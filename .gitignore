@@ -1,0 +1,89 @@
+data/*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor and IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Node.js
+node_modules/
+dist/
+build/
+coverage/
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+*.tsbuildinfo
+
+# Package manager caches
+.npm/
+.npm-cache/
+.yarn/
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+.venv/
+venv/
+env/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.tox/
+.nox/
+htmlcov/
+site/
+
+# Test and coverage output
+.coverage
+.coverage.*
+junit.xml
+coverage.xml
+test-results/
+
+# Build artifacts
+*.egg-info/
+*.egg
+*.whl
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
+# Local database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
