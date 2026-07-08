@@ -1,0 +1,451 @@
+import type { CliToolDefinition } from '@/types';
+
+export const CLI_TOOLS_CATALOG: CliToolDefinition[] = [
+  {
+    id: 'ffmpeg',
+    name: 'FFmpeg',
+    binNames: ['ffmpeg', 'ffprobe'],
+    summaryZh: '音视频处理瑞士军刀，支持转码、剪辑、合并、流处理',
+    summaryEn: 'Swiss army knife for audio/video — transcode, trim, merge, stream',
+    categories: ['media'],
+    installMethods: [
+      { method: 'brew', command: 'brew install ffmpeg', platforms: ['darwin', 'linux'] },
+    ],
+    setupType: 'simple',
+    detailIntro: {
+      zh: 'FFmpeg 是最强大的开源音视频处理工具，支持几乎所有格式的转码、剪辑、合并、滤镜处理和流媒体操作。Claude 可以帮你生成复杂的 FFmpeg 命令。',
+      en: 'FFmpeg is the most powerful open-source audio/video processing tool. It supports transcoding, trimming, merging, filtering, and streaming for virtually all formats. Claude can help generate complex FFmpeg commands.',
+    },
+    useCases: {
+      zh: ['视频格式转换（MP4/MKV/WebM 互转）', '音频提取和转码', '视频剪辑和拼接', '添加字幕和水印', '调整分辨率和码率'],
+      en: ['Video format conversion (MP4/MKV/WebM)', 'Audio extraction and transcoding', 'Video trimming and concatenation', 'Add subtitles and watermarks', 'Adjust resolution and bitrate'],
+    },
+    guideSteps: {
+      zh: ['安装 FFmpeg（推荐使用 Homebrew）', '安装完成后在终端输入 ffmpeg -version 验证', '在对话中描述你的音视频处理需求，Claude 会生成对应命令'],
+      en: ['Install FFmpeg (Homebrew recommended)', 'Verify by running ffmpeg -version in terminal', 'Describe your audio/video task in chat — Claude will generate the command'],
+    },
+    examplePrompts: [
+      { label: 'Convert to MP4', promptZh: '把 input.mov 转换成 MP4 格式，保持原始质量', promptEn: 'Convert input.mov to MP4 format, keeping original quality' },
+      { label: 'Extract audio', promptZh: '从视频文件中提取音频并保存为 MP3', promptEn: 'Extract audio from a video file and save as MP3' },
+      { label: 'Compress video', promptZh: '将视频压缩到 10MB 以内，尽量保持画质', promptEn: 'Compress video to under 10MB while maintaining quality' },
+    ],
+    homepage: 'https://ffmpeg.org',
+    repoUrl: 'https://github.com/FFmpeg/FFmpeg',
+    officialDocsUrl: 'https://ffmpeg.org/documentation.html',
+    supportsAutoDescribe: true,
+  },  // ffmpeg: not agent-specific, no json output
+  {
+    id: 'jq',
+    name: 'jq',
+    binNames: ['jq'],
+    summaryZh: '轻量级 JSON 处理器，支持查询、过滤、转换',
+    summaryEn: 'Lightweight JSON processor — query, filter, transform',
+    categories: ['data'],
+    installMethods: [
+      { method: 'brew', command: 'brew install jq', platforms: ['darwin', 'linux'] },
+    ],
+    setupType: 'simple',
+    detailIntro: {
+      zh: 'jq 是命令行下的 JSON 处理利器，可以对 JSON 数据进行查询、过滤、映射和格式化。适合处理 API 响应、配置文件和日志分析。',
+      en: 'jq is a powerful command-line JSON processor for querying, filtering, mapping, and formatting JSON data. Great for API responses, config files, and log analysis.',
+    },
+    useCases: {
+      zh: ['解析和格式化 JSON 数据', '从 API 响应中提取特定字段', '批量转换 JSON 文件', '分析 JSON 格式的日志'],
+      en: ['Parse and format JSON data', 'Extract specific fields from API responses', 'Batch transform JSON files', 'Analyze JSON-formatted logs'],
+    },
+    guideSteps: {
+      zh: ['安装 jq', '运行 jq --version 验证安装', '使用管道将 JSON 数据传给 jq 处理'],
+      en: ['Install jq', 'Verify with jq --version', 'Pipe JSON data to jq for processing'],
+    },
+    examplePrompts: [
+      { label: 'Parse JSON', promptZh: '用 jq 从 package.json 中提取所有依赖名称', promptEn: 'Use jq to extract all dependency names from package.json' },
+      { label: 'Filter array', promptZh: '用 jq 过滤 JSON 数组中 status 为 active 的项目', promptEn: 'Use jq to filter JSON array items where status is active' },
+    ],
+    homepage: 'https://jqlang.github.io/jq/',
+    repoUrl: 'https://github.com/jqlang/jq',
+    officialDocsUrl: 'https://jqlang.github.io/jq/manual/',
+    supportsJson: true,
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'ripgrep',
+    name: 'ripgrep',
+    binNames: ['rg'],
+    summaryZh: '极速文本搜索工具，比 grep 快数倍',
+    summaryEn: 'Ultra-fast text search tool — orders of magnitude faster than grep',
+    categories: ['search'],
+    installMethods: [
+      { method: 'brew', command: 'brew install ripgrep', platforms: ['darwin', 'linux'] },
+      { method: 'cargo', command: 'cargo install ripgrep', platforms: ['darwin', 'linux', 'win32'] },
+    ],
+    setupType: 'simple',
+    detailIntro: {
+      zh: 'ripgrep (rg) 是一个面向行的搜索工具，递归搜索当前目录中的正则表达式模式。它默认尊重 .gitignore 规则，速度极快。',
+      en: 'ripgrep (rg) is a line-oriented search tool that recursively searches directories for regex patterns. It respects .gitignore rules by default and is extremely fast.',
+    },
+    useCases: {
+      zh: ['在代码库中搜索特定模式', '查找包含特定文本的文件', '替代 grep 进行大规模搜索', '搜索时自动跳过 .gitignore 中的文件'],
+      en: ['Search codebases for specific patterns', 'Find files containing specific text', 'Replace grep for large-scale searches', 'Auto-skip .gitignore files during search'],
+    },
+    guideSteps: {
+      zh: ['安装 ripgrep', '运行 rg --version 验证安装', '使用 rg "pattern" 搜索当前目录'],
+      en: ['Install ripgrep', 'Verify with rg --version', 'Use rg "pattern" to search current directory'],
+    },
+    examplePrompts: [
+      { label: 'Search code', promptZh: '用 ripgrep 在项目中搜索所有 TODO 注释', promptEn: 'Use ripgrep to find all TODO comments in the project' },
+      { label: 'Find usage', promptZh: '用 rg 搜索某个函数在哪些文件中被调用', promptEn: 'Use rg to find which files call a specific function' },
+    ],
+    supportsJson: true,
+    homepage: 'https://github.com/BurntSushi/ripgrep',
+    repoUrl: 'https://github.com/BurntSushi/ripgrep',
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'yt-dlp',
+    name: 'yt-dlp',
+    binNames: ['yt-dlp'],
+    summaryZh: '功能强大的视频下载工具，支持数千个网站',
+    summaryEn: 'Powerful video downloader supporting thousands of websites',
+    categories: ['download', 'media'],
+    installMethods: [
+      { method: 'brew', command: 'brew install yt-dlp', platforms: ['darwin', 'linux'] },
+      { method: 'pipx', command: 'pipx install yt-dlp', platforms: ['darwin', 'linux', 'win32'] },
+    ],
+    setupType: 'simple',
+    detailIntro: {
+      zh: 'yt-dlp 是 youtube-dl 的活跃分支，支持从数千个网站下载视频和音频。功能包括格式选择、字幕下载、播放列表处理等。',
+      en: 'yt-dlp is an actively maintained fork of youtube-dl, supporting video/audio downloads from thousands of websites. Features include format selection, subtitle download, playlist handling, and more.',
+    },
+    useCases: {
+      zh: ['下载在线视频', '提取视频中的音频', '下载字幕文件', '批量下载播放列表'],
+      en: ['Download online videos', 'Extract audio from videos', 'Download subtitles', 'Batch download playlists'],
+    },
+    guideSteps: {
+      zh: ['安装 yt-dlp', '运行 yt-dlp --version 验证安装', '使用 yt-dlp URL 下载视频'],
+      en: ['Install yt-dlp', 'Verify with yt-dlp --version', 'Use yt-dlp URL to download videos'],
+    },
+    examplePrompts: [
+      { label: 'Download video', promptZh: '用 yt-dlp 下载这个视频的最高画质版本', promptEn: 'Use yt-dlp to download the highest quality version of this video' },
+      { label: 'Extract audio', promptZh: '用 yt-dlp 只下载音频并转为 MP3', promptEn: 'Use yt-dlp to download audio only and convert to MP3' },
+    ],
+    supportsJson: true,
+    homepage: 'https://github.com/yt-dlp/yt-dlp',
+    repoUrl: 'https://github.com/yt-dlp/yt-dlp',
+    officialDocsUrl: 'https://github.com/yt-dlp/yt-dlp#readme',
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'pandoc',
+    name: 'Pandoc',
+    binNames: ['pandoc'],
+    summaryZh: '通用文档格式转换器，支持 Markdown/HTML/PDF/DOCX 等',
+    summaryEn: 'Universal document converter — Markdown, HTML, PDF, DOCX, and more',
+    categories: ['document'],
+    installMethods: [
+      { method: 'brew', command: 'brew install pandoc', platforms: ['darwin', 'linux'] },
+    ],
+    setupType: 'simple',
+    detailIntro: {
+      zh: 'Pandoc 是一个通用的文档格式转换器，支持 Markdown、HTML、LaTeX、PDF、DOCX、EPUB 等数十种格式之间的相互转换。',
+      en: 'Pandoc is a universal document converter supporting dozens of formats including Markdown, HTML, LaTeX, PDF, DOCX, EPUB, and more.',
+    },
+    useCases: {
+      zh: ['Markdown 转 PDF/DOCX', 'HTML 转 Markdown', '批量文档格式转换', '生成电子书（EPUB）'],
+      en: ['Markdown to PDF/DOCX', 'HTML to Markdown', 'Batch document conversion', 'Generate ebooks (EPUB)'],
+    },
+    guideSteps: {
+      zh: ['安装 Pandoc', '运行 pandoc --version 验证安装', '使用 pandoc input.md -o output.pdf 转换文件'],
+      en: ['Install Pandoc', 'Verify with pandoc --version', 'Use pandoc input.md -o output.pdf to convert files'],
+    },
+    examplePrompts: [
+      { label: 'MD to PDF', promptZh: '用 pandoc 把 README.md 转成 PDF', promptEn: 'Use pandoc to convert README.md to PDF' },
+      { label: 'HTML to MD', promptZh: '用 pandoc 把网页 HTML 转成 Markdown', promptEn: 'Use pandoc to convert HTML page to Markdown' },
+    ],
+    homepage: 'https://pandoc.org',
+    repoUrl: 'https://github.com/jgm/pandoc',
+    officialDocsUrl: 'https://pandoc.org/MANUAL.html',
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'imagemagick',
+    name: 'ImageMagick',
+    binNames: ['magick', 'convert'],
+    summaryZh: '强大的图片处理工具，支持格式转换、缩放、裁剪、特效',
+    summaryEn: 'Powerful image processing tool — convert, resize, crop, effects',
+    categories: ['media'],
+    installMethods: [
+      { method: 'brew', command: 'brew install imagemagick', platforms: ['darwin', 'linux'] },
+    ],
+    setupType: 'simple',
+    detailIntro: {
+      zh: 'ImageMagick 是一个功能丰富的图片处理套件，支持 200+ 种图片格式的读写和转换，以及缩放、裁剪、旋转、合成、特效等操作。',
+      en: 'ImageMagick is a feature-rich image processing suite supporting 200+ image formats for reading, writing, converting, resizing, cropping, compositing, and applying effects.',
+    },
+    useCases: {
+      zh: ['批量图片格式转换', '图片缩放和裁剪', '添加水印和文字', '图片拼接和合成', 'PDF 转图片'],
+      en: ['Batch image format conversion', 'Image resizing and cropping', 'Add watermarks and text', 'Image montage and compositing', 'PDF to image conversion'],
+    },
+    guideSteps: {
+      zh: ['安装 ImageMagick', '运行 magick --version 验证安装', '使用 magick convert input.png output.jpg 转换图片'],
+      en: ['Install ImageMagick', 'Verify with magick --version', 'Use magick convert input.png output.jpg to convert images'],
+    },
+    examplePrompts: [
+      { label: 'Batch resize', promptZh: '用 ImageMagick 批量将文件夹中的图片缩放到 800px 宽', promptEn: 'Use ImageMagick to batch resize images in a folder to 800px wide' },
+      { label: 'Add watermark', promptZh: '用 ImageMagick 给图片添加文字水印', promptEn: 'Use ImageMagick to add text watermark to images' },
+    ],
+    homepage: 'https://imagemagick.org',
+    repoUrl: 'https://github.com/ImageMagick/ImageMagick',
+    officialDocsUrl: 'https://imagemagick.org/script/command-line-processing.php',
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'gws',
+    name: 'Google Workspace CLI',
+    binNames: ['gws'],
+    summaryZh: 'Google Workspace 命令行工具，支持 Drive/Gmail/Calendar/Sheets 等 API 操作',
+    summaryEn: 'CLI for Google Workspace APIs — Drive, Gmail, Calendar, Sheets and more',
+    categories: ['productivity'],
+    installMethods: [
+      { method: 'npm', command: 'npm install -g @googleworkspace/cli', platforms: ['darwin', 'linux', 'win32'] },
+    ],
+    setupType: 'needs_auth',
+    detailIntro: {
+      zh: 'gws 是 Google Workspace 的官方命令行工具，通过 Google Discovery Service 动态生成命令，自动覆盖所有 Workspace API。输出为结构化 JSON，天然适合 AI 代理和脚本集成。首次使用需通过 OAuth 完成身份认证。',
+      en: 'gws is the official CLI for Google Workspace. It dynamically generates commands from Google Discovery Service, automatically covering all Workspace APIs. Output is structured JSON, making it ideal for AI agents and scripting. First-time use requires OAuth authentication.',
+    },
+    useCases: {
+      zh: ['管理 Google Drive 文件（上传、下载、搜索）', '读取和发送 Gmail 邮件', '操作 Google Sheets 数据', '管理 Google Calendar 日程', '在 CI/脚本中自动化 Google Workspace 操作'],
+      en: ['Manage Google Drive files (upload, download, search)', 'Read and send Gmail messages', 'Operate on Google Sheets data', 'Manage Google Calendar events', 'Automate Google Workspace operations in CI/scripts'],
+    },
+    guideSteps: {
+      zh: ['安装 gws：npm install -g @googleworkspace/cli', '按需安装 AI Agent Skills（如 npx skills add https://github.com/googleworkspace/cli/tree/main/skills/gws-drive）', '运行 gws auth setup 配置 Google Cloud 项目（需要 gcloud CLI 或手动配置 OAuth）', '运行 gws auth login -s drive,gmail,sheets 选择需要的 API 权限并登录', '使用 gws drive files list 等命令操作 Workspace 资源'],
+      en: ['Install gws: npm install -g @googleworkspace/cli', 'Install AI Agent Skills as needed (e.g. npx skills add https://github.com/googleworkspace/cli/tree/main/skills/gws-drive)', 'Run gws auth setup to configure Google Cloud project (requires gcloud CLI or manual OAuth setup)', 'Run gws auth login -s drive,gmail,sheets to select API scopes and log in', 'Use commands like gws drive files list to operate on Workspace resources'],
+    },
+    examplePrompts: [
+      { label: 'List Drive files', promptZh: '用 gws 列出我 Google Drive 根目录下的文件', promptEn: 'Use gws to list files in my Google Drive root directory' },
+      { label: 'Send email', promptZh: '用 gws 发送一封测试邮件', promptEn: 'Use gws to send a test email via Gmail' },
+      { label: 'Read spreadsheet', promptZh: '用 gws 读取 Google Sheets 表格中的数据', promptEn: 'Use gws to read data from a Google Sheets spreadsheet' },
+    ],
+    postInstallCommands: [
+      'gws --help',
+    ],
+    agentFriendly: true,
+    supportsJson: true,
+    supportsSchema: true,
+    supportsDryRun: true,
+    contextFriendly: true,
+    healthCheckCommand: 'gws auth status',
+    homepage: 'https://github.com/googleworkspace/cli',
+    repoUrl: 'https://github.com/googleworkspace/cli',
+    officialDocsUrl: 'https://github.com/googleworkspace/cli#readme',
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'elevenlabs',
+    name: 'ElevenLabs CLI',
+    binNames: ['elevenlabs'],
+    summaryZh: 'AI 语音代理管理工具，支持创建、配置、部署语音代理',
+    summaryEn: 'Manage AI voice agents as code — create, configure, push/pull sync, and deploy',
+    categories: ['productivity'],
+    installMethods: [
+      { method: 'npm', command: 'npm install -g @elevenlabs/cli', platforms: ['darwin', 'linux', 'win32'] },
+    ],
+    setupType: 'needs_auth',
+    detailIntro: {
+      zh: 'ElevenLabs CLI 让你通过命令行管理 AI 语音代理。支持创建代理模板、推送/拉取配置同步、监控状态、生成嵌入代码，以及 CI/CD 集成。编码代理可以直接管理你的语音代理。',
+      en: 'ElevenLabs CLI lets you manage AI voice agents from the terminal. Create agents from templates, push/pull sync configurations, monitor status, generate embed widgets, and integrate with CI/CD. Your coding agent can directly manage your voice agents.',
+    },
+    useCases: {
+      zh: ['创建和配置 AI 语音代理', '推送/拉取代理配置同步', '管理 Webhook 和客户端工具集成', '通过 CI/CD 自动部署语音代理', '生成网页嵌入代码'],
+      en: ['Create and configure AI voice agents', 'Push/pull agent configuration sync', 'Manage webhook and client tool integrations', 'Automate voice agent deployment via CI/CD', 'Generate web embed widgets'],
+    },
+    guideSteps: {
+      zh: ['安装：npm install -g @elevenlabs/cli', '运行 elevenlabs init 初始化项目结构', '运行 elevenlabs auth login 配置 API 密钥（密钥存储在 ~/.agents/api_keys.json）', '运行 elevenlabs agents add 从模板创建代理'],
+      en: ['Install: npm install -g @elevenlabs/cli', 'Run elevenlabs init to initialize project structure', 'Run elevenlabs auth login to configure API key (stored in ~/.agents/api_keys.json)', 'Run elevenlabs agents add to create an agent from template'],
+    },
+    examplePrompts: [
+      { label: 'Create agent', promptZh: '用 ElevenLabs CLI 创建一个客服语音代理', promptEn: 'Use ElevenLabs CLI to create a customer service voice agent' },
+      { label: 'Sync config', promptZh: '把本地的语音代理配置推送到 ElevenLabs 平台', promptEn: 'Push local voice agent config to ElevenLabs platform' },
+    ],
+    agentFriendly: true,
+    supportsDryRun: true,
+    healthCheckCommand: 'elevenlabs agents status',
+    homepage: 'https://elevenlabs.io',
+    repoUrl: 'https://github.com/elevenlabs/cli',
+    officialDocsUrl: 'https://elevenlabs.io/docs/eleven-agents/operate/cli',
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'stripe',
+    name: 'Stripe CLI',
+    binNames: ['stripe'],
+    summaryZh: '支付集成命令行工具，支持资源管理、Webhook 调试、日志监控',
+    summaryEn: 'Build, test, and manage Stripe payment integrations from the command line',
+    categories: ['productivity'],
+    installMethods: [
+      { method: 'brew', command: 'brew install stripe/stripe-cli/stripe', platforms: ['darwin', 'linux'] },
+    ],
+    setupType: 'needs_auth',
+    detailIntro: {
+      zh: 'Stripe CLI 是 Stripe 官方命令行工具，支持在沙箱中创建/查询/更新支付资源、实时监控 API 日志、触发和转发 Webhook 事件到本地开发服务器。还可安装 Projects 插件统一管理第三方服务凭证和环境变量。',
+      en: 'Stripe CLI is the official command-line tool for Stripe. CRUD payment resources in sandbox, stream real-time API logs, trigger and forward webhook events to your local server. The Projects plugin adds unified credential management across third-party providers with automatic .env sync.',
+    },
+    useCases: {
+      zh: ['在沙箱中创建和管理支付资源', '实时监控 API 请求日志', '触发和转发 Webhook 事件到本地', '通过 Projects 插件管理多服务凭证和环境变量', '在 CI/CD 中自动化支付测试'],
+      en: ['Create and manage payment resources in sandbox', 'Stream real-time API request logs', 'Trigger and forward webhook events locally', 'Manage multi-service credentials via Projects plugin', 'Automate payment testing in CI/CD'],
+    },
+    guideSteps: {
+      zh: ['安装：brew install stripe/stripe-cli/stripe', '运行 stripe login 完成身份认证（会在浏览器中打开配对页面）', '运行 stripe listen --forward-to localhost:4242/webhooks 转发 Webhook 事件到本地', '记录 listen 命令输出的 webhook signing secret（whsec_...）用于签名验证'],
+      en: ['Install: brew install stripe/stripe-cli/stripe', 'Run stripe login to authenticate (opens pairing page in browser)', 'Run stripe listen --forward-to localhost:4242/webhooks to forward events locally', 'Note the webhook signing secret (whsec_...) from listen output for signature verification'],
+    },
+    examplePrompts: [
+      { label: 'Forward webhooks', promptZh: '用 Stripe CLI 把 Webhook 事件转发到我的本地服务器', promptEn: 'Use Stripe CLI to forward webhook events to my local server' },
+      { label: 'Trigger event', promptZh: '用 Stripe CLI 触发一个 checkout.session.completed 事件', promptEn: 'Use Stripe CLI to trigger a checkout.session.completed event' },
+      { label: 'View logs', promptZh: '用 Stripe CLI 实时查看 API 请求日志', promptEn: 'Use Stripe CLI to stream real-time API request logs' },
+    ],
+    agentFriendly: true,
+    supportsJson: true,
+    healthCheckCommand: 'stripe status',
+    homepage: 'https://stripe.com/docs/stripe-cli',
+    repoUrl: 'https://github.com/stripe/stripe-cli',
+    officialDocsUrl: 'https://docs.stripe.com/stripe-cli',
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'ncm-cli',
+    name: '网易云音乐 CLI',
+    binNames: ['ncm-cli'],
+    summaryZh: '网易云音乐命令行播放器，支持搜索、播放、歌单管理，专为 AI Agent 设计',
+    summaryEn: 'NetEase Cloud Music CLI player with search, playback, playlists — designed for AI agents',
+    categories: ['media'],
+    installMethods: [
+      { method: 'npm', command: 'npm install -g @music163/ncm-cli', platforms: ['darwin', 'linux', 'win32'] },
+    ],
+    setupType: 'needs_auth',
+    detailIntro: {
+      zh: 'ncm-cli 是网易云音乐的命令行客户端，支持音乐搜索、播放控制、歌单管理、每日推荐等功能，内置全屏 TUI 播放器。专为 AI Agent 设计，提供 Claude Code 技能和 OpenClaw 集成，支持自然语言控制音乐播放。需要 mpv 播放器和网易云音乐账号。',
+      en: 'ncm-cli is a command-line client for NetEase Cloud Music with search, playback, playlist management, daily recommendations, and a full-screen TUI player. Designed for AI agents with Claude Code skills and OpenClaw integration for natural language music control. Requires mpv player and a NetEase Cloud Music account.',
+    },
+    useCases: {
+      zh: ['搜索和播放网易云音乐', '管理和创建歌单', '获取每日推荐和个性化内容', '通过 AI Agent 自然语言控制音乐', 'TUI 全屏播放器体验'],
+      en: ['Search and play NetEase Cloud Music', 'Manage and create playlists', 'Get daily recommendations and personalized content', 'Control music via AI agent natural language', 'Full-screen TUI player experience'],
+    },
+    guideSteps: {
+      zh: ['安装：npm install -g @music163/ncm-cli', '安装 mpv 播放器（本地播放必需）：brew install mpv', '运行 ncm-cli configure 配置 API 凭证（需要网易云开发者账号的 App ID 和 Private Key）', '运行 ncm-cli login 扫码登录网易云音乐账号'],
+      en: ['Install: npm install -g @music163/ncm-cli', 'Install mpv player (required for playback): brew install mpv', 'Run ncm-cli configure to set up API credentials (needs App ID and Private Key from developer.music.163.com)', 'Run ncm-cli login to scan QR code and log in'],
+    },
+    examplePrompts: [
+      { label: 'Play music', promptZh: '帮我播放一首轻松的音乐', promptEn: 'Play some relaxing music for me' },
+      { label: 'Search song', promptZh: '搜索周杰伦的晴天并播放', promptEn: 'Search for "Sunny Day" by Jay Chou and play it' },
+      { label: 'Daily picks', promptZh: '播放我的每日推荐歌曲', promptEn: 'Play my daily recommended songs' },
+    ],
+    agentFriendly: true,
+    // ncm-cli has no auth status command — omit healthCheckCommand
+    // so AI won't falsely report "healthy" before configure+login
+    homepage: 'https://www.npmjs.com/package/@music163/ncm-cli',
+    repoUrl: 'https://github.com/nicepkg/ncm-cli',
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'dreamina',
+    name: '即梦 Dreamina CLI',
+    binNames: ['dreamina'],
+    summaryZh: '即梦 AI 创作工具包，支持文生图、文生视频、图生图、图生视频',
+    summaryEn: 'Dreamina AI creation toolkit — text-to-image, text-to-video, image-to-image, image-to-video',
+    categories: ['media'],
+    installMethods: [
+      { method: 'brew', command: 'curl -fsSL https://jimeng.jianying.com/cli | bash', platforms: ['darwin', 'linux'] },
+    ],
+    setupType: 'needs_auth',
+    detailIntro: {
+      zh: '即梦 Dreamina CLI 是面向 AI Agent 的创作工具包，让你的 Agent 能够使用即梦的图片和视频生成能力。无需额外开通会员，Agent 可以自动使用你的即梦账号进行文生图、文生视频、图生图、图生视频等任务。支持异步任务轮询、结果下载、历史记录查询。',
+      en: 'Dreamina CLI is an AI agent-oriented creation toolkit that enables your agent to use Dreamina\'s image and video generation capabilities. No extra subscription needed — your agent can automatically use your Dreamina account for text-to-image, text-to-video, image-to-image, and image-to-video tasks. Supports async task polling, result downloading, and task history.',
+    },
+    useCases: {
+      zh: ['文字描述生成图片（text2image）', '文字描述生成视频（text2video）', '图片风格转换（image2image）', '静态图片转动态视频（image2video）', '批量自动化创作任务'],
+      en: ['Generate images from text (text2image)', 'Generate videos from text (text2video)', 'Image style transfer (image2image)', 'Animate static images to video (image2video)', 'Batch automated creation tasks'],
+    },
+    guideSteps: {
+      zh: ['安装：curl -fsSL https://jimeng.jianying.com/cli | bash', '运行 dreamina login 完成浏览器登录授权', '运行 dreamina user_credit 验证登录状态', '使用 dreamina text2image --prompt="描述" 开始生成'],
+      en: ['Install: curl -fsSL https://jimeng.jianying.com/cli | bash', 'Run dreamina login to authorize via browser', 'Run dreamina user_credit to verify login', 'Use dreamina text2image --prompt="description" to start generating'],
+    },
+    examplePrompts: [
+      { label: 'Generate image', promptZh: '用即梦生成一张赛博朋克风格的城市夜景图片', promptEn: 'Use Dreamina to generate a cyberpunk city nightscape image' },
+      { label: 'Generate video', promptZh: '用即梦把这段描述生成一个 5 秒的短视频', promptEn: 'Use Dreamina to generate a 5-second video from this description' },
+      { label: 'Image to video', promptZh: '用即梦把这张图片转成动态视频', promptEn: 'Use Dreamina to animate this image into a video' },
+    ],
+    agentFriendly: true,
+    supportsJson: true,
+    healthCheckCommand: 'dreamina user_credit',
+    homepage: 'https://jimeng.jianying.com',
+    supportsAutoDescribe: true,
+  },
+  {
+    id: 'lark-cli',
+    name: '飞书 Lark CLI',
+    binNames: ['lark-cli'],
+    summaryZh: '飞书开放平台命令行工具，覆盖消息、文档、多维表格、日历、邮箱等 200+ 命令',
+    summaryEn: 'Lark/Feishu CLI — 200+ commands for messaging, docs, sheets, calendar, mail and more',
+    categories: ['productivity'],
+    installMethods: [
+      { method: 'npm', command: 'npm install -g @larksuite/cli', platforms: ['darwin', 'linux', 'win32'] },
+    ],
+    setupType: 'needs_auth',
+    detailIntro: {
+      zh: '飞书 Lark CLI 是飞书开放平台的命令行工具，为 AI Agent 原生设计。覆盖日历、即时通讯、云文档、多维表格、电子表格、任务、知识库、邮箱、视频会议等 11 大业务域，提供 200+ 命令和 19 个 AI Agent Skills。支持三层调用架构（快捷命令→API 命令→通用调用），内置结构化输出和 dry-run 预览。',
+      en: 'Lark CLI is the command-line tool for the Lark/Feishu open platform, designed natively for AI agents. Covers 11 business domains including calendar, messaging, docs, sheets, tasks, wiki, mail, and video conferencing with 200+ commands and 19 AI Agent Skills. Features a three-layer calling architecture (shortcuts→API commands→generic calls), structured output, and dry-run preview.',
+    },
+    useCases: {
+      zh: ['发送消息和管理群聊', '创建和编辑飞书文档', '操作多维表格和电子表格数据', '查看日历日程和管理任务', '搜索和阅读邮件'],
+      en: ['Send messages and manage group chats', 'Create and edit Lark documents', 'Operate on Bitable and spreadsheet data', 'View calendar events and manage tasks', 'Search and read emails'],
+    },
+    guideSteps: {
+      zh: ['安装：npm install -g @larksuite/cli', '安装全部 19 个 AI Agent Skills：npx skills add larksuite/cli -y', '运行 lark-cli config init --new 配置应用凭证（需在浏览器中完成授权）', '运行 lark-cli auth login --recommend 完成登录授权', '运行 lark-cli auth status 验证登录状态'],
+      en: ['Install: npm install -g @larksuite/cli', 'Install all 19 AI Agent Skills: npx skills add larksuite/cli -y', 'Run lark-cli config init --new to configure credentials (complete auth in browser)', 'Run lark-cli auth login --recommend to authorize', 'Run lark-cli auth status to verify login'],
+    },
+    examplePrompts: [
+      { label: 'Send message', promptZh: '用飞书 CLI 给某个群聊发一条消息', promptEn: 'Use Lark CLI to send a message to a group chat' },
+      { label: 'Create doc', promptZh: '用飞书 CLI 创建一个新文档并写入内容', promptEn: 'Use Lark CLI to create a new document with content' },
+      { label: 'View agenda', promptZh: '用飞书 CLI 查看我今天的日程安排', promptEn: 'Use Lark CLI to view my agenda for today' },
+    ],
+    postInstallCommands: ['npx skills add larksuite/cli -y'],
+    agentFriendly: true,
+    supportsJson: true,
+    supportsSchema: true,
+    supportsDryRun: true,
+    contextFriendly: true,
+    healthCheckCommand: 'lark-cli auth status',
+    homepage: 'https://github.com/larksuite/cli',
+    repoUrl: 'https://github.com/larksuite/cli',
+    supportsAutoDescribe: true,
+  },
+];
+
+/**
+ * Well-known CLI binaries to detect beyond the curated catalog.
+ * These are probed at detection time to surface tools already on the system
+ * that don't have a full catalog entry but are useful for AI workflows.
+ * Each entry: [id, displayName, binName]
+ */
+export const EXTRA_WELL_KNOWN_BINS: Array<[string, string, string]> = [
+  ['wget', 'wget', 'wget'],
+  ['curl', 'curl', 'curl'],
+  ['git', 'Git', 'git'],
+  ['python3', 'Python 3', 'python3'],
+  ['node', 'Node.js', 'node'],
+  ['go', 'Go', 'go'],
+  ['rustc', 'Rust', 'rustc'],
+  ['docker', 'Docker', 'docker'],
+  ['kubectl', 'kubectl', 'kubectl'],
+  ['terraform', 'Terraform', 'terraform'],
+  ['gh', 'GitHub CLI', 'gh'],
+  ['aws', 'AWS CLI', 'aws'],
+  ['gcloud', 'Google Cloud CLI', 'gcloud'],
+  ['sox', 'SoX', 'sox'],
+  ['sqlite3', 'SQLite', 'sqlite3'],
+  ['htop', 'htop', 'htop'],
+  ['tmux', 'tmux', 'tmux'],
+  ['bat', 'bat', 'bat'],
+  ['fd', 'fd', 'fd'],
+  ['fzf', 'fzf', 'fzf'],
+];

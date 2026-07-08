@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "declaration": true,
+    "sourceMap": true
+  },
+  "include": ["src/codex/**/*.ts", "src/codex-web/**/*.ts", "server/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "server/**/*.test.ts", "src/app/**", "src/components/**", "src/hooks/**", "src/lib/**"]
+}

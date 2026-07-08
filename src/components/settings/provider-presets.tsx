@@ -1,0 +1,234 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { HardDrives } from "@/components/ui/icon";
+import type { ApiProvider } from "@/types";
+import { VENDOR_PRESETS, isValidProtocol } from "@/lib/provider-catalog";
+import type { VendorPreset } from "@/lib/provider-catalog";
+import { getProviderIconKey, type ProviderIconKey } from "@/lib/provider-icon-rule";
+import {
+  AnthropicIcon as Anthropic,
+  AwsIcon as Aws,
+  BailianIcon as Bailian,
+  BedrockIcon as Bedrock,
+  ClineIcon as Cline,
+  DeepSeekIcon as DeepSeek,
+  GoogleIcon as Google,
+  KimiIcon as Kimi,
+  MinimaxIcon as Minimax,
+  MoonshotIcon as Moonshot,
+  OllamaIcon as Ollama,
+  OpenAIIcon as OpenAI,
+  OpenCodeIcon as OpenCode,
+  OpenRouterIcon as OpenRouter,
+  VolcengineIcon as Volcengine,
+  XiaomiMiMoIcon as XiaomiMiMo,
+  ZhipuIcon as Zhipu,
+} from "@/components/icons/provider-icons";
+
+// ---------------------------------------------------------------------------
+// Brand icon resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * React node for a brand icon. Pure rule lives in
+ * `src/lib/provider-icon-rule.ts` (unit-testable without React); this
+ * thin wrapper just maps the rule's string key to a JSX component.
+ */
+const ICON_BY_KEY: Record<ProviderIconKey, ReactNode> = {
+  openrouter: <OpenRouter size={18} />,
+  zhipu: <Zhipu size={18} />,
+  kimi: <Kimi size={18} />,
+  moonshot: <Moonshot size={18} />,
+  minimax: <Minimax size={18} />,
+  volcengine: <Volcengine size={18} />,
+  bailian: <Bailian size={18} />,
+  "xiaomi-mimo": <XiaomiMiMo size={18} />,
+  ollama: <Ollama size={18} />,
+  openai: <OpenAI size={18} />,
+  deepseek: <DeepSeek size={18} />,
+  bedrock: <Bedrock size={18} />,
+  google: <Google size={18} />,
+  aws: <Aws size={18} />,
+  anthropic: <Anthropic size={18} />,
+  cline: <Cline size={18} />,
+  opencode: <OpenCode size={18} />,
+  default: <HardDrives size={18} className="text-muted-foreground" />,
+};
+
+/** Map a provider name / base_url to a brand icon */
+export function getProviderIcon(name: string, baseUrl: string): ReactNode {
+  return ICON_BY_KEY[getProviderIconKey(name, baseUrl)];
+}
+
+// ---------------------------------------------------------------------------
+// Quick-add preset definitions — generated from VENDOR_PRESETS (single source of truth)
+// ---------------------------------------------------------------------------
+
+export interface QuickPreset {
+  key: string;
+  name: string;
+  description: string;
+  descriptionZh: string;
+  icon: ReactNode;
+  provider_type: string;
+  protocol: string;
+  /** Auth style from catalog — frontend should use this instead of inferring from extra_env */
+  authStyle: string;
+  base_url: string;
+  extra_env: string;
+  fields: ("name" | "api_key" | "base_url" | "extra_env" | "model_names" | "model_mapping")[];
+  category?: "chat" | "media";
+  /** Provider meta info from catalog (for user guidance) */
+  meta?: VendorPreset['meta'];
+  /** Catalog default model id — used to pre-fill the model_names input so a
+   *  preset that requires a user-specified model (e.g. MiMo) shows its current
+   *  default instead of an empty box with an unrelated placeholder. */
+  defaultModelId?: string;
+}
+
+/** Map iconKey from VENDOR_PRESETS to React icon component */
+function resolveIcon(iconKey: string): ReactNode {
+  const ICON_MAP: Record<string, ReactNode> = {
+    anthropic: <Anthropic size={18} />,
+    openrouter: <OpenRouter size={18} />,
+    zhipu: <Zhipu size={18} />,
+    kimi: <Kimi size={18} />,
+    moonshot: <Moonshot size={18} />,
+    minimax: <Minimax size={18} />,
+    bedrock: <Bedrock size={18} />,
+    google: <Google size={18} />,
+    volcengine: <Volcengine size={18} />,
+    bailian: <Bailian size={18} />,
+    'xiaomi-mimo': <XiaomiMiMo size={18} />,
+    ollama: <Ollama size={18} />,
+    openai: <OpenAI size={18} />,
+    deepseek: <DeepSeek size={18} />,
+    cline: <Cline size={18} />,
+    opencode: <OpenCode size={18} />,
+    server: <HardDrives size={18} className="text-muted-foreground" />,
+  };
+  return ICON_MAP[iconKey] || <HardDrives size={18} className="text-muted-foreground" />;
+}
+
+/** Convert a VendorPreset to the frontend QuickPreset format */
+function toQuickPreset(vp: VendorPreset): QuickPreset {
+  return {
+    key: vp.key,
+    name: vp.name,
+    description: vp.description,
+    descriptionZh: vp.descriptionZh,
+    icon: resolveIcon(vp.iconKey),
+    provider_type: vp.protocol === 'openrouter' ? 'openrouter'
+      : vp.protocol === 'bedrock' ? 'bedrock'
+      : vp.protocol === 'vertex' ? 'vertex'
+      : vp.protocol === 'gemini-image' ? 'gemini-image'
+      : vp.protocol === 'openai-image' ? 'openai-image'
+      : vp.protocol === 'openai-compatible' ? 'openai-compatible'
+      : 'anthropic',
+    protocol: vp.protocol,
+    authStyle: vp.authStyle,
+    base_url: vp.baseUrl,
+    extra_env: JSON.stringify(vp.defaultEnvOverrides),
+    fields: vp.fields as QuickPreset['fields'],
+    category: vp.category,
+    meta: vp.meta,
+    defaultModelId: vp.defaultRoleModels?.default ?? vp.defaultModels?.[0]?.upstreamModelId,
+  };
+}
+
+export const QUICK_PRESETS: QuickPreset[] = VENDOR_PRESETS.map(toQuickPreset);
+
+// ---------------------------------------------------------------------------
+// Gemini image model definitions
+// ---------------------------------------------------------------------------
+
+export const GEMINI_IMAGE_MODELS = [
+  { value: 'gemini-3.1-flash-image-preview', label: 'Nano Banana 2' },
+  { value: 'gemini-3-pro-image-preview', label: 'Nano Banana Pro' },
+  { value: 'gemini-2.5-flash-image', label: 'Nano Banana' },
+];
+
+export const DEFAULT_GEMINI_IMAGE_MODEL = 'gemini-3.1-flash-image-preview';
+
+export const OPENAI_IMAGE_MODELS = [
+  { value: 'gpt-image-2', label: 'GPT Image 2' },
+  { value: 'gpt-image-1.5', label: 'GPT Image 1.5' },
+  { value: 'gpt-image-1', label: 'GPT Image 1' },
+  { value: 'gpt-image-1-mini', label: 'GPT Image 1 Mini' },
+];
+
+export const DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-2';
+
+export function getGeminiImageModel(provider: ApiProvider): string {
+  try {
+    const env = JSON.parse(provider.extra_env || '{}');
+    return env.GEMINI_IMAGE_MODEL || DEFAULT_GEMINI_IMAGE_MODEL;
+  } catch {
+    return DEFAULT_GEMINI_IMAGE_MODEL;
+  }
+}
+
+export function getOpenAIImageModel(provider: ApiProvider): string {
+  try {
+    const env = JSON.parse(provider.extra_env || '{}');
+    return env.OPENAI_IMAGE_MODEL || DEFAULT_OPENAI_IMAGE_MODEL;
+  } catch {
+    return DEFAULT_OPENAI_IMAGE_MODEL;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Preset matcher — find which quick preset a provider was created from
+// ---------------------------------------------------------------------------
+
+export function findMatchingPreset(provider: ApiProvider): QuickPreset | undefined {
+  // Exact base_url match (most specific) — protocol-aware so a legacy OpenCode
+  // Go Anthropic record (base .../zen/go/v1) doesn't match the OpenAI half that
+  // now lives at that base. Mirrors findMatchingPresetForRecord; rows with a
+  // legacy/blank protocol keep the plain base match.
+  if (provider.base_url) {
+    const byBase = QUICK_PRESETS.filter(p => p.base_url && p.base_url === provider.base_url);
+    const wire = provider.protocol || provider.provider_type;
+    const match = byBase.find(p => p.protocol === wire)
+      ?? (isValidProtocol(wire) ? undefined : byBase[0]);
+    if (match) return match;
+  }
+  // Type-based fallback for known types
+  if (provider.provider_type === "bedrock") return QUICK_PRESETS.find(p => p.key === "bedrock");
+  if (provider.provider_type === "vertex") return QUICK_PRESETS.find(p => p.key === "vertex");
+  if (provider.provider_type === "openrouter") return QUICK_PRESETS.find(p => p.key === "openrouter");
+  // Media providers: official vs third-party share provider_type; tie-break
+  // by whether the stored base_url is the official one. Anything else goes to
+  // the third-party preset so the edit dialog exposes the base_url field.
+  if (provider.provider_type === "gemini-image") {
+    const official = QUICK_PRESETS.find(p => p.key === "gemini-image");
+    if (official && provider.base_url && provider.base_url !== official.base_url) {
+      return QUICK_PRESETS.find(p => p.key === "gemini-image-thirdparty");
+    }
+    return official;
+  }
+  if (provider.provider_type === "openai-image") {
+    const official = QUICK_PRESETS.find(p => p.key === "openai-image");
+    if (official && provider.base_url && provider.base_url !== official.base_url) {
+      return QUICK_PRESETS.find(p => p.key === "openai-image-thirdparty");
+    }
+    return official;
+  }
+  if (provider.provider_type === "anthropic" && provider.base_url === "https://api.anthropic.com") {
+    return QUICK_PRESETS.find(p => p.key === "anthropic-official");
+  }
+  // Anthropic-type with custom base_url → anthropic-thirdparty
+  if (provider.provider_type === "anthropic" && provider.base_url) {
+    return QUICK_PRESETS.find(p => p.key === "anthropic-thirdparty");
+  }
+  // Generic OpenAI-compatible third-party gateway → generic openai-compatible
+  // preset. Mirrors the server-side findMatchingPresetForRecord branch so the
+  // settings page and runtime-compat agree: the provider groups under
+  // Third-party and classifies as codepilot_only (CodexWeb + Codex), not
+  // unknown.
+  if (provider.provider_type === "openai-compatible") {
+    return QUICK_PRESETS.find(p => p.key === "openai-compatible");
+  }
+  return undefined;
+}

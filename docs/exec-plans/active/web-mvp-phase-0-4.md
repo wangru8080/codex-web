@@ -57,9 +57,9 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 
 | Phase | 内容 | 状态 | 验收 |
 |---|---|---|---|
-| Phase 0 | 协议和项目基线 | 待开始 | 能生成或引用 app-server TS schema，Web 项目脚本可运行 |
-| Phase 1 | 最小 Web bridge | 待开始 | 浏览器能连接 bridge，bridge 能启动或连接 app-server |
-| Phase 2 | app-server 初始化和基础 API | 待开始 | initialize、initialized、model/list、account/read 可用 |
+| Phase 0 | 协议和项目基线 | 已完成 | 能生成或引用 app-server TS schema，Web 项目脚本可运行 |
+| Phase 1 | 最小 Web bridge | 已完成 | 浏览器能连接 bridge，bridge 能启动或连接 app-server |
+| Phase 2 | app-server 初始化和基础 API | 已完成 | initialize、initialized、model/list、account/read 可用 |
 | Phase 3 | CodexWeb 风格 UI foundation | 待开始 | 页面基于 CodexWeb 布局显示连接、账号、模型、空会话和 diagnostics |
 | Phase 4 | Thread / Turn / Item 生命周期 | 待开始 | 能在 CodexWeb 聊天 Demo 结构中完成新建 thread、发送 turn、显示 delta、完成 turn |
 
@@ -68,12 +68,12 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 用户可见变化：可以进入 `web/` 项目并运行基础开发命令。  
 本阶段不做：真实聊天、approval、SSH remote。
 
-- [ ] 确认系统 `codex` 可执行文件存在，并记录版本。
-- [ ] 使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 确认 `codex app-server --stdio` 可启动。
-- [ ] 生成或复制当前版本 app-server TypeScript schema 到 `src/codex/protocol/generated/`。
-- [ ] 创建 `package.json`、`tsconfig.json` 和基础源码目录。
-- [ ] 定义脚本：`typecheck`、`test`、`build`、`test:smoke`。
-- [ ] 编写最小 JSON-RPC 类型和测试 fixture。
+- [x] 确认系统 `codex` 可执行文件存在，并记录版本。
+- [x] 使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 确认 `codex app-server --stdio` 可启动。
+- [x] 生成或复制当前版本 app-server TypeScript schema 到 `src/codex/protocol/generated/`。
+- [x] 创建 `package.json`、`tsconfig.json` 和基础源码目录。
+- [x] 定义脚本：`typecheck`、`test`、`build`、`test:smoke`。
+- [x] 编写最小 JSON-RPC 类型和测试 fixture。
 
 验证：
 
@@ -83,18 +83,29 @@ npm run typecheck
 npm run test
 ```
 
+Phase 0 记录：
+
+- 2026-07-09：`codex --version` 返回 `codex-cli 0.143.0`。
+- 2026-07-09：隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 下 `codex app-server --stdio` initialize 成功，返回 `codexHome=/volume2/SSD/codex/Temp/codex-dev-home`。
+- 2026-07-09：使用 `codex app-server generate-ts --out src/codex/protocol/generated` 生成 595 个协议 TypeScript 文件。
+- 2026-07-09：已创建 `package.json`、TypeScript/Vitest 配置、`src/codex/protocol/json-rpc.ts` 和 JSON-RPC 基线测试。
+- 2026-07-09：已运行 `npm run typecheck`，通过。
+- 2026-07-09：已运行 `npm run test`，1 个测试文件、5 个测试通过。
+- 2026-07-09：已运行 `npm run build`，通过。
+- 2026-07-09：已运行 `npm run test:smoke`，隔离 `CODEX_HOME` 检查通过。
+
 ## Phase 1：最小 Web bridge
 
 用户可见变化：浏览器可以连接本地 bridge，并看到连接状态。  
 本阶段不做：Codex 会话和模型渲染。
 
-- [ ] 实现 `server/codex-process.ts`：启动 `codex app-server --stdio`。
-- [ ] 实现 `server/json-rpc-client.ts`：request、response、notification、server request 基础分发。
-- [ ] 实现 `server/websocket-bridge.ts`：浏览器 WebSocket 连接。
-- [ ] 实现 `server/security.ts`：localhost、token、Origin 校验。
-- [ ] app-server 子进程环境显式传入隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`。
-- [ ] app-server stderr 只进入 diagnostics 摘要，不混入 JSON-RPC stdout。
-- [ ] transport close 时所有 pending request 快速失败。
+- [x] 实现 `server/codex-process.ts`：启动 `codex app-server --stdio`。
+- [x] 实现 `server/json-rpc-client.ts`：request、response、notification、server request 基础分发。
+- [x] 实现 `server/websocket-bridge.ts`：浏览器 WebSocket 连接。
+- [x] 实现 `server/security.ts`：localhost、token、Origin 校验。
+- [x] app-server 子进程环境显式传入隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`。
+- [x] app-server stderr 只进入 diagnostics 摘要，不混入 JSON-RPC stdout。
+- [x] transport close 时所有 pending request 快速失败。
 
 验证：
 
@@ -108,20 +119,31 @@ Smoke 记录：
 
 | Date | Runtime | 场景 | Result | Evidence |
 |---|---|---|---|---|
-| 未运行 | local codex app-server | bridge connect，隔离 CODEX_HOME | 待验证 | 待补充 |
+| 2026-07-09 | local codex app-server | bridge connect，隔离 CODEX_HOME，initialize 往返 | 通过 | `npm run test:smoke` 返回 `smoke bridge 通过：CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` |
+
+Phase 1 记录：
+
+- 2026-07-09：实现 `server/codex-process.ts`，启动 `codex app-server --stdio` 时强制传入隔离 `CODEX_HOME` 和 `RUST_LOG=warn`，stderr 保存为最近 50 条 diagnostics。
+- 2026-07-09：实现 `server/json-rpc-client.ts`，支持 response resolve/reject、notification、server request 分发，以及 transport close 后 pending request 快速失败。
+- 2026-07-09：实现 `server/security.ts`，覆盖 localhost、Bearer/query token 和 Origin 校验。
+- 2026-07-09：实现 `server/websocket-bridge.ts`，每个浏览器 WebSocket 连接独立启动一个 app-server stdio 子进程，避免跨连接 JSON-RPC id 串扰。
+- 2026-07-09：已运行 `npm run test`，3 个测试文件、15 个测试通过。
+- 2026-07-09：已运行 `npm run build`，通过。
+- 2026-07-09：已运行 `npm run test:smoke`，真实 bridge initialize 往返通过，返回隔离 `CODEX_HOME`。
+- 2026-07-09：反例验证已覆盖无效 token、非 localhost 地址、非法 Origin 均拒绝；transport close 时 pending request 被快速 reject。
 
 ## Phase 2：app-server 初始化和基础 API
 
 用户可见变化：页面能显示 Codex 连接状态、账号状态和模型列表。  
 本阶段不做：聊天流和 approval。
 
-- [ ] 对照 TUI `app_server_session.rs`，确认 initialize / initialized 语义。
-- [ ] 发送 `initialize`，clientInfo 使用 Web 专属标识。
-- [ ] 发送 `initialized` notification。
-- [ ] 实现 `model/list`。
-- [ ] 实现 `account/read` 或当前 app-server 对应账号读取方法。
-- [ ] 处理 `account/updated`、`account/rateLimits/updated` 为 diagnostics 或状态。
-- [ ] 初始化失败时展示明确错误：未安装、启动失败、协议失败、认证缺失。
+- [x] 对照 TUI `app_server_session.rs`，确认 initialize / initialized 语义。
+- [x] 发送 `initialize`，clientInfo 使用 Web 专属标识。
+- [x] 发送 `initialized` notification。
+- [x] 实现 `model/list`。
+- [x] 实现 `account/read` 或当前 app-server 对应账号读取方法。
+- [x] 处理 `account/updated`、`account/rateLimits/updated` 为 diagnostics 或状态。
+- [x] 初始化失败时展示明确错误：未安装、启动失败、协议失败、认证缺失。
 
 验证：
 
@@ -130,6 +152,17 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 npm run test
 npm run test:smoke
 ```
+
+Phase 2 记录：
+
+- 2026-07-09：已对照 `/home/rrssnas/code/codex/codex-rs/tui/src/app_server_session.rs` 和 `/home/rrssnas/code/codex/codex-rs/app-server/README.md`，确认连接生命周期为 `initialize` request 后发送 `initialized` notification。
+- 2026-07-09：已确认当前 generated schema 中账号读取 method 为 `account/read`，参数类型为 `GetAccountParams`，响应类型为 `GetAccountResponse`。
+- 2026-07-09：实现 `server/app-server-session.ts`，提供 `initialize()`、`initialized()`、`listModels()`、`readAccount()` 和 `bootstrap()`。
+- 2026-07-09：`model/list` 使用 `{ includeHidden: false }`，source breadcrumb 为 `app-server.model/list`；`account/read` 使用 `{ refreshToken: false }`，source breadcrumb 为 `app-server.account/read`。
+- 2026-07-09：未知 notification、`account/updated`、`account/rateLimits/updated` 等通过 `AppServerSession.diagnostics` 保留，source breadcrumb 为 `app-server.notification`。
+- 2026-07-09：已运行 `npm run test`，4 个测试文件、17 个测试通过。
+- 2026-07-09：已运行 `npm run build`，通过。
+- 2026-07-09：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，返回 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`、`models=5`、`accountSource=app-server.account/read`。
 
 ## Phase 3：CodexWeb 风格 UI foundation
 
