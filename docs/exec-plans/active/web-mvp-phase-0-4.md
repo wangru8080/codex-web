@@ -3,13 +3,14 @@
 > 创建时间：2026-07-06  
 > 状态：进行中  
 > 主线：围绕官方 `codex-rs/tui` 做 TUI-first Web 化。  
-> 范围：只实现本地 Web bridge + 浏览器基础 UI + Thread / Turn / Item 生命周期。  
+> UI 基准：基于 `/home/rrssnas/code/CodexWeb` 的既有 UI 样式、布局和 Demo 展示接入真实 app-server；不得直接修改 `CodexWeb` 目录。  
+> 范围：只实现本地 Web bridge + CodexWeb 风格浏览器基础 UI + Thread / Turn / Item 生命周期。  
 > 非目标：SSH remote、完整 approval、插件市场、Electron、provider 管理、多用户远程访问。
 > 环境限制：开发、测试和 smoke 默认必须使用 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，最终验收才允许在用户明确同意后切回本地真实 `CODEX_HOME`。
 
 ## 目标
 
-在 `/home/rrssnas/code/codex/web` 中实现一个最小可用的 Codex Web MVP：浏览器通过本地 Web bridge 连接服务器已安装的 `codex app-server --stdio`，完成 initialize、model/list、thread/start、turn/start、流式 item delta 和 turn completed 展示。
+在 `/home/rrssnas/code/codex/web` 中实现一个最小可用的 Codex Web MVP：浏览器通过本地 Web bridge 连接服务器已安装的 `codex app-server --stdio`，并把 initialize、model/list、thread/start、turn/start、流式 item delta 和 turn completed 接入到 CodexWeb 风格 UI 中。
 
 ## 架构
 
@@ -29,7 +30,10 @@ codex app-server --stdio
 
 - app-server 是事实源。
 - TUI 是业务语义和用户流程基准。
-- Web 重新实现浏览器布局、状态 reducer 和组件。
+- CodexWeb 是 Web UI 样式、布局、左右侧边栏、聊天区和 Demo 展示基准。
+- 开发 UI 前必须阅读 `/home/rrssnas/code/CodexWeb/README.md`，确认对应模块职责和产品背景。
+- 不得直接修改 `/home/rrssnas/code/CodexWeb` 目录；如需复用 UI，可复制相关代码到当前项目后接入真实 app-server 后端。
+- Web 保持 CodexWeb 既有 UI 风格，重点实现状态 reducer、真实数据接线和必要的小模块适配。
 - `CodexBrowser` / `CodePilot` 只能借鉴经验，不作为代码来源。
 - 默认使用隔离 `CODEX_HOME`，避免开发测试误读或污染本地真实 Codex 配置、账号、历史和 MCP 状态。
 
@@ -56,8 +60,8 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 0 | 协议和项目基线 | 待开始 | 能生成或引用 app-server TS schema，Web 项目脚本可运行 |
 | Phase 1 | 最小 Web bridge | 待开始 | 浏览器能连接 bridge，bridge 能启动或连接 app-server |
 | Phase 2 | app-server 初始化和基础 API | 待开始 | initialize、initialized、model/list、account/read 可用 |
-| Phase 3 | Web UI foundation | 待开始 | 页面显示连接、账号、模型、空会话和 diagnostics |
-| Phase 4 | Thread / Turn / Item 生命周期 | 待开始 | 能新建 thread、发送 turn、显示 delta、完成 turn |
+| Phase 3 | CodexWeb 风格 UI foundation | 待开始 | 页面基于 CodexWeb 布局显示连接、账号、模型、空会话和 diagnostics |
+| Phase 4 | Thread / Turn / Item 生命周期 | 待开始 | 能在 CodexWeb 聊天 Demo 结构中完成新建 thread、发送 turn、显示 delta、完成 turn |
 
 ## Phase 0：协议和项目基线
 
@@ -127,16 +131,18 @@ npm run test
 npm run test:smoke
 ```
 
-## Phase 3：Web UI foundation
+## Phase 3：CodexWeb 风格 UI foundation
 
 用户可见变化：出现 Codex Web 基础工作台。  
 本阶段不做：完整历史、完整 approval、复杂 diff。
 
-- [ ] 实现 `AppShell`：顶部状态栏、左侧 Thread 区、中央 timeline、右侧 diagnostics。
-- [ ] 实现 `ConnectionStatus`。
-- [ ] 实现 `ModelPicker` 只读取 `model/list`。
-- [ ] 实现 `AccountStatus` 只读取 app-server 账号状态。
-- [ ] 实现 `DiagnosticsPanel`，未知 notification 不丢弃。
+- [ ] 阅读 `/home/rrssnas/code/CodexWeb/README.md`，确认 `AppShell`、`ChatView`、`MessageList`、`MessageInput`、左右侧边栏和工作区侧栏职责。
+- [ ] 基于 CodexWeb `AppShell` Demo 结构实现当前项目基础工作台：顶部状态栏、左侧 Thread 区、中央聊天区、右侧文件树/工作区或 diagnostics 入口。
+- [ ] 保持 CodexWeb 既有 UI 样式和布局，不擅自修改整体视觉；只做真实 app-server 接线所需的小模块适配。
+- [ ] 实现 `ConnectionStatus`，接入 bridge / app-server 真实连接状态。
+- [ ] 实现 `ModelPicker`，只读取 `model/list` 并接入 CodexWeb 输入框或顶部模型入口。
+- [ ] 实现 `AccountStatus`，只读取 app-server 账号状态。
+- [ ] 实现 `DiagnosticsPanel` 或接入 CodexWeb 右侧工作区，未知 notification 不丢弃。
 - [ ] 页面文案使用中文，字段必须有 source breadcrumb。
 
 验证：
@@ -154,6 +160,7 @@ npm run build
 本阶段不做：完整 approval 决策、SSH remote、插件 UI。
 
 - [ ] 对照 TUI `app/app_server_events.rs` 和 `app_server_session.rs`，确认 thread/start 与 turn/start 接线。
+- [ ] 对照 CodexWeb 聊天 Demo，确认左侧会话、中央消息流、输入框、生成中状态和右侧工作区如何承载真实 app-server 状态。
 - [ ] 实现 `thread/start`。
 - [ ] 实现 `turn/start`。
 - [ ] reducer 支持 `thread/started`。
@@ -163,8 +170,9 @@ npm run build
 - [ ] reducer 支持 `item/completed`。
 - [ ] reducer 支持 `turn/completed`。
 - [ ] reducer 支持 `error` 和 transport close。
-- [ ] UI 展示 user message、assistant delta、running、completed、failed、interrupted。
-- [ ] Composer 在 active turn 期间禁用或进入可控状态。
+- [ ] 在 CodexWeb 消息流结构中展示 user message、assistant delta、running、completed、failed、interrupted。
+- [ ] 将 app-server item / tool / delta 状态映射到 CodexWeb 历史消息、流式消息和工具 Cell 展示结构。
+- [ ] Composer 在 active turn 期间禁用或进入可控状态，并保持 CodexWeb 输入框交互风格。
 
 验证：
 
@@ -185,11 +193,13 @@ Smoke 记录：
 - 2026-07-06：第一版采用 TUI-first Web 化。官方 TUI 是业务语义基准，Web bridge 连接已安装的 `codex app-server --stdio`，不改 `codex-core`。
 - 2026-07-06：`CodexBrowser` 和 `CodePilot` 只用于借鉴 app-server 经验、开发流程和测试经验，禁止作为代码来源。
 - 2026-07-06：开发、测试和 smoke 默认使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`；最终验收才在用户明确同意后使用本地真实 `CODEX_HOME`。
+- 2026-07-08：Web UI 基于 `/home/rrssnas/code/CodexWeb` 开发；开发前阅读其 README，保持 CodexWeb 既有 UI 样式和 Demo 结构，不直接修改 CodexWeb 目录，只在当前项目中接入真实 app-server 后端。
 
 ## 剩余风险
 
 - 系统安装的 `codex` 版本可能与生成的 TypeScript schema 不一致。
 - 隔离 `CODEX_HOME` 可能缺少账号、模型、MCP 或历史配置；测试失败时要先区分隔离环境配置问题和 Web 实现问题。
 - app-server server request 类型较多，Phase 4 前只做 diagnostics 和 fail-safe，完整 approval 需要后续计划。
-- 浏览器 UI 可能偏离 TUI 语义，所有新增功能必须先对照 TUI。
+- 浏览器 UI 可能偏离 TUI 语义或 CodexWeb 既有体验，所有新增功能必须先对照 TUI 业务语义和 CodexWeb UI Demo。
+- 从 CodexWeb 复制 UI 代码时可能引入 mock 数据路径或前端预览逻辑，接入当前项目前必须替换为 app-server 真实数据来源并保留 source breadcrumb。
 - 真实模型调用需要账号、网络和额度，smoke 失败时要区分认证、网络、额度和协议问题。

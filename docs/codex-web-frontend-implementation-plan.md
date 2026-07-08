@@ -2,14 +2,16 @@
 
 > 创建日期：2026-07-05  
 > 目标仓库：`/home/rrssnas/code/codex`  
+> UI 基准项目：`/home/rrssnas/code/CodexWeb`  
 > 参考项目：`/home/rrssnas/code/CodexBrowser`、`/home/rrssnas/code/CodePilot`  
 > 方案定位：在官方 `openai/codex` 开源代码基础上新增 Web 前端 surface，核心 Codex 执行逻辑保持不改。
+> UI 边界：当前项目的 Web UI 基于 `CodexWeb` 开发；不得直接修改 `CodexWeb` 目录，可复制相关 UI 代码到当前项目后接入真实 `codex app-server` 后端。
 > 参考边界：`CodexBrowser` 和 `CodePilot` 只能用于借鉴 Codex app-server 相关逻辑、产品/开发流程和测试经验；禁止直接移植、复制或复用两者的代码实现。
 > 环境限制：开发、测试、smoke 和普通调试默认不得使用本地真实 `CODEX_HOME`；必须使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`。最终验收阶段才允许在用户明确同意后切回本地真实 `CODEX_HOME`。
 
 ## 1. 结论
 
-可以基于官方 `openai/codex` 开源代码开发 Web 前端。正确路线是以官方 `codex-rs/tui` 的业务语义、交互流程和状态处理作为主参考，把它重新表达成浏览器 Web 版本；不是把 Ratatui 终端组件直接改成 HTML，也不是迁移第三方项目代码。执行层继续复用 `codex-core`、`codex-app-server`、`codex-app-server-client` 和 `codex-app-server-protocol`。
+可以基于官方 `openai/codex` 开源代码开发 Web 前端。正确路线是以官方 `codex-rs/tui` 的业务语义、交互流程和状态处理作为主参考，以 `/home/rrssnas/code/CodexWeb` 作为 Web UI 样式、布局和组件体验基准，把真实 `codex app-server` 后端接入到 CodexWeb 风格的浏览器工作台中；不是把 Ratatui 终端组件直接改成 HTML，也不是迁移 `CodexBrowser` 或 `CodePilot` 代码。执行层继续复用 `codex-core`、`codex-app-server`、`codex-app-server-client` 和 `codex-app-server-protocol`。
 
 推荐架构：
 
@@ -53,12 +55,27 @@ codex app-server
 - `codex-core` 不改，除非 app-server 缺少 Web 必需的协议字段。
 - `codex-app-server` 是 Web、IDE、桌面 rich interface 的事实接口，应作为 Web 前端的主后端。
 - `codex-rs/tui` 是 Web 版本的主业务参考：Thread / Turn / Item 展示、approval、diff、history/resume、Plan/Goal、状态栏、错误收口等用户语义优先对齐 TUI。
+- `CodexWeb` 是 Web UI 的主视觉和组件参考：开发前必须阅读 `/home/rrssnas/code/CodexWeb/README.md`，保持其左右侧边栏、聊天区、消息流、工具 Cell、输入框、文件树和工作区侧栏的既有样式与 Demo 展示结构。
+- 不得直接在 `/home/rrssnas/code/CodexWeb` 目录下修改代码；如需使用其 UI，可复制相关代码到当前项目并替换 mock 数据来源。
 - `codex-rs/tui` 不能整体搬到 Web。它大量混合 Ratatui 渲染、键盘事件、终端布局和 snapshot 测试；Web 只能围绕其业务语义和 app-server 接线方式重新实现浏览器交互。
 - `CodexBrowser` 只能作为次级参考，用于借鉴 app-server JSON-RPC 连接思路、local/SSH transport 边界、reducer 职责、approval 状态模型、session 管理思路和测试分层；禁止复制、移植或复用其代码。
 - `CodePilot` 只作为历史流程、测试分层、文档治理、Smoke Ledger 和语义验收参考；禁止复制、移植或复用其代码，也不应迁移它的多 provider、多 runtime、Electron 发版和 CodePilot tool bridge。
 - 开发和测试必须隔离 `CODEX_HOME`：所有会启动 `codex app-server`、读取账号/配置/历史、执行 smoke 的命令，都必须显式使用 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`；最终验收才允许切回本地真实 `CODEX_HOME`。
 
 ## 2. 分析范围
+
+### 2.0 CodexWeb UI 基准
+
+已重点查看：
+
+- `/home/rrssnas/code/CodexWeb/README.md`
+
+开发规则：
+
+- `CodexWeb` 已实现主要 UI，当前项目应保持其 UI 样式和布局，不得擅自改动整体视觉与交互。
+- 不直接修改 `/home/rrssnas/code/CodexWeb`；允许复制必要 UI 代码到当前项目后接入真实 app-server。
+- 左右侧边栏、聊天页、消息流、工具 Cell、输入框、文件树和工作区侧栏均以 CodexWeb README 描述的 Demo 结构为对照基准。
+- `codex app-server` 的 initialize、model/list、account/read、thread/start、turn/start 和 notification stream 需要接入到 CodexWeb 风格 UI 的对应数据入口。
 
 ### 2.1 官方 Codex 仓库
 
