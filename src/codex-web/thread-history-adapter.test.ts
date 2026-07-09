@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 
 import { threadToChatSession, threadToMessages } from "./thread-history-adapter";
+import { TOOL_OUTPUT_DISPLAY_BYTE_LIMIT } from "./tool-output-display";
 
 describe("thread-history-adapter", () => {
   it("把 app-server Thread 映射为 CodexWeb 会话项", () => {
@@ -109,6 +110,20 @@ describe("thread-history-adapter", () => {
     ]);
     expect(result.unsupportedItemCount).toBe(0);
   });
+
+  it("截断历史 commandExecution 和 MCP 大输出", () => {
+    const thread = createThreadWithLargeToolOutput();
+    const result = threadToMessages(thread);
+    const assistantContent = JSON.parse(result.messages[0].content);
+
+    expect(assistantContent[1].content).toContain("已按官方 DEFAULT_OUTPUT_BYTES_CAP 截断");
+    expect(assistantContent[1].content).toContain("command-head");
+    expect(assistantContent[1].content).not.toContain("command-tail");
+    expect(assistantContent[1].content).toContain("exit code: 0");
+    expect(assistantContent[3].content).toContain("已按官方 DEFAULT_OUTPUT_BYTES_CAP 截断");
+    expect(assistantContent[3].content).toContain("mcp-head");
+    expect(assistantContent[3].content).not.toContain("mcp-tail");
+  });
 });
 
 function createThread(): Thread {
@@ -213,6 +228,57 @@ function createThreadWithPatchAndMcp(): Thread {
         error: null,
         startedAt: 1783570200,
         completedAt: 1783570201,
+        durationMs: 1000,
+      },
+    ],
+  };
+}
+
+function createThreadWithLargeToolOutput(): Thread {
+  return {
+    ...createThread(),
+    turns: [
+      {
+        id: "turn-large",
+        items: [
+          {
+            type: "commandExecution",
+            id: "cmd-large",
+            command: "cat big.log",
+            cwd: "/repo/web",
+            processId: null,
+            source: "agent",
+            status: "completed",
+            commandActions: [],
+            aggregatedOutput: `command-head\n${"x".repeat(TOOL_OUTPUT_DISPLAY_BYTE_LIMIT + 1000)}\ncommand-tail`,
+            exitCode: 0,
+            durationMs: 12,
+          },
+          {
+            type: "mcpToolCall",
+            id: "mcp-large",
+            server: "docs",
+            tool: "read",
+            status: "completed",
+            arguments: { id: "large" },
+            appContext: null,
+            pluginId: null,
+            result: {
+              content: [],
+              structuredContent: {
+                text: `mcp-head\n${"y".repeat(TOOL_OUTPUT_DISPLAY_BYTE_LIMIT + 1000)}\nmcp-tail`,
+              },
+              _meta: null,
+            },
+            error: null,
+            durationMs: 15,
+          },
+        ],
+        itemsView: "full",
+        status: "completed",
+        error: null,
+        startedAt: 1783570300,
+        completedAt: 1783570301,
         durationMs: 1000,
       },
     ],

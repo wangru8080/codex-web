@@ -3,6 +3,8 @@ import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 import type { ChatSession, Message, MessageContentBlock } from "@/types";
 
+import { formatToolDisplayOutput } from "./tool-output-display";
+
 const CODEX_PROVIDER_ID = "codex_account";
 const CODEX_RUNTIME_PIN = "codex_runtime";
 
@@ -221,8 +223,11 @@ function commandExecutionResult(
   if (item.status === "inProgress") return null;
   const output = item.aggregatedOutput?.trimEnd() ?? "";
   const suffix = typeof item.exitCode === "number" ? `\nexit code: ${item.exitCode}` : "";
+  const displayOutput = formatToolDisplayOutput(output, {
+    sourceLabel: "app-server commandExecution item",
+  });
   return {
-    content: `${output}${suffix}`.trim(),
+    content: `${displayOutput}${suffix}`.trim(),
     isError: item.status === "failed" || item.status === "declined" || (item.exitCode ?? 0) !== 0,
   };
 }
@@ -243,9 +248,15 @@ function formatChangeKind(
 }
 
 function formatMcpResult(item: Extract<ThreadItem, { type: "mcpToolCall" }>): string {
-  if (item.error?.message) return item.error.message;
+  if (item.error?.message) {
+    return formatToolDisplayOutput(item.error.message, {
+      sourceLabel: "app-server mcpToolCall item",
+    });
+  }
   if (!item.result) return "";
-  return stringifyJson(item.result.structuredContent ?? item.result.content);
+  return formatToolDisplayOutput(stringifyJson(item.result.structuredContent ?? item.result.content), {
+    sourceLabel: "app-server mcpToolCall item",
+  });
 }
 
 function stringifyJson(value: unknown): string {

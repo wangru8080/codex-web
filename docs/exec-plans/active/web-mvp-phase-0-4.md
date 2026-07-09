@@ -62,7 +62,9 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 2 | app-server 初始化和基础 API | 已完成 | initialize、initialized、model/list、account/read 可用 |
 | Phase 3 | CodexWeb 风格 UI foundation | 已完成 | 页面基于 CodexWeb 布局显示连接、账号、模型、空会话和 diagnostics |
 | Phase 4 | Thread / Turn / Item 生命周期 | 已完成 | 已完成 Phase 4A one-turn 真实闭环、Phase 4B 工具 cell、Phase 4C approval 闭环 |
-| Phase 5A | Thread 列表与历史恢复基础 | 进行中 | app-server `thread/list` 接入左侧会话；`thread/read` 恢复 user/assistant 历史文本 |
+| Phase 5A-5G | 历史恢复、继续发送、approval、中断、刷新 degraded 提示 | 已完成 | 历史 thread 可恢复、继续发送和中断；approval 按官方 schema 闭环；刷新后 running 状态显示明确 degraded |
+| Phase 6A | 历史分页加载 | 已完成 | `thread/read` metadata-first，`thread/turns/list` 分页加载更早 turn，失败时回退稳定历史读取 |
+| Phase 6B | 工具大输出展示截断 | Code complete | 实时和历史工具输出进入 CodexWeb 消息结构前按官方 1 MiB 前缀上限做展示保护 |
 
 ## Phase 0：协议和项目基线
 
@@ -351,7 +353,7 @@ Phase 5C 记录：
 | Approval | 多个 approval 或过期 approval | 未开始 | Phase 6 | 多个 server request 不串线；已完成/过期 approval 不再接受重复响应 |
 | Tools | exec / patch / file change / MCP / skill 完整状态映射 | 部分完成 | Phase 6 | running、success、failed、cancelled、interrupted 都有真实 source breadcrumb 和 CodexWeb 展示 |
 | Tools | 工具结果默认折叠、展开详情 | 部分完成 | Phase 6 | 历史工具和新 turn 工具都默认折叠，展开后展示 stdout、stderr、patch 或 MCP 详情 |
-| Tools | 大输出与增量输出截断策略 | 未开始 | Phase 6 | 大 stdout/stderr 不撑爆页面；截断信息可见，原始输出保留在可诊断来源中 |
+| Tools | 大输出与增量输出截断策略 | Code complete | Phase 6B | 大 stdout/stderr 不撑爆页面；截断信息可见，原始输出保留在可诊断来源中 |
 | Interrupt | 运行中 turn 中断 | 已完成 | Phase 5D-B | 点击停止后调用官方中断路径，turn 进入 interrupted 或等价官方状态 |
 | Interrupt | interrupted 后继续下一轮 | 已完成 | Phase 5D-B | 中断后的同一 thread 可以继续发送新 turn，历史消息不丢失 |
 | Interrupt | 页面刷新后恢复 interrupted 状态 | 未开始 | Phase 6 | 刷新后历史页能从 app-server 状态显示 interrupted，而不是误报 completed |
@@ -581,6 +583,60 @@ Phase 6A 记录：
 - 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
 - 2026-07-10：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
 - 2026-07-10：启动 dev server 后用 HTTP 验证 `/chat` 与 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 均返回 `200 text/html; charset=utf-8`；临时 HTML 保存到 `/volume2/SSD/codex/Temp/codex-web-phase6a-chat-20260710.html` 和 `/volume2/SSD/codex/Temp/codex-web-phase6a-history-20260710.html`；验证后已停止 dev server。
+
+## Phase 6B：工具大输出展示截断
+
+目标：对实时和历史工具输出做与官方 TUI/core 一致的展示保护，避免超过官方上限的 stdout、stderr 或 MCP JSON 结果完整进入 CodexWeb 消息状态导致页面卡顿。
+
+架构：新增纯展示 helper `tool-output-display`。实时 `tool-adapter` 和历史 `thread-history-adapter` 在把工具输出转成 CodexWeb `tool_result.content` 或 `streamingToolOutput` 前调用该 helper；阈值对齐官方 `DEFAULT_OUTPUT_BYTES_CAP = 1024 * 1024`，超过阈值时保留前缀并提示省略字节数。CodexWeb UI 层继续按 5 行头尾折叠；不改 app-server 协议、不改 bridge、不新增完整输出 UI。
+
+本阶段不做：完整输出弹窗、下载完整 stdout、浏览器端保存原始输出副本、工具 cell 视觉布局调整、真实 `CODEX_HOME` 验收。
+
+实施清单：
+
+- [x] 新增 `src/codex-web/tool-output-display.ts`，短输出原样返回，长输出按官方 1 MiB 前缀上限插入可见截断提示。
+- [x] 实时 adapter 的 running output、completed command、fileChange output、MCP result 统一接入展示截断。
+- [x] 历史 adapter 的 commandExecution result 和 MCP result 接入展示截断。
+- [x] 补单元测试覆盖短输出原样、运行中 command 大输出、完成 command 大输出、fileChange 大输出、历史 command / MCP 大输出。
+- [x] 在隔离 `CODEX_HOME` 下完成 targeted、全量、build 和 smoke 验证。
+
+验证：
+
+```bash
+export NODE_HOME="/volume2/SSD/node-v24.14.0"
+export PATH=$NODE_HOME/bin:$PATH
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web/tool-output-display.test.ts
+npm run test -- src/codex-web/tool-adapter.test.ts
+npm run test -- src/codex-web/thread-history-adapter.test.ts
+npm run test -- src/codex-web
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 6B 记录：
+
+- 2026-07-10：新增 `docs/superpowers/specs/2026-07-10-phase-6b-tool-output-truncation-design.md` 和 `docs/superpowers/plans/2026-07-10-phase-6b-tool-output-truncation.md`，记录展示层截断方案与执行步骤。
+- 2026-07-10：对照官方实现：`codex-rs/utils/pty/src/lib.rs` 定义 `DEFAULT_OUTPUT_BYTES_CAP = 1024 * 1024`；`codex-rs/core/src/exec.rs` 的 shell tool 聚合输出按该上限前缀保留；`codex-rs/core/src/mcp_tool_call.rs` 的 MCP result 事件也使用同一上限族；`codex-rs/tui/src/exec_cell/render.rs` 展示层使用 `TOOL_CALL_MAX_LINES = 5` 做行级头尾折叠。
+- 2026-07-10：新增 `src/codex-web/tool-output-display.ts`，展示保护阈值为官方 1 MiB；超阈值时保留前缀并提示省略字节数。
+- 2026-07-10：`tool-adapter` 和 `thread-history-adapter` 已接入展示截断；短输出保持原样；命令输出先截断 stdout/stderr 聚合文本，再追加 exit code，保留命令元数据。
+- 2026-07-10：已运行 `npm run test -- src/codex-web/tool-output-display.test.ts`，包含 `tsc --noEmit`，1 个测试文件、2 个测试通过。
+- 2026-07-10：已运行 `npm run test -- src/codex-web/tool-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、6 个测试通过。
+- 2026-07-10：已运行 `npm run test -- src/codex-web/thread-history-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、4 个测试通过。
+- 2026-07-10：已运行 `npm run test -- src/codex-web`，包含 `tsc --noEmit`，10 个测试文件、40 个测试通过。
+- 2026-07-10：已运行 `npm run test`，包含 `tsc --noEmit`，14 个测试文件、58 个测试通过。
+- 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
+- 2026-07-10：`npm run build` 后 `next-env.d.ts` 被 Next 自动改为 `./.next/types/routes.d.ts`，已按用户要求还原为 `./.next/dev/types/routes.d.ts`，不纳入本阶段提交。
+- 2026-07-10：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+- 2026-07-10：按用户要求对比官方 TUI/core 后调整 Phase 6B：Web 展示保护从 12KB 头尾字符截断改为官方 1 MiB 前缀字节上限；CodexWeb UI 层继续复用 5 行头尾折叠，保持与 TUI 展示节奏一致。
+- 2026-07-10：官方一致调整后已重新运行 `npm run test -- src/codex-web/tool-output-display.test.ts`，包含 `tsc --noEmit`，1 个测试文件、2 个测试通过。
+- 2026-07-10：官方一致调整后已重新运行 `npm run test -- src/codex-web/tool-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、6 个测试通过。
+- 2026-07-10：官方一致调整后已重新运行 `npm run test -- src/codex-web/thread-history-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、4 个测试通过。
+- 2026-07-10：官方一致调整后已重新运行 `npm run test -- src/codex-web`，包含 `tsc --noEmit`，10 个测试文件、40 个测试通过。
+- 2026-07-10：官方一致调整后已重新运行 `npm run test`，包含 `tsc --noEmit`，14 个测试文件、58 个测试通过。
+- 2026-07-10：官方一致调整后已重新运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建；构建后 `next-env.d.ts` 已按用户要求再次还原。
+- 2026-07-10：官方一致调整后已重新运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
 
 ## 决策日志
 

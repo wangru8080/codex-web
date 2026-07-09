@@ -2,6 +2,7 @@ import type { FileUpdateChange } from "@/codex/protocol/generated/v2/FileUpdateC
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 
 import type { AppServerTurnState } from "./turn-reducer";
+import { formatToolDisplayOutput } from "./tool-output-display";
 
 export interface CodexWebToolUseInfo {
   id: string;
@@ -97,11 +98,14 @@ function toToolUse(item: ThreadItem, turn: AppServerTurnState): CodexWebToolUseI
 function toToolResult(item: ThreadItem, turn: AppServerTurnState): CodexWebToolResultInfo | null {
   if (item.type === "commandExecution") {
     if (item.status === "inProgress") return null;
-    const output = item.aggregatedOutput ?? turn.toolOutputs[item.id] ?? "";
+    const output = (item.aggregatedOutput ?? turn.toolOutputs[item.id] ?? "").trimEnd();
     const suffix = typeof item.exitCode === "number" ? `\nexit code: ${item.exitCode}` : "";
+    const displayOutput = formatToolDisplayOutput(output, {
+      sourceLabel: "app-server commandExecution item / diagnostics",
+    });
     return {
       tool_use_id: item.id,
-      content: `${output}${suffix}`.trim(),
+      content: `${displayOutput}${suffix}`.trim(),
       is_error: item.status === "failed" || item.status === "declined" || (item.exitCode ?? 0) !== 0,
     };
   }
@@ -111,7 +115,9 @@ function toToolResult(item: ThreadItem, turn: AppServerTurnState): CodexWebToolR
     const changes = readFileChanges(item, turn);
     return {
       tool_use_id: item.id,
-      content: formatFileChanges(item.status, changes, turn.toolOutputs[item.id]),
+      content: formatToolDisplayOutput(formatFileChanges(item.status, changes, turn.toolOutputs[item.id]), {
+        sourceLabel: "app-server fileChange item / diagnostics",
+      }),
       is_error: item.status === "failed" || item.status === "declined",
     };
   }
@@ -120,7 +126,9 @@ function toToolResult(item: ThreadItem, turn: AppServerTurnState): CodexWebToolR
     if (item.status === "inProgress") return null;
     return {
       tool_use_id: item.id,
-      content: formatMcpResult(item),
+      content: formatToolDisplayOutput(formatMcpResult(item), {
+        sourceLabel: "app-server mcpToolCall item / diagnostics",
+      }),
       is_error: item.status === "failed" || !!item.error,
     };
   }
@@ -130,10 +138,14 @@ function toToolResult(item: ThreadItem, turn: AppServerTurnState): CodexWebToolR
 
 function readRunningOutput(item: ThreadItem, turn: AppServerTurnState): string {
   if (item.type === "commandExecution" || item.type === "fileChange") {
-    return turn.toolOutputs[item.id] ?? "";
+    return formatToolDisplayOutput(turn.toolOutputs[item.id] ?? "", {
+      sourceLabel: "app-server 工具增量 diagnostics",
+    });
   }
   if (item.type === "mcpToolCall") {
-    return turn.mcpProgress[item.id]?.trimEnd() ?? "";
+    return formatToolDisplayOutput(turn.mcpProgress[item.id]?.trimEnd() ?? "", {
+      sourceLabel: "app-server MCP progress diagnostics",
+    });
   }
   return "";
 }

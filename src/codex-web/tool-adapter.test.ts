@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AppServerTurnState } from "./turn-reducer";
 import { createStartingTurnState } from "./turn-reducer";
 import { deriveCodexWebToolState } from "./tool-adapter";
+import { TOOL_OUTPUT_DISPLAY_BYTE_LIMIT } from "./tool-output-display";
 
 describe("deriveCodexWebToolState", () => {
   it("把运行中的 commandExecution 映射为 CodexWeb 工具 cell", () => {
@@ -127,5 +128,90 @@ describe("deriveCodexWebToolState", () => {
         is_error: true,
       },
     ]);
+  });
+
+  it("截断运行中的 commandExecution 大输出", () => {
+    const largeOutput = `head\n${"x".repeat(TOOL_OUTPUT_DISPLAY_BYTE_LIMIT + 1000)}\ntail`;
+    const turn: AppServerTurnState = {
+      ...createStartingTurnState(),
+      items: [
+        {
+          type: "commandExecution",
+          id: "cmd-large",
+          command: "yes",
+          cwd: "/repo",
+          processId: "proc-large",
+          source: "agent",
+          status: "inProgress",
+          commandActions: [],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+      ],
+      toolOutputs: { "cmd-large": largeOutput },
+    };
+
+    const state = deriveCodexWebToolState(turn);
+
+    expect(state.streamingToolOutput).toContain("已按官方 DEFAULT_OUTPUT_BYTES_CAP 截断");
+    expect(state.streamingToolOutput).toContain("head");
+    expect(state.streamingToolOutput).not.toContain("tail");
+    expect(state.streamingToolOutput.length).toBeLessThan(largeOutput.length);
+  });
+
+  it("截断完成的 commandExecution 大输出并保留 exit code", () => {
+    const largeOutput = `start\n${"x".repeat(TOOL_OUTPUT_DISPLAY_BYTE_LIMIT + 1000)}\nend`;
+    const turn: AppServerTurnState = {
+      ...createStartingTurnState(),
+      items: [
+        {
+          type: "commandExecution",
+          id: "cmd-large",
+          command: "cat big.log",
+          cwd: "/repo",
+          processId: null,
+          source: "agent",
+          status: "completed",
+          commandActions: [],
+          aggregatedOutput: largeOutput,
+          exitCode: 0,
+          durationMs: 100,
+        },
+      ],
+    };
+
+    const [result] = deriveCodexWebToolState(turn).toolResults;
+
+    expect(result.content).toContain("已按官方 DEFAULT_OUTPUT_BYTES_CAP 截断");
+    expect(result.content).toContain("start");
+    expect(result.content).not.toContain("end");
+    expect(result.content).toContain("exit code: 0");
+    expect(result.content.length).toBeLessThan(largeOutput.length);
+  });
+
+  it("截断完成的 fileChange 大输出", () => {
+    const largeOutput = `patch head\n${"x".repeat(TOOL_OUTPUT_DISPLAY_BYTE_LIMIT + 1000)}\npatch tail`;
+    const turn: AppServerTurnState = {
+      ...createStartingTurnState(),
+      items: [
+        {
+          type: "fileChange",
+          id: "patch-large",
+          changes: [
+            { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@" },
+          ],
+          status: "completed",
+        },
+      ],
+      toolOutputs: { "patch-large": largeOutput },
+    };
+
+    const [result] = deriveCodexWebToolState(turn).toolResults;
+
+    expect(result.content).toContain("已按官方 DEFAULT_OUTPUT_BYTES_CAP 截断");
+    expect(result.content).toContain("completed: 1 file");
+    expect(result.content).not.toContain("patch tail");
+    expect(result.content.length).toBeLessThan(largeOutput.length);
   });
 });
