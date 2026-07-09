@@ -74,7 +74,7 @@ function NewChatPageInner() {
   useEffect(() => { prefillTextRef.current = prefillText; }, [prefillText]);
   const { setPendingApprovalSessionId } = usePanel();
   const appServerState = useAppServerState();
-  const { sendOneTurn } = useAppServerActions();
+  const { sendOneTurn, respondToApproval } = useAppServerActions();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -200,6 +200,8 @@ function NewChatPageInner() {
   const [thinkingMode, setThinkingMode] = useState<string>('adaptive');
   const [context1m, setContext1m] = useState(false);
   const appServerTurn = appServerState.activeTurn?.data ?? null;
+  const appServerApproval = appServerState.pendingApproval?.data ?? null;
+  const visiblePendingPermission = appServerApproval?.permission ?? pendingPermission;
 
   useEffect(() => {
     if (!appServerTurn) return;
@@ -218,6 +220,10 @@ function NewChatPageInner() {
       setStatusText(undefined);
     }
   }, [appServerTurn]);
+
+  useEffect(() => {
+    setPendingApprovalSessionId(appServerApproval?.threadId ?? '');
+  }, [appServerApproval, setPendingApprovalSessionId]);
 
   useEffect(() => {
     const models = appServerState.models?.data.data.filter((model) => !model.hidden) ?? [];
@@ -343,6 +349,21 @@ function NewChatPageInner() {
   }, []);
 
   const handlePermissionResponse = useCallback(async (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => {
+    if (appServerApproval) {
+      setPermissionResolved(decision === 'deny' ? 'deny' : 'allow');
+      setPendingApprovalSessionId('');
+      try {
+        await respondToApproval(decision);
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : 'Unknown error';
+        setErrorBanner({ message: 'Approval response failed', description: errMsg });
+      }
+      setTimeout(() => {
+        setPermissionResolved(null);
+      }, 1000);
+      return;
+    }
+
     if (!pendingPermission) return;
 
     const body: { permissionRequestId: string; decision: { behavior: 'allow'; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[] } | { behavior: 'deny'; message?: string } } = {
@@ -375,7 +396,7 @@ function NewChatPageInner() {
       setPendingPermission(null);
       setPermissionResolved(null);
     }, 1000);
-  }, [pendingPermission, setPendingApprovalSessionId]);
+  }, [appServerApproval, pendingPermission, respondToApproval, setPendingApprovalSessionId]);
 
   const sendFirstMessage = useCallback(
     async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[]) => {
@@ -605,7 +626,7 @@ function NewChatPageInner() {
       <RunCheckpoint key="composer-run-checkpoint" reasons={checkpointReasons} className="mb-2" onAction={handleCheckpointAction} />
       <PermissionPrompt
         key="composer-permission-prompt"
-        pendingPermission={pendingPermission}
+        pendingPermission={visiblePendingPermission}
         permissionResolved={permissionResolved}
         onPermissionResponse={handlePermissionResponse}
         toolUses={toolUses}

@@ -1,7 +1,8 @@
 import type { InitializeResponse } from "@/codex/protocol/generated/InitializeResponse";
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
-import type { JsonRpcNotification } from "@/codex/protocol/json-rpc";
+import type { JsonRpcNotification, JsonRpcRequest } from "@/codex/protocol/json-rpc";
+import type { AppServerApprovalRequest } from "./approval-adapter";
 import type { AppServerTurnState } from "./turn-reducer";
 
 export type SourceBreadcrumb =
@@ -10,6 +11,7 @@ export type SourceBreadcrumb =
   | "app-server.model/list"
   | "app-server.account/read"
   | "app-server.notification"
+  | "app-server.serverRequest"
   | "web-bridge";
 
 export type Sourced<T> = {
@@ -25,7 +27,8 @@ export type CodexWebAppServerState = {
   models: Sourced<ModelListResponse> | null;
   account: Sourced<GetAccountResponse> | null;
   activeTurn: Sourced<AppServerTurnState> | null;
-  diagnostics: Array<Sourced<JsonRpcNotification | { message: string }>>;
+  pendingApproval: Sourced<AppServerApprovalRequest> | null;
+  diagnostics: Array<Sourced<JsonRpcNotification | JsonRpcRequest | { message: string }>>;
 };
 
 export const initialAppServerState: CodexWebAppServerState = {
@@ -34,5 +37,6 @@ export const initialAppServerState: CodexWebAppServerState = {
   models: null,
   account: null,
   activeTurn: null,
+  pendingApproval: null,
   diagnostics: [],
 };

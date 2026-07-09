@@ -1,4 +1,4 @@
-import type { JsonRpcNotification } from "@/codex/protocol/json-rpc";
+import type { JsonRpcId, JsonRpcNotification, JsonRpcRequest } from "@/codex/protocol/json-rpc";
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -8,8 +8,9 @@ type PendingRequest = {
 export class AppServerBrowserClient {
   private nextId = 1;
   private socket: WebSocket | null = null;
-  private readonly pending = new Map<number, PendingRequest>();
+  private readonly pending = new Map<JsonRpcId, PendingRequest>();
   private readonly notificationListeners = new Set<(notification: JsonRpcNotification) => void>();
+  private readonly serverRequestListeners = new Set<(request: JsonRpcRequest) => void>();
 
   constructor(private readonly url: string) {}
 
@@ -57,6 +58,19 @@ export class AppServerBrowserClient {
     return () => this.notificationListeners.delete(listener);
   }
 
+  onServerRequest(listener: (request: JsonRpcRequest) => void): () => void {
+    this.serverRequestListeners.add(listener);
+    return () => this.serverRequestListeners.delete(listener);
+  }
+
+  respond(id: JsonRpcId, result: unknown): void {
+    this.send({ id, result });
+  }
+
+  respondError(id: JsonRpcId, message: string): void {
+    this.send({ id, error: { code: -32601, message } });
+  }
+
   close(): void {
     this.socket?.close();
     this.socket = null;
@@ -72,12 +86,20 @@ export class AppServerBrowserClient {
   private handleMessage(data: unknown): void {
     const text = typeof data === "string" ? data : String(data);
     const message = JSON.parse(text) as {
-      id?: number;
+      id?: JsonRpcId;
       method?: string;
       params?: unknown;
       result?: unknown;
       error?: { message?: string };
     };
+
+    if (message.method && message.id !== undefined) {
+      const request = { id: message.id, method: message.method, params: message.params };
+      for (const listener of this.serverRequestListeners) {
+        listener(request);
+      }
+      return;
+    }
 
     if (message.id !== undefined) {
       const pending = this.pending.get(message.id);

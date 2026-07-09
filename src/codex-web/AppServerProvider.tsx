@@ -9,6 +9,11 @@ import type { ThreadStartParams } from "@/codex/protocol/generated/v2/ThreadStar
 import type { ThreadStartResponse } from "@/codex/protocol/generated/v2/ThreadStartResponse";
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
 import type { TurnStartResponse } from "@/codex/protocol/generated/v2/TurnStartResponse";
+import {
+  buildApprovalResponse,
+  mapServerRequestToApproval,
+  type AppServerApprovalDecision,
+} from "./approval-adapter";
 import { AppServerBrowserClient } from "./app-server-browser-client";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
 import {
@@ -29,6 +34,7 @@ export type SendOneTurnParams = {
 
 export type AppServerActions = {
   sendOneTurn: (params: SendOneTurnParams) => Promise<AppServerTurnState>;
+  respondToApproval: (decision: AppServerApprovalDecision) => Promise<void>;
   resetTurn: () => void;
 };
 
@@ -54,6 +60,30 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     let disposed = false;
     const client = new AppServerBrowserClient(bridgeUrl);
     clientRef.current = client;
+    client.onServerRequest((request) => {
+      const approval = mapServerRequestToApproval(request);
+      if (!approval) {
+        client.respondError(request.id, `Codex Web 暂不支持 app-server request: ${request.method}`);
+        setState((current) => ({
+          ...current,
+          diagnostics: appendDiagnostic(current.diagnostics, {
+            source: "app-server.serverRequest",
+            data: request,
+          }),
+        }));
+        return;
+      }
+
+      setState((current) => ({
+        ...current,
+        pendingApproval: { source: "app-server.serverRequest", data: approval },
+        diagnostics: appendDiagnostic(current.diagnostics, {
+          source: "app-server.serverRequest",
+          data: request,
+        }),
+      }));
+    });
+
     client.onNotification((notification) => {
       setState((current) => {
         const activeTurn = reduceAppServerTurnNotification(
@@ -63,6 +93,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         const next = {
           ...current,
           activeTurn: { source: "app-server.notification" as const, data: activeTurn },
+          pendingApproval: resolvePendingApproval(current.pendingApproval, notification),
           diagnostics: appendDiagnostic(current.diagnostics, {
             source: "app-server.notification",
             data: notification,
@@ -136,8 +167,32 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     setState((current) => ({
       ...current,
       activeTurn: null,
+      pendingApproval: null,
     }));
   }, []);
+
+  const respondToApproval = useCallback(async (decision: AppServerApprovalDecision) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    const approval = state.pendingApproval?.data ?? null;
+    if (!approval) {
+      throw new Error("没有待处理的 app-server approval");
+    }
+
+    const response = buildApprovalResponse(approval, decision);
+    client.respond(approval.requestId, response);
+    const requestId = approval.requestId;
+    setState((current) => {
+      return {
+        ...current,
+        pendingApproval:
+          current.pendingApproval?.data.requestId === requestId ? null : current.pendingApproval,
+      };
+    });
+  }, [state.pendingApproval]);
 
   const sendOneTurn = useCallback(async ({ content, cwd, model }: SendOneTurnParams) => {
     const client = clientRef.current;
@@ -200,7 +255,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return completed;
   }, []);
 
-  const actions = useMemo<AppServerActions>(() => ({ sendOneTurn, resetTurn }), [sendOneTurn, resetTurn]);
+  const actions = useMemo<AppServerActions>(
+    () => ({ sendOneTurn, respondToApproval, resetTurn }),
+    [sendOneTurn, respondToApproval, resetTurn],
+  );
 
   return (
     <AppServerContext.Provider value={state}>
@@ -232,6 +290,22 @@ function appendDiagnostic(
 
 function isTerminalTurn(turn: AppServerTurnState): boolean {
   return turn.status === "completed" || turn.status === "failed" || turn.status === "interrupted";
+}
+
+function resolvePendingApproval(
+  pendingApproval: CodexWebAppServerState["pendingApproval"],
+  notification: { method: string; params?: unknown },
+): CodexWebAppServerState["pendingApproval"] {
+  if (!pendingApproval || notification.method !== "serverRequest/resolved") {
+    return pendingApproval;
+  }
+
+  const params = readRecord(notification.params);
+  return params.requestId === pendingApproval.data.requestId ? null : pendingApproval;
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
 function waitForTurnCompletion(
