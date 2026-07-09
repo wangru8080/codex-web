@@ -340,7 +340,7 @@ Phase 5C 记录：
 | 模块 | 场景 | 当前状态 | 建议 Phase | 验收标准 |
 |---|---|---|---|---|
 | Resume / History | 历史 thread 恢复后多轮连续发送 | 已完成 | Phase 5D-B | 同一历史 thread 连续发送至少 2 轮，消息顺序、active turn、composer 状态均正确恢复 |
-| Resume / History | 恢复后的 active turn 页面刷新再进入 | 未开始 | Phase 5D | turn running 期间刷新页面，重新进入同一 thread 后 UI 能显示进行中或明确 degraded 状态 |
+| Resume / History | 恢复后的 active turn 页面刷新再进入 | Code complete | Phase 5G | turn running 期间刷新页面，重新进入同一 thread 后 UI 能显示进行中或明确 degraded 状态 |
 | Resume / History | 历史 thread 切换时 active turn 隔离 | Code complete | Phase 5F-B | A thread running 时切到 B thread，不把 A 的 delta、approval 或工具状态显示到 B |
 | Resume / History | `thread/resume` 失败收口 | Code complete | Phase 5F-B | resume 返回错误或 bridge 断开时，composer 恢复可用，消息区显示可见错误，不追加伪 assistant 成功消息 |
 | Resume / History | 历史分页加载 | 未开始 | Phase 6 | thread/list 或 thread/read 有分页/截断时，UI 能继续加载且不重复消息 |
@@ -500,6 +500,45 @@ Phase 5F-B 记录：
 - 2026-07-10：构建稳定化后已运行 `npm run test`，包含 `tsc --noEmit`，12 个测试文件、46 个测试通过。
 - 2026-07-10：构建稳定化后已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
 - 2026-07-10：构建稳定化后启动 dev server 并用 HTTP 验证 `/chat` 与 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 均返回 `200 text/html; charset=utf-8`；验证后已停止 dev server。
+
+## Phase 5G：刷新后 active turn degraded 提示
+
+目标：补齐历史会话在 turn running 期间刷新页面后的可见状态。刷新后 WebSocket notification 流不可恢复时，Web 不伪造实时 running/delta；如果 `thread/read` 显示该 thread 仍为 active 或存在 `inProgress` turn，则在当前历史页显示明确 degraded 提示。
+
+架构：继续以 app-server 为事实源。`thread/read { includeTurns: true }` 返回的 `thread.status` 与 `turn.status` 是刷新后唯一可用状态来源；`selectVisibleActiveTurn()` 统一决定当前页显示真实 active turn、跨 thread degraded notice，或刷新后 degraded notice；`ChatView` 复用 Phase 5F-B 的 `appServerNotice` banner。
+
+本阶段不做：恢复旧 WebSocket notification 流、补齐页面刷新后的实时 delta、自动 reconnect 到运行中 turn、分页加载、真实 `CODEX_HOME` 验收。
+
+实施清单：
+
+- [x] 对照 generated schema，确认 `Thread.status` 支持 `active`，`Turn.status` 支持 `inProgress`。
+- [x] `/chat/[id]` 保存当前页面 `thread/read` 返回的 Thread，避免从全局 selectedThread 读取导致串页。
+- [x] `selectVisibleActiveTurn()` 在无可见 active turn 时读取 `thread.status` / `turn.status`，返回刷新后 degraded notice。
+- [x] 保持已有跨 thread running notice 优先，不把其它 thread 的 delta、approval 或工具状态显示到当前页。
+- [x] 补 targeted 单元测试覆盖刷新后 `thread.status=active`、`turn.status=inProgress` 和 completed 历史反例。
+
+验证：
+
+```bash
+export NODE_HOME="/volume2/SSD/node-v24.14.0"
+export PATH=$NODE_HOME/bin:$PATH
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web/active-turn-visibility-adapter.test.ts
+npm run test -- src/codex-web
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 5G 记录：
+
+- 2026-07-10：`thread/read` schema 确认：`Thread.status` 可为 `{ type: "active" }`，`Turn.status` 可为 `"inProgress"`；刷新后 UI 只能基于这些历史读取状态显示 degraded，不能伪造实时 notification。
+- 2026-07-10：`/chat/[id]` 保存本页 `thread/read` 返回的 Thread，并传给 `selectVisibleActiveTurn()`；selector 在没有可见 active turn 时返回“此会话可能仍在运行”的 app-server.thread/read breadcrumb 提示。
+- 2026-07-10：已运行 `npm run test -- src/codex-web/active-turn-visibility-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、7 个测试通过。
+- 2026-07-10：已运行 `npm run test -- src/codex-web`，包含 `tsc --noEmit`，8 个测试文件、31 个测试通过。
+- 2026-07-10：已运行 `npm run test`，包含 `tsc --noEmit`，12 个测试文件、49 个测试通过。
+- 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
+- 2026-07-10：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
 
 ## 决策日志
 

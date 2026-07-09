@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 import { selectVisibleActiveTurn } from "./active-turn-visibility-adapter";
 import { createStartingTurnState } from "./turn-reducer";
 
@@ -60,4 +61,78 @@ describe("selectVisibleActiveTurn", () => {
       notice: null,
     });
   });
+
+  it("刷新后 thread/read 显示 active 时返回 degraded 提示", () => {
+    const result = selectVisibleActiveTurn({
+      activeTurn: null,
+      routeThreadId: "thread-a",
+      thread: createThreadFixture({
+        status: { type: "active", activeFlags: [] },
+      }),
+    });
+
+    expect(result.visibleTurn).toBeNull();
+    expect(result.notice?.message).toContain("可能仍在运行");
+    expect(result.notice?.description).toContain("app-server.thread/read");
+  });
+
+  it("刷新后最后一轮 inProgress 时返回 degraded 提示", () => {
+    const result = selectVisibleActiveTurn({
+      activeTurn: null,
+      routeThreadId: "thread-a",
+      thread: createThreadFixture({
+        turns: [
+          {
+            id: "turn-a",
+            items: [],
+            itemsView: "full",
+            status: "inProgress",
+            error: null,
+            startedAt: 1,
+            completedAt: null,
+            durationMs: null,
+          },
+        ],
+      }),
+    });
+
+    expect(result.notice?.message).toContain("可能仍在运行");
+  });
+
+  it("刷新后 completed 历史不显示 degraded 提示", () => {
+    expect(
+      selectVisibleActiveTurn({
+        activeTurn: null,
+        routeThreadId: "thread-a",
+        thread: createThreadFixture(),
+      }),
+    ).toEqual({ visibleTurn: null, notice: null });
+  });
 });
+
+function createThreadFixture(overrides: Partial<Thread> = {}): Thread {
+  return {
+    id: "thread-a",
+    sessionId: "session-a",
+    forkedFromId: null,
+    parentThreadId: null,
+    preview: "请只回复：pong",
+    ephemeral: false,
+    modelProvider: "openai",
+    createdAt: 1,
+    updatedAt: 2,
+    recencyAt: 2,
+    status: { type: "idle" },
+    path: null,
+    cwd: "/tmp",
+    cliVersion: "0.0.0",
+    source: "cli",
+    threadSource: null,
+    agentNickname: null,
+    agentRole: null,
+    gitInfo: null,
+    name: null,
+    turns: [],
+    ...overrides,
+  };
+}

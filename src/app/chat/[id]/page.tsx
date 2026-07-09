@@ -12,6 +12,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
 import { selectVisibleActiveTurn } from '@/codex-web/active-turn-visibility-adapter';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
+import type { Thread } from '@/codex/protocol/generated/v2/Thread';
 
 function safeDecodeSessionId(id: string): string {
   try {
@@ -50,6 +51,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [resumedThreadId, setResumedThreadId] = useState<string | null>(null);
   const [resumedModel, setResumedModel] = useState<string>('');
   const [resumedCwd, setResumedCwd] = useState<string>('');
+  const [appServerThread, setAppServerThread] = useState<Thread | null>(null);
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle, setFileTreeOpen } = usePanel();
   const appServerState = useAppServerState();
   const { readThread, resumeThread, sendTurnInThread, interruptTurn, respondToApproval } = useAppServerActions();
@@ -75,6 +77,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setResumedThreadId(null);
     setResumedModel('');
     setResumedCwd('');
+    setAppServerThread(null);
     setSessionInfoLoaded(false);
 
     let cancelled = false;
@@ -85,6 +88,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         if (appServerState.connection.data === 'connected') {
           const response = await readThread(id);
           if (cancelled) return;
+          setAppServerThread(response.thread);
           const session = threadToChatSession(response.thread);
           applySession(session);
           const result = threadToMessages(response.thread);
@@ -257,7 +261,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const messageApiBase = `/api/chat/sessions/${encodeURIComponent(id)}`;
   const activeAppServerTurn = appServerState.activeTurn?.data ?? null;
   const activeTurnVisibility = isAppServerThread
-    ? selectVisibleActiveTurn({ activeTurn: activeAppServerTurn, routeThreadId: id, resumedThreadId })
+    ? selectVisibleActiveTurn({ activeTurn: activeAppServerTurn, routeThreadId: id, resumedThreadId, thread: appServerThread })
     : { visibleTurn: null, notice: null };
   const appServerTurn = activeTurnVisibility.visibleTurn;
   const appServerApproval =
