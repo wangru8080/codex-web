@@ -12,6 +12,10 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
 import { selectVisibleActiveTurn } from '@/codex-web/active-turn-visibility-adapter';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
+import {
+  mergeThreadTurnMessages,
+  threadTurnsPageToMessages,
+} from '@/codex-web/thread-turns-page-adapter';
 import type { Thread } from '@/codex/protocol/generated/v2/Thread';
 
 function safeDecodeSessionId(id: string): string {
@@ -52,9 +56,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [resumedModel, setResumedModel] = useState<string>('');
   const [resumedCwd, setResumedCwd] = useState<string>('');
   const [appServerThread, setAppServerThread] = useState<Thread | null>(null);
+  const [turnsNextCursor, setTurnsNextCursor] = useState<string | null>(null);
+  const [paginationNotice, setPaginationNotice] = useState<{ message: string; description?: string } | null>(null);
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle, setFileTreeOpen } = usePanel();
   const appServerState = useAppServerState();
-  const { readThread, resumeThread, sendTurnInThread, interruptTurn, respondToApproval } = useAppServerActions();
+  const { readThread, listThreadTurns, resumeThread, sendTurnInThread, interruptTurn, respondToApproval } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
   const { t } = useTranslation();
@@ -78,6 +84,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setResumedModel('');
     setResumedCwd('');
     setAppServerThread(null);
+    setTurnsNextCursor(null);
+    setPaginationNotice(null);
     setSessionInfoLoaded(false);
 
     let cancelled = false;
@@ -86,16 +94,46 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
       try {
         const encodedId = encodeURIComponent(id);
         if (appServerState.connection.data === 'connected') {
-          const response = await readThread(id);
+          const response = await readThread(id, { includeTurns: false });
           if (cancelled) return;
           setAppServerThread(response.thread);
           const session = threadToChatSession(response.thread);
           applySession(session);
-          const result = threadToMessages(response.thread);
-          setMessages(result.messages);
-          setHasMore(false);
-          if (result.unsupportedItemCount > 0) {
-            console.info(`Phase 5A 暂未渲染 ${result.unsupportedItemCount} 个历史工具 item`);
+          try {
+            const turnsPage = await listThreadTurns({
+              threadId: id,
+              cursor: null,
+              limit: 30,
+              sortDirection: "desc",
+              itemsView: "full",
+            });
+            if (cancelled) return;
+            setMessages(threadTurnsPageToMessages(response.thread, turnsPage.data, "desc"));
+            setHasMore(!!turnsPage.nextCursor);
+            setTurnsNextCursor(turnsPage.nextCursor);
+          } catch (pageError) {
+            if (cancelled) return;
+            let fallbackThread = response.thread;
+            try {
+              const fallbackResponse = await readThread(id, { includeTurns: true });
+              if (cancelled) return;
+              fallbackThread = fallbackResponse.thread;
+              setAppServerThread(fallbackThread);
+            } catch {
+              // 保留 metadata-only thread；错误 banner 会说明分页失败。
+            }
+            const result = threadToMessages(fallbackThread);
+            setMessages(result.messages);
+            setHasMore(false);
+            setTurnsNextCursor(null);
+            setPaginationNotice({
+              message: "历史分页暂不可用",
+              description:
+                pageError instanceof Error ? pageError.message : String(pageError),
+            });
+            if (result.unsupportedItemCount > 0) {
+              console.info(`Phase 5A 暂未渲染 ${result.unsupportedItemCount} 个历史工具 item`);
+            }
           }
           return;
         }
@@ -264,6 +302,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     ? selectVisibleActiveTurn({ activeTurn: activeAppServerTurn, routeThreadId: id, resumedThreadId, thread: appServerThread })
     : { visibleTurn: null, notice: null };
   const appServerTurn = activeTurnVisibility.visibleTurn;
+  const appServerNotice = activeTurnVisibility.notice ?? paginationNotice;
   const appServerApproval =
     isAppServerThread &&
     appServerState.pendingApproval?.data &&
@@ -296,7 +335,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         projectName={sessionProjectName}
         appServerTurn={appServerTurn}
         appServerApproval={appServerApproval}
-        appServerNotice={activeTurnVisibility.notice}
+        appServerNotice={appServerNotice}
         onAppServerApprovalDecision={respondToApproval}
         appServerInterrupt={appServerTurn ? async () => {
           await interruptTurn({
@@ -332,6 +371,32 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             model: turnModel,
             onAccepted,
           });
+        } : undefined}
+        appServerLoadEarlier={isAppServerThread && appServerThread && turnsNextCursor ? async () => {
+          try {
+            const turnsPage = await listThreadTurns({
+              threadId: appServerThread.id,
+              cursor: turnsNextCursor,
+              limit: 30,
+              sortDirection: "desc",
+              itemsView: "full",
+            });
+            const incoming = threadTurnsPageToMessages(appServerThread, turnsPage.data, "desc");
+            const mergedMessages = mergeThreadTurnMessages(messages, incoming, "prepend");
+            setMessages(mergedMessages);
+            setHasMore(!!turnsPage.nextCursor);
+            setTurnsNextCursor(turnsPage.nextCursor);
+            setPaginationNotice(null);
+            return { messages: mergedMessages, hasMore: !!turnsPage.nextCursor };
+          } catch (pageError) {
+            setHasMore(false);
+            setTurnsNextCursor(null);
+            setPaginationNotice({
+              message: "历史分页暂不可用",
+              description: pageError instanceof Error ? pageError.message : String(pageError),
+            });
+            return { messages, hasMore: false };
+          }
         } : undefined}
       />
     </div>

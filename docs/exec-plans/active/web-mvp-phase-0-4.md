@@ -343,7 +343,7 @@ Phase 5C 记录：
 | Resume / History | 恢复后的 active turn 页面刷新再进入 | Code complete | Phase 5G | turn running 期间刷新页面，重新进入同一 thread 后 UI 能显示进行中或明确 degraded 状态 |
 | Resume / History | 历史 thread 切换时 active turn 隔离 | Code complete | Phase 5F-B | A thread running 时切到 B thread，不把 A 的 delta、approval 或工具状态显示到 B |
 | Resume / History | `thread/resume` 失败收口 | Code complete | Phase 5F-B | resume 返回错误或 bridge 断开时，composer 恢复可用，消息区显示可见错误，不追加伪 assistant 成功消息 |
-| Resume / History | 历史分页加载 | 未开始 | Phase 6 | thread/list 或 thread/read 有分页/截断时，UI 能继续加载且不重复消息 |
+| Resume / History | 历史分页加载 | Code complete | Phase 6A | thread/list 或 thread/read 有分页/截断时，UI 能继续加载且不重复消息 |
 | Resume / History | 历史归档、重命名、删除/清理入口 | 未开始 | Phase 6 | 仅接入官方 app-server 支持的方法；删除类操作必须按项目清理规则另行确认 |
 | Approval | 历史会话继续发送时触发 approval | 已完成 | Phase 5E-B | resume 后触发 command/file/permission approval，PermissionPrompt 出现并按官方 schema 返回 response |
 | Approval | approval pending 时 composer 与状态栏 | 已完成 | Phase 5E-B | pending approval 期间 composer 不产生并发 turn；用户 approve/deny 后状态恢复 |
@@ -539,6 +539,48 @@ Phase 5G 记录：
 - 2026-07-10：已运行 `npm run test`，包含 `tsc --noEmit`，12 个测试文件、49 个测试通过。
 - 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
 - 2026-07-10：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+
+## Phase 6A：历史分页加载
+
+目标：为 app-server 历史会话接入 turn 分页加载。长历史打开时不依赖一次性全量 `thread/read includeTurns=true`，而是通过 experimental `thread/turns/list` 获取 turn page 和 cursor；用户点击“加载更早”时继续拉取更早 turn，并避免重复消息。
+
+架构：稳定 `thread/read` 仅用于 metadata-first 读取；分页使用官方 experimental `thread/turns/list`。当前项目 generated TS schema 未包含 experimental method，因此新增本地最小 `ThreadTurnsListParams` / `ThreadTurnsListResponse` 类型，字段严格对齐官方 Rust protocol，不重新生成整套 schema。消息映射复用 `threadToMessages()`，新增 `thread-turns-page-adapter` 负责 page 顺序和去重。
+
+本阶段不做：`thread/items/list` 深度 item 分页、重新生成 experimental TS schema、历史归档/删除/重命名、真实 `CODEX_HOME` 验收。
+
+实施清单：
+
+- [x] 对照官方 Rust protocol 和 app-server tests，确认 `thread/turns/list` 参数为 `threadId`、`cursor`、`limit`、`sortDirection`、`itemsView`，响应包含 `data`、`nextCursor`、`backwardsCursor`。
+- [x] 新增 `src/codex-web/thread-turns-page-adapter.ts`，定义本地 experimental 类型，支持 desc page 反转为时间正序，并按 message id 去重合并。
+- [x] `AppServerProvider` 暴露 `listThreadTurns()`，仅发起 JSON-RPC request，不写入全局 selectedThread。
+- [x] `/chat/[id]` 改为 metadata-first：先 `thread/read { includeTurns: false }`，再尝试 `thread/turns/list` 读取第一页；experimental 不可用时回退稳定 `thread/read { includeTurns: true }`。
+- [x] `ChatView` 增加 app-server load-earlier override，复用现有 `MessageList` 的“加载更早”入口。
+- [x] unsupported 或分页失败时显示 `历史分页暂不可用` notice，不追加伪消息。
+
+验证：
+
+```bash
+export NODE_HOME="/volume2/SSD/node-v24.14.0"
+export PATH=$NODE_HOME/bin:$PATH
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web/thread-turns-page-adapter.test.ts
+npm run test -- src/codex-web
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 6A 记录：
+
+- 2026-07-10：新增 `docs/superpowers/specs/2026-07-10-phase-6a-history-pagination-design.md` 和 `docs/superpowers/plans/2026-07-10-phase-6a-history-pagination.md`，记录 experimental adapter 方案与执行步骤。
+- 2026-07-10：新增 `src/codex-web/thread-turns-page-adapter.ts` 和测试，覆盖 desc page 时间正序、asc page 保持正序、prepend 合并去重。
+- 2026-07-10：`/chat/[id]` 初始历史加载改为 metadata-first，并用 `thread/turns/list(limit=30, sortDirection=desc, itemsView=full)` 获取第一页和 `nextCursor`；加载更早继续使用该 cursor。
+- 2026-07-10：已运行 `npm run test -- src/codex-web/thread-turns-page-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、3 个测试通过。
+- 2026-07-10：已运行 `npm run test -- src/codex-web`，包含 `tsc --noEmit`，9 个测试文件、34 个测试通过。
+- 2026-07-10：已运行 `npm run test`，包含 `tsc --noEmit`，13 个测试文件、52 个测试通过。
+- 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
+- 2026-07-10：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+- 2026-07-10：启动 dev server 后用 HTTP 验证 `/chat` 与 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 均返回 `200 text/html; charset=utf-8`；临时 HTML 保存到 `/volume2/SSD/codex/Temp/codex-web-phase6a-chat-20260710.html` 和 `/volume2/SSD/codex/Temp/codex-web-phase6a-history-20260710.html`；验证后已停止 dev server。
 
 ## 决策日志
 

@@ -109,6 +109,7 @@ interface ChatViewProps {
   onAppServerApprovalDecision?: (decision: AppServerApprovalDecision) => Promise<void>;
   appServerSend?: (params: { content: string; cwd: string; model?: string; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
   appServerInterrupt?: () => Promise<void>;
+  appServerLoadEarlier?: () => Promise<MessagesResponse>;
 }
 
 /** Maximum messages kept in React state. Older messages are trimmed and reloaded on scroll. */
@@ -146,6 +147,7 @@ export function ChatView({
   onAppServerApprovalDecision,
   appServerSend,
   appServerInterrupt,
+  appServerLoadEarlier,
 }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory: panelWorkingDirectory, setPendingApprovalSessionId, setFileTreeOpen, setIsAssistantWorkspace } = usePanel();
   const workingDirectory = sessionWorkingDirectory ?? panelWorkingDirectory;
@@ -992,6 +994,15 @@ export function ChatView({
     loadingMoreRef.current = true;
     setLoadingMore(true);
     try {
+      if (appServerLoadEarlier) {
+        const data = await appServerLoadEarlier();
+        setHasMore(data.hasMore ?? false);
+        if (data.messages.length > 0) {
+          setMessages(data.messages);
+        }
+        return;
+      }
+
       const earliest = messages[0];
       const earliestRowId = (earliest as Message & { _rowid?: number })._rowid;
       if (!earliestRowId) return;
@@ -1015,7 +1026,7 @@ export function ChatView({
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [resolvedMessageApiBase, messages, hasMore]);
+  }, [resolvedMessageApiBase, messages, hasMore, appServerLoadEarlier]);
 
   const stopStreaming = useCallback(() => {
     if (appServerSend && appServerInterrupt) {

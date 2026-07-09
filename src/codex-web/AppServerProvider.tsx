@@ -39,6 +39,10 @@ import {
   reduceAppServerTurnNotification,
   type AppServerTurnState,
 } from "./turn-reducer";
+import type {
+  ThreadTurnsListParams,
+  ThreadTurnsListResponse,
+} from "./thread-turns-page-adapter";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -69,7 +73,8 @@ export type AppServerActions = {
   sendTurnInThread: (params: SendTurnInThreadParams) => Promise<AppServerTurnState>;
   interruptTurn: (params?: InterruptTurnParams) => Promise<void>;
   refreshThreads: () => Promise<ThreadListResponse>;
-  readThread: (threadId: string) => Promise<ThreadReadResponse>;
+  readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
+  listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
   respondToApproval: (decision: AppServerApprovalDecision) => Promise<void>;
   resetTurn: () => void;
 };
@@ -275,19 +280,28 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return threads;
   }, []);
 
-  const readThread = useCallback(async (threadId: string) => {
+  const readThread = useCallback(async (threadId: string, options?: { includeTurns?: boolean }) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
     }
 
-    const params: ThreadReadParams = { threadId, includeTurns: true };
+    const params: ThreadReadParams = { threadId, includeTurns: options?.includeTurns ?? true };
     const response = (await client.request("thread/read", params)) as ThreadReadResponse;
     setState((current) => ({
       ...current,
       selectedThread: { source: "app-server.thread/read", data: response },
     }));
     return response;
+  }, []);
+
+  const listThreadTurns = useCallback(async (params: ThreadTurnsListParams) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    return (await client.request("thread/turns/list", params)) as ThreadTurnsListResponse;
   }, []);
 
   const resumeThread = useCallback(async ({ threadId, cwd, model }: ResumeThreadParams) => {
@@ -458,10 +472,11 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       interruptTurn,
       refreshThreads,
       readThread,
+      listThreadTurns,
       respondToApproval,
       resetTurn,
     }),
-    [sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, respondToApproval, resetTurn],
+    [sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, respondToApproval, resetTurn],
   );
 
   return (
