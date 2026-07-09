@@ -61,7 +61,8 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 1 | 最小 Web bridge | 已完成 | 浏览器能连接 bridge，bridge 能启动或连接 app-server |
 | Phase 2 | app-server 初始化和基础 API | 已完成 | initialize、initialized、model/list、account/read 可用 |
 | Phase 3 | CodexWeb 风格 UI foundation | 已完成 | 页面基于 CodexWeb 布局显示连接、账号、模型、空会话和 diagnostics |
-| Phase 4 | Thread / Turn / Item 生命周期 | 进行中 | 已完成 Phase 4A one-turn 真实闭环与 Phase 4B 工具 cell；Phase 4C approval 闭环进行中 |
+| Phase 4 | Thread / Turn / Item 生命周期 | 已完成 | 已完成 Phase 4A one-turn 真实闭环、Phase 4B 工具 cell、Phase 4C approval 闭环 |
+| Phase 5A | Thread 列表与历史恢复基础 | 进行中 | app-server `thread/list` 接入左侧会话；`thread/read` 恢复 user/assistant 历史文本 |
 
 ## Phase 0：协议和项目基线
 
@@ -234,6 +235,7 @@ Smoke 记录：
 | 2026-07-09 | local codex app-server，隔离 CODEX_HOME | app-server default | `gpt-5.5` | one-turn chat，提示“请只回复：pong” | 通过 | CDP 页面验证 `/chat` 显示 user message 与 assistant `pong`，console 无错误；截图 `codexweb-phase4a-real-one-turn.png` |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 4B tool cell 接线后打开 `/chat` | 通过 | 真实浏览器打开 `http://192.168.3.12:3000/chat`，页面标题 `CodexWeb`，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase4b-20260709/` |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 4C approval 接线后打开 `/chat` | 通过 | 真实浏览器打开 `http://192.168.3.12:3000/chat`，页面标题 `CodexWeb`，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase4c-20260709/` |
+| 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 5A thread/list 与 thread/read 历史恢复 | 通过 | `thread/list` 返回 22 个隔离环境 thread；真实浏览器打开 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 显示 user “请只回复：pong” 与 assistant “pong”，只读提示可见，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase5a-20260709/` |
 
 Phase 4A 记录：
 
@@ -253,6 +255,42 @@ Phase 4B 记录：
 - 2026-07-09：单元测试覆盖 commandExecution running output、fileChange patch 摘要、MCP progress 和失败结果映射。
 - 2026-07-09：已运行 `npm run test`，6 个测试文件、24 个测试通过；已运行 `npm run build`，通过但仍有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
 - 2026-07-09：真实页面验证：启动 dev server 后打开 `/chat`，页面标题 `CodexWeb`，console 0 errors / 0 warnings；验证后已停止 dev server。
+
+## Phase 5A：Thread 列表与历史恢复基础
+
+用户可见变化：左侧会话列表来自 app-server `thread/list`，打开历史 thread 时可以看到历史 user/assistant 文本。
+本阶段不做：历史工具 cell / diff 完整映射、`thread/resume` 继续发送、分页加载、归档/删除/重命名。
+
+- [x] 对照 TUI `resume_picker.rs`，确认历史列表使用 `thread/list`，预览/读取使用 `thread/read { includeTurns: true }`。
+- [x] 对照 CodexWeb `ChatListPanel`、`SessionListItem` 和 `/chat/[id]`，确认左侧列表和历史页接线入口。
+- [x] `AppServerProvider` 初始化后读取 `thread/list`，source breadcrumb 为 `app-server.thread/list`。
+- [x] `AppServerProvider` 暴露 `refreshThreads()` 和 `readThread(threadId)`，`readThread` source breadcrumb 为 `app-server.thread/read`。
+- [x] 新增 `thread-history-adapter`，把 app-server `Thread` 映射为 CodexWeb `ChatSession`。
+- [x] 新增 `thread-history-adapter`，把历史 `userMessage` / `agentMessage` 映射为 CodexWeb `Message`。
+- [x] `ChatListPanel` 优先使用 app-server `thread/list` 作为 Codex 历史事实源。
+- [x] `/chat/[id]` 通过 `thread/read { includeTurns: true }` 恢复历史 user/assistant 文本。
+- [x] 历史 thread 初版设为只读，继续发送留到 `thread/resume` 阶段。
+- [ ] 历史 commandExecution / fileChange / mcpToolCall 映射到 CodexWeb 历史工具 cell。
+
+验证：
+
+```bash
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 5A 记录：
+
+- 2026-07-09：新增 `src/codex-web/thread-history-adapter.ts`，将 app-server `Thread` 映射到 CodexWeb `ChatSession`，并将 `userMessage`、`agentMessage` 历史 item 映射到 `Message[]`。
+- 2026-07-09：`AppServerProvider` 接入 `thread/list`、`thread/read`，并在 one-turn 完成后 best-effort 刷新 thread 列表。
+- 2026-07-09：`ChatListPanel` 优先展示 app-server `thread/list` 返回的历史 thread；旧 `/api/chat/sessions` fallback 暂保留给非 app-server 连接状态。
+- 2026-07-09：`/chat/[id]` 打开 app-server thread 时通过 `thread/read { includeTurns: true }` 恢复历史 user/assistant 文本，并标记为只读。
+- 2026-07-09：已运行 `npm run typecheck`，通过；已运行 `npm run test -- src/codex-web`，4 个测试文件、12 个测试通过。
+- 2026-07-09：已运行 `npm run test`，8 个测试文件、30 个测试通过；已运行 `npm run build`，通过但仍有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
+- 2026-07-09：只读协议验证：隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 下 `thread/list` 返回 22 个 thread，第一个 thread 为 `019f452c-2c35-7ee3-a876-cc0770789a58`，preview 为“请只回复：pong”。
+- 2026-07-09：真实页面验证：启动 dev server 后打开 `/chat` 和 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58`；历史页显示 user “请只回复：pong”、assistant “pong” 与只读提示，console 0 errors / 0 warnings；验证后已停止 dev server。
 
 Phase 4C 记录：
 

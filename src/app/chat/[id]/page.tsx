@@ -9,8 +9,8 @@ import { SpinnerGap } from "@/components/ui/icon";
 import { usePanel } from '@/hooks/usePanel';
 import { useWorkspaceSidebarOptional } from '@/hooks/useWorkspaceSidebar';
 import { useTranslation } from '@/hooks/useTranslation';
-
-const CODEX_SESSION_ID_PREFIX = 'codex:';
+import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 
 function safeDecodeSessionId(id: string): string {
   try {
@@ -18,10 +18,6 @@ function safeDecodeSessionId(id: string): string {
   } catch {
     return id;
   }
-}
-
-function isCodexVirtualSessionId(id: string): boolean {
-  return id.startsWith(CODEX_SESSION_ID_PREFIX);
 }
 
 interface ChatSessionPageProps {
@@ -51,15 +47,20 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [sessionWorkingDirectory, setSessionWorkingDirectory] = useState('');
   const [sessionProjectName, setSessionProjectName] = useState('');
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle, setFileTreeOpen } = usePanel();
+  const appServerState = useAppServerState();
+  const { readThread } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
   const { t } = useTranslation();
   const defaultPanelAppliedRef = useRef(false);
 
-  // Load session info and set working directory
   useEffect(() => {
-    let cancelled = false;
-    // Clear stale state immediately so ChatView doesn't inherit previous session's values
+    // Reset state when switching sessions
+    defaultPanelAppliedRef.current = false;
+    setLoading(true);
+    setError(null);
+    setMessages([]);
+    setHasMore(false);
     setWorkingDirectory('');
     setSessionModel('');
     setSessionProviderId('');
@@ -69,29 +70,31 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setSessionProjectName('');
     setSessionInfoLoaded(false);
 
-    async function loadSession() {
+    let cancelled = false;
+
+    async function loadSessionAndMessages() {
       try {
         const encodedId = encodeURIComponent(id);
-        const sessionUrl = isCodexVirtualSessionId(id)
-          ? `/api/codex/sessions/${encodedId}`
-          : `/api/chat/sessions/${encodedId}`;
-        const sessionRes = await fetch(sessionUrl);
+        if (appServerState.connection.data === 'connected') {
+          const response = await readThread(id);
+          if (cancelled) return;
+          const session = threadToChatSession(response.thread);
+          applySession(session);
+          const result = threadToMessages(response.thread);
+          setMessages(result.messages);
+          setHasMore(false);
+          if (result.unsupportedItemCount > 0) {
+            console.info(`Phase 5A 暂未渲染 ${result.unsupportedItemCount} 个历史工具 item`);
+          }
+          return;
+        }
+
+        const sessionRes = await fetch(`/api/chat/sessions/${encodedId}`);
         if (cancelled) return;
         if (sessionRes.ok) {
           const data: { session: ChatSession } = await sessionRes.json();
           if (cancelled) return;
-          if (data.session.working_directory) {
-            setSessionWorkingDirectory(data.session.working_directory);
-            setWorkingDirectory(data.session.working_directory);
-            localStorage.setItem("codepilot:last-working-directory", data.session.working_directory);
-            window.dispatchEvent(new Event('refresh-file-tree'));
-          }
-          setSessionProjectName(data.session.project_name || '');
-          setSessionId(id);
-          const title = data.session.title || t('chat.newConversation');
-          setPanelSessionTitle(title);
-
-          // Resolve model: session → global default → provider's first → localStorage → 'sonnet'
+          applySession(data.session);
           const { resolveSessionModel } = await import('@/lib/resolve-session-model');
           if (cancelled) return;
           const resolved = await resolveSessionModel(data.session.model || '', data.session.provider_id || '');
@@ -104,33 +107,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           setSessionHasSummary(!!data.session.context_summary);
           setSessionReadOnly(!!data.session.read_only);
         }
-      } catch {
-        // Session info load failed - panel will still work without directory
-      } finally {
-        if (!cancelled) setSessionInfoLoaded(true);
-      }
-    }
 
-    loadSession();
-    return () => { cancelled = true; };
-  }, [id, setWorkingDirectory, setSessionId, setPanelSessionTitle, t]);
-
-  useEffect(() => {
-    // Reset state when switching sessions
-    defaultPanelAppliedRef.current = false;
-    setLoading(true);
-    setError(null);
-    setMessages([]);
-    setHasMore(false);
-
-    let cancelled = false;
-
-    async function loadMessages() {
-      try {
-        const encodedId = encodeURIComponent(id);
-        const messageUrl = isCodexVirtualSessionId(id)
-          ? `/api/codex/sessions/${encodedId}/messages?limit=30`
-          : `/api/chat/sessions/${encodedId}/messages?limit=30`;
+        const messageUrl = `/api/chat/sessions/${encodedId}/messages?limit=30`;
         const res = await fetch(messageUrl);
         if (cancelled) return;
         if (!res.ok) {
@@ -148,14 +126,36 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to load messages');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setSessionInfoLoaded(true);
+          setLoading(false);
+        }
       }
     }
 
-    loadMessages();
+    function applySession(session: ChatSession) {
+      if (session.working_directory) {
+        setSessionWorkingDirectory(session.working_directory);
+        setWorkingDirectory(session.working_directory);
+        localStorage.setItem("codepilot:last-working-directory", session.working_directory);
+        window.dispatchEvent(new Event('refresh-file-tree'));
+      }
+      setSessionProjectName(session.project_name || '');
+      setSessionId(id);
+      setPanelSessionTitle(session.title || t('chat.newConversation'));
+      setSessionProviderId(session.provider_id || '');
+      setSessionRuntimePin(session.runtime_pin || '');
+      setSessionPermissionProfile(session.permission_profile || 'request_approval');
+      setSessionMode((session.mode as 'code' | 'plan') || 'code');
+      setSessionHasSummary(!!session.context_summary);
+      setSessionReadOnly(!!session.read_only);
+      setSessionInfoLoaded(true);
+    }
+
+    loadSessionAndMessages();
 
     return () => { cancelled = true; };
-  }, [id]);
+  }, [appServerState.connection.data, id, readThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t]);
 
   // Auto-open file tree when jumping from a file search result
   useEffect(() => {
@@ -246,9 +246,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     );
   }
 
-  const messageApiBase = isCodexVirtualSessionId(id)
-    ? `/api/codex/sessions/${encodeURIComponent(id)}`
-    : `/api/chat/sessions/${encodeURIComponent(id)}`;
+  const isAppServerThread = appServerState.connection.data === 'connected';
+  const messageApiBase = `/api/chat/sessions/${encodeURIComponent(id)}`;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -263,9 +262,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         initialPermissionProfile={sessionPermissionProfile}
         initialMode={sessionMode}
         initialHasSummary={sessionHasSummary}
-        readOnly={sessionReadOnly && !isCodexVirtualSessionId(id)}
-        readOnlyReason="这是从 CODEX_HOME 读取的 Codex 历史会话，首次发送会通过官方 Codex resume 接管。"
-        adoptCodexSessionId={isCodexVirtualSessionId(id) ? id : undefined}
+        readOnly={sessionReadOnly || isAppServerThread}
+        readOnlyReason="这是从 app-server thread/read 读取的 Codex 历史会话；继续发送将在 Phase 5 后续接入 thread/resume。"
         messageApiBase={messageApiBase}
         workingDirectory={sessionWorkingDirectory}
         projectName={sessionProjectName}

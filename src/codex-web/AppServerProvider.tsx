@@ -5,6 +5,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { InitializeResponse } from "@/codex/protocol/generated/InitializeResponse";
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
+import type { ThreadListParams } from "@/codex/protocol/generated/v2/ThreadListParams";
+import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
+import type { ThreadReadParams } from "@/codex/protocol/generated/v2/ThreadReadParams";
+import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadReadResponse";
 import type { ThreadStartParams } from "@/codex/protocol/generated/v2/ThreadStartParams";
 import type { ThreadStartResponse } from "@/codex/protocol/generated/v2/ThreadStartResponse";
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
@@ -34,6 +38,8 @@ export type SendOneTurnParams = {
 
 export type AppServerActions = {
   sendOneTurn: (params: SendOneTurnParams) => Promise<AppServerTurnState>;
+  refreshThreads: () => Promise<ThreadListResponse>;
+  readThread: (threadId: string) => Promise<ThreadReadResponse>;
   respondToApproval: (decision: AppServerApprovalDecision) => Promise<void>;
   resetTurn: () => void;
 };
@@ -121,9 +127,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           capabilities: null,
         })) as InitializeResponse;
         client.notify("initialized");
-        const [models, account] = await Promise.all([
+        const [models, account, threads] = await Promise.all([
           client.request("model/list", { includeHidden: false }) as Promise<ModelListResponse>,
           client.request("account/read", { refreshToken: false }) as Promise<GetAccountResponse>,
+          client.request("thread/list", threadListParams()) as Promise<ThreadListResponse>,
         ]);
 
         if (disposed) {
@@ -136,6 +143,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           initialize: { source: "app-server.initialize", data: initialize },
           models: { source: "app-server.model/list", data: models },
           account: { source: "app-server.account/read", data: account },
+          threads: { source: "app-server.thread/list", data: threads },
         }));
       } catch (error) {
         if (disposed) {
@@ -193,6 +201,35 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       };
     });
   }, [state.pendingApproval]);
+
+  const refreshThreads = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    const threads = (await client.request("thread/list", threadListParams())) as ThreadListResponse;
+    setState((current) => ({
+      ...current,
+      threads: { source: "app-server.thread/list", data: threads },
+    }));
+    return threads;
+  }, []);
+
+  const readThread = useCallback(async (threadId: string) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    const params: ThreadReadParams = { threadId, includeTurns: true };
+    const response = (await client.request("thread/read", params)) as ThreadReadResponse;
+    setState((current) => ({
+      ...current,
+      selectedThread: { source: "app-server.thread/read", data: response },
+    }));
+    return response;
+  }, []);
 
   const sendOneTurn = useCallback(async ({ content, cwd, model }: SendOneTurnParams) => {
     const client = clientRef.current;
@@ -252,12 +289,14 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       },
     }));
 
-    return completed;
-  }, []);
+    const finalTurn = await completed;
+    void refreshThreads().catch(() => undefined);
+    return finalTurn;
+  }, [refreshThreads]);
 
   const actions = useMemo<AppServerActions>(
-    () => ({ sendOneTurn, respondToApproval, resetTurn }),
-    [sendOneTurn, respondToApproval, resetTurn],
+    () => ({ sendOneTurn, refreshThreads, readThread, respondToApproval, resetTurn }),
+    [sendOneTurn, refreshThreads, readThread, respondToApproval, resetTurn],
   );
 
   return (
@@ -322,4 +361,13 @@ function waitForTurnCompletion(
       resolve(turn);
     };
   });
+}
+
+function threadListParams(): ThreadListParams {
+  return {
+    limit: 50,
+    sortKey: "recency_at",
+    sortDirection: "desc",
+    archived: false,
+  };
 }
