@@ -236,6 +236,7 @@ Smoke 记录：
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 4B tool cell 接线后打开 `/chat` | 通过 | 真实浏览器打开 `http://192.168.3.12:3000/chat`，页面标题 `CodexWeb`，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase4b-20260709/` |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 4C approval 接线后打开 `/chat` | 通过 | 真实浏览器打开 `http://192.168.3.12:3000/chat`，页面标题 `CodexWeb`，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase4c-20260709/` |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 5A thread/list 与 thread/read 历史恢复 | 通过 | `thread/list` 返回 22 个隔离环境 thread；真实浏览器打开 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 显示 user “请只回复：pong” 与 assistant “pong”，只读提示可见，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase5a-20260709/` |
+| 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 5B 历史工具 cell 默认折叠 | 通过 | 隔离历史 thread `019f1c15-da0b-71e1-a3c3-d407b96f8ccb` 含 `fileChange` item；真实浏览器打开历史页后看到 `已处理` 工具摘要，默认 `aria-expanded=false` 且详情不可见；点击后展开显示 `fileChange` 详情，再次点击恢复折叠；console 0 errors / 0 warnings |
 
 Phase 4A 记录：
 
@@ -258,8 +259,8 @@ Phase 4B 记录：
 
 ## Phase 5A：Thread 列表与历史恢复基础
 
-用户可见变化：左侧会话列表来自 app-server `thread/list`，打开历史 thread 时可以看到历史 user/assistant 文本。
-本阶段不做：历史工具 cell / diff 完整映射、`thread/resume` 继续发送、分页加载、归档/删除/重命名。
+用户可见变化：左侧会话列表来自 app-server `thread/list`，打开历史 thread 时可以看到历史 user/assistant 文本和已完成工具 cell。
+本阶段不做：历史 diff 完整映射、`thread/resume` 继续发送、分页加载、归档/删除/重命名。
 
 - [x] 对照 TUI `resume_picker.rs`，确认历史列表使用 `thread/list`，预览/读取使用 `thread/read { includeTurns: true }`。
 - [x] 对照 CodexWeb `ChatListPanel`、`SessionListItem` 和 `/chat/[id]`，确认左侧列表和历史页接线入口。
@@ -270,7 +271,7 @@ Phase 4B 记录：
 - [x] `ChatListPanel` 优先使用 app-server `thread/list` 作为 Codex 历史事实源。
 - [x] `/chat/[id]` 通过 `thread/read { includeTurns: true }` 恢复历史 user/assistant 文本。
 - [x] 历史 thread 初版设为只读，继续发送留到 `thread/resume` 阶段。
-- [ ] 历史 commandExecution / fileChange / mcpToolCall 映射到 CodexWeb 历史工具 cell。
+- [x] 历史 commandExecution / fileChange / mcpToolCall 映射到 CodexWeb 历史工具 cell。
 
 验证：
 
@@ -291,6 +292,11 @@ Phase 5A 记录：
 - 2026-07-09：已运行 `npm run test`，8 个测试文件、30 个测试通过；已运行 `npm run build`，通过但仍有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
 - 2026-07-09：只读协议验证：隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 下 `thread/list` 返回 22 个 thread，第一个 thread 为 `019f452c-2c35-7ee3-a876-cc0770789a58`，preview 为“请只回复：pong”。
 - 2026-07-09：真实页面验证：启动 dev server 后打开 `/chat` 和 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58`；历史页显示 user “请只回复：pong”、assistant “pong” 与只读提示，console 0 errors / 0 warnings；验证后已停止 dev server。
+- 2026-07-09：Phase 5B 对照官方 TUI `thread_transcript.rs`：历史恢复使用 `thread/read { include_turns: true }`，逐项读取 app-server `ThreadItem`；工具项作为只读历史 transcript 展示，不进入 prompt，不冒充实时执行态。
+- 2026-07-09：`thread-history-adapter` 将历史 `commandExecution`、`fileChange`、`mcpToolCall` 聚合为 CodexWeb `MessageContentBlock` JSON，复用 `MessageItem` 和 `ToolActionsGroup`；工具结果态默认折叠。
+- 2026-07-09：已运行 `npm run test -- src/codex-web/thread-history-adapter.test.ts`，1 个测试文件、3 个测试通过；已运行 `npm run test -- src/codex-web`，4 个测试文件、13 个测试通过。
+- 2026-07-09：已运行 `npm run test`，8 个测试文件、31 个测试通过；已运行 `npm run build`，通过但仍有既有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
+- 2026-07-09：真实页面验证：启动 dev server 后打开 `/chat/019f1c15-da0b-71e1-a3c3-d407b96f8ccb`；历史工具 cell 默认折叠，展开后显示 `fileChange` 详情，再次点击恢复折叠；console 0 errors / 0 warnings；验证后已停止 dev server。
 
 Phase 4C 记录：
 

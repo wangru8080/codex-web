@@ -23,6 +23,7 @@ describe("thread-history-adapter", () => {
   it("把历史 turn 中的 user/assistant item 映射为消息", () => {
     const result = threadToMessages(createThread());
 
+    const assistantContent = JSON.parse(result.messages[1].content);
     expect(result.messages).toEqual([
       expect.objectContaining({
         id: "user-1",
@@ -31,13 +32,82 @@ describe("thread-history-adapter", () => {
         created_at: "2026-07-09T04:06:40.000Z",
       }),
       expect.objectContaining({
-        id: "assistant-1",
         role: "assistant",
-        content: "你好，Codex。",
         created_at: "2026-07-09T04:06:43.000Z",
       }),
     ]);
-    expect(result.unsupportedItemCount).toBe(1);
+    expect(assistantContent).toEqual([
+      {
+        type: "tool_use",
+        id: "cmd-1",
+        name: "bash",
+        input: {
+          command: "pwd",
+          cwd: "/repo/web",
+          source: "agent",
+          actions: [],
+        },
+      },
+      {
+        type: "tool_result",
+        tool_use_id: "cmd-1",
+        content: "/repo/web\nexit code: 0",
+        is_error: false,
+      },
+      {
+        type: "text",
+        text: "你好，Codex。",
+      },
+    ]);
+    expect(result.unsupportedItemCount).toBe(0);
+  });
+
+  it("把历史 fileChange 和 mcpToolCall 映射为 CodexWeb 工具块", () => {
+    const result = threadToMessages(createThreadWithPatchAndMcp());
+    const assistantContent = JSON.parse(result.messages[0].content);
+
+    expect(assistantContent).toEqual([
+      {
+        type: "tool_use",
+        id: "patch-1",
+        name: "fileChange",
+        input: {
+          status: "completed",
+          files: ["src/app.ts"],
+          changes: [
+            {
+              path: "src/app.ts",
+              kind: { type: "update", move_path: null },
+              diff: "@@",
+            },
+          ],
+        },
+      },
+      {
+        type: "tool_result",
+        tool_use_id: "patch-1",
+        content: "completed: 1 file\n- update: src/app.ts",
+        is_error: false,
+      },
+      {
+        type: "tool_use",
+        id: "mcp-1",
+        name: "mcp:docs/search",
+        input: {
+          server: "docs",
+          tool: "search",
+          arguments: { q: "codex" },
+          appContext: null,
+        },
+      },
+      {
+        type: "tool_result",
+        tool_use_id: "mcp-1",
+        content: "{\"ok\":true}",
+        is_error: false,
+      },
+    ]);
+    expect(result.unsupportedItemCount).toBe(0);
   });
 });
 
@@ -100,6 +170,50 @@ function createThread(): Thread {
         startedAt: 1783570000,
         completedAt: 1783570003,
         durationMs: 3000,
+      },
+    ],
+  };
+}
+
+function createThreadWithPatchAndMcp(): Thread {
+  return {
+    ...createThread(),
+    turns: [
+      {
+        id: "turn-2",
+        items: [
+          {
+            type: "fileChange",
+            id: "patch-1",
+            changes: [
+              { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@" },
+            ],
+            status: "completed",
+          },
+          {
+            type: "mcpToolCall",
+            id: "mcp-1",
+            server: "docs",
+            tool: "search",
+            status: "completed",
+            arguments: { q: "codex" },
+            appContext: null,
+            pluginId: null,
+            result: {
+              content: [],
+              structuredContent: { ok: true },
+              _meta: null,
+            },
+            error: null,
+            durationMs: 15,
+          },
+        ],
+        itemsView: "full",
+        status: "completed",
+        error: null,
+        startedAt: 1783570200,
+        completedAt: 1783570201,
+        durationMs: 1000,
       },
     ],
   };
