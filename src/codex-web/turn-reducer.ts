@@ -1,4 +1,5 @@
 import type { JsonRpcNotification } from "@/codex/protocol/json-rpc";
+import type { FileUpdateChange } from "@/codex/protocol/generated/v2/FileUpdateChange";
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 import type { TurnStatus } from "@/codex/protocol/generated/v2/TurnStatus";
 
@@ -10,6 +11,9 @@ export type AppServerTurnState = {
   turnId: string;
   assistantText: string;
   items: ThreadItem[];
+  toolOutputs: Record<string, string>;
+  filePatchChanges: Record<string, FileUpdateChange[]>;
+  mcpProgress: Record<string, string>;
   errorMessage: string;
 };
 
@@ -19,6 +23,9 @@ export const initialAppServerTurnState: AppServerTurnState = {
   turnId: "",
   assistantText: "",
   items: [],
+  toolOutputs: {},
+  filePatchChanges: {},
+  mcpProgress: {},
   errorMessage: "",
 };
 
@@ -82,6 +89,43 @@ export function reduceAppServerTurnNotification(
       };
     }
 
+    case "item/commandExecution/outputDelta":
+    case "item/fileChange/outputDelta": {
+      const data = readRecord(params);
+      const itemId = data.itemId;
+      const delta = data.delta;
+      if (typeof itemId !== "string" || typeof delta !== "string") return state;
+      return {
+        ...state,
+        toolOutputs: appendRecordText(state.toolOutputs, itemId, delta),
+      };
+    }
+
+    case "item/fileChange/patchUpdated": {
+      const data = readRecord(params);
+      const itemId = data.itemId;
+      const changes = data.changes;
+      if (typeof itemId !== "string" || !Array.isArray(changes)) return state;
+      return {
+        ...state,
+        filePatchChanges: {
+          ...state.filePatchChanges,
+          [itemId]: changes.filter(isFileUpdateChange),
+        },
+      };
+    }
+
+    case "item/mcpToolCall/progress": {
+      const data = readRecord(params);
+      const itemId = data.itemId;
+      const message = data.message;
+      if (typeof itemId !== "string" || typeof message !== "string") return state;
+      return {
+        ...state,
+        mcpProgress: appendRecordText(state.mcpProgress, itemId, `${message}\n`),
+      };
+    }
+
     case "turn/completed": {
       const data = readRecord(params);
       const turn = readRecord(data.turn);
@@ -132,12 +176,24 @@ function upsertItem(items: ThreadItem[], item: ThreadItem): ThreadItem[] {
   return next;
 }
 
+function appendRecordText(record: Record<string, string>, key: string, text: string): Record<string, string> {
+  return {
+    ...record,
+    [key]: (record[key] ?? "") + text,
+  };
+}
+
 function isThreadItem(value: unknown): value is ThreadItem {
   const data = readRecord(value);
   return typeof data.id === "string" && typeof data.type === "string";
 }
 
+function isFileUpdateChange(value: unknown): value is FileUpdateChange {
+  const data = readRecord(value);
+  const kind = readRecord(data.kind);
+  return typeof data.path === "string" && typeof kind.type === "string" && typeof data.diff === "string";
+}
+
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
-

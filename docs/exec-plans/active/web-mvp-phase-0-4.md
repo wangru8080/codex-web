@@ -211,7 +211,8 @@ Phase 3 记录：
 - [x] reducer 支持 `turn/completed`。
 - [x] reducer 支持 `error`。
 - [x] 在 CodexWeb 消息流结构中展示 user message、assistant delta、running、completed、failed、interrupted。
-- [ ] 将 app-server item / tool / delta 状态映射到 CodexWeb 历史消息、流式消息和工具 Cell 展示结构。
+- [x] 将 app-server commandExecution / fileChange / mcpToolCall item 与 delta 状态最小映射到 CodexWeb 流式工具 Cell 展示结构。
+- [ ] 将 app-server item / tool / delta 状态映射到 CodexWeb 历史消息结构。
 - [x] Composer 在 active turn 期间禁用或进入可控状态，并保持 CodexWeb 输入框交互风格。
 
 验证：
@@ -227,6 +228,7 @@ Smoke 记录：
 | Date | Runtime | Provider | Model | 场景 | Result | Evidence |
 |---|---|---|---|---|---|---|
 | 2026-07-09 | local codex app-server，隔离 CODEX_HOME | app-server default | `gpt-5.5` | one-turn chat，提示“请只回复：pong” | 通过 | CDP 页面验证 `/chat` 显示 user message 与 assistant `pong`，console 无错误；截图 `codexweb-phase4a-real-one-turn.png` |
+| 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 4B tool cell 接线后打开 `/chat` | 通过 | 真实浏览器打开 `http://192.168.3.12:3000/chat`，页面标题 `CodexWeb`，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase4b-20260709/` |
 
 Phase 4A 记录：
 
@@ -237,6 +239,15 @@ Phase 4A 记录：
 - 2026-07-09：已运行 `npm run test`，5 个测试文件、20 个测试通过。
 - 2026-07-09：已运行 `npm run build`，通过；Turbopack 输出 theme loader trace warning，未阻塞构建。
 - 2026-07-09：已运行 `npm run test:smoke`，真实 bridge bootstrap 仍通过。
+
+Phase 4B 记录：
+
+- 2026-07-09：新增 `src/codex-web/tool-adapter.ts`，把 app-server `commandExecution`、`fileChange`、`mcpToolCall` item 派生为 CodexWeb 现有 `toolUses`、`toolResults`、`streamingToolOutput` 结构。
+- 2026-07-09：`turn-reducer` 支持 `item/commandExecution/outputDelta`、`item/fileChange/outputDelta`、`item/fileChange/patchUpdated`、`item/mcpToolCall/progress`，保留原始增量供工具 cell 展示。
+- 2026-07-09：`/chat` 流式消息接入工具 adapter，复用 CodexWeb `StreamingMessage` 与 `ToolActionsGroup`，不改变整体 UI 布局。
+- 2026-07-09：单元测试覆盖 commandExecution running output、fileChange patch 摘要、MCP progress 和失败结果映射。
+- 2026-07-09：已运行 `npm run test`，6 个测试文件、24 个测试通过；已运行 `npm run build`，通过但仍有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
+- 2026-07-09：真实页面验证：启动 dev server 后打开 `/chat`，页面标题 `CodexWeb`，console 0 errors / 0 warnings；验证后已停止 dev server。
 
 ## 决策日志
 

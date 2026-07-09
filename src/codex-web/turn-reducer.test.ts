@@ -69,5 +69,36 @@ describe("reduceAppServerTurnNotification", () => {
     expect(state.status).toBe("failed");
     expect(state.errorMessage).toBe("模型不可用");
   });
-});
 
+  it("保存工具输出、文件 patch 和 MCP progress 增量", () => {
+    let state = createStartingTurnState();
+
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/commandExecution/outputDelta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "cmd-1", delta: "hello" },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/commandExecution/outputDelta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "cmd-1", delta: "\nworld" },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/fileChange/patchUpdated",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "patch-1",
+        changes: [{ path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@" }],
+      },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/mcpToolCall/progress",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "mcp-1", message: "查询中" },
+    });
+
+    expect(state.toolOutputs["cmd-1"]).toBe("hello\nworld");
+    expect(state.filePatchChanges["patch-1"]).toEqual([
+      { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@" },
+    ]);
+    expect(state.mcpProgress["mcp-1"]).toBe("查询中\n");
+  });
+});

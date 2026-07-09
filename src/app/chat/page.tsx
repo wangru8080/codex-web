@@ -22,17 +22,11 @@ import { useNativeFolderPicker } from '@/hooks/useNativeFolderPicker';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
-interface ToolUseInfo {
-  id: string;
-  name: string;
-  input: unknown;
-}
-
-interface ToolResultInfo {
-  tool_use_id: string;
-  content: string;
-  is_error?: boolean;
-}
+import {
+  deriveCodexWebToolState,
+  type CodexWebToolResultInfo,
+  type CodexWebToolUseInfo,
+} from '@/codex-web/tool-adapter';
 
 const DEFAULT_CODEX_PROVIDER_ID = 'codex_account';
 const DEFAULT_CODEX_MODEL = 'gpt-5.5';
@@ -87,8 +81,8 @@ function NewChatPageInner() {
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingThinkingContent, setStreamingThinkingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const [toolUses, setToolUses] = useState<ToolUseInfo[]>([]);
-  const [toolResults, setToolResults] = useState<ToolResultInfo[]>([]);
+  const [toolUses, setToolUses] = useState<CodexWebToolUseInfo[]>([]);
+  const [toolResults, setToolResults] = useState<CodexWebToolResultInfo[]>([]);
   const [statusText, setStatusText] = useState<string | undefined>();
   const [workingDir, setWorkingDir] = useState('');
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
@@ -209,9 +203,19 @@ function NewChatPageInner() {
 
   useEffect(() => {
     if (!appServerTurn) return;
+    const toolState = deriveCodexWebToolState(appServerTurn);
     setStreamingContent(appServerTurn.assistantText);
+    setToolUses(toolState.toolUses);
+    setToolResults(toolState.toolResults);
+    setStreamingToolOutput(toolState.streamingToolOutput);
     if (appServerTurn.status === 'running') {
       setStatusText('Codex 正在处理...');
+    } else if (appServerTurn.status === 'failed') {
+      setStatusText('Codex 处理失败');
+    } else if (appServerTurn.status === 'interrupted') {
+      setStatusText('Codex 已中断');
+    } else if (appServerTurn.status === 'completed') {
+      setStatusText(undefined);
     }
   }, [appServerTurn]);
 
