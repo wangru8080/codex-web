@@ -106,6 +106,7 @@ interface ChatViewProps {
   appServerApproval?: AppServerApprovalRequest | null;
   onAppServerApprovalDecision?: (decision: AppServerApprovalDecision) => Promise<void>;
   appServerSend?: (params: { content: string; cwd: string; model?: string }) => Promise<AppServerTurnState>;
+  appServerInterrupt?: () => Promise<void>;
 }
 
 /** Maximum messages kept in React state. Older messages are trimmed and reloaded on scroll. */
@@ -141,6 +142,7 @@ export function ChatView({
   appServerApproval,
   onAppServerApprovalDecision,
   appServerSend,
+  appServerInterrupt,
 }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory: panelWorkingDirectory, setPendingApprovalSessionId, setFileTreeOpen, setIsAssistantWorkspace } = usePanel();
   const workingDirectory = sessionWorkingDirectory ?? panelWorkingDirectory;
@@ -1011,7 +1013,16 @@ export function ChatView({
     }
   }, [resolvedMessageApiBase, messages, hasMore]);
 
-  const stopStreaming = useCallback(() => { stopStream(activeSessionId); }, [activeSessionId]);
+  const stopStreaming = useCallback(() => {
+    if (appServerSend && appServerInterrupt) {
+      void appServerInterrupt().catch((error) => {
+        console.warn('[ChatView] app-server turn interrupt failed', error);
+      });
+      return;
+    }
+
+    stopStream(activeSessionId);
+  }, [activeSessionId, appServerInterrupt, appServerSend]);
 
   const handlePermissionResponse = useCallback(
     async (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => {
@@ -1157,7 +1168,16 @@ export function ChatView({
             throw new Error(completedTurn.errorMessage || 'Codex turn failed');
           }
           if (completedTurn.status === 'interrupted') {
-            throw new Error('Codex turn interrupted');
+            const interruptedMessage: Message = {
+              id: 'temp-interrupted-' + Date.now(),
+              session_id: completedTurn.threadId || activeSessionId,
+              role: 'assistant',
+              content: 'Codex 已中断。可以继续发送下一轮。',
+              created_at: new Date().toISOString(),
+              token_usage: null,
+            };
+            cappedSetMessages((prev) => [...prev, interruptedMessage]);
+            return;
           }
           if (completedTurn.assistantText.trim()) {
             const assistantMessage: Message = {

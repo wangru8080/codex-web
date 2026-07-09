@@ -12,6 +12,7 @@ import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadRea
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
 import type { ThreadStartParams } from "@/codex/protocol/generated/v2/ThreadStartParams";
 import type { ThreadStartResponse } from "@/codex/protocol/generated/v2/ThreadStartResponse";
+import type { TurnInterruptResponse } from "@/codex/protocol/generated/v2/TurnInterruptResponse";
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
 import type { TurnStartResponse } from "@/codex/protocol/generated/v2/TurnStartResponse";
 import {
@@ -21,6 +22,10 @@ import {
 } from "./approval-adapter";
 import { AppServerBrowserClient } from "./app-server-browser-client";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
+import {
+  selectTurnInterruptParams,
+  type InterruptTurnParams,
+} from "./interrupt-adapter";
 import { buildThreadResumeParams } from "./resume-adapter";
 import {
   createStartingTurnState,
@@ -55,6 +60,7 @@ export type AppServerActions = {
   sendOneTurn: (params: SendOneTurnParams) => Promise<AppServerTurnState>;
   resumeThread: (params: ResumeThreadParams) => Promise<ThreadResumeResponse>;
   sendTurnInThread: (params: SendTurnInThreadParams) => Promise<AppServerTurnState>;
+  interruptTurn: (params?: InterruptTurnParams) => Promise<void>;
   refreshThreads: () => Promise<ThreadListResponse>;
   readThread: (threadId: string) => Promise<ThreadReadResponse>;
   respondToApproval: (decision: AppServerApprovalDecision) => Promise<void>;
@@ -353,17 +359,36 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return sendTurnInThread({ threadId, content: trimmed, cwd, model });
   }, [sendTurnInThread]);
 
+  const interruptTurn = useCallback(async (params?: InterruptTurnParams) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    const activeTurn = state.activeTurn?.data ?? null;
+    const interruptParams = selectTurnInterruptParams({ activeTurn, params });
+    if (!interruptParams) {
+      return;
+    }
+
+    await client.request(
+      "turn/interrupt",
+      interruptParams,
+    ) as TurnInterruptResponse;
+  }, [state.activeTurn]);
+
   const actions = useMemo<AppServerActions>(
     () => ({
       sendOneTurn,
       resumeThread,
       sendTurnInThread,
+      interruptTurn,
       refreshThreads,
       readThread,
       respondToApproval,
       resetTurn,
     }),
-    [sendOneTurn, resumeThread, sendTurnInThread, refreshThreads, readThread, respondToApproval, resetTurn],
+    [sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, respondToApproval, resetTurn],
   );
 
   return (

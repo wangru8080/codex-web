@@ -238,6 +238,7 @@ Smoke 记录：
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 5A thread/list 与 thread/read 历史恢复 | 通过 | `thread/list` 返回 22 个隔离环境 thread；真实浏览器打开 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 显示 user “请只回复：pong” 与 assistant “pong”，只读提示可见，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase5a-20260709/` |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 5B 历史工具 cell 默认折叠 | 通过 | 隔离历史 thread `019f1c15-da0b-71e1-a3c3-d407b96f8ccb` 含 `fileChange` item；真实浏览器打开历史页后看到 `已处理` 工具摘要，默认 `aria-expanded=false` 且详情不可见；点击后展开显示 `fileChange` 详情，再次点击恢复折叠；console 0 errors / 0 warnings |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | `gpt-5.5` | Phase 5C 历史 thread resume 后继续发送 | 通过 | 真实浏览器打开 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58`；composer 可输入，发送“请只回复：resume-pong”后页面显示 user 新消息和 assistant `resume-pong`，状态恢复，console 0 errors / 0 warnings；验证后已停止 dev server |
+| 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | `gpt-5.5` | Phase 5D-B resume 多轮、new thread 反例、turn/interrupt | 通过 | 历史页 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 连续发送“请只回复：resume-5d-a”和“请只回复：resume-5d-b”均完成；新建 `/chat` 发送“请只回复：new-5d”完成；运行 `sleep 60 && echo done` 后点击“停止生成”，页面显示“Codex 已中断。可以继续发送下一轮。”，随后发送“请只回复：after-interrupt”完成；当前 console 0 errors / 0 warnings；Playwright 产物保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase5d-20260709/`，验证后已停止 dev server |
 
 Phase 4A 记录：
 
@@ -330,6 +331,81 @@ Phase 5C 记录：
 - 2026-07-09：已运行 `npm run test -- src/codex-web`，5 个测试文件、14 个测试通过。
 - 2026-07-09：已运行 `npm run test`，9 个测试文件、32 个测试通过；已运行 `npm run build`，通过但仍有既有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
 - 2026-07-09：真实页面验证：启动 dev server 后打开 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58`；发送“请只回复：resume-pong”后历史页追加 user 新消息和 assistant `resume-pong`，处理状态恢复，console 0 errors / 0 warnings；验证后已停止 dev server。
+
+## 未实现复杂场景 Backlog
+
+本清单用于明确 Phase 4A-5C 简单闭环之外尚未覆盖的复杂场景。后续每完成一项，需要同步更新状态、目标 Phase、验收方式和 Smoke Ledger；未完成项不得在汇报中表述为完整支持。
+
+| 模块 | 场景 | 当前状态 | 建议 Phase | 验收标准 |
+|---|---|---|---|---|
+| Resume / History | 历史 thread 恢复后多轮连续发送 | 已完成 | Phase 5D-B | 同一历史 thread 连续发送至少 2 轮，消息顺序、active turn、composer 状态均正确恢复 |
+| Resume / History | 恢复后的 active turn 页面刷新再进入 | 未开始 | Phase 5D | turn running 期间刷新页面，重新进入同一 thread 后 UI 能显示进行中或明确 degraded 状态 |
+| Resume / History | 历史 thread 切换时 active turn 隔离 | 未开始 | Phase 5D | A thread running 时切到 B thread，不把 A 的 delta、approval 或工具状态显示到 B |
+| Resume / History | `thread/resume` 失败收口 | 未开始 | Phase 5D | resume 返回错误或 bridge 断开时，composer 恢复可用，消息区显示可见错误，不追加伪 assistant 成功消息 |
+| Resume / History | 历史分页加载 | 未开始 | Phase 6 | thread/list 或 thread/read 有分页/截断时，UI 能继续加载且不重复消息 |
+| Resume / History | 历史归档、重命名、删除/清理入口 | 未开始 | Phase 6 | 仅接入官方 app-server 支持的方法；删除类操作必须按项目清理规则另行确认 |
+| Approval | 历史会话继续发送时触发 approval | 未开始 | Phase 5D | resume 后触发 command/file/permission approval，PermissionPrompt 出现并按官方 schema 返回 response |
+| Approval | approval pending 时 composer 与状态栏 | 未开始 | Phase 5D | pending approval 期间 composer 不产生并发 turn；用户 approve/deny 后状态恢复 |
+| Approval | approve / deny 后同一个 turn 继续完成 | 未开始 | Phase 5D | approve 后 turn 继续到 completed；deny 后显示官方返回的失败/中断语义 |
+| Approval | 多个 approval 或过期 approval | 未开始 | Phase 6 | 多个 server request 不串线；已完成/过期 approval 不再接受重复响应 |
+| Tools | exec / patch / file change / MCP / skill 完整状态映射 | 部分完成 | Phase 6 | running、success、failed、cancelled、interrupted 都有真实 source breadcrumb 和 CodexWeb 展示 |
+| Tools | 工具结果默认折叠、展开详情 | 部分完成 | Phase 6 | 历史工具和新 turn 工具都默认折叠，展开后展示 stdout、stderr、patch 或 MCP 详情 |
+| Tools | 大输出与增量输出截断策略 | 未开始 | Phase 6 | 大 stdout/stderr 不撑爆页面；截断信息可见，原始输出保留在可诊断来源中 |
+| Interrupt | 运行中 turn 中断 | 已完成 | Phase 5D-B | 点击停止后调用官方中断路径，turn 进入 interrupted 或等价官方状态 |
+| Interrupt | interrupted 后继续下一轮 | 已完成 | Phase 5D-B | 中断后的同一 thread 可以继续发送新 turn，历史消息不丢失 |
+| Interrupt | 页面刷新后恢复 interrupted 状态 | 未开始 | Phase 6 | 刷新后历史页能从 app-server 状态显示 interrupted，而不是误报 completed |
+| Diagnostics | app-server transport close 与 pending request fail-fast | 部分完成 | Phase 6 | bridge/app-server 退出时 pending request 快速失败，UI 显示 diagnostics，不长时间挂起 |
+| Diagnostics | 未知 notification 可见诊断 | 部分完成 | Phase 6 | 未知 notification 不静默丢弃，在 diagnostics 中保留 method、source 和摘要 |
+| E2E / Smoke | 普通消息 vs 工具消息反例 | 未开始 | Phase 5D | 同一轮验证无工具普通消息和触发工具消息，断言工具 cell 只在触发路径出现 |
+| E2E / Smoke | 无 approval vs approval 反例 | 未开始 | Phase 5D | 同一轮验证普通消息无 PermissionPrompt，触发权限时才出现 PermissionPrompt |
+| E2E / Smoke | 新 thread vs resume thread 反例 | 已完成 | Phase 5D-B | 新建会话走 `thread/start`，历史继续发送先走 `thread/resume`，两者日志和 UI 行为可区分 |
+| E2E / Smoke | success vs failed / interrupted 反例 | 未开始 | Phase 6 | completed、failed、interrupted 三类状态分别有可复现验证记录 |
+
+优先级说明：
+
+- Phase 5D 优先补齐“用户已经能触发但还没有完整边界保护”的路径：resume 多轮、approval、interrupt 和反例 smoke。
+- Phase 6 再补齐更重的历史管理、完整工具语义、大输出、分页和诊断深化。
+- Web 不手工拼接历史 prompt、不使用 unstable `thread/resume.history` 的决策保持不变；复杂场景也必须基于官方 app-server 状态恢复和 notification 驱动。
+
+## Phase 5D-B：Resume 复杂边界优先
+
+目标：不继续扩展简单 demo，而是优先补齐用户已经能触发的复杂边界，确保历史继续发送、approval、中断和反例 smoke 不串线。
+
+架构：继续以官方 TUI 和 generated schema 为准。Web 只调用 app-server 官方方法并消费 notification；ChatView 仍保持 CodexWeb UI，只在 app-server 分支覆盖发送、approval 和中断行为。
+
+本阶段不做：分页加载、归档/删除/重命名、完整大输出截断、所有工具类型的深度详情、真实 `CODEX_HOME` 验收。
+
+实施清单：
+
+- [x] 对照官方 TUI `turn_interrupt` 和 generated schema，确认 `turn/interrupt` 参数与响应。
+- [x] 新增 `interrupt-adapter`，只构造 `{ threadId, turnId }`，不创造 Web 私有中断协议。
+- [x] `AppServerProvider` 暴露 `interruptTurn()`，有 active turn 时调用 `turn/interrupt`，无 active turn 时快速返回。
+- [x] `ChatView` app-server 分支的 Stop 按钮调用 `interruptTurn()`，旧 `/api/chat` stop 仍只用于 legacy stream。
+- [x] 历史页继续按 thread id 过滤 active turn 和 approval，避免切换历史 thread 时串线。
+- [x] 补单元测试覆盖中断参数、无 active turn 快速返回、interrupted 状态映射。
+- [x] 补反例验证记录：新 thread vs resume thread、普通消息 vs 触发中断路径。
+
+验证：
+
+```bash
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 5D-B 记录：
+
+- 2026-07-09：官方语义确认：generated schema 中 `turn/interrupt` 参数为 `{ threadId, turnId }`，响应为空对象；TUI 通过 app-server `turn_interrupt(thread_id, turn_id)` 提交中断。
+- 2026-07-09：新增 `src/codex-web/interrupt-adapter.ts`，统一构造官方 `TurnInterruptParams`，并在无 active thread 或 terminal turn 时快速返回，不创造 Web 私有中断协议。
+- 2026-07-09：`AppServerProvider` 新增 `interruptTurn()`；`/chat` 与 `/chat/[id]` 的 app-server 分支均接入 Stop 行为，停止按钮调用 `turn/interrupt`。
+- 2026-07-09：修复 `MessageInputParts` 流式状态下 Stop 按钮仍受 composer disabled 影响的问题；新增 `messageInput.stopAriaLabel` 中英文文案。
+- 2026-07-09：已运行 `npm run test -- src/codex-web`，6 个测试文件、19 个测试通过。
+- 2026-07-09：已运行 `npm run test`，10 个测试文件、37 个测试通过；已运行 `npm run build`，通过但仍有既有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
+- 2026-07-09：真实页面验证：历史页 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 连续发送“请只回复：resume-5d-a”和“请只回复：resume-5d-b”均完成，composer 恢复。
+- 2026-07-09：真实页面反例验证：新建 `/chat` 发送“请只回复：new-5d”完成，与历史 resume 路径区分。
+- 2026-07-09：真实页面中断验证：新建 `/chat` 发送“请运行命令：sleep 60 && echo done”后点击“停止生成”，页面显示“Codex 已中断。可以继续发送下一轮。”；随后发送“请只回复：after-interrupt”完成，当前 console 0 errors / 0 warnings；验证后已停止 dev server。
 
 Phase 4C 记录：
 

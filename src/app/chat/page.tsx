@@ -74,7 +74,7 @@ function NewChatPageInner() {
   useEffect(() => { prefillTextRef.current = prefillText; }, [prefillText]);
   const { setPendingApprovalSessionId } = usePanel();
   const appServerState = useAppServerState();
-  const { sendOneTurn, respondToApproval } = useAppServerActions();
+  const { sendOneTurn, interruptTurn, respondToApproval } = useAppServerActions();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -344,9 +344,20 @@ function NewChatPageInner() {
   }, []);
 
   const stopStreaming = useCallback(() => {
+    if (appServerTurn?.threadId) {
+      void interruptTurn({
+        threadId: appServerTurn.threadId,
+        turnId: appServerTurn.turnId,
+      }).catch((error) => {
+        const errMsg = error instanceof Error ? error.message : 'Unknown error';
+        setErrorBanner({ message: 'Codex 中断失败', description: errMsg });
+      });
+      return;
+    }
+
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
-  }, []);
+  }, [appServerTurn, interruptTurn]);
 
   const handlePermissionResponse = useCallback(async (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => {
     if (appServerApproval) {
@@ -503,7 +514,16 @@ function NewChatPageInner() {
           throw new Error(completedTurn.errorMessage || 'Codex turn failed');
         }
         if (completedTurn.status === 'interrupted') {
-          throw new Error('Codex turn interrupted');
+          const assistantMessage: Message = {
+            id: 'temp-interrupted-' + Date.now(),
+            session_id: completedTurn.threadId || virtualSessionId,
+            role: 'assistant',
+            content: 'Codex 已中断。可以继续发送下一轮。',
+            created_at: new Date().toISOString(),
+            token_usage: null,
+          };
+          setMessages((prev) => [...prev, assistantMessage]);
+          return;
         }
         if (completedTurn.assistantText.trim()) {
           const assistantMessage: Message = {

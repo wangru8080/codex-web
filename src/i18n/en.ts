@@ -1957,6 +1957,7 @@ const en = {
   'messageInput.actionCallCli': 'Call CLI tool',
   'messageInput.removeChipAriaLabel': 'Remove {name}',
   'messageInput.submitAriaLabel': 'Send message',
+  'messageInput.stopAriaLabel': 'Stop generation',
   'permission.defaultDesc': 'Follow confirmation rules',
   'permission.fullAccessDesc': 'Fewer confirmations; trusted projects only',
   // Phase 2 Step 4c — composer runtime selector (between mode and permission).

@@ -51,7 +51,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [resumedCwd, setResumedCwd] = useState<string>('');
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle, setFileTreeOpen } = usePanel();
   const appServerState = useAppServerState();
-  const { readThread, resumeThread, sendTurnInThread, respondToApproval } = useAppServerActions();
+  const { readThread, resumeThread, sendTurnInThread, interruptTurn, respondToApproval } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
   const { t } = useTranslation();
@@ -294,6 +294,12 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         appServerTurn={appServerTurn}
         appServerApproval={appServerApproval}
         onAppServerApprovalDecision={respondToApproval}
+        appServerInterrupt={appServerTurn ? async () => {
+          await interruptTurn({
+            threadId: appServerTurn.threadId || resumedThreadId || id,
+            turnId: appServerTurn.turnId,
+          });
+        } : undefined}
         appServerSend={canResumeAppServerThread ? async ({ content, cwd, model }) => {
           const nextModel = resumedModel || model || sessionModel || defaultAppServerModel;
           let threadId = resumedThreadId;

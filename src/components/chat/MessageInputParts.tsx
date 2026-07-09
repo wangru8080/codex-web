@@ -51,13 +51,14 @@ export function FileAwareSubmitButton({
     isStreaming,
     disabled: !!disabled,
   });
+  const canStop = isStreaming && !canQueue && !!onStop;
 
   return (
     <PromptInputSubmit
       status={canQueue ? 'ready' : status}
       onStop={canQueue ? undefined : onStop}
-      disabled={!enabled}
-      aria-label={t('messageInput.submitAriaLabel' as TranslationKey)}
+      disabled={!enabled && !canStop}
+      aria-label={t((canStop ? 'messageInput.stopAriaLabel' : 'messageInput.submitAriaLabel') as TranslationKey)}
       // Stable hook for programmatic clicks. The Run Checkpoint Round 2
       // confirm-and-send flow needs to find this button in a locale-
       // agnostic way; aria-label is i18n'd ("发送消息" in zh) and
