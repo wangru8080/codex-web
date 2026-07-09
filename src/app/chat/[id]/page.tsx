@@ -46,9 +46,12 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [sessionReadOnly, setSessionReadOnly] = useState(false);
   const [sessionWorkingDirectory, setSessionWorkingDirectory] = useState('');
   const [sessionProjectName, setSessionProjectName] = useState('');
+  const [resumedThreadId, setResumedThreadId] = useState<string | null>(null);
+  const [resumedModel, setResumedModel] = useState<string>('');
+  const [resumedCwd, setResumedCwd] = useState<string>('');
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle, setFileTreeOpen } = usePanel();
   const appServerState = useAppServerState();
-  const { readThread } = useAppServerActions();
+  const { readThread, resumeThread, sendTurnInThread, respondToApproval } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
   const { t } = useTranslation();
@@ -68,6 +71,9 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setSessionReadOnly(false);
     setSessionWorkingDirectory('');
     setSessionProjectName('');
+    setResumedThreadId(null);
+    setResumedModel('');
+    setResumedCwd('');
     setSessionInfoLoaded(false);
 
     let cancelled = false;
@@ -248,6 +254,24 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
 
   const isAppServerThread = appServerState.connection.data === 'connected';
   const messageApiBase = `/api/chat/sessions/${encodeURIComponent(id)}`;
+  const activeAppServerTurn = appServerState.activeTurn?.data ?? null;
+  const appServerTurn =
+    isAppServerThread &&
+    activeAppServerTurn &&
+    (activeAppServerTurn.threadId === id || activeAppServerTurn.threadId === resumedThreadId)
+      ? activeAppServerTurn
+      : null;
+  const appServerApproval =
+    isAppServerThread &&
+    appServerState.pendingApproval?.data &&
+    (appServerState.pendingApproval.data.threadId === id || appServerState.pendingApproval.data.threadId === resumedThreadId)
+      ? appServerState.pendingApproval.data
+      : null;
+  const defaultAppServerModel =
+    appServerState.models?.data.data.find((model) => !model.hidden && model.isDefault)?.id ||
+    appServerState.models?.data.data.find((model) => !model.hidden)?.id ||
+    '';
+  const canResumeAppServerThread = isAppServerThread && !!sessionWorkingDirectory;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -262,11 +286,42 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         initialPermissionProfile={sessionPermissionProfile}
         initialMode={sessionMode}
         initialHasSummary={sessionHasSummary}
-        readOnly={sessionReadOnly || isAppServerThread}
-        readOnlyReason="这是从 app-server thread/read 读取的 Codex 历史会话；继续发送将在 Phase 5 后续接入 thread/resume。"
+        readOnly={!isAppServerThread && sessionReadOnly}
+        readOnlyReason="这是只读历史会话，当前版本不能继续发送。"
         messageApiBase={messageApiBase}
         workingDirectory={sessionWorkingDirectory}
         projectName={sessionProjectName}
+        appServerTurn={appServerTurn}
+        appServerApproval={appServerApproval}
+        onAppServerApprovalDecision={respondToApproval}
+        appServerSend={canResumeAppServerThread ? async ({ content, cwd, model }) => {
+          const nextModel = resumedModel || model || sessionModel || defaultAppServerModel;
+          let threadId = resumedThreadId;
+          let turnCwd = resumedCwd || cwd || sessionWorkingDirectory;
+          let turnModel = nextModel;
+
+          if (!threadId) {
+            const resume = await resumeThread({
+              threadId: id,
+              cwd: turnCwd,
+              model: nextModel,
+            });
+            threadId = resume.thread.id;
+            turnCwd = resume.cwd || turnCwd;
+            turnModel = resume.model || turnModel;
+            setResumedThreadId(threadId);
+            setResumedCwd(turnCwd);
+            setResumedModel(turnModel);
+            setSessionModel(turnModel);
+          }
+
+          return sendTurnInThread({
+            threadId,
+            content,
+            cwd: turnCwd,
+            model: turnModel,
+          });
+        } : undefined}
       />
     </div>
   );

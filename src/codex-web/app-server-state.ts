@@ -3,6 +3,7 @@ import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccoun
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
 import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
 import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadReadResponse";
+import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
 import type { JsonRpcNotification, JsonRpcRequest } from "@/codex/protocol/json-rpc";
 import type { AppServerApprovalRequest } from "./approval-adapter";
 import type { AppServerTurnState } from "./turn-reducer";
@@ -14,6 +15,7 @@ export type SourceBreadcrumb =
   | "app-server.account/read"
   | "app-server.thread/list"
   | "app-server.thread/read"
+  | "app-server.thread/resume"
   | "app-server.notification"
   | "app-server.serverRequest"
   | "web-bridge";
@@ -32,6 +34,7 @@ export type CodexWebAppServerState = {
   account: Sourced<GetAccountResponse> | null;
   threads: Sourced<ThreadListResponse> | null;
   selectedThread: Sourced<ThreadReadResponse> | null;
+  resumedThread: Sourced<ThreadResumeResponse> | null;
   activeTurn: Sourced<AppServerTurnState> | null;
   pendingApproval: Sourced<AppServerApprovalRequest> | null;
   diagnostics: Array<Sourced<JsonRpcNotification | JsonRpcRequest | { message: string }>>;
@@ -44,6 +47,7 @@ export const initialAppServerState: CodexWebAppServerState = {
   account: null,
   threads: null,
   selectedThread: null,
+  resumedThread: null,
   activeTurn: null,
   pendingApproval: null,
   diagnostics: [],

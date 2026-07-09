@@ -237,6 +237,7 @@ Smoke 记录：
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 4C approval 接线后打开 `/chat` | 通过 | 真实浏览器打开 `http://192.168.3.12:3000/chat`，页面标题 `CodexWeb`，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase4c-20260709/` |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 5A thread/list 与 thread/read 历史恢复 | 通过 | `thread/list` 返回 22 个隔离环境 thread；真实浏览器打开 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 显示 user “请只回复：pong” 与 assistant “pong”，只读提示可见，console 0 errors / 0 warnings；Playwright 日志保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase5a-20260709/` |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 5B 历史工具 cell 默认折叠 | 通过 | 隔离历史 thread `019f1c15-da0b-71e1-a3c3-d407b96f8ccb` 含 `fileChange` item；真实浏览器打开历史页后看到 `已处理` 工具摘要，默认 `aria-expanded=false` 且详情不可见；点击后展开显示 `fileChange` 详情，再次点击恢复折叠；console 0 errors / 0 warnings |
+| 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | `gpt-5.5` | Phase 5C 历史 thread resume 后继续发送 | 通过 | 真实浏览器打开 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58`；composer 可输入，发送“请只回复：resume-pong”后页面显示 user 新消息和 assistant `resume-pong`，状态恢复，console 0 errors / 0 warnings；验证后已停止 dev server |
 
 Phase 4A 记录：
 
@@ -297,6 +298,38 @@ Phase 5A 记录：
 - 2026-07-09：已运行 `npm run test -- src/codex-web/thread-history-adapter.test.ts`，1 个测试文件、3 个测试通过；已运行 `npm run test -- src/codex-web`，4 个测试文件、13 个测试通过。
 - 2026-07-09：已运行 `npm run test`，8 个测试文件、31 个测试通过；已运行 `npm run build`，通过但仍有既有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
 - 2026-07-09：真实页面验证：启动 dev server 后打开 `/chat/019f1c15-da0b-71e1-a3c3-d407b96f8ccb`；历史工具 cell 默认折叠，展开后显示 `fileChange` 详情，再次点击恢复折叠；console 0 errors / 0 warnings；验证后已停止 dev server。
+
+## Phase 5C：Thread Resume 与历史会话继续发送
+
+用户可见变化：打开 app-server 历史 thread 后，可以直接继续发送新消息；第一条继续消息前 Web 调用官方 `thread/resume`，后续新 turn 仍由 app-server notification 驱动。
+本阶段不做：手工拼接历史 prompt、使用 unstable `thread/resume.history`、历史 diff 完整映射、分页加载、归档/删除/重命名。
+
+- [x] 对照官方 TUI `resume_thread` 与 app-server `thread_processor`，确认历史上下文由 app-server/core 从 persisted rollout 恢复。
+- [x] 新增 `resume-adapter`，构造 `thread/resume` 参数时只使用 `threadId`、`cwd`、`model` 和 approval policy，不传 `history`。
+- [x] `AppServerProvider` 暴露 `resumeThread()`，source breadcrumb 为 `app-server.thread/resume`。
+- [x] `AppServerProvider` 暴露 `sendTurnInThread()`，在已恢复 thread 上调用 `turn/start`，继续复用 reducer、approval 和工具 cell。
+- [x] `/chat/[id]` 历史页首次发送前执行 `thread/resume`，并用 resume response 的 `thread.id`、`cwd`、`model` 启动新 turn。
+- [x] `ChatView` 增加 app-server 发送 override，历史页保持 CodexWeb 输入框和消息流 UI，不走旧 `/api/chat` 流。
+- [x] 历史页 app-server approval 继续复用 CodexWeb `PermissionPrompt` 显示层，response 仍由 `approval-adapter` 按官方 schema 返回。
+
+验证：
+
+```bash
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 5C 记录：
+
+- 2026-07-09：官方语义确认：`thread/resume` 正常客户端应传 `threadId`；`thread/resume.history` 标注为 unstable，不用于 Web 第一版。历史上下文会进入模型上下文，但由 app-server/core 恢复，不由 Web 拼 prompt。
+- 2026-07-09：`AppServerProvider` 新增 `resumeThread()` 和 `sendTurnInThread()`；`sendOneTurn()` 复用同一条 resumed/new-thread turn 启动逻辑。
+- 2026-07-09：`ChatView` 新增 app-server 发送 override；有 override 时绕过旧 provider/API 发送 gate，并使用外部 `appServerTurn` 派生 streaming/tool 状态。
+- 2026-07-09：已运行 `npm run test -- src/codex-web`，5 个测试文件、14 个测试通过。
+- 2026-07-09：已运行 `npm run test`，9 个测试文件、32 个测试通过；已运行 `npm run build`，通过但仍有既有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
+- 2026-07-09：真实页面验证：启动 dev server 后打开 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58`；发送“请只回复：resume-pong”后历史页追加 user 新消息和 assistant `resume-pong`，处理状态恢复，console 0 errors / 0 warnings；验证后已停止 dev server。
 
 Phase 4C 记录：
 

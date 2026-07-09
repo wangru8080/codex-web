@@ -9,6 +9,7 @@ import type { ThreadListParams } from "@/codex/protocol/generated/v2/ThreadListP
 import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
 import type { ThreadReadParams } from "@/codex/protocol/generated/v2/ThreadReadParams";
 import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadReadResponse";
+import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
 import type { ThreadStartParams } from "@/codex/protocol/generated/v2/ThreadStartParams";
 import type { ThreadStartResponse } from "@/codex/protocol/generated/v2/ThreadStartResponse";
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
@@ -20,6 +21,7 @@ import {
 } from "./approval-adapter";
 import { AppServerBrowserClient } from "./app-server-browser-client";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
+import { buildThreadResumeParams } from "./resume-adapter";
 import {
   createStartingTurnState,
   initialAppServerTurnState,
@@ -36,8 +38,23 @@ export type SendOneTurnParams = {
   model?: string;
 };
 
+export type ResumeThreadParams = {
+  threadId: string;
+  cwd?: string;
+  model?: string;
+};
+
+export type SendTurnInThreadParams = {
+  threadId: string;
+  content: string;
+  cwd: string;
+  model?: string;
+};
+
 export type AppServerActions = {
   sendOneTurn: (params: SendOneTurnParams) => Promise<AppServerTurnState>;
+  resumeThread: (params: ResumeThreadParams) => Promise<ThreadResumeResponse>;
+  sendTurnInThread: (params: SendTurnInThreadParams) => Promise<AppServerTurnState>;
   refreshThreads: () => Promise<ThreadListResponse>;
   readThread: (threadId: string) => Promise<ThreadReadResponse>;
   respondToApproval: (decision: AppServerApprovalDecision) => Promise<void>;
@@ -231,6 +248,72 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
+  const resumeThread = useCallback(async ({ threadId, cwd, model }: ResumeThreadParams) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    const response = (await client.request(
+      "thread/resume",
+      buildThreadResumeParams({ threadId, cwd, model }),
+    )) as ThreadResumeResponse;
+    setState((current) => ({
+      ...current,
+      resumedThread: { source: "app-server.thread/resume", data: response },
+      selectedThread: { source: "app-server.thread/resume", data: { thread: response.thread } },
+    }));
+    return response;
+  }, []);
+
+  const sendTurnInThread = useCallback(async ({ threadId, content, cwd, model }: SendTurnInThreadParams) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+    const trimmed = content.trim();
+    if (!trimmed) {
+      throw new Error("消息内容不能为空");
+    }
+
+    setState((current) => ({
+      ...current,
+      activeTurn: {
+        source: "app-server.notification",
+        data: {
+          ...createStartingTurnState(),
+          threadId,
+        },
+      },
+    }));
+
+    const completed = waitForTurnCompletion(turnCompletionRef);
+    const turnParams: TurnStartParams = {
+      threadId,
+      input: [{ type: "text", text: trimmed, text_elements: [] }],
+      cwd,
+      model: model || null,
+      approvalPolicy: "on-request",
+    };
+    const turnResponse = (await client.request("turn/start", turnParams)) as TurnStartResponse;
+    setState((current) => ({
+      ...current,
+      activeTurn: {
+        source: "app-server.notification",
+        data: {
+          ...(current.activeTurn?.data ?? createStartingTurnState()),
+          threadId,
+          turnId: turnResponse.turn.id,
+          status: "running",
+        },
+      },
+    }));
+
+    const finalTurn = await completed;
+    void refreshThreads().catch(() => undefined);
+    return finalTurn;
+  }, [refreshThreads]);
+
   const sendOneTurn = useCallback(async ({ content, cwd, model }: SendOneTurnParams) => {
     const client = clientRef.current;
     if (!client) {
@@ -267,36 +350,20 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       },
     }));
 
-    const completed = waitForTurnCompletion(turnCompletionRef);
-    const turnParams: TurnStartParams = {
-      threadId,
-      input: [{ type: "text", text: trimmed, text_elements: [] }],
-      cwd,
-      model: model || null,
-      approvalPolicy: "on-request",
-    };
-    const turnResponse = (await client.request("turn/start", turnParams)) as TurnStartResponse;
-    setState((current) => ({
-      ...current,
-      activeTurn: {
-        source: "app-server.notification",
-        data: {
-          ...(current.activeTurn?.data ?? createStartingTurnState()),
-          threadId,
-          turnId: turnResponse.turn.id,
-          status: "running",
-        },
-      },
-    }));
-
-    const finalTurn = await completed;
-    void refreshThreads().catch(() => undefined);
-    return finalTurn;
-  }, [refreshThreads]);
+    return sendTurnInThread({ threadId, content: trimmed, cwd, model });
+  }, [sendTurnInThread]);
 
   const actions = useMemo<AppServerActions>(
-    () => ({ sendOneTurn, refreshThreads, readThread, respondToApproval, resetTurn }),
-    [sendOneTurn, refreshThreads, readThread, respondToApproval, resetTurn],
+    () => ({
+      sendOneTurn,
+      resumeThread,
+      sendTurnInThread,
+      refreshThreads,
+      readThread,
+      respondToApproval,
+      resetTurn,
+    }),
+    [sendOneTurn, resumeThread, sendTurnInThread, refreshThreads, readThread, respondToApproval, resetTurn],
   );
 
   return (

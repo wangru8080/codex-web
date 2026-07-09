@@ -64,6 +64,9 @@ import {
   getRewindPoints,
   respondToPermission,
 } from '@/lib/stream-session-manager';
+import type { AppServerApprovalDecision, AppServerApprovalRequest } from '@/codex-web/approval-adapter';
+import { deriveCodexWebToolState } from '@/codex-web/tool-adapter';
+import type { AppServerTurnState } from '@/codex-web/turn-reducer';
 
 interface QueuedMessage {
   content: string;
@@ -99,6 +102,10 @@ interface ChatViewProps {
   messageApiBase?: string;
   workingDirectory?: string;
   projectName?: string;
+  appServerTurn?: AppServerTurnState | null;
+  appServerApproval?: AppServerApprovalRequest | null;
+  onAppServerApprovalDecision?: (decision: AppServerApprovalDecision) => Promise<void>;
+  appServerSend?: (params: { content: string; cwd: string; model?: string }) => Promise<AppServerTurnState>;
 }
 
 /** Maximum messages kept in React state. Older messages are trimmed and reloaded on scroll. */
@@ -114,7 +121,27 @@ const CONFIRM_REQUIRED = new Set<import('./TerminalReasonChip').TerminalActionId
   'retry_simple',
 ]);
 
-export function ChatView({ sessionId, initialMessages = [], initialHasMore = false, modelName, providerId, runtimePin: initialRuntimePin, initialPermissionProfile, initialMode, initialHasSummary, readOnly = false, readOnlyReason, adoptCodexSessionId, messageApiBase, workingDirectory: sessionWorkingDirectory, projectName }: ChatViewProps) {
+export function ChatView({
+  sessionId,
+  initialMessages = [],
+  initialHasMore = false,
+  modelName,
+  providerId,
+  runtimePin: initialRuntimePin,
+  initialPermissionProfile,
+  initialMode,
+  initialHasSummary,
+  readOnly = false,
+  readOnlyReason,
+  adoptCodexSessionId,
+  messageApiBase,
+  workingDirectory: sessionWorkingDirectory,
+  projectName,
+  appServerTurn,
+  appServerApproval,
+  onAppServerApprovalDecision,
+  appServerSend,
+}: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory: panelWorkingDirectory, setPendingApprovalSessionId, setFileTreeOpen, setIsAssistantWorkspace } = usePanel();
   const workingDirectory = sessionWorkingDirectory ?? panelWorkingDirectory;
   const { t } = useTranslation();
@@ -466,14 +493,30 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
   useEffect(() => { setStreamSnapshot(getSnapshot(activeSessionId)); }, [activeSessionId]);
 
   // Derive rendering state from snapshot
-  const isStreaming = streamSnapshot?.phase === 'active';
-  const streamingContent = streamSnapshot?.streamingContent ?? '';
-  const toolUses = streamSnapshot?.toolUses ?? [];
-  const toolResults = streamSnapshot?.toolResults ?? [];
-  const streamingToolOutput = streamSnapshot?.streamingToolOutput ?? '';
-  const streamingThinkingContent = streamSnapshot?.streamingThinkingContent ?? '';
-  const statusText = streamSnapshot?.statusText;
-  const pendingPermission = streamSnapshot?.pendingPermission ?? null;
+  const legacyIsStreaming = streamSnapshot?.phase === 'active';
+  const [appServerLocalStreaming, setAppServerLocalStreaming] = useState(false);
+  const appServerToolState = useMemo(
+    () => deriveCodexWebToolState(appServerTurn ?? null),
+    [appServerTurn],
+  );
+  const appServerStatusText =
+    appServerTurn?.status === 'running'
+      ? 'Codex 正在处理...'
+      : appServerTurn?.status === 'failed'
+        ? 'Codex 处理失败'
+        : appServerTurn?.status === 'interrupted'
+          ? 'Codex 已中断'
+          : undefined;
+  const isStreaming = appServerSend
+    ? appServerLocalStreaming || appServerTurn?.status === 'running'
+    : legacyIsStreaming;
+  const streamingContent = appServerSend ? appServerTurn?.assistantText ?? '' : streamSnapshot?.streamingContent ?? '';
+  const toolUses = appServerSend ? appServerToolState.toolUses : streamSnapshot?.toolUses ?? [];
+  const toolResults = appServerSend ? appServerToolState.toolResults : streamSnapshot?.toolResults ?? [];
+  const streamingToolOutput = appServerSend ? appServerToolState.streamingToolOutput : streamSnapshot?.streamingToolOutput ?? '';
+  const streamingThinkingContent = appServerSend ? '' : streamSnapshot?.streamingThinkingContent ?? '';
+  const statusText = appServerSend ? appServerStatusText : streamSnapshot?.statusText;
+  const pendingPermission = appServerApproval?.permission ?? streamSnapshot?.pendingPermission ?? null;
   const permissionResolved = streamSnapshot?.permissionResolved ?? null;
   const rewindPoints = getRewindPoints(activeSessionId);
 
@@ -524,7 +567,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
 
   // Pending image generation notices
   const pendingImageNoticesRef = useRef<string[]>([]);
-  const sendMessageRef = useRef<(content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[]) => Promise<boolean | void>>(undefined);
+  const sendMessageRef = useRef<(content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[]) => Promise<boolean | void>>(undefined);
   const initMetaRef = useRef<{ tools?: unknown; slash_commands?: unknown; skills?: unknown } | null>(null);
 
   const handleModeChange = useCallback((newMode: string) => {
@@ -972,10 +1015,16 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
 
   const handlePermissionResponse = useCallback(
     async (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => {
+      if (appServerApproval && onAppServerApprovalDecision) {
+        setPendingApprovalSessionId('');
+        await onAppServerApprovalDecision(decision);
+        return;
+      }
+
       setPendingApprovalSessionId('');
       await respondToPermission(activeSessionId, decision, updatedInput, denyMessage);
     },
-    [activeSessionId, setPendingApprovalSessionId]
+    [activeSessionId, appServerApproval, onAppServerApprovalDecision, setPendingApprovalSessionId]
   );
 
   /** Start an API stream for the given content. Does NOT add a user message to the list. */
@@ -1071,6 +1120,73 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
   const sendMessage = useCallback(
     async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[]) => {
       if (readOnly) return false;
+      if (appServerSend) {
+        if (files && files.length > 0) {
+          console.warn('[ChatView] app-server 历史恢复发送暂不支持附件');
+          return false;
+        }
+
+        const trimmed = content.trim();
+        if (!trimmed) return false;
+
+        if (isStreaming) {
+          setMessageQueue((prev) => [...prev, { content, files, systemPromptAppend, displayOverride, mentions, selectedSkills }]);
+          return;
+        }
+
+        const userMessage: Message = {
+          id: 'temp-' + Date.now(),
+          session_id: activeSessionId,
+          role: 'user',
+          content: displayOverride || content,
+          created_at: new Date().toISOString(),
+          token_usage: null,
+        };
+
+        setAppServerLocalStreaming(true);
+        pendingOptimisticUserIdRef.current = userMessage.id;
+        cappedSetMessages((prev) => [...prev, userMessage]);
+
+        try {
+          const completedTurn = await appServerSend({
+            content: trimmed,
+            cwd: workingDirectory,
+            model: currentModel,
+          });
+          if (completedTurn.status === 'failed') {
+            throw new Error(completedTurn.errorMessage || 'Codex turn failed');
+          }
+          if (completedTurn.status === 'interrupted') {
+            throw new Error('Codex turn interrupted');
+          }
+          if (completedTurn.assistantText.trim()) {
+            const assistantMessage: Message = {
+              id: 'temp-assistant-' + Date.now(),
+              session_id: completedTurn.threadId || activeSessionId,
+              role: 'assistant',
+              content: completedTurn.assistantText.trim(),
+              created_at: new Date().toISOString(),
+              token_usage: null,
+            };
+            cappedSetMessages((prev) => [...prev, assistantMessage]);
+          }
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : String(error);
+          const errorMessage: Message = {
+            id: 'temp-error-' + Date.now(),
+            session_id: activeSessionId,
+            role: 'assistant',
+            content: `Codex 处理失败：${errMsg}`,
+            created_at: new Date().toISOString(),
+            token_usage: null,
+          };
+          cappedSetMessages((prev) => [...prev, errorMessage]);
+        } finally {
+          setAppServerLocalStreaming(false);
+          pendingOptimisticUserIdRef.current = null;
+        }
+        return;
+      }
       // Hoist provider-state guards above message append. Without this
       // sendMessage would write a user bubble into the local list and
       // *then* doStartStream would refuse to fire — leaving the user
@@ -1171,7 +1287,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
       cappedSetMessages((prev) => [...prev, userMessage]);
       doStartStream(content, files, systemPromptAppend, displayOverride, mentions, selectedSkills, effectiveSessionId);
     },
-    [readOnly, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]
+    [readOnly, appServerSend, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]
   );
 
   sendMessageRef.current = sendMessage;
@@ -1179,6 +1295,23 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
   // ── Dequeue: when streaming finishes and queue is non-empty, send next ──
   useEffect(() => {
     if (!isStreaming && messageQueue.length > 0 && !dequeuingRef.current) {
+      if (appServerSend) {
+        dequeuingRef.current = true;
+        const [next, ...rest] = messageQueue;
+        setMessageQueue(rest);
+        queueMicrotask(() => {
+          sendMessageRef.current?.(
+            next.content,
+            next.files,
+            next.systemPromptAppend,
+            next.displayOverride,
+            next.mentions,
+            next.selectedSkills,
+          );
+        });
+        return;
+      }
+
       // Same hoisted guards as sendMessage. Idle = wait (re-runs when
       // fetchState transitions). noCompatible = drop the queue so it
       // doesn't loop on a provider that's never coming back.
@@ -1230,7 +1363,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
     if (isStreaming) {
       dequeuingRef.current = false;
     }
-  }, [isStreaming, messageQueue, doStartStream, cappedSetMessages, activeSessionId, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]);
+  }, [isStreaming, messageQueue, appServerSend, doStartStream, cappedSetMessages, activeSessionId, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]);
 
   // Expose widget drill-down bridge: widgets can call window.__widgetSendMessage(text)
   // to trigger follow-up questions (e.g. clicking a node to get deeper explanation)
@@ -1377,9 +1510,11 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
               onStop={stopStreaming}
               disabled={
                 readOnly
-                || noCompatibleProvider
-                || providerFetchState === 'idle'
-                || sessionProviderRuntimeIncompatible
+                || (!appServerSend && (
+                  noCompatibleProvider
+                  || providerFetchState === 'idle'
+                  || sessionProviderRuntimeIncompatible
+                ))
               }
               isStreaming={isStreaming}
               sessionId={activeSessionId}
@@ -1470,7 +1605,7 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
       )}
       {/* Permission prompt */}
       <PermissionPrompt
-        pendingPermission={pendingPermission}
+        pendingPermission={appServerApproval?.permission ?? pendingPermission}
         permissionResolved={permissionResolved}
         onPermissionResponse={handlePermissionResponse}
         toolUses={toolUses}
@@ -1658,9 +1793,11 @@ export function ChatView({ sessionId, initialMessages = [], initialHasMore = fal
         // guard above is belt-and-suspenders.
         disabled={
           readOnly
-          || noCompatibleProvider
-          || providerFetchState === 'idle'
-          || sessionProviderRuntimeIncompatible
+          || (!appServerSend && (
+            noCompatibleProvider
+            || providerFetchState === 'idle'
+            || sessionProviderRuntimeIncompatible
+          ))
         }
         isStreaming={isStreaming}
         sessionId={activeSessionId}
