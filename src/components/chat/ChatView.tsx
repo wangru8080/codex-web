@@ -26,6 +26,7 @@ import { buildCheckpoints } from '@/lib/run-checkpoint';
 // dropped from this surface, both go away too.
 import { useGlobalAgentRuntime } from '@/hooks/useGlobalAgentRuntime';
 import { Button } from '@/components/ui/button';
+import { ErrorBanner } from '@/components/ui/error-banner';
 import { usePanel } from '@/hooks/usePanel';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
@@ -104,8 +105,9 @@ interface ChatViewProps {
   projectName?: string;
   appServerTurn?: AppServerTurnState | null;
   appServerApproval?: AppServerApprovalRequest | null;
+  appServerNotice?: { message: string; description?: string } | null;
   onAppServerApprovalDecision?: (decision: AppServerApprovalDecision) => Promise<void>;
-  appServerSend?: (params: { content: string; cwd: string; model?: string }) => Promise<AppServerTurnState>;
+  appServerSend?: (params: { content: string; cwd: string; model?: string; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
   appServerInterrupt?: () => Promise<void>;
 }
 
@@ -140,6 +142,7 @@ export function ChatView({
   projectName,
   appServerTurn,
   appServerApproval,
+  appServerNotice,
   onAppServerApprovalDecision,
   appServerSend,
   appServerInterrupt,
@@ -497,6 +500,7 @@ export function ChatView({
   // Derive rendering state from snapshot
   const legacyIsStreaming = streamSnapshot?.phase === 'active';
   const [appServerLocalStreaming, setAppServerLocalStreaming] = useState(false);
+  const [appServerErrorBanner, setAppServerErrorBanner] = useState<{ message: string; description?: string } | null>(null);
   const appServerToolState = useMemo(
     () => deriveCodexWebToolState(appServerTurn ?? null),
     [appServerTurn],
@@ -1150,28 +1154,48 @@ export function ChatView({
           return;
         }
 
-        const userMessage: Message = {
-          id: 'temp-' + Date.now(),
-          session_id: activeSessionId,
-          role: 'user',
-          content: displayOverride || content,
-          created_at: new Date().toISOString(),
-          token_usage: null,
-        };
-
         setAppServerLocalStreaming(true);
-        pendingOptimisticUserIdRef.current = userMessage.id;
-        cappedSetMessages((prev) => [...prev, userMessage]);
+        setAppServerErrorBanner(null);
+        let accepted = false;
 
         try {
           const completedTurn = await appServerSend({
             content: trimmed,
             cwd: workingDirectory,
             model: currentModel,
+            onAccepted: (threadId) => {
+              if (accepted) return;
+              accepted = true;
+              const userMessage: Message = {
+                id: 'temp-' + Date.now(),
+                session_id: threadId || activeSessionId,
+                role: 'user',
+                content: displayOverride || content,
+                created_at: new Date().toISOString(),
+                token_usage: null,
+              };
+              pendingOptimisticUserIdRef.current = userMessage.id;
+              cappedSetMessages((prev) => [...prev, userMessage]);
+            },
           });
           if (completedTurn.status === 'failed') {
             throw new Error(completedTurn.errorMessage || 'Codex turn failed');
           }
+
+          if (!accepted) {
+            accepted = true;
+            const userMessage: Message = {
+              id: 'temp-' + Date.now(),
+              session_id: completedTurn.threadId || activeSessionId,
+              role: 'user',
+              content: displayOverride || content,
+              created_at: new Date().toISOString(),
+              token_usage: null,
+            };
+            pendingOptimisticUserIdRef.current = userMessage.id;
+            cappedSetMessages((prev) => [...prev, userMessage]);
+          }
+
           if (completedTurn.status === 'interrupted') {
             const interruptedMessage: Message = {
               id: 'temp-interrupted-' + Date.now(),
@@ -1197,15 +1221,8 @@ export function ChatView({
           }
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error);
-          const errorMessage: Message = {
-            id: 'temp-error-' + Date.now(),
-            session_id: activeSessionId,
-            role: 'assistant',
-            content: `Codex 处理失败：${errMsg}`,
-            created_at: new Date().toISOString(),
-            token_usage: null,
-          };
-          cappedSetMessages((prev) => [...prev, errorMessage]);
+          setAppServerErrorBanner({ message: 'Codex 发送失败', description: errMsg });
+          if (!accepted) return false;
         } finally {
           setAppServerLocalStreaming(false);
           pendingOptimisticUserIdRef.current = null;
@@ -1494,6 +1511,7 @@ export function ChatView({
   // "clicked + in the assistant workspace" — both create an empty
   // session and land here.
   const isNewChat = messages.length === 0 && !isStreaming;
+  const appServerBanner = appServerErrorBanner ?? appServerNotice ?? null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -1527,6 +1545,14 @@ export function ChatView({
               >
                 {readOnlyReason ?? '这是只读历史会话，当前版本不能继续发送。'}
               </div>
+            )}
+            {appServerBanner && (
+              <ErrorBanner
+                message={appServerBanner.message}
+                description={appServerBanner.description}
+                className="mb-2"
+                onDismiss={appServerErrorBanner ? () => setAppServerErrorBanner(null) : undefined}
+              />
             )}
             <MessageInput
               key={activeSessionId}
@@ -1760,6 +1786,14 @@ export function ChatView({
         >
           {readOnlyReason ?? '这是只读历史会话，当前版本不能继续发送。'}
         </div>
+      )}
+      {appServerBanner && (
+        <ErrorBanner
+          message={appServerBanner.message}
+          description={appServerBanner.description}
+          className="mx-auto mb-2 w-full max-w-3xl"
+          onDismiss={appServerErrorBanner ? () => setAppServerErrorBanner(null) : undefined}
+        />
       )}
       {/* Task checklist — moved out of the FileTree sidebar. Default
           expanded; minimize via top-right toggle; auto-hides when 0

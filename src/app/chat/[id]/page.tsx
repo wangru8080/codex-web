@@ -10,6 +10,7 @@ import { usePanel } from '@/hooks/usePanel';
 import { useWorkspaceSidebarOptional } from '@/hooks/useWorkspaceSidebar';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { selectVisibleActiveTurn } from '@/codex-web/active-turn-visibility-adapter';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 
 function safeDecodeSessionId(id: string): string {
@@ -255,12 +256,10 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const isAppServerThread = appServerState.connection.data === 'connected';
   const messageApiBase = `/api/chat/sessions/${encodeURIComponent(id)}`;
   const activeAppServerTurn = appServerState.activeTurn?.data ?? null;
-  const appServerTurn =
-    isAppServerThread &&
-    activeAppServerTurn &&
-    (activeAppServerTurn.threadId === id || activeAppServerTurn.threadId === resumedThreadId)
-      ? activeAppServerTurn
-      : null;
+  const activeTurnVisibility = isAppServerThread
+    ? selectVisibleActiveTurn({ activeTurn: activeAppServerTurn, routeThreadId: id, resumedThreadId })
+    : { visibleTurn: null, notice: null };
+  const appServerTurn = activeTurnVisibility.visibleTurn;
   const appServerApproval =
     isAppServerThread &&
     appServerState.pendingApproval?.data &&
@@ -293,6 +292,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         projectName={sessionProjectName}
         appServerTurn={appServerTurn}
         appServerApproval={appServerApproval}
+        appServerNotice={activeTurnVisibility.notice}
         onAppServerApprovalDecision={respondToApproval}
         appServerInterrupt={appServerTurn ? async () => {
           await interruptTurn({
@@ -300,7 +300,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             turnId: appServerTurn.turnId,
           });
         } : undefined}
-        appServerSend={canResumeAppServerThread ? async ({ content, cwd, model }) => {
+        appServerSend={canResumeAppServerThread ? async ({ content, cwd, model, onAccepted }) => {
           const nextModel = resumedModel || model || sessionModel || defaultAppServerModel;
           let threadId = resumedThreadId;
           let turnCwd = resumedCwd || cwd || sessionWorkingDirectory;
@@ -326,6 +326,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             content,
             cwd: turnCwd,
             model: turnModel,
+            onAccepted,
           });
         } : undefined}
       />

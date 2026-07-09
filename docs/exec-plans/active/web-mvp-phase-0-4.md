@@ -341,8 +341,8 @@ Phase 5C 记录：
 |---|---|---|---|---|
 | Resume / History | 历史 thread 恢复后多轮连续发送 | 已完成 | Phase 5D-B | 同一历史 thread 连续发送至少 2 轮，消息顺序、active turn、composer 状态均正确恢复 |
 | Resume / History | 恢复后的 active turn 页面刷新再进入 | 未开始 | Phase 5D | turn running 期间刷新页面，重新进入同一 thread 后 UI 能显示进行中或明确 degraded 状态 |
-| Resume / History | 历史 thread 切换时 active turn 隔离 | 未开始 | Phase 5D | A thread running 时切到 B thread，不把 A 的 delta、approval 或工具状态显示到 B |
-| Resume / History | `thread/resume` 失败收口 | 未开始 | Phase 5D | resume 返回错误或 bridge 断开时，composer 恢复可用，消息区显示可见错误，不追加伪 assistant 成功消息 |
+| Resume / History | 历史 thread 切换时 active turn 隔离 | Code complete | Phase 5F-B | A thread running 时切到 B thread，不把 A 的 delta、approval 或工具状态显示到 B |
+| Resume / History | `thread/resume` 失败收口 | Code complete | Phase 5F-B | resume 返回错误或 bridge 断开时，composer 恢复可用，消息区显示可见错误，不追加伪 assistant 成功消息 |
 | Resume / History | 历史分页加载 | 未开始 | Phase 6 | thread/list 或 thread/read 有分页/截断时，UI 能继续加载且不重复消息 |
 | Resume / History | 历史归档、重命名、删除/清理入口 | 未开始 | Phase 6 | 仅接入官方 app-server 支持的方法；删除类操作必须按项目清理规则另行确认 |
 | Approval | 历史会话继续发送时触发 approval | 已完成 | Phase 5E-B | resume 后触发 command/file/permission approval，PermissionPrompt 出现并按官方 schema 返回 response |
@@ -445,6 +445,61 @@ Phase 4C 记录：
 - 2026-07-09：已运行 `npm run typecheck`，通过；已运行 `npm run test -- src/codex-web`，3 个测试文件、10 个测试通过。
 - 2026-07-09：已运行 `npm run test`，7 个测试文件、28 个测试通过；已运行 `npm run build`，通过但仍有 Turbopack theme loader trace warning；已运行 `npm run test:smoke`，真实 bridge bootstrap 通过。
 - 2026-07-09：真实页面验证：启动 dev server 后打开 `/chat`，页面标题 `CodexWeb`，console 0 errors / 0 warnings；验证后已停止 dev server。
+
+## Phase 5F-B：Resume 错误收口与 active turn 隔离
+
+目标：补齐历史会话继续发送的错误收口与跨 thread active turn 隔离。`thread/resume`、`turn/start` 或 bridge 失败时必须显示可见错误，不追加伪 user/assistant 成功消息；其它 thread 正在运行时，当前历史页必须明确 degraded，而不是展示不属于本页的 delta、approval 或工具状态。
+
+架构：继续以 app-server notification 为事实源。`ChatView` 只负责 app-server 分支的错误 banner 和 composer 状态；`selectVisibleActiveTurn()` 负责纯逻辑判断 active turn 是否属于当前 route thread 或 resumed thread；历史页只消费 selector 结果，不手写多处分支。
+
+本阶段不做：页面刷新后恢复 running turn、分页加载、多个 approval 队列、真实 `CODEX_HOME` 验收。
+
+实施清单：
+
+- [x] `ChatView` 增加 app-server 错误 banner，app-server 发送失败只显示 banner，不追加伪 assistant 错误消息。
+- [x] `ChatView` app-server 分支改为发送成功后再追加本地 user/assistant 历史消息；前置失败返回 `false`，保留 composer 输入。
+- [x] 新增 `active-turn-visibility-adapter`，判断 active turn 是否属于当前历史页或 resumed thread。
+- [x] `/chat/[id]` 使用 selector 过滤 active turn，并把其它 thread running/starting 状态显示为 degraded notice。
+- [x] 补 targeted 单元测试覆盖当前 route thread、resumed thread、其它 running thread、其它 completed thread 反例。
+
+验证：
+
+```bash
+export NODE_HOME="/volume2/SSD/node-v24.14.0"
+export PATH=$NODE_HOME/bin:$PATH
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web/active-turn-visibility-adapter.test.ts
+npm run test -- src/codex-web
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 5F-B 记录：
+
+- 2026-07-09：新增 `src/codex-web/active-turn-visibility-adapter.ts`，返回当前页面可见 active turn 或 degraded notice；其它 completed thread 不显示提示。
+- 2026-07-09：`/chat/[id]` 通过 selector 过滤 app-server active turn，避免其它 thread 的 delta、approval 或工具状态串入当前页。
+- 2026-07-09：`ChatView` 增加 app-server 错误 banner；`appServerSend` 抛错或返回 failed 时不追加伪 assistant 错误消息；`thread/resume` 或 `turn/start` 前置失败返回 `false`，保留 composer 输入。
+- 2026-07-09：`sendTurnInThread` 增加 `onAccepted` 回调，在 app-server `turn/start` 成功后追加 optimistic user，避免前置失败制造伪消息，同时保持成功 turn 的即时用户消息反馈。
+- 2026-07-09：重新执行 Phase 5F-B 时补充 provider 层失败清理：`thread/start` 或 `turn/start` 请求失败会清掉本次留下的 `starting` active turn 和 pending completion，避免 composer 或跨 thread degraded notice 残留错误状态。
+- 2026-07-09：真实页面验证发现 `FolderPicker` 在 browse 响应缺少 `directories` 数组时会触发 ErrorBoundary；已最小修复为非数组目录按空列表处理，避免影响 `/chat` 页面走查。
+- 2026-07-09：已运行 `npm run test -- src/codex-web/active-turn-visibility-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、4 个测试通过。
+- 2026-07-09：已运行 `npm run test -- src/codex-web`，包含 `tsc --noEmit`，8 个测试文件、28 个测试通过。
+- 2026-07-09：已运行 `npm run test`，包含 `tsc --noEmit`，12 个测试文件、46 个测试通过。
+- 2026-07-09：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` trace warning，未阻塞构建。
+- 2026-07-09：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+- 2026-07-09：真实页面验证：启动 dev server 后通过 CDP 打开 `http://192.168.3.12:3000/chat` 和 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58`；标题 `CodexWeb`，页面有 Codex UI 文本，无 ErrorBoundary，console 0 errors / 0 warnings；验证后已停止 dev server。
+- 2026-07-09：重新执行 Phase 5F-B 后已运行 `npm run test -- src/codex-web/active-turn-visibility-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、4 个测试通过。
+- 2026-07-09：重新执行 Phase 5F-B 后已运行 `npm run test -- src/codex-web`，包含 `tsc --noEmit`，8 个测试文件、28 个测试通过。
+- 2026-07-09：重新执行 Phase 5F-B 后已运行 `npm run test`，包含 `tsc --noEmit`，12 个测试文件、46 个测试通过。
+- 2026-07-09：重新执行 Phase 5F-B 后已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+- 2026-07-09：重新执行 Phase 5F-B 时 `npm run build` 在沙箱、代理和非沙箱代理环境均未通过，失败点为 Next/Turbopack 下载 Google Fonts / `fonts.gstatic.com` 字体资源连接失败；未出现本阶段 TypeScript 或 5F-B 代码编译错误。
+- 2026-07-09：重新执行 Phase 5F-B 真实页面验证：启动 dev server 后打开 `http://192.168.3.12:3000/chat` 和 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58`；标题 `CodexWeb`，历史页显示隔离 thread “请只回复：pong”，无 ErrorBoundary，console 0 errors / 0 warnings；验证后已停止 dev server。
+- 2026-07-10：构建稳定化：移除 `next/font/google` 的构建期联网字体依赖，在 `globals.css` 保留 `--font-geist-sans` / `--font-geist-mono` 变量名并映射到系统字体栈，避免 Google Fonts 下载失败阻塞生产构建。
+- 2026-07-10：构建稳定化后已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
+- 2026-07-10：构建稳定化后已运行 `npm run test`，包含 `tsc --noEmit`，12 个测试文件、46 个测试通过。
+- 2026-07-10：构建稳定化后已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+- 2026-07-10：构建稳定化后启动 dev server 并用 HTTP 验证 `/chat` 与 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 均返回 `200 text/html; charset=utf-8`；验证后已停止 dev server。
 
 ## 决策日志
 

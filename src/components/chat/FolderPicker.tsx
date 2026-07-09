@@ -57,11 +57,12 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
       const res = await fetch(url);
       if (res.ok) {
         const data: BrowseResponse = await res.json();
-        setCurrentDir(data.current);
-        setParentDir(data.parent);
-        setDirectories(data.directories);
-        setPathInput(data.current);
-        setDrives(data.drives || []);
+        const current = typeof data.current === 'string' ? data.current : '';
+        setCurrentDir(current);
+        setParentDir(typeof data.parent === 'string' ? data.parent : null);
+        setDirectories(Array.isArray(data.directories) ? data.directories : []);
+        setPathInput(current);
+        setDrives(Array.isArray(data.drives) ? data.drives : []);
       }
     } catch {
       // silently fail

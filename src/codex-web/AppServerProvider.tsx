@@ -60,6 +60,7 @@ export type SendTurnInThreadParams = {
   content: string;
   cwd: string;
   model?: string;
+  onAccepted?: (threadId: string) => void;
 };
 
 export type AppServerActions = {
@@ -307,7 +308,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
-  const sendTurnInThread = useCallback(async ({ threadId, content, cwd, model }: SendTurnInThreadParams) => {
+  const sendTurnInThread = useCallback(async ({ threadId, content, cwd, model, onAccepted }: SendTurnInThreadParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -336,7 +337,29 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       model: model || null,
       approvalPolicy: "on-request",
     };
-    const turnResponse = (await client.request("turn/start", turnParams)) as TurnStartResponse;
+    let turnResponse: TurnStartResponse;
+    try {
+      turnResponse = (await client.request("turn/start", turnParams)) as TurnStartResponse;
+    } catch (error) {
+      turnCompletionRef.current = null;
+      setState((current) => {
+        const activeTurn = current.activeTurn?.data;
+        if (
+          !activeTurn ||
+          activeTurn.threadId !== threadId ||
+          activeTurn.turnId ||
+          activeTurn.status !== "starting"
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          activeTurn: null,
+        };
+      });
+      throw error;
+    }
+    onAccepted?.(threadId);
     setState((current) => ({
       ...current,
       activeTurn: {
@@ -377,7 +400,22 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       threadSource: "codex_web",
       serviceName: "codex_web",
     };
-    const threadResponse = (await client.request("thread/start", threadParams)) as ThreadStartResponse;
+    let threadResponse: ThreadStartResponse;
+    try {
+      threadResponse = (await client.request("thread/start", threadParams)) as ThreadStartResponse;
+    } catch (error) {
+      setState((current) => {
+        const activeTurn = current.activeTurn?.data;
+        if (!activeTurn || activeTurn.threadId || activeTurn.turnId || activeTurn.status !== "starting") {
+          return current;
+        }
+        return {
+          ...current,
+          activeTurn: null,
+        };
+      });
+      throw error;
+    }
     const threadId = threadResponse.thread.id;
 
     setState((current) => ({

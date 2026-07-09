@@ -253,6 +253,12 @@
  * content layers.
  * ───────────────────────────────────────────────────────────────────── */
 :root {
+  /* 构建期不联网下载 Google Fonts，保留原变量名并映射到系统字体栈。 */
+  --font-geist-sans: ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-geist-mono: ui-monospace, "SFMono-Regular", Consolas,
+    "Liberation Mono", monospace;
+
   /* Font: chrome UI typeface. Default = Geist (project sans). macOS
      override below switches to system-ui so the shell inherits the
      active SF/Helvetica stack the user has configured. */
