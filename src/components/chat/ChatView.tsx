@@ -1132,6 +1132,11 @@ export function ChatView({
     async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[]) => {
       if (readOnly) return false;
       if (appServerSend) {
+        if (appServerApproval) {
+          console.warn('[ChatView] app-server approval pending，发送已暂缓');
+          return false;
+        }
+
         if (files && files.length > 0) {
           console.warn('[ChatView] app-server 历史恢复发送暂不支持附件');
           return false;
@@ -1307,7 +1312,7 @@ export function ChatView({
       cappedSetMessages((prev) => [...prev, userMessage]);
       doStartStream(content, files, systemPromptAppend, displayOverride, mentions, selectedSkills, effectiveSessionId);
     },
-    [readOnly, appServerSend, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]
+    [readOnly, appServerSend, appServerApproval, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]
   );
 
   sendMessageRef.current = sendMessage;
@@ -1530,6 +1535,7 @@ export function ChatView({
               onStop={stopStreaming}
               disabled={
                 readOnly
+                || !!appServerApproval
                 || (!appServerSend && (
                   noCompatibleProvider
                   || providerFetchState === 'idle'
@@ -1813,6 +1819,7 @@ export function ChatView({
         // guard above is belt-and-suspenders.
         disabled={
           readOnly
+          || !!appServerApproval
           || (!appServerSend && (
             noCompatibleProvider
             || providerFetchState === 'idle'

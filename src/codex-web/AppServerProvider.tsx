@@ -20,6 +20,12 @@ import {
   mapServerRequestToApproval,
   type AppServerApprovalDecision,
 } from "./approval-adapter";
+import {
+  beginApprovalResponse,
+  completeApprovalResponse,
+  failApprovalResponse,
+  type ApprovalResponseGuardState,
+} from "./approval-response-guard";
 import { AppServerBrowserClient } from "./app-server-browser-client";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
 import {
@@ -72,6 +78,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const bridgeUrl = useMemo(() => process.env.NEXT_PUBLIC_CODEX_BRIDGE_URL ?? "", []);
   const clientRef = useRef<AppServerBrowserClient | null>(null);
   const turnCompletionRef = useRef<((turn: AppServerTurnState) => void) | null>(null);
+  const approvalResponseStateRef = useRef<ApprovalResponseGuardState>({});
 
   useEffect(() => {
     if (!bridgeUrl) {
@@ -189,6 +196,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       disposed = true;
       clientRef.current = null;
       turnCompletionRef.current = null;
+      approvalResponseStateRef.current = {};
       client.close();
     };
   }, [bridgeUrl]);
@@ -213,16 +221,43 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("没有待处理的 app-server approval");
     }
 
+    const guard = beginApprovalResponse({
+      pendingApproval: approval,
+      requestId: approval.requestId,
+      state: approvalResponseStateRef.current,
+    });
+    approvalResponseStateRef.current = guard.state;
+    if (!guard.ok) {
+      setState((current) => ({
+        ...current,
+        diagnostics: appendDiagnostic(current.diagnostics, {
+          source: "app-server.serverRequest",
+          data: { message: `approval response skipped: ${guard.reason}` },
+        }),
+      }));
+      throw new Error(`app-server approval 已处理或已失效: ${guard.reason}`);
+    }
+
     const response = buildApprovalResponse(approval, decision);
-    client.respond(approval.requestId, response);
-    const requestId = approval.requestId;
-    setState((current) => {
-      return {
+    try {
+      client.respond(approval.requestId, response);
+      approvalResponseStateRef.current = completeApprovalResponse({
+        key: guard.key,
+        state: approvalResponseStateRef.current,
+      });
+      const requestId = approval.requestId;
+      setState((current) => ({
         ...current,
         pendingApproval:
           current.pendingApproval?.data.requestId === requestId ? null : current.pendingApproval,
-      };
-    });
+      }));
+    } catch (error) {
+      approvalResponseStateRef.current = failApprovalResponse({
+        key: guard.key,
+        state: approvalResponseStateRef.current,
+      });
+      throw error;
+    }
   }, [state.pendingApproval]);
 
   const refreshThreads = useCallback(async () => {

@@ -415,6 +415,7 @@ function NewChatPageInner() {
       // composer preserves the user's text + attachments instead of letting
       // PromptInput clear a first-message screenshot that never got sent (#615).
       if (isStreaming) return false;
+      if (appServerApproval) return false;
 
       // Wait for model/provider to be resolved from the global default before allowing send
       if (!modelReady) return false;
@@ -563,7 +564,7 @@ function NewChatPageInner() {
         firstSendInFlightRef.current = false;
       }
     },
-    [isStreaming, workingDir, currentModel, currentProviderId, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, sendOneTurn]
+    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, sendOneTurn]
   );
 
   const handleCommand = useCallback((command: string) => {
@@ -656,7 +657,7 @@ function NewChatPageInner() {
         onSend={sendFirstMessage}
         onCommand={handleCommand}
         onStop={stopStreaming}
-        disabled={!modelReady || noCompatibleProvider}
+        disabled={!modelReady || noCompatibleProvider || !!appServerApproval}
         isStreaming={isStreaming}
         modelName={currentModel}
         onModelChange={setCurrentModel}

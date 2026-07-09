@@ -239,6 +239,7 @@ Smoke 记录：
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | N/A | Phase 5B 历史工具 cell 默认折叠 | 通过 | 隔离历史 thread `019f1c15-da0b-71e1-a3c3-d407b96f8ccb` 含 `fileChange` item；真实浏览器打开历史页后看到 `已处理` 工具摘要，默认 `aria-expanded=false` 且详情不可见；点击后展开显示 `fileChange` 详情，再次点击恢复折叠；console 0 errors / 0 warnings |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | `gpt-5.5` | Phase 5C 历史 thread resume 后继续发送 | 通过 | 真实浏览器打开 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58`；composer 可输入，发送“请只回复：resume-pong”后页面显示 user 新消息和 assistant `resume-pong`，状态恢复，console 0 errors / 0 warnings；验证后已停止 dev server |
 | 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | `gpt-5.5` | Phase 5D-B resume 多轮、new thread 反例、turn/interrupt | 通过 | 历史页 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 连续发送“请只回复：resume-5d-a”和“请只回复：resume-5d-b”均完成；新建 `/chat` 发送“请只回复：new-5d”完成；运行 `sleep 60 && echo done` 后点击“停止生成”，页面显示“Codex 已中断。可以继续发送下一轮。”，随后发送“请只回复：after-interrupt”完成；当前 console 0 errors / 0 warnings；Playwright 产物保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase5d-20260709/`，验证后已停止 dev server |
+| 2026-07-09 | local dev server，隔离 CODEX_HOME | app-server default | `gpt-5.5` | Phase 5E-B approval 复杂边界 | 通过 | 新建 `/chat` 普通消息“请只回复：approval-normal”未出现 PermissionPrompt；`curl https://example.com` 触发 command approval 后 composer disabled，Deny 后恢复；再次触发后 Allow Once，同一 turn 继续完成；历史页 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` resume 后触发 command approval，仅当前历史页显示 PermissionPrompt，Deny 后恢复；当前 console 0 errors / 0 warnings；Playwright 产物保存到 `/volume2/SSD/codex/Temp/playwright-mcp-phase5e-20260709/`，验证后已停止 dev server |
 
 Phase 4A 记录：
 
@@ -344,9 +345,9 @@ Phase 5C 记录：
 | Resume / History | `thread/resume` 失败收口 | 未开始 | Phase 5D | resume 返回错误或 bridge 断开时，composer 恢复可用，消息区显示可见错误，不追加伪 assistant 成功消息 |
 | Resume / History | 历史分页加载 | 未开始 | Phase 6 | thread/list 或 thread/read 有分页/截断时，UI 能继续加载且不重复消息 |
 | Resume / History | 历史归档、重命名、删除/清理入口 | 未开始 | Phase 6 | 仅接入官方 app-server 支持的方法；删除类操作必须按项目清理规则另行确认 |
-| Approval | 历史会话继续发送时触发 approval | 未开始 | Phase 5D | resume 后触发 command/file/permission approval，PermissionPrompt 出现并按官方 schema 返回 response |
-| Approval | approval pending 时 composer 与状态栏 | 未开始 | Phase 5D | pending approval 期间 composer 不产生并发 turn；用户 approve/deny 后状态恢复 |
-| Approval | approve / deny 后同一个 turn 继续完成 | 未开始 | Phase 5D | approve 后 turn 继续到 completed；deny 后显示官方返回的失败/中断语义 |
+| Approval | 历史会话继续发送时触发 approval | 已完成 | Phase 5E-B | resume 后触发 command/file/permission approval，PermissionPrompt 出现并按官方 schema 返回 response |
+| Approval | approval pending 时 composer 与状态栏 | 已完成 | Phase 5E-B | pending approval 期间 composer 不产生并发 turn；用户 approve/deny 后状态恢复 |
+| Approval | approve / deny 后同一个 turn 继续完成 | 已完成 | Phase 5E-B | approve 后 turn 继续到 completed；deny 后显示官方返回的失败/中断语义 |
 | Approval | 多个 approval 或过期 approval | 未开始 | Phase 6 | 多个 server request 不串线；已完成/过期 approval 不再接受重复响应 |
 | Tools | exec / patch / file change / MCP / skill 完整状态映射 | 部分完成 | Phase 6 | running、success、failed、cancelled、interrupted 都有真实 source breadcrumb 和 CodexWeb 展示 |
 | Tools | 工具结果默认折叠、展开详情 | 部分完成 | Phase 6 | 历史工具和新 turn 工具都默认折叠，展开后展示 stdout、stderr、patch 或 MCP 详情 |
@@ -357,7 +358,7 @@ Phase 5C 记录：
 | Diagnostics | app-server transport close 与 pending request fail-fast | 部分完成 | Phase 6 | bridge/app-server 退出时 pending request 快速失败，UI 显示 diagnostics，不长时间挂起 |
 | Diagnostics | 未知 notification 可见诊断 | 部分完成 | Phase 6 | 未知 notification 不静默丢弃，在 diagnostics 中保留 method、source 和摘要 |
 | E2E / Smoke | 普通消息 vs 工具消息反例 | 未开始 | Phase 5D | 同一轮验证无工具普通消息和触发工具消息，断言工具 cell 只在触发路径出现 |
-| E2E / Smoke | 无 approval vs approval 反例 | 未开始 | Phase 5D | 同一轮验证普通消息无 PermissionPrompt，触发权限时才出现 PermissionPrompt |
+| E2E / Smoke | 无 approval vs approval 反例 | 已完成 | Phase 5E-B | 同一轮验证普通消息无 PermissionPrompt，触发权限时才出现 PermissionPrompt |
 | E2E / Smoke | 新 thread vs resume thread 反例 | 已完成 | Phase 5D-B | 新建会话走 `thread/start`，历史继续发送先走 `thread/resume`，两者日志和 UI 行为可区分 |
 | E2E / Smoke | success vs failed / interrupted 反例 | 未开始 | Phase 6 | completed、failed、interrupted 三类状态分别有可复现验证记录 |
 
@@ -406,6 +407,34 @@ Phase 5D-B 记录：
 - 2026-07-09：真实页面验证：历史页 `/chat/019f452c-2c35-7ee3-a876-cc0770789a58` 连续发送“请只回复：resume-5d-a”和“请只回复：resume-5d-b”均完成，composer 恢复。
 - 2026-07-09：真实页面反例验证：新建 `/chat` 发送“请只回复：new-5d”完成，与历史 resume 路径区分。
 - 2026-07-09：真实页面中断验证：新建 `/chat` 发送“请运行命令：sleep 60 && echo done”后点击“停止生成”，页面显示“Codex 已中断。可以继续发送下一轮。”；随后发送“请只回复：after-interrupt”完成，当前 console 0 errors / 0 warnings；验证后已停止 dev server。
+
+## Phase 5E-B：Approval 复杂边界硬化
+
+目标：让 app-server approval 在新 thread 和 resume thread 中成为可靠闭环，而不是只显示 PermissionPrompt。pending approval 期间不得并发启动新 turn，approval response 必须按 requestId 精确响应，approve/deny 后 UI 状态要恢复。
+
+架构：继续以 app-server server request 为 approval 事实源，`approval-adapter` 只负责官方 schema 映射；`AppServerProvider` 负责防重复响应和 diagnostics；`ChatView`、`/chat`、`/chat/[id]` 只做 UI 禁用和 thread 过滤，不改写 prompt 或 turn input。
+
+本阶段不做：多个 approval 队列、过期 approval 的复杂队列调度、MCP elicitation、完整工具详情和 Phase 6 的大输出策略。
+
+实施清单：
+
+- [x] 新增 approval response guard，区分 `idle/responding/resolved`，防止同一个 requestId 重复响应。
+- [x] `AppServerProvider.respondToApproval()` 使用 guard，stale requestId 快速失败并写 diagnostics。
+- [x] `ChatView` app-server 分支在 pending approval 时禁止发送新 turn，不把输入加入队列。
+- [x] `/chat` 新建会话 pending approval 时禁用 composer，避免 approval 期间并发发送。
+- [x] `/chat/[id]` 历史会话继续按 threadId / resumedThreadId 过滤 approval，避免跨 thread 显示。
+- [x] 补单元测试覆盖 approval guard、重复响应、stale 响应和官方 schema 映射不变。
+- [x] 补真实页面反例验证：普通消息无 PermissionPrompt，触发 command approval 才出现 PermissionPrompt，approve/deny 后状态恢复。
+
+验证：
+
+```bash
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web
+npm run test
+npm run build
+npm run test:smoke
+```
 
 Phase 4C 记录：
 
