@@ -1,8 +1,8 @@
 'use client';
 
 import { Suspense, useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import type { Message, SSEEvent, SessionResponse, TokenUsage, PermissionRequestEvent, FileAttachment, MentionRef, PermissionProfile } from '@/types';
+import { useSearchParams } from 'next/navigation';
+import type { Message, PermissionRequestEvent, FileAttachment, MentionRef, PermissionProfile } from '@/types';
 import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput, composerDraftKey } from '@/components/chat/MessageInput';
 import { ChatComposerActionBar } from '@/components/chat/ChatComposerActionBar';
@@ -21,8 +21,7 @@ import { FolderPicker } from '@/components/chat/FolderPicker';
 import { useNativeFolderPicker } from '@/hooks/useNativeFolderPicker';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
-import { maybeShowStatusToast } from '@/hooks/useSSEStream';
-import { seedSnapshotPatch } from '@/lib/stream-session-manager';
+import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
 interface ToolUseInfo {
   id: string;
   name: string;
@@ -57,7 +56,6 @@ export default function NewChatPage() {
 }
 
 function NewChatPageInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const prefillText = searchParams.get('prefill') || '';
   // #4/#5 (Codex P2) — the prefill enters the composer via `initialValue`, which
@@ -81,6 +79,8 @@ function NewChatPageInner() {
   const prefillTextRef = useRef(prefillText);
   useEffect(() => { prefillTextRef.current = prefillText; }, [prefillText]);
   const { setPendingApprovalSessionId } = usePanel();
+  const appServerState = useAppServerState();
+  const { sendOneTurn } = useAppServerActions();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -205,51 +205,48 @@ function NewChatPageInner() {
   // Provider options (thinking mode + 1M context)
   const [thinkingMode, setThinkingMode] = useState<string>('adaptive');
   const [context1m, setContext1m] = useState(false);
+  const appServerTurn = appServerState.activeTurn?.data ?? null;
 
   useEffect(() => {
-    let cancelled = false;
-    setModelReady(false);
+    if (!appServerTurn) return;
+    setStreamingContent(appServerTurn.assistantText);
+    if (appServerTurn.status === 'running') {
+      setStatusText('Codex 正在处理...');
+    }
+  }, [appServerTurn]);
 
-    fetch('/api/codex/models')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled) return;
-        const models = Array.isArray(data?.group?.models) ? data.group.models : [];
-        if (models.length === 0) {
-          setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
-          setCurrentModel('');
-          setNoCompatibleProvider(true);
-          setInvalidDefault(null);
-          setModelReady(true);
-          return;
-        }
+  useEffect(() => {
+    const models = appServerState.models?.data.data.filter((model) => !model.hidden) ?? [];
+    if (appServerState.connection.data !== 'connected') {
+      setModelReady(false);
+      return;
+    }
 
-        const savedProvider = localStorage.getItem('codepilot:last-provider-id');
-        const savedModel = savedProvider === DEFAULT_CODEX_PROVIDER_ID
-          ? localStorage.getItem('codepilot:last-model')
-          : '';
-        const selected =
-          models.find((m: { value?: string; upstreamModelId?: string }) =>
-            savedModel && (m.value === savedModel || m.upstreamModelId === savedModel),
-          )?.value || models[0]?.value || DEFAULT_CODEX_MODEL;
+    if (models.length === 0) {
+      setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
+      setCurrentModel('');
+      setNoCompatibleProvider(true);
+      setInvalidDefault(null);
+      setModelReady(true);
+      return;
+    }
 
-        setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
-        setCurrentModel(selected);
-        setNoCompatibleProvider(false);
-        setInvalidDefault(null);
-        setModelReady(true);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
-        setCurrentModel('');
-        setNoCompatibleProvider(true);
-        setInvalidDefault(null);
-        setModelReady(true);
-      });
+    const savedProvider = localStorage.getItem('codepilot:last-provider-id');
+    const savedModel = savedProvider === DEFAULT_CODEX_PROVIDER_ID
+      ? localStorage.getItem('codepilot:last-model')
+      : '';
+    const selected =
+      models.find((model) => savedModel && (model.id === savedModel || model.model === savedModel))?.id ||
+      models.find((model) => model.isDefault)?.id ||
+      models[0]?.id ||
+      DEFAULT_CODEX_MODEL;
 
-    return () => { cancelled = true; };
-  }, []);
+    setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
+    setCurrentModel(selected);
+    setNoCompatibleProvider(false);
+    setInvalidDefault(null);
+    setModelReady(true);
+  }, [appServerState.connection.data, appServerState.models]);
 
   // Initialize workingDir from localStorage (or setup default), validating the path exists
   useEffect(() => {
@@ -424,10 +421,6 @@ function NewChatPageInner() {
       if (firstSendInFlightRef.current) return false; // double-submit guard while mid-flight
       firstSendInFlightRef.current = true;
 
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      let sessionId = '';
       // #615: tracks whether the message reached a delivered / recoverable state
       // (session created + POST /api/chat accepted). A failure BEFORE this must
       // return false so the composer preserves the user's text + attachments —
@@ -435,96 +428,9 @@ function NewChatPageInner() {
       let accepted = false;
 
       try {
-        // Create a new session with working directory + model/provider
-        const createBody: Record<string, string> = {
-          title: content.slice(0, 50),
-          mode,
-          working_directory: workingDir.trim(),
-          permission_profile: permissionProfile,
-          model: currentModel,
-          provider_id: currentProviderId,
-        };
+        const virtualSessionId = `app-server-${Date.now()}`;
+        setCreatedSessionId(virtualSessionId);
 
-        const createRes = await fetch('/api/chat/sessions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(createBody),
-        });
-
-        if (!createRes.ok) {
-          const errBody = await createRes.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to create session (${createRes.status})`);
-        }
-
-        const { session }: SessionResponse = await createRes.json();
-        sessionId = session.id;
-        setCreatedSessionId(sessionId);
-
-        // Codex-only 新建聊天固定写入 codex_runtime，避免会话后续受旧全局
-        // runtime 设置漂移影响。
-        if (runtimePin) {
-          try {
-            await fetch(`/api/chat/sessions/${sessionId}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ runtime_pin: runtimePin }),
-            });
-          } catch {
-            // 非致命：/api/chat 仍会按请求里的 codex_account 路由。
-          }
-        }
-
-        // Notify ChatListPanel to refresh immediately
-        window.dispatchEvent(new CustomEvent('session-created'));
-
-        // NOTE: the optimistic user bubble is pushed AFTER the message is
-        // accepted (post-accept block below), not here — pushing it now would
-        // make messages non-empty → flip isNewChat → remount the composer and
-        // eat the screenshot on a /api/chat rejection. (#615)
-
-        // Build thinking config from settings
-        const thinkingConfig = thinkingMode && thinkingMode !== 'adaptive'
-          ? { type: thinkingMode }
-          : thinkingMode === 'adaptive' ? { type: 'adaptive' } : undefined;
-
-        // Send the message via streaming API
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            session_id: session.id,
-            content,
-            mode,
-            model: currentModel,
-            provider_id: currentProviderId,
-            ...(files && files.length > 0 ? { files } : {}),
-            ...(mentions && mentions.length > 0 ? { mentions } : {}),
-            ...(systemPromptAppend ? { systemPromptAppend } : {}),
-            // 'auto' sentinel means "no explicit effort" — omit so Claude
-            // Code CLI applies its per-model default (Opus 4.7 → xhigh).
-            ...(selectedEffort && selectedEffort !== 'auto' ? { effort: selectedEffort } : {}),
-            ...(thinkingConfig ? { thinking: thinkingConfig } : {}),
-            ...(context1m ? { context_1m: true } : {}),
-            ...(displayOverride ? { displayOverride } : {}),
-            ...(selectedSkills && selectedSkills.length > 0
-              ? { selectedSkills }
-              : {}),
-          }),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({}));
-          if (err?.code === 'NEEDS_PROVIDER_SETUP' && typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('open-setup-center', {
-              detail: { initialCard: err.initialCard ?? 'codex' },
-            }));
-          }
-          throw new Error(err?.error || 'Failed to send message');
-        }
-        // Backend accepted the message + files (POST /api/chat is 2xx and the
-        // stream is opening) — from here the screenshot is committed
-        // server-side, so a later error must NOT preserve the composer (#615).
         accepted = true;
         // #4/#5 — clear the persisted composer draft at accept. The imminent
         // isStreaming flip REMOUNTS the composer, which re-seeds inputValue from
@@ -553,7 +459,7 @@ function NewChatPageInner() {
             : displayUserContent;
           const userMessage: Message = {
             id: 'temp-' + Date.now(),
-            session_id: session.id,
+            session_id: virtualSessionId,
             role: 'user',
             content: contentWithFileMeta,
             created_at: new Date().toISOString(),
@@ -562,241 +468,32 @@ function NewChatPageInner() {
           setMessages([userMessage]);
         }
 
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error('No response stream');
+        const completedTurn = await sendOneTurn({
+          content,
+          cwd: workingDir.trim(),
+          model: currentModel,
+        });
 
-        const decoder = new TextDecoder();
-        let accumulated = '';
-        let tokenUsage: TokenUsage | null = null;
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-
-            try {
-              const event: SSEEvent = JSON.parse(line.slice(6));
-
-              switch (event.type) {
-                case 'text': {
-                  accumulated += event.data;
-                  setStreamingContent(accumulated);
-                  break;
-                }
-                case 'tool_use': {
-                  try {
-                    const toolData = JSON.parse(event.data);
-                    setStreamingToolOutput('');
-                    setToolUses((prev) => {
-                      if (prev.some((t) => t.id === toolData.id)) return prev;
-                      return [...prev, { id: toolData.id, name: toolData.name, input: toolData.input }];
-                    });
-                  } catch { /* skip */ }
-                  break;
-                }
-                case 'tool_result': {
-                  try {
-                    const resultData = JSON.parse(event.data);
-                    setStreamingToolOutput('');
-                    setToolResults((prev) => [...prev, { tool_use_id: resultData.tool_use_id, content: resultData.content }]);
-                  } catch { /* skip */ }
-                  break;
-                }
-                case 'tool_output': {
-                  try {
-                    const parsed = JSON.parse(event.data);
-                    if (parsed._progress) {
-                      setStatusText(`Running ${parsed.tool_name}... (${Math.round(parsed.elapsed_time_seconds)}s)`);
-                      break;
-                    }
-                  } catch {
-                    // Not JSON — raw stderr output
-                  }
-                  setStreamingToolOutput((prev) => {
-                    const next = prev + (prev ? '\n' : '') + event.data;
-                    return next.length > 5000 ? next.slice(-5000) : next;
-                  });
-                  break;
-                }
-                case 'status': {
-                  try {
-                    const statusData = JSON.parse(event.data);
-                    if (statusData.session_id) {
-                      setStatusText(`Connected (${statusData.model || 'codex'})`);
-                      setTimeout(() => setStatusText(undefined), 2000);
-                    } else if (statusData.notification) {
-                      // Shared toast routing so code-driven notifications
-                      // (e.g. RUNTIME_EFFORT_IGNORED) survive the next
-                      // status-text update on both the first-message flow
-                      // (this page) and the ongoing session flow
-                      // (useSSEStream via stream-session-manager).
-                      maybeShowStatusToast(statusData);
-                      setStatusText(statusData.message || statusData.title || undefined);
-                    } else if (statusData.apiRetry) {
-                      // #635 — show human copy, not raw JSON. The first-message
-                      // path doesn't run the idle checker, so this is display-only.
-                      setStatusText(
-                        typeof statusData.attempt === 'number'
-                          ? `Retrying upstream (attempt ${statusData.attempt})…`
-                          : 'Retrying upstream…',
-                      );
-                    } else {
-                      setStatusText(event.data || undefined);
-                    }
-                  } catch {
-                    setStatusText(event.data || undefined);
-                  }
-                  break;
-                }
-                case 'result': {
-                  try {
-                    const resultData = JSON.parse(event.data);
-                    if (resultData.usage) tokenUsage = resultData.usage;
-                    // Phase 1: seed terminal_reason into the snapshot the
-                    // redirected ChatView will read so first-turn
-                    // prompt_too_long / blocking_limit / max_turns /
-                    // hook_stopped can still surface the chip + action
-                    // buttons in the post-redirect view.
-                    if (resultData.terminal_reason && session?.id) {
-                      seedSnapshotPatch(session.id, {
-                        terminalReason: resultData.terminal_reason as string,
-                      });
-                    }
-                  } catch { /* skip */ }
-                  setStatusText(undefined);
-                  break;
-                }
-                case 'rate_limit': {
-                  // Phase 2: subscription rate-limit telemetry. Seed the
-                  // snapshot so RateLimitBanner renders after redirect.
-                  try {
-                    const info = JSON.parse(event.data);
-                    if (session?.id) {
-                      seedSnapshotPatch(session.id, { rateLimitInfo: info });
-                    }
-                  } catch { /* skip */ }
-                  break;
-                }
-                case 'context_usage': {
-                  // Phase 5 extension-point; no producer currently (see
-                  // b65c6ac). Seed the snapshot for forward compatibility.
-                  try {
-                    const snap = JSON.parse(event.data);
-                    if (session?.id) {
-                      seedSnapshotPatch(session.id, { contextUsageSnapshot: snap });
-                    }
-                  } catch { /* skip */ }
-                  break;
-                }
-                case 'thinking': {
-                  // Opus 4.7 with display: 'summarized' streams reasoning
-                  // as thinking deltas. Accumulate them into the same
-                  // streamingThinkingContent surface that ChatView's
-                  // MessageList already renders, so the first-turn UI
-                  // shows the reasoning block as it streams in. Backend
-                  // /api/chat/route.ts separately persists thinking as a
-                  // content-block JSON on the assistant message, so the
-                  // redirected ChatView gets a fully-formed message from
-                  // DB — this branch is for the pre-redirect live view.
-                  setStreamingThinkingContent((prev) => prev + event.data);
-                  break;
-                }
-                case 'permission_request': {
-                  try {
-                    const permData: PermissionRequestEvent = JSON.parse(event.data);
-                    setPendingPermission(permData);
-                    setPermissionResolved(null);
-                    setPendingApprovalSessionId(sessionId);
-                  } catch {
-                    // skip malformed permission_request data
-                  }
-                  break;
-                }
-                case 'permission_resolved': {
-                  // A5 Step 2 — registry timed out the pending request and
-                  // auto-denied it. The inline first-message flow has a single
-                  // active prompt and the registry only emits this for a still-
-                  // unresolved request, so marking resolved without an explicit
-                  // id-guard is safe here (entry 2 / stream-session-manager
-                  // id-guards because it has fresh mutable snapshot access).
-                  // Also clear the sidebar "needs approval" badge: the prompt
-                  // now shows the timeout one-liner, nothing's left to approve
-                  // (A5 follow-up — without this the badge lingers till stream end).
-                  try {
-                    const data = JSON.parse(event.data) as { status: 'timeout' };
-                    setPermissionResolved(data.status);
-                    setPendingApprovalSessionId('');
-                  } catch {
-                    // skip malformed permission_resolved data
-                  }
-                  break;
-                }
-                case 'error': {
-                  // Try to parse structured error JSON from classifier
-                  let errorDisplay: string;
-                  try {
-                    const parsed = JSON.parse(event.data);
-                    if (parsed.category && parsed.userMessage) {
-                      errorDisplay = parsed.userMessage;
-                      if (parsed.actionHint) errorDisplay += `\n\n**What to do:** ${parsed.actionHint}`;
-                      if (parsed.details) errorDisplay += `\n\nDetails: ${parsed.details}`;
-                      // Add diagnostic guidance for provider/auth related errors
-                      const diagCategories = new Set([
-                        'AUTH_REJECTED', 'AUTH_FORBIDDEN', 'AUTH_STYLE_MISMATCH',
-                        'NO_CREDENTIALS', 'PROVIDER_NOT_APPLIED', 'MODEL_NOT_AVAILABLE',
-                        'NETWORK_UNREACHABLE', 'ENDPOINT_NOT_FOUND', 'PROCESS_CRASH',
-                        'CLI_NOT_FOUND', 'UNSUPPORTED_FEATURE',
-                      ]);
-                      if (diagCategories.has(parsed.category)) {
-                        errorDisplay += '\n\n💡 [检查 Codex 账户与 Runtime](/settings/codex)。';
-                      }
-                    } else {
-                      errorDisplay = event.data;
-                    }
-                  } catch {
-                    errorDisplay = event.data;
-                  }
-                  accumulated += '\n\n**Error:** ' + errorDisplay;
-                  setStreamingContent(accumulated);
-                  break;
-                }
-                case 'done':
-                  break;
-              }
-            } catch {
-              // skip
-            }
-          }
+        if (completedTurn.status === 'failed') {
+          throw new Error(completedTurn.errorMessage || 'Codex turn failed');
         }
-
-        // Add the completed assistant message
-        if (accumulated.trim()) {
+        if (completedTurn.status === 'interrupted') {
+          throw new Error('Codex turn interrupted');
+        }
+        if (completedTurn.assistantText.trim()) {
           const assistantMessage: Message = {
             id: 'temp-assistant-' + Date.now(),
-            session_id: session.id,
+            session_id: completedTurn.threadId || virtualSessionId,
             role: 'assistant',
-            content: accumulated.trim(),
+            content: completedTurn.assistantText.trim(),
             created_at: new Date().toISOString(),
-            token_usage: tokenUsage ? JSON.stringify(tokenUsage) : null,
+            token_usage: null,
           };
           setMessages((prev) => [...prev, assistantMessage]);
         }
-
-        // Navigate to the session page after response is complete
-        router.push(`/chat/${session.id}`);
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
-          // User stopped - navigate to session if we have one
-          if (sessionId) {
-            router.push(`/chat/${sessionId}`);
-          }
+          setStatusText('已停止');
         } else {
           const errMsg = error instanceof Error ? error.message : 'Unknown error';
           setErrorBanner({ message: t('error.sessionCreateFailed'), description: errMsg });
@@ -821,7 +518,7 @@ function NewChatPageInner() {
         firstSendInFlightRef.current = false;
       }
     },
-    [isStreaming, router, workingDir, mode, currentModel, currentProviderId, permissionProfile, selectedEffort, thinkingMode, context1m, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, invalidDefault]
+    [isStreaming, workingDir, currentModel, currentProviderId, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, sendOneTurn]
   );
 
   const handleCommand = useCallback((command: string) => {

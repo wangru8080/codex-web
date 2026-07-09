@@ -60,8 +60,8 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 0 | 协议和项目基线 | 已完成 | 能生成或引用 app-server TS schema，Web 项目脚本可运行 |
 | Phase 1 | 最小 Web bridge | 已完成 | 浏览器能连接 bridge，bridge 能启动或连接 app-server |
 | Phase 2 | app-server 初始化和基础 API | 已完成 | initialize、initialized、model/list、account/read 可用 |
-| Phase 3 | CodexWeb 风格 UI foundation | 待开始 | 页面基于 CodexWeb 布局显示连接、账号、模型、空会话和 diagnostics |
-| Phase 4 | Thread / Turn / Item 生命周期 | 待开始 | 能在 CodexWeb 聊天 Demo 结构中完成新建 thread、发送 turn、显示 delta、完成 turn |
+| Phase 3 | CodexWeb 风格 UI foundation | 已完成 | 页面基于 CodexWeb 布局显示连接、账号、模型、空会话和 diagnostics |
+| Phase 4 | Thread / Turn / Item 生命周期 | 进行中 | 已完成 Phase 4A one-turn 真实闭环；完整 approval/tool/diff 深接待 Phase 4B/5 |
 
 ## Phase 0：协议和项目基线
 
@@ -169,14 +169,14 @@ Phase 2 记录：
 用户可见变化：出现 Codex Web 基础工作台。  
 本阶段不做：完整历史、完整 approval、复杂 diff。
 
-- [ ] 阅读 `/home/rrssnas/code/CodexWeb/README.md`，确认 `AppShell`、`ChatView`、`MessageList`、`MessageInput`、左右侧边栏和工作区侧栏职责。
-- [ ] 基于 CodexWeb `AppShell` Demo 结构实现当前项目基础工作台：顶部状态栏、左侧 Thread 区、中央聊天区、右侧文件树/工作区或 diagnostics 入口。
-- [ ] 保持 CodexWeb 既有 UI 样式和布局，不擅自修改整体视觉；只做真实 app-server 接线所需的小模块适配。
-- [ ] 实现 `ConnectionStatus`，接入 bridge / app-server 真实连接状态。
-- [ ] 实现 `ModelPicker`，只读取 `model/list` 并接入 CodexWeb 输入框或顶部模型入口。
-- [ ] 实现 `AccountStatus`，只读取 app-server 账号状态。
-- [ ] 实现 `DiagnosticsPanel` 或接入 CodexWeb 右侧工作区，未知 notification 不丢弃。
-- [ ] 页面文案使用中文，字段必须有 source breadcrumb。
+- [x] 阅读 `/home/rrssnas/code/CodexWeb/README.md`，确认 `AppShell`、`ChatView`、`MessageList`、`MessageInput`、左右侧边栏和工作区侧栏职责。
+- [x] 基于 CodexWeb `AppShell` Demo 结构实现当前项目基础工作台：顶部状态栏、左侧 Thread 区、中央聊天区、右侧文件树/工作区或 diagnostics 入口。
+- [x] 保持 CodexWeb 既有 UI 样式和布局，不擅自修改整体视觉；只做真实 app-server 接线所需的小模块适配。
+- [x] 实现 `ConnectionStatus`，接入 bridge / app-server 真实连接状态。
+- [x] 实现 `ModelPicker`，只读取 `model/list` 并接入 CodexWeb 输入框或顶部模型入口。
+- [x] 实现 `AccountStatus`，只读取 app-server 账号状态。
+- [x] 实现 diagnostics 入口，未知 notification 不丢弃。
+- [x] 页面文案使用中文，字段必须有 source breadcrumb。
 
 验证：
 
@@ -187,25 +187,32 @@ npm run test
 npm run build
 ```
 
+Phase 3 记录：
+
+- 2026-07-09：已基于 `/home/rrssnas/code/CodexWeb` 迁移完整 UI、主题和静态资源到当前项目，未直接修改 CodexWeb 源目录。
+- 2026-07-09：`AppServerProvider` 接入 Web bridge，初始化后读取 `initialize`、`model/list`、`account/read`，并保留 notification diagnostics。
+- 2026-07-09：已运行 `npm run typecheck`、`npm run test`、`npm run build`、`npm run build:server`、`npm run test:smoke`，均通过。
+- 2026-07-09：已用真实浏览器验证 `/chat` 和 `/chat/demo-session`，桌面与 390px 移动视口均能渲染 CodexWeb UI，console 无错误，验证截图保存到 `/volume2/SSD/codex/Temp/`。
+
 ## Phase 4：Thread / Turn / Item 生命周期
 
 用户可见变化：可以在浏览器中发起一轮 Codex 对话并看到流式输出。  
 本阶段不做：完整 approval 决策、SSH remote、插件 UI。
 
-- [ ] 对照 TUI `app/app_server_events.rs` 和 `app_server_session.rs`，确认 thread/start 与 turn/start 接线。
-- [ ] 对照 CodexWeb 聊天 Demo，确认左侧会话、中央消息流、输入框、生成中状态和右侧工作区如何承载真实 app-server 状态。
-- [ ] 实现 `thread/start`。
-- [ ] 实现 `turn/start`。
-- [ ] reducer 支持 `thread/started`。
-- [ ] reducer 支持 `turn/started`。
-- [ ] reducer 支持 `item/started`。
-- [ ] reducer 支持 `item/agentMessage/delta`。
-- [ ] reducer 支持 `item/completed`。
-- [ ] reducer 支持 `turn/completed`。
-- [ ] reducer 支持 `error` 和 transport close。
-- [ ] 在 CodexWeb 消息流结构中展示 user message、assistant delta、running、completed、failed、interrupted。
+- [x] 对照 TUI `app/app_server_events.rs` 和 `app_server_session.rs`，确认 thread/start 与 turn/start 接线。
+- [x] 对照 CodexWeb 聊天 Demo，确认左侧会话、中央消息流、输入框、生成中状态和右侧工作区如何承载真实 app-server 状态。
+- [x] 实现 `thread/start`。
+- [x] 实现 `turn/start`。
+- [x] reducer 支持 `thread/started`。
+- [x] reducer 支持 `turn/started`。
+- [x] reducer 支持 `item/started`。
+- [x] reducer 支持 `item/agentMessage/delta`。
+- [x] reducer 支持 `item/completed`。
+- [x] reducer 支持 `turn/completed`。
+- [x] reducer 支持 `error`。
+- [x] 在 CodexWeb 消息流结构中展示 user message、assistant delta、running、completed、failed、interrupted。
 - [ ] 将 app-server item / tool / delta 状态映射到 CodexWeb 历史消息、流式消息和工具 Cell 展示结构。
-- [ ] Composer 在 active turn 期间禁用或进入可控状态，并保持 CodexWeb 输入框交互风格。
+- [x] Composer 在 active turn 期间禁用或进入可控状态，并保持 CodexWeb 输入框交互风格。
 
 验证：
 
@@ -219,7 +226,17 @@ Smoke 记录：
 
 | Date | Runtime | Provider | Model | 场景 | Result | Evidence |
 |---|---|---|---|---|---|---|
-| 未运行 | local codex app-server，隔离 CODEX_HOME | app-server default | model/list default | one-turn chat | 待验证 | 待补充 |
+| 2026-07-09 | local codex app-server，隔离 CODEX_HOME | app-server default | `gpt-5.5` | one-turn chat，提示“请只回复：pong” | 通过 | CDP 页面验证 `/chat` 显示 user message 与 assistant `pong`，console 无错误；截图 `codexweb-phase4a-real-one-turn.png` |
+
+Phase 4A 记录：
+
+- 2026-07-09：新增 `src/codex-web/turn-reducer.ts`，按 app-server notification 构建 one-turn 状态；测试覆盖 thread/turn 启动、agent delta 拼接、item completed 覆盖最终文本和 error 失败态。
+- 2026-07-09：`AppServerProvider` 暴露 `sendOneTurn()`，复用已建立的 WebSocket bridge 发送 `thread/start` 和 `turn/start`，notification 统一进入 reducer 与 diagnostics。
+- 2026-07-09：`/chat` 新对话发送路径改为读取真实 `app-server.model/list`，并通过 `sendOneTurn()` 驱动 CodexWeb `MessageList` 的 user message、assistant streaming、running 和 completed 状态。
+- 2026-07-09：真实页面验证：CDP 打开 `http://192.168.3.12:3000/chat`，发送“请只回复：pong”，页面出现 assistant `pong`，状态恢复，输入框可用，console 无错误。
+- 2026-07-09：已运行 `npm run test`，5 个测试文件、20 个测试通过。
+- 2026-07-09：已运行 `npm run build`，通过；Turbopack 输出 theme loader trace warning，未阻塞构建。
+- 2026-07-09：已运行 `npm run test:smoke`，真实 bridge bootstrap 仍通过。
 
 ## 决策日志
 

@@ -2,6 +2,7 @@ import type { InitializeResponse } from "@/codex/protocol/generated/InitializeRe
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
 import type { JsonRpcNotification } from "@/codex/protocol/json-rpc";
+import type { AppServerTurnState } from "./turn-reducer";
 
 export type SourceBreadcrumb =
   | "app-server.initialize"
@@ -23,6 +24,7 @@ export type CodexWebAppServerState = {
   initialize: Sourced<InitializeResponse> | null;
   models: Sourced<ModelListResponse> | null;
   account: Sourced<GetAccountResponse> | null;
+  activeTurn: Sourced<AppServerTurnState> | null;
   diagnostics: Array<Sourced<JsonRpcNotification | { message: string }>>;
 };
 
@@ -31,5 +33,6 @@ export const initialAppServerState: CodexWebAppServerState = {
   initialize: null,
   models: null,
   account: null,
+  activeTurn: null,
   diagnostics: [],
 };
