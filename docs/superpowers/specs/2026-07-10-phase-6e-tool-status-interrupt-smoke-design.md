@@ -26,6 +26,8 @@ Phase 6D 已经统一实时和历史工具 item 的状态映射，覆盖 `comman
 - 历史中存在 interrupted，但之后已有 completed turn：不显示过期 notice。
 - thread 为 active 或存在 inProgress turn：继续使用现有“此会话可能仍在运行” degraded notice。
 
+状态优先级：当前页面的实时 turn > 其它 thread 运行隔离 notice > thread active / 最新 inProgress degraded notice > 最新 interrupted notice。这样不会用旧的 interrupted 状态覆盖仍在运行的 app-server thread。
+
 历史中断 notice 复用现有 `appServerNotice -> ChatView -> ErrorBanner` 接线，不新增 UI 组件，不向历史 transcript 注入伪 assistant 消息。
 
 分页主路径建议文案：
