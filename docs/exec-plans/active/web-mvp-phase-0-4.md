@@ -67,6 +67,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6B | 工具大输出展示截断 | Code complete | 实时和历史工具输出进入 CodexWeb 消息结构前按官方 1 MiB 前缀上限做展示保护 |
 | Phase 6C | Approval 队列与过期响应硬化 | Code complete | 多个 approval request 排队处理，resolved 时移除，历史页按 thread 过滤可见 approval |
 | Phase 6D | 工具状态完整映射 | Code complete | 实时和历史工具 item 统一复用 app-server 状态映射，覆盖 command、fileChange、MCP、dynamic 和 collab |
+| Phase 6E | 工具状态与中断反例验证 | Smoke passed | 普通、success、failed、interrupted 四类路径已用单元测试、build、smoke 和真实浏览器验证；当前隔离环境刷新后 interrupted 使用 `app-server.thread/read` fallback breadcrumb |
 
 ## Phase 0：协议和项目基线
 
@@ -358,13 +359,13 @@ Phase 5C 记录：
 | Tools | 大输出与增量输出截断策略 | Code complete | Phase 6B | 大 stdout/stderr 不撑爆页面；截断信息可见，原始输出保留在可诊断来源中 |
 | Interrupt | 运行中 turn 中断 | 已完成 | Phase 5D-B | 点击停止后调用官方中断路径，turn 进入 interrupted 或等价官方状态 |
 | Interrupt | interrupted 后继续下一轮 | 已完成 | Phase 5D-B | 中断后的同一 thread 可以继续发送新 turn，历史消息不丢失 |
-| Interrupt | 页面刷新后恢复 interrupted 状态 | 未开始 | Phase 6 | 刷新后历史页能从 app-server 状态显示 interrupted，而不是误报 completed |
+| Interrupt | 页面刷新后恢复 interrupted 状态 | Smoke passed | Phase 6E | 刷新后历史页能从最新历史 turn 显示 interrupted；当前隔离环境 `thread/turns/list` 无 experimental capability，已验证 fallback breadcrumb 为 `app-server.thread/read` |
 | Diagnostics | app-server transport close 与 pending request fail-fast | 部分完成 | Phase 6 | bridge/app-server 退出时 pending request 快速失败，UI 显示 diagnostics，不长时间挂起 |
 | Diagnostics | 未知 notification 可见诊断 | 部分完成 | Phase 6 | 未知 notification 不静默丢弃，在 diagnostics 中保留 method、source 和摘要 |
-| E2E / Smoke | 普通消息 vs 工具消息反例 | 未开始 | Phase 5D | 同一轮验证无工具普通消息和触发工具消息，断言工具 cell 只在触发路径出现 |
+| E2E / Smoke | 普通消息 vs 工具消息反例 | Smoke passed | Phase 6E | 普通文本消息无工具状态；触发 shell 命令时实时工具 cell 显示 success / failed 状态 |
 | E2E / Smoke | 无 approval vs approval 反例 | 已完成 | Phase 5E-B | 同一轮验证普通消息无 PermissionPrompt，触发权限时才出现 PermissionPrompt |
 | E2E / Smoke | 新 thread vs resume thread 反例 | 已完成 | Phase 5D-B | 新建会话走 `thread/start`，历史继续发送先走 `thread/resume`，两者日志和 UI 行为可区分 |
-| E2E / Smoke | success vs failed / interrupted 反例 | 未开始 | Phase 6 | completed、failed、interrupted 三类状态分别有可复现验证记录 |
+| E2E / Smoke | success vs failed / interrupted 反例 | Smoke passed | Phase 6E | 真实浏览器验证 success 显示 `已运行`、failed 显示 `运行失败`、中断后刷新显示 `Codex 已中断`；历史工具 cell 在当前 fallback 环境不保留，已记录限制 |
 
 优先级说明：
 
@@ -724,6 +725,51 @@ Phase 6D 记录：
 - 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
 - 2026-07-10：`npm run build` 后 `next-env.d.ts` 被 Next 自动改为 `./.next/types/routes.d.ts`，已按用户要求还原为 `./.next/dev/types/routes.d.ts`，不纳入本阶段提交。
 - 2026-07-10：单元测试反例：普通 agentMessage 不产生工具信息；command 非零 exit code 产生 error result；MCP completed 但 content block `is_error=true` 产生 error result；turn interrupted 不显示为工具 interrupted/cancelled。
+
+## Phase 6E：工具状态与中断反例验证
+
+目标：补齐 Phase 6D 后的语义验收闭环，确保普通消息不会显示工具状态，触发工具路径能区分 success / failed，并且页面刷新后能从 app-server 历史状态恢复最新 interrupted notice。
+
+架构：`active-turn-visibility-adapter` 接收最新历史 turn snapshot 和真实 source breadcrumb；`thread-turns-page-adapter` 只按明确排序方向提取最新 turn；`/chat/[id]` 在 metadata-first 分页成功时记录 `app-server.thread/turns/list`，fallback 时记录 `app-server.thread/read`。中断提示复用现有 `appServerNotice -> ChatView -> ErrorBanner`，不向 transcript 注入伪 assistant 消息。
+
+本阶段不做：新增 turn-status UI、引入持久 Playwright E2E runner、使用本地真实 `CODEX_HOME`、伪造 `thread/turns/list` capability、把 turn interrupted 写成工具 item 状态。
+
+实施清单：
+
+- [x] 扩展 `selectVisibleActiveTurn()`，支持最新历史 turn 的 `interrupted` / `inProgress` notice，并保留 source breadcrumb。
+- [x] 新增 `latestHistoryTurnFromPage()`，`desc` 取第一页第一项，`asc` 取最后一项，空 page 返回 `null`。
+- [x] `/chat/[id]` 在初始历史加载和 fallback 中保存最新历史 turn snapshot，并传入 selector；加载更早页面不覆盖最新 snapshot。
+- [x] 补单元测试覆盖 interrupted notice、completed 反例、实时 turn 优先级、分页排序和空 page。
+- [x] 在隔离 `CODEX_HOME` 下完成 targeted、全量、build、smoke 和真实浏览器验证。
+
+验证：
+
+```bash
+export NODE_HOME="/volume2/SSD/node-v24.14.0"
+export PATH=$NODE_HOME/bin:$PATH
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web/active-turn-visibility-adapter.test.ts src/codex-web/thread-turns-page-adapter.test.ts src/codex-web/tool-item-adapter.test.ts src/codex-web/tool-adapter.test.ts
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 6E 记录：
+
+- 2026-07-10：新增 `docs/superpowers/specs/2026-07-10-phase-6e-tool-status-interrupt-smoke-design.md` 和 `docs/superpowers/plans/2026-07-10-phase-6e-tool-status-interrupt-smoke.md`，记录工具状态与中断反例验证设计。
+- 2026-07-10：`active-turn-visibility-adapter` 支持最新历史 turn snapshot；`interrupted` 返回 `Codex 已中断` notice，`completed` 不显示旧中断，`inProgress` / `thread.status=active` 继续显示运行中 degraded notice。
+- 2026-07-10：`thread-turns-page-adapter` 新增 `latestHistoryTurnFromPage()`；`/chat/[id]` 主分页 source 为 `app-server.thread/turns/list`，fallback source 为 `app-server.thread/read`。
+- 2026-07-10：已运行 targeted adapter 测试，包含 `tsc --noEmit`，4 个测试文件、34 个测试通过。
+- 2026-07-10：已运行 `npm run test`，包含 `tsc --noEmit`，16 个测试文件、83 个测试通过。
+- 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
+- 2026-07-10：`npm run build` 后 `next-env.d.ts` 被 Next 自动改为 `./.next/types/routes.d.ts`，已按用户要求还原为 `./.next/dev/types/routes.d.ts`，不纳入本阶段提交。
+- 2026-07-10：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+- 2026-07-10：真实浏览器普通消息反例：`/chat` 发送“请只回复：phase6e-plain”，assistant 回复 `phase6e-plain`，主区未出现 `已运行`、`运行失败` 或命令输出。
+- 2026-07-10：真实浏览器 success 路径：历史 route `/chat/019f4a15-70d7-7d02-93e9-1b780fefab7f` 触发 `sh -c 'printf phase6e-success-live\n; sleep 3; exit 0'`，approval 后实时工具 cell 显示 `已运行` 和真实 `/bin/bash -lc ...` 命令。
+- 2026-07-10：真实浏览器 failed 路径：同一历史 route 触发 `sh -c 'echo phase6e-failed >&2; sleep 3; exit 7'`，approval 后实时工具 cell 显示 `运行失败`，最终 assistant 汇总退出码 7 和 `phase6e-failed` 输出。
+- 2026-07-10：真实浏览器 interrupted 路径：停止当前运行 turn 后页面显示“Codex 已中断。可以继续发送下一轮。”；刷新同一 route 后 ErrorBanner 显示 `Codex 已中断` 和 `此状态来自 app-server.thread/read 的最新 turn；可以继续发送下一轮。`
+- 2026-07-10：当前隔离环境中 `thread/turns/list` 返回 `requires experimentalApi capability`，因此真实浏览器刷新后 interrupted breadcrumb 走 fallback `app-server.thread/read`；主路径 `app-server.thread/turns/list` 已由单元测试覆盖。
+- 2026-07-10：真实浏览器 console 检查：0 errors / 0 warnings；验证后已停止 dev server。
 
 ## 决策日志
 

@@ -60,7 +60,7 @@
   - `LatestHistoryTurn = { status: TurnStatus; source: HistoryTurnStatusSource }`
   - `selectVisibleActiveTurn({ activeTurn, routeThreadId, resumedThreadId, thread, latestHistoryTurn })`
 
-- [ ] **Step 1: Add failing selector tests**
+- [x] **Step 1: Add failing selector tests**
 
 Add these tests to `src/codex-web/active-turn-visibility-adapter.test.ts`:
 
@@ -177,7 +177,7 @@ Add the import:
 import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 ```
 
-- [ ] **Step 2: Run selector tests and verify failure**
+- [x] **Step 2: Run selector tests and verify failure**
 
 Run:
 
@@ -190,7 +190,7 @@ npm run test -- src/codex-web/active-turn-visibility-adapter.test.ts
 
 Expected: FAIL because `latestHistoryTurn` is not accepted and interrupted history notice is not implemented.
 
-- [ ] **Step 3: Implement latest history notice semantics**
+- [x] **Step 3: Implement latest history notice semantics**
 
 Modify `src/codex-web/active-turn-visibility-adapter.ts`:
 
@@ -278,7 +278,7 @@ if (activeTurn.threadId === routeThreadId || activeTurn.threadId === resumedThre
 
 This ensures a current visible real turn wins over historical notice.
 
-- [ ] **Step 4: Run selector tests**
+- [x] **Step 4: Run selector tests**
 
 Run:
 
@@ -291,7 +291,7 @@ npm run test -- src/codex-web/active-turn-visibility-adapter.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 Run:
 
@@ -321,7 +321,7 @@ Expected: commit succeeds.
   - `latestHistoryTurnFromPage(turns, sortDirection, source): LatestHistoryTurn | null`
   - `/chat/[id]` state `latestHistoryTurn`
 
-- [ ] **Step 1: Add failing page-adapter tests**
+- [x] **Step 1: Add failing page-adapter tests**
 
 Add imports to `src/codex-web/thread-turns-page-adapter.test.ts`:
 
@@ -375,7 +375,7 @@ it("空 turns page 没有最新历史状态", () => {
 });
 ```
 
-- [ ] **Step 2: Run page-adapter tests and verify failure**
+- [x] **Step 2: Run page-adapter tests and verify failure**
 
 Run:
 
@@ -388,7 +388,7 @@ npm run test -- src/codex-web/thread-turns-page-adapter.test.ts
 
 Expected: FAIL because `latestHistoryTurnFromPage` does not exist.
 
-- [ ] **Step 3: Implement latest turn extraction**
+- [x] **Step 3: Implement latest turn extraction**
 
 Modify `src/codex-web/thread-turns-page-adapter.ts`:
 
@@ -418,7 +418,7 @@ export function latestHistoryTurnFromPage(
 }
 ```
 
-- [ ] **Step 4: Wire `/chat/[id]` state**
+- [x] **Step 4: Wire `/chat/[id]` state**
 
 Modify `src/app/chat/[id]/page.tsx` imports:
 
@@ -483,7 +483,7 @@ const activeTurnVisibility = isAppServerThread
 
 Do not update `latestHistoryTurn` when loading earlier pages. Earlier pages cannot replace the latest status from the initial desc page.
 
-- [ ] **Step 5: Run targeted tests**
+- [x] **Step 5: Run targeted tests**
 
 Run:
 
@@ -497,7 +497,7 @@ npm run test -- src/codex-web/active-turn-visibility-adapter.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 Run:
 
@@ -525,7 +525,7 @@ Expected: commit succeeds.
   - Phase 6E verification ledger.
   - Real browser observations for ordinary/success/failed/interrupted.
 
-- [ ] **Step 1: Run targeted status regression tests**
+- [x] **Step 1: Run targeted status regression tests**
 
 Run:
 
@@ -541,7 +541,7 @@ npm run test -- src/codex-web/tool-adapter.test.ts
 
 Expected: all targeted tests PASS.
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
 Run:
 
@@ -560,7 +560,7 @@ Expected:
 - `npm run build`: PASS; existing Turbopack NFT trace warning may remain.
 - `npm run test:smoke`: bridge bootstrap PASS and reports the isolated CODEX_HOME.
 
-- [ ] **Step 3: Restore `next-env.d.ts` if Next rewrites it**
+- [x] **Step 3: Restore `next-env.d.ts` if Next rewrites it**
 
 Run:
 
@@ -582,7 +582,7 @@ import "./.next/dev/types/routes.d.ts";
 
 Use `apply_patch`; do not include generated Next changes in the commit.
 
-- [ ] **Step 4: Start the isolated dev server**
+- [x] **Step 4: Start the isolated dev server**
 
 Run:
 
@@ -595,7 +595,7 @@ npm run dev
 
 Expected: the terminal prints the localhost URL and bridge/app-server startup succeeds. Keep the session open until browser validation finishes.
 
-- [ ] **Step 5: Validate ordinary message in the real browser**
+- [x] **Step 5: Validate ordinary message in the real browser**
 
 Use Playwright MCP with CDP endpoint `http://192.168.3.12:45737`.
 
@@ -611,7 +611,7 @@ Expected:
 - No tool group/header appears for this turn.
 - Browser console has no new errors or warnings.
 
-- [ ] **Step 6: Validate success command**
+- [x] **Step 6: Validate success command**
 
 Start a new chat and send:
 
@@ -627,7 +627,7 @@ Expected:
 - Completed header is success (`已运行`), not `运行失败`.
 - Expanding the tool group shows `phase6e-success`, `status: completed` and `exit code: 0`.
 
-- [ ] **Step 7: Validate failed command**
+- [x] **Step 7: Validate failed command**
 
 Start a new chat and send:
 
@@ -644,7 +644,7 @@ Expected:
 - Expanding the tool group shows `phase6e-failed` and `exit code: 7`.
 - The page remains usable after the failed tool result.
 
-- [ ] **Step 8: Validate interrupted and refreshed history**
+- [x] **Step 8: Validate interrupted and refreshed history**
 
 Start a new chat and send:
 
@@ -671,7 +671,7 @@ Expected after refresh:
 - Composer remains usable for the next turn.
 - Browser console has no new errors or warnings.
 
-- [ ] **Step 9: Stop the dev server and inspect browser artifacts**
+- [x] **Step 9: Stop the dev server and inspect browser artifacts**
 
 Stop the dev server cleanly with `Ctrl+C`.
 
@@ -688,7 +688,7 @@ Expected:
 - If `.playwright-mcp` does not exist, continue.
 - If `.playwright-mcp` contains files, do not delete or move them automatically. Output a separate “拟执行操作清单”，列出源路径和 `/volume2/SSD/Trash/home/rrssnas/code/codex/web/.playwright-mcp/` 目标路径，等待用户明确同意。
 
-- [ ] **Step 10: Update the active execution plan**
+- [x] **Step 10: Update the active execution plan**
 
 Append `## Phase 6E：工具状态与中断反例验证` to `docs/exec-plans/active/web-mvp-phase-0-4.md`:
 
@@ -721,7 +721,7 @@ Update backlog rows according to actual results:
 
 Only use `Smoke passed` for rows whose real-browser checks actually completed. If an environment dependency blocks a path, keep the row `部分完成` and record the exact blocker.
 
-- [ ] **Step 11: Commit Task 3**
+- [x] **Step 11: Commit Task 3**
 
 Run:
 
