@@ -66,6 +66,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6A | 历史分页加载 | 已完成 | `thread/read` metadata-first，`thread/turns/list` 分页加载更早 turn，失败时回退稳定历史读取 |
 | Phase 6B | 工具大输出展示截断 | Code complete | 实时和历史工具输出进入 CodexWeb 消息结构前按官方 1 MiB 前缀上限做展示保护 |
 | Phase 6C | Approval 队列与过期响应硬化 | Code complete | 多个 approval request 排队处理，resolved 时移除，历史页按 thread 过滤可见 approval |
+| Phase 6D | 工具状态完整映射 | Code complete | 实时和历史工具 item 统一复用 app-server 状态映射，覆盖 command、fileChange、MCP、dynamic 和 collab |
 
 ## Phase 0：协议和项目基线
 
@@ -352,7 +353,7 @@ Phase 5C 记录：
 | Approval | approval pending 时 composer 与状态栏 | 已完成 | Phase 5E-B | pending approval 期间 composer 不产生并发 turn；用户 approve/deny 后状态恢复 |
 | Approval | approve / deny 后同一个 turn 继续完成 | 已完成 | Phase 5E-B | approve 后 turn 继续到 completed；deny 后显示官方返回的失败/中断语义 |
 | Approval | 多个 approval 或过期 approval | Code complete | Phase 6C | 多个 server request 不串线；已完成/过期 approval 不再接受重复响应 |
-| Tools | exec / patch / file change / MCP / skill 完整状态映射 | 部分完成 | Phase 6 | running、success、failed、cancelled、interrupted 都有真实 source breadcrumb 和 CodexWeb 展示 |
+| Tools | exec / patch / file change / MCP / skill 完整状态映射 | Code complete | Phase 6D | command、fileChange、MCP、dynamic、collab 的 running、success、failed、declined 使用真实 source breadcrumb；interrupted 保持 turn 级状态，不伪造成工具状态 |
 | Tools | 工具结果默认折叠、展开详情 | 部分完成 | Phase 6 | 历史工具和新 turn 工具都默认折叠，展开后展示 stdout、stderr、patch 或 MCP 详情 |
 | Tools | 大输出与增量输出截断策略 | Code complete | Phase 6B | 大 stdout/stderr 不撑爆页面；截断信息可见，原始输出保留在可诊断来源中 |
 | Interrupt | 运行中 turn 中断 | 已完成 | Phase 5D-B | 点击停止后调用官方中断路径，turn 进入 interrupted 或等价官方状态 |
@@ -680,6 +681,49 @@ Phase 6C 记录：
 - 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
 - 2026-07-10：`npm run build` 后 `next-env.d.ts` 被 Next 自动改为 `./.next/types/routes.d.ts`，已按用户要求还原为 `./.next/dev/types/routes.d.ts`，不纳入本阶段提交。
 - 2026-07-10：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+
+## Phase 6D：工具状态完整映射
+
+目标：实时 turn 和历史 thread 使用同一套 app-server 工具 item 状态映射，覆盖 commandExecution、fileChange、mcpToolCall、dynamicToolCall 和 collabAgentToolCall。
+
+架构：新增 `tool-item-adapter` 作为纯数据转换层；实时 `tool-adapter` 和历史 `thread-history-adapter` 复用该 helper，不新增 Web 私有工具状态。MCP error 对齐官方：`failed`、`error` 或 `result.content[]` 内 `is_error` / `isError` 为 error；`interrupted` 仍是 turn 级状态，不写入工具 item。
+
+本阶段不做：完整 transcript、原始输出下载、工具详情 UI 大改、历史清理入口、真实 `CODEX_HOME` 验收。
+
+实施清单：
+
+- [x] 对照 generated schema 确认工具 item 状态枚举；`interrupted` 仅作为 turn 级状态处理。
+- [x] 新增 `src/codex-web/tool-item-adapter.ts`，统一 tool use、tool result、error 和 breadcrumb 语义。
+- [x] 实时 `tool-adapter` 接入共享 adapter，保留 command/fileChange 输出、file patch updates 和 MCP progress 上下文。
+- [x] 历史 `thread-history-adapter` 接入共享 adapter，dynamicToolCall 和 collabAgentToolCall 不再计入 unsupported。
+- [x] 补单元测试覆盖 command、fileChange、MCP content block `is_error`、dynamic tool、collab tool 和 turn interrupted 反例。
+
+验证：
+
+```bash
+export NODE_HOME="/volume2/SSD/node-v24.14.0"
+export PATH=$NODE_HOME/bin:$PATH
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web/tool-item-adapter.test.ts
+npm run test -- src/codex-web/tool-adapter.test.ts
+npm run test -- src/codex-web/thread-history-adapter.test.ts
+npm run test
+npm run build
+```
+
+Phase 6D 记录：
+
+- 2026-07-10：新增 `docs/superpowers/specs/2026-07-10-phase-6d-tool-status-mapping-design.md` 和 `docs/superpowers/plans/2026-07-10-phase-6d-tool-status-mapping.md`。
+- 2026-07-10：generated schema 确认：command/fileChange 支持 `inProgress/completed/failed/declined`；MCP/dynamic/collab 支持 `inProgress/completed/failed`；`interrupted` 是 turn 级状态，不写入工具 item。
+- 2026-07-10：新增 `tool-item-adapter`，实时 `tool-adapter` 和历史 `thread-history-adapter` 已复用同一套 tool use / result / error / breadcrumb 映射。
+- 2026-07-10：MCP error 按官方 content block 语义处理：`status=failed`、`error.message`、或 `result.content[]` 内 `is_error` / `isError` 都映射为 CodexWeb error result；不访问 generated `McpToolCallResult` 不存在的顶层 `isError`。
+- 2026-07-10：已运行 `npm run test -- src/codex-web/tool-item-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、7 个测试通过。
+- 2026-07-10：已运行 `npm run test -- src/codex-web/tool-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、8 个测试通过。
+- 2026-07-10：已运行 `npm run test -- src/codex-web/thread-history-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、6 个测试通过。
+- 2026-07-10：已运行 `npm run test`，包含 `tsc --noEmit`，16 个测试文件、74 个测试通过。
+- 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
+- 2026-07-10：`npm run build` 后 `next-env.d.ts` 被 Next 自动改为 `./.next/types/routes.d.ts`，已按用户要求还原为 `./.next/dev/types/routes.d.ts`，不纳入本阶段提交。
+- 2026-07-10：单元测试反例：普通 agentMessage 不产生工具信息；command 非零 exit code 产生 error result；MCP completed 但 content block `is_error=true` 产生 error result；turn interrupted 不显示为工具 interrupted/cancelled。
 
 ## 决策日志
 
