@@ -46,13 +46,19 @@ describe("thread-history-adapter", () => {
           command: "pwd",
           cwd: "/repo/web",
           source: "agent",
+          status: "completed",
+          durationMs: 12,
+          exitCode: 0,
+          processId: null,
           actions: [],
+          sourceBreadcrumb: "app-server.commandExecution",
         },
       },
       {
         type: "tool_result",
         tool_use_id: "cmd-1",
-        content: "/repo/web\nexit code: 0",
+        content:
+          "/repo/web\nstatus: completed\nexit code: 0\nduration: 12ms\nsource: app-server.commandExecution",
         is_error: false,
       },
       {
@@ -82,12 +88,13 @@ describe("thread-history-adapter", () => {
               diff: "@@",
             },
           ],
+          sourceBreadcrumb: "app-server.fileChange",
         },
       },
       {
         type: "tool_result",
         tool_use_id: "patch-1",
-        content: "completed: 1 file\n- update: src/app.ts",
+        content: "completed: 1 file\n- update: src/app.ts\nsource: app-server.fileChange",
         is_error: false,
       },
       {
@@ -99,15 +106,76 @@ describe("thread-history-adapter", () => {
           tool: "search",
           arguments: { q: "codex" },
           appContext: null,
+          pluginId: null,
+          status: "completed",
+          durationMs: 15,
+          sourceBreadcrumb: "app-server.mcpToolCall",
         },
       },
       {
         type: "tool_result",
         tool_use_id: "mcp-1",
-        content: "{\"ok\":true}",
+        content: "{\n  \"ok\": true\n}\nstatus: completed\nduration: 15ms\nsource: app-server.mcpToolCall",
         is_error: false,
       },
     ]);
+    expect(result.unsupportedItemCount).toBe(0);
+  });
+
+  it("把历史 dynamic 和 collab 工具映射为 CodexWeb 工具块", () => {
+    const result = threadToMessages(createThreadWithDynamicAndCollab());
+    const assistantContent = JSON.parse(result.messages[0].content);
+
+    expect(assistantContent).toEqual([
+      expect.objectContaining({
+        type: "tool_use",
+        id: "dyn-1",
+        name: "dynamic:browser/open",
+        input: expect.objectContaining({
+          namespace: "browser",
+          tool: "open",
+          status: "failed",
+          success: false,
+          durationMs: 10,
+          sourceBreadcrumb: "app-server.dynamicToolCall",
+        }),
+      }),
+      expect.objectContaining({
+        type: "tool_result",
+        tool_use_id: "dyn-1",
+        content: expect.stringContaining("source: app-server.dynamicToolCall"),
+        is_error: true,
+      }),
+      expect.objectContaining({
+        type: "tool_use",
+        id: "collab-1",
+        name: "collab:wait",
+        input: expect.objectContaining({
+          status: "completed",
+          senderThreadId: "thread-a",
+          receiverThreadIds: ["thread-b"],
+          sourceBreadcrumb: "app-server.collabAgentToolCall",
+        }),
+      }),
+      expect.objectContaining({
+        type: "tool_result",
+        tool_use_id: "collab-1",
+        content: expect.stringContaining("source: app-server.collabAgentToolCall"),
+        is_error: false,
+      }),
+    ]);
+    expect(result.unsupportedItemCount).toBe(0);
+  });
+
+  it("把历史 MCP content block is_error 映射为 error result", () => {
+    const result = threadToMessages(createThreadWithMcpContentError());
+    const assistantContent = JSON.parse(result.messages[0].content);
+
+    expect(assistantContent[1]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "mcp-error",
+      is_error: true,
+    });
     expect(result.unsupportedItemCount).toBe(0);
   });
 
@@ -228,6 +296,84 @@ function createThreadWithPatchAndMcp(): Thread {
         error: null,
         startedAt: 1783570200,
         completedAt: 1783570201,
+        durationMs: 1000,
+      },
+    ],
+  };
+}
+
+function createThreadWithDynamicAndCollab(): Thread {
+  return {
+    ...createThread(),
+    turns: [
+      {
+        id: "turn-dynamic",
+        items: [
+          {
+            type: "dynamicToolCall",
+            id: "dyn-1",
+            namespace: "browser",
+            tool: "open",
+            arguments: { url: "http://localhost:3000" },
+            status: "failed",
+            contentItems: [{ type: "inputText", text: "failed" }],
+            success: false,
+            durationMs: 10,
+          },
+          {
+            type: "collabAgentToolCall",
+            id: "collab-1",
+            tool: "wait",
+            status: "completed",
+            senderThreadId: "thread-a",
+            receiverThreadIds: ["thread-b"],
+            prompt: null,
+            model: null,
+            reasoningEffort: null,
+            agentsStates: { "thread-b": { status: "completed", message: null } },
+          },
+        ],
+        itemsView: "full",
+        status: "completed",
+        error: null,
+        startedAt: 1783570300,
+        completedAt: 1783570301,
+        durationMs: 1000,
+      },
+    ],
+  };
+}
+
+function createThreadWithMcpContentError(): Thread {
+  return {
+    ...createThread(),
+    turns: [
+      {
+        id: "turn-mcp-error",
+        items: [
+          {
+            type: "mcpToolCall",
+            id: "mcp-error",
+            server: "docs",
+            tool: "search",
+            status: "completed",
+            arguments: { q: "codex" },
+            appContext: null,
+            pluginId: null,
+            result: {
+              content: [{ type: "text", text: "bad", is_error: true }],
+              structuredContent: null,
+              _meta: null,
+            },
+            error: null,
+            durationMs: 15,
+          },
+        ],
+        itemsView: "full",
+        status: "completed",
+        error: null,
+        startedAt: 1783570350,
+        completedAt: 1783570351,
         durationMs: 1000,
       },
     ],

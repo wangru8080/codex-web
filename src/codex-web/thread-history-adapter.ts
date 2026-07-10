@@ -3,7 +3,7 @@ import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 import type { ChatSession, Message, MessageContentBlock } from "@/types";
 
-import { formatToolDisplayOutput } from "./tool-output-display";
+import { codexWebToolResultFromItem, codexWebToolUseFromItem } from "./tool-item-adapter";
 
 const CODEX_PROVIDER_ID = "codex_account";
 const CODEX_RUNTIME_PIN = "codex_runtime";
@@ -109,81 +109,26 @@ function assistantItemToBlocks(item: ThreadItem): MessageContentBlock[] {
     return text ? [{ type: "text", text }] : [];
   }
 
-  if (item.type === "commandExecution") {
-    const result = commandExecutionResult(item);
+  const toolUse = codexWebToolUseFromItem(item);
+  if (toolUse) {
+    const result = codexWebToolResultFromItem(item);
     return [
       {
         type: "tool_use",
-        id: item.id,
-        name: "bash",
-        input: {
-          command: item.command,
-          cwd: item.cwd,
-          source: item.source,
-          actions: item.commandActions,
-        },
+        id: toolUse.id,
+        name: toolUse.name,
+        input: toolUse.input,
       },
       ...(result
         ? [
             {
               type: "tool_result" as const,
-              tool_use_id: item.id,
+              tool_use_id: result.tool_use_id,
               content: result.content,
-              is_error: result.isError,
+              is_error: result.is_error,
             },
           ]
         : []),
-    ];
-  }
-
-  if (item.type === "fileChange") {
-    return [
-      {
-        type: "tool_use",
-        id: item.id,
-        name: "fileChange",
-        input: {
-          status: item.status,
-          files: item.changes.map((change) => change.path),
-          changes: item.changes,
-        },
-      },
-      ...(item.status === "inProgress"
-        ? []
-        : [
-            {
-              type: "tool_result" as const,
-              tool_use_id: item.id,
-              content: formatFileChanges(item),
-              is_error: item.status === "failed" || item.status === "declined",
-            },
-          ]),
-    ];
-  }
-
-  if (item.type === "mcpToolCall") {
-    return [
-      {
-        type: "tool_use",
-        id: item.id,
-        name: `mcp:${item.server}/${item.tool}`,
-        input: {
-          server: item.server,
-          tool: item.tool,
-          arguments: item.arguments,
-          appContext: item.appContext,
-        },
-      },
-      ...(item.status === "inProgress"
-        ? []
-        : [
-            {
-              type: "tool_result" as const,
-              tool_use_id: item.id,
-              content: formatMcpResult(item),
-              is_error: item.status === "failed" || !!item.error,
-            },
-          ]),
     ];
   }
 
@@ -213,59 +158,10 @@ function isUnsupportedHistoryItem(item: ThreadItem): boolean {
     item.type !== "agentMessage" &&
     item.type !== "commandExecution" &&
     item.type !== "fileChange" &&
-    item.type !== "mcpToolCall"
+    item.type !== "mcpToolCall" &&
+    item.type !== "dynamicToolCall" &&
+    item.type !== "collabAgentToolCall"
   );
-}
-
-function commandExecutionResult(
-  item: Extract<ThreadItem, { type: "commandExecution" }>,
-): { content: string; isError: boolean } | null {
-  if (item.status === "inProgress") return null;
-  const output = item.aggregatedOutput?.trimEnd() ?? "";
-  const suffix = typeof item.exitCode === "number" ? `\nexit code: ${item.exitCode}` : "";
-  const displayOutput = formatToolDisplayOutput(output, {
-    sourceLabel: "app-server commandExecution item",
-  });
-  return {
-    content: `${displayOutput}${suffix}`.trim(),
-    isError: item.status === "failed" || item.status === "declined" || (item.exitCode ?? 0) !== 0,
-  };
-}
-
-function formatFileChanges(item: Extract<ThreadItem, { type: "fileChange" }>): string {
-  const header = `${item.status}: ${item.changes.length} file${item.changes.length === 1 ? "" : "s"}`;
-  const paths = item.changes
-    .map((change) => `- ${formatChangeKind(change.kind)}: ${change.path}`)
-    .join("\n");
-  return [header, paths].filter(Boolean).join("\n");
-}
-
-function formatChangeKind(
-  kind: Extract<ThreadItem, { type: "fileChange" }>["changes"][number]["kind"],
-): string {
-  if (kind.type === "update" && kind.move_path) return `update from ${kind.move_path}`;
-  return kind.type;
-}
-
-function formatMcpResult(item: Extract<ThreadItem, { type: "mcpToolCall" }>): string {
-  if (item.error?.message) {
-    return formatToolDisplayOutput(item.error.message, {
-      sourceLabel: "app-server mcpToolCall item",
-    });
-  }
-  if (!item.result) return "";
-  return formatToolDisplayOutput(stringifyJson(item.result.structuredContent ?? item.result.content), {
-    sourceLabel: "app-server mcpToolCall item",
-  });
-}
-
-function stringifyJson(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
 }
 
 function secondsToIso(seconds: number | null): string {
