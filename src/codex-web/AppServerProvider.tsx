@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import type { InitializeResponse } from "@/codex/protocol/generated/InitializeResponse";
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
@@ -42,8 +42,10 @@ import {
 } from "./interrupt-adapter";
 import { buildThreadResumeParams } from "./resume-adapter";
 import {
+  createAcceptedTurnState,
   createStartingTurnState,
   initialAppServerTurnState,
+  mergeAcceptedTurnState,
   reduceAppServerTurnNotification,
   type AppServerTurnState,
 } from "./turn-reducer";
@@ -91,7 +93,6 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<CodexWebAppServerState>(initialAppServerState);
   const bridgeUrl = useMemo(() => process.env.NEXT_PUBLIC_CODEX_BRIDGE_URL ?? "", []);
   const clientRef = useRef<AppServerBrowserClient | null>(null);
-  const turnCompletionRef = useRef<((turn: AppServerTurnState) => void) | null>(null);
   const approvalResponseStateRef = useRef<ApprovalResponseGuardState>({});
 
   useEffect(() => {
@@ -156,14 +157,6 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           }),
         };
 
-        if (isTerminalTurn(activeTurn)) {
-          const resolve = turnCompletionRef.current;
-          turnCompletionRef.current = null;
-          if (resolve) {
-            queueMicrotask(() => resolve(activeTurn));
-          }
-        }
-
         return next;
       });
     });
@@ -215,14 +208,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return () => {
       disposed = true;
       clientRef.current = null;
-      turnCompletionRef.current = null;
       approvalResponseStateRef.current = {};
       client.close();
     };
   }, [bridgeUrl]);
 
   const resetTurn = useCallback(() => {
-    turnCompletionRef.current = null;
     setState((current) => ({
       ...current,
       activeTurn: null,
@@ -364,7 +355,6 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       },
     }));
 
-    const completed = waitForTurnCompletion(turnCompletionRef);
     const turnParams: TurnStartParams = {
       threadId,
       input: [{ type: "text", text: trimmed, text_elements: [] }],
@@ -376,7 +366,6 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     try {
       turnResponse = (await client.request("turn/start", turnParams)) as TurnStartResponse;
     } catch (error) {
-      turnCompletionRef.current = null;
       setState((current) => {
         const activeTurn = current.activeTurn?.data;
         if (
@@ -395,22 +384,17 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw error;
     }
     onAccepted?.(threadId);
+    const acceptedTurn = createAcceptedTurnState(threadId, turnResponse.turn.id);
     setState((current) => ({
       ...current,
       activeTurn: {
         source: "app-server.notification",
-        data: {
-          ...(current.activeTurn?.data ?? createStartingTurnState()),
-          threadId,
-          turnId: turnResponse.turn.id,
-          status: "running",
-        },
+        data: mergeAcceptedTurnState(current.activeTurn?.data, acceptedTurn),
       },
     }));
 
-    const finalTurn = await completed;
     void refreshThreads().catch(() => undefined);
-    return finalTurn;
+    return acceptedTurn;
   }, [refreshThreads]);
 
   const sendOneTurn = useCallback(async ({ content, cwd, model }: SendOneTurnParams) => {
@@ -528,10 +512,6 @@ function appendDiagnostic(
   return [...diagnostics, entry].slice(-100);
 }
 
-function isTerminalTurn(turn: AppServerTurnState): boolean {
-  return turn.status === "completed" || turn.status === "failed" || turn.status === "interrupted";
-}
-
 function resolvePendingApprovals(
   pendingApprovals: CodexWebAppServerState["pendingApprovals"],
   notification: { method: string; params?: unknown },
@@ -549,22 +529,6 @@ function resolvePendingApprovals(
 
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function waitForTurnCompletion(
-  ref: MutableRefObject<((turn: AppServerTurnState) => void) | null>,
-): Promise<AppServerTurnState> {
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      ref.current = null;
-      reject(new Error("等待 turn/completed 超时"));
-    }, 10 * 60 * 1000);
-
-    ref.current = (turn) => {
-      window.clearTimeout(timeout);
-      resolve(turn);
-    };
-  });
 }
 
 function threadListParams(): ThreadListParams {

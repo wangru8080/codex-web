@@ -188,6 +188,7 @@ function NewChatPageInner() {
   }, []);
   const [createdSessionId, setCreatedSessionId] = useState<string | undefined>();
   const abortControllerRef = useRef<AbortController | null>(null);
+  const finalizedAppServerTurnRef = useRef<string>('');
   // #615: guards the first-message send while it's mid-flight. We defer the
   // isStreaming / optimistic-bubble flips until the backend ACCEPTS the message
   // (otherwise flipping `isNewChat` remounts the composer and eats the
@@ -220,6 +221,55 @@ function NewChatPageInner() {
       setStatusText(undefined);
     }
   }, [appServerTurn]);
+
+  useEffect(() => {
+    if (!isStreaming || !appServerTurn) return;
+    if (!['completed', 'failed', 'interrupted'].includes(appServerTurn.status)) return;
+
+    const finalKey = `${appServerTurn.threadId}:${appServerTurn.turnId}:${appServerTurn.status}`;
+    if (finalizedAppServerTurnRef.current === finalKey) return;
+    finalizedAppServerTurnRef.current = finalKey;
+
+    if (appServerTurn.status === 'failed') {
+      setErrorBanner({
+        message: 'Codex 处理失败',
+        description: appServerTurn.errorMessage || undefined,
+      });
+    } else if (appServerTurn.status === 'interrupted') {
+      const assistantMessage: Message = {
+        id: 'temp-interrupted-' + Date.now(),
+        session_id: appServerTurn.threadId || createdSessionId || '',
+        role: 'assistant',
+        content: 'Codex 已中断。可以继续发送下一轮。',
+        created_at: new Date().toISOString(),
+        token_usage: null,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } else if (appServerTurn.assistantText.trim()) {
+      const assistantMessage: Message = {
+        id: 'temp-assistant-' + Date.now(),
+        session_id: appServerTurn.threadId || createdSessionId || '',
+        role: 'assistant',
+        content: appServerTurn.assistantText.trim(),
+        created_at: new Date().toISOString(),
+        token_usage: null,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    }
+
+    setIsStreaming(false);
+    setStreamingContent('');
+    setStreamingThinkingContent('');
+    setToolUses([]);
+    setToolResults([]);
+    setStreamingToolOutput('');
+    setStatusText(undefined);
+    setPendingPermission(null);
+    setPermissionResolved(null);
+    setPendingApprovalSessionId('');
+    abortControllerRef.current = null;
+    firstSendInFlightRef.current = false;
+  }, [appServerTurn, createdSessionId, isStreaming, setPendingApprovalSessionId]);
 
   useEffect(() => {
     setPendingApprovalSessionId(appServerApproval?.threadId ?? '');
@@ -463,6 +513,7 @@ function NewChatPageInner() {
       // return false so the composer preserves the user's text + attachments —
       // otherwise a session-create 500 silently eats the screenshot.
       let accepted = false;
+      let handoffToAppServerTurn = false;
 
       try {
         const virtualSessionId = `app-server-${Date.now()}`;
@@ -505,38 +556,15 @@ function NewChatPageInner() {
           setMessages([userMessage]);
         }
 
-        const completedTurn = await sendOneTurn({
+        const acceptedTurn = await sendOneTurn({
           content,
           cwd: workingDir.trim(),
           model: currentModel,
         });
-
-        if (completedTurn.status === 'failed') {
-          throw new Error(completedTurn.errorMessage || 'Codex turn failed');
+        if (acceptedTurn.threadId) {
+          setCreatedSessionId(acceptedTurn.threadId);
         }
-        if (completedTurn.status === 'interrupted') {
-          const assistantMessage: Message = {
-            id: 'temp-interrupted-' + Date.now(),
-            session_id: completedTurn.threadId || virtualSessionId,
-            role: 'assistant',
-            content: 'Codex 已中断。可以继续发送下一轮。',
-            created_at: new Date().toISOString(),
-            token_usage: null,
-          };
-          setMessages((prev) => [...prev, assistantMessage]);
-          return;
-        }
-        if (completedTurn.assistantText.trim()) {
-          const assistantMessage: Message = {
-            id: 'temp-assistant-' + Date.now(),
-            session_id: completedTurn.threadId || virtualSessionId,
-            role: 'assistant',
-            content: completedTurn.assistantText.trim(),
-            created_at: new Date().toISOString(),
-            token_usage: null,
-          };
-          setMessages((prev) => [...prev, assistantMessage]);
-        }
+        handoffToAppServerTurn = true;
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           setStatusText('已停止');
@@ -550,18 +578,20 @@ function NewChatPageInner() {
         // keep today's behavior — the message already went, so the composer clears.
         if (!accepted) return false;
       } finally {
-        setIsStreaming(false);
-        setStreamingContent('');
-        setStreamingThinkingContent('');
-        setToolUses([]);
-        setToolResults([]);
-        setStreamingToolOutput('');
-        setStatusText(undefined);
-        setPendingPermission(null);
-        setPermissionResolved(null);
-        setPendingApprovalSessionId('');
-        abortControllerRef.current = null;
-        firstSendInFlightRef.current = false;
+        if (!handoffToAppServerTurn) {
+          setIsStreaming(false);
+          setStreamingContent('');
+          setStreamingThinkingContent('');
+          setToolUses([]);
+          setToolResults([]);
+          setStreamingToolOutput('');
+          setStatusText(undefined);
+          setPendingPermission(null);
+          setPermissionResolved(null);
+          setPendingApprovalSessionId('');
+          abortControllerRef.current = null;
+          firstSendInFlightRef.current = false;
+        }
       }
     },
     [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, sendOneTurn]

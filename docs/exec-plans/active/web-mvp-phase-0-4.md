@@ -69,7 +69,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6D | 工具状态完整映射 | Code complete | 实时和历史工具 item 统一复用 app-server 状态映射，覆盖 command、fileChange、MCP、dynamic 和 collab |
 | Phase 6E | 工具状态与中断反例验证 | Smoke passed | 普通、success、failed、interrupted 四类路径已用单元测试、build、smoke 和真实浏览器验证；当前隔离环境刷新后 interrupted 使用 `app-server.thread/read` fallback breadcrumb |
 | Phase 6F Task 1 | 协议观察脚本和真实 fallback 数据判定 | Code complete | `thread/read(includeTurns:true)` 已用只读脚本观察；当前目标 thread 不含可恢复工具 item，Web 不从 assistant 文本伪造工具 cell |
-| Phase 6F Task 3 | 独立工具路径真实浏览器验证 | 部分完成 | file read 成功；web direct 成功；curl 网络工具因 DNS 失败但失败 UI 可见；write 文件实际落地但 turn completion 超时 |
+| Phase 6F Task 3 | 独立工具路径真实浏览器验证 | Smoke passed | file read、web direct、write/fileChange 和历史 route 复查完成；curl baidu 在当前 app-server 命令环境仍受网络/代理限制但错误可见；write completion timeout 已修复 |
 
 ## Phase 0：协议和项目基线
 
@@ -798,6 +798,14 @@ Phase 6F Task 3 记录：
 - 2026-07-10：write 路径残留风险：虽然文件写入成功，页面最终显示“创建会话失败 / 等待 turn/completed 超时”，未进入正常 completed 收口；需后续单独调查 approval 后 completion timeout。
 - 2026-07-10：本轮没有完成新工具 thread 的历史 route 复查；dev server 停止后浏览器标签进入 `chrome-error://chromewebdata/`，无法再从 DOM 取本轮新 thread 链接。当前可确定结论仍以 Task 1 的 `thread/read` 协议观察为准：fallback 不含可恢复工具 item 时 Web 不伪造工具 cell。
 - 2026-07-10：真实浏览器 console 检查：0 errors / 0 warnings；验证后已停止 dev server。
+- 2026-07-10：修复 completion 收口：Web 的 `turn/start` / `thread/start` Promise 语义改为与官方 TUI 对齐，只表示 app-server accepted；running、completed、failed、interrupted 继续由 notification reducer 驱动，避免缺失或延迟 `turn/completed` 时把已执行动作误报为“创建会话失败”。
+- 2026-07-10：修复后已运行 `npm run test`，包含 `tsc --noEmit`，16 个测试文件、85 个测试通过；新增 accepted turn 不等待 completed、accepted 不覆盖已到达终态 notification 的单元测试。
+- 2026-07-10：修复后 `npm run build` 在默认 sandbox 下因 Turbopack 创建进程 / 绑定端口触发 `Operation not permitted`；提权重跑通过，仍仅有既有 `theme/loader.ts` / `next.config.mjs` NFT trace warning。`next-env.d.ts` 已按用户要求还原为 `./.next/dev/types/routes.d.ts`。
+- 2026-07-10：修复后 `npm run test:smoke` 在默认 sandbox 下因 `tsx` IPC pipe `listen EPERM` 失败；提权重跑通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+- 2026-07-10：修复后真实浏览器 curl baidu 路径：无代理 dev server 下请求 `curl -I https://www.baidu.com/`，页面回复 `curl: (6) Could not resolve host: www.baidu.com`；代理环境 dev server 下命令可见代理地址但 app-server 命令环境无法连接 `192.168.3.12:7899`，页面回复 `curl: (7) Failed to connect ... Couldn't connect to server`。两次均无 completion timeout，属于环境网络/代理连通性限制。
+- 2026-07-10：修复后真实浏览器 write 路径：请求创建 `/volume2/SSD/codex/Temp/phase6f-write-check.txt`，approval 显示目标路径，`Allow Once` 后文件实际创建，内容为 `phase6f-write-ok`，页面正常回复“写入成功”，未再出现“等待 turn/completed 超时”。
+- 2026-07-10：Step 6 历史 route 复查完成：打开 `/chat/019f4ccb-3432-7692-a164-f631394a66de` 后历史只恢复用户消息和 assistant “写入成功”，没有伪造工具 cell；页面显示 `thread/turns/list requires experimentalApi capability` 后回退到 `thread/read`，符合 fallback 不伪造工具过程区的原则。
+- 2026-07-10：修复后真实浏览器 console 检查：0 errors / 0 warnings；验证后已停止 dev server。
 
 ## 决策日志
 

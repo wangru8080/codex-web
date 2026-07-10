@@ -36,6 +36,36 @@ export function createStartingTurnState(): AppServerTurnState {
   };
 }
 
+export function createAcceptedTurnState(threadId: string, turnId: string): AppServerTurnState {
+  return {
+    ...initialAppServerTurnState,
+    status: "running",
+    threadId,
+    turnId,
+  };
+}
+
+export function mergeAcceptedTurnState(
+  current: AppServerTurnState | undefined,
+  accepted: AppServerTurnState,
+): AppServerTurnState {
+  if (
+    current &&
+    current.threadId === accepted.threadId &&
+    current.turnId === accepted.turnId &&
+    isTerminalTurnStatus(current.status)
+  ) {
+    return current;
+  }
+
+  return {
+    ...(current ?? accepted),
+    threadId: accepted.threadId,
+    turnId: accepted.turnId,
+    status: "running",
+  };
+}
+
 export function reduceAppServerTurnNotification(
   state: AppServerTurnState,
   notification: JsonRpcNotification,
@@ -155,10 +185,14 @@ export function reduceAppServerTurnNotification(
 }
 
 function normalizeTurnStatus(status: unknown): AppServerTurnStatus {
-  if (status === "completed" || status === "failed" || status === "interrupted") {
+  if (isTerminalTurnStatus(status)) {
     return status;
   }
   return "running";
+}
+
+function isTerminalTurnStatus(status: unknown): status is "completed" | "failed" | "interrupted" {
+  return status === "completed" || status === "failed" || status === "interrupted";
 }
 
 function readTurnErrorMessage(error: unknown): string {

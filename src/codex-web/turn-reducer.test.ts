@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createAcceptedTurnState,
   createStartingTurnState,
   initialAppServerTurnState,
+  mergeAcceptedTurnState,
   reduceAppServerTurnNotification,
 } from "./turn-reducer";
 
@@ -100,5 +102,30 @@ describe("reduceAppServerTurnNotification", () => {
       { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@" },
     ]);
     expect(state.mcpProgress["mcp-1"]).toBe("查询中\n");
+  });
+
+  it("turn/start accepted 只进入 running，不要求等待 turn/completed", () => {
+    const accepted = createAcceptedTurnState("thread-1", "turn-1");
+
+    expect(accepted).toMatchObject({
+      status: "running",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      assistantText: "",
+    });
+  });
+
+  it("accepted 状态不会覆盖已经到达的终态 notification", () => {
+    const completed = reduceAppServerTurnNotification(createAcceptedTurnState("thread-1", "turn-1"), {
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: { id: "turn-1", status: "completed", error: null },
+      },
+    });
+
+    const merged = mergeAcceptedTurnState(completed, createAcceptedTurnState("thread-1", "turn-1"));
+
+    expect(merged.status).toBe("completed");
   });
 });

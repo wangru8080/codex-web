@@ -527,6 +527,7 @@ export function ChatView({
   const pendingPermission = appServerApproval?.permission ?? streamSnapshot?.pendingPermission ?? null;
   const permissionResolved = streamSnapshot?.permissionResolved ?? null;
   const rewindPoints = getRewindPoints(activeSessionId);
+  const finalizedAppServerTurnRef = useRef<string>('');
 
   // ── Skill nudge banner ──
   // Listens for 'skill-nudge' window events dispatched by stream-session-manager
@@ -696,6 +697,45 @@ export function ChatView({
     setMessages: cappedSetMessages,
     onStreamCompleted: handleStreamCompleted,
   });
+
+  useEffect(() => {
+    if (!appServerSend || !appServerLocalStreaming || !appServerTurn) return;
+    if (!['completed', 'failed', 'interrupted'].includes(appServerTurn.status)) return;
+
+    const finalKey = `${appServerTurn.threadId}:${appServerTurn.turnId}:${appServerTurn.status}`;
+    if (finalizedAppServerTurnRef.current === finalKey) return;
+    finalizedAppServerTurnRef.current = finalKey;
+
+    if (appServerTurn.status === 'failed') {
+      setAppServerErrorBanner({
+        message: 'Codex 发送失败',
+        description: appServerTurn.errorMessage || undefined,
+      });
+    } else if (appServerTurn.status === 'interrupted') {
+      const interruptedMessage: Message = {
+        id: 'temp-interrupted-' + Date.now(),
+        session_id: appServerTurn.threadId || activeSessionId,
+        role: 'assistant',
+        content: 'Codex 已中断。可以继续发送下一轮。',
+        created_at: new Date().toISOString(),
+        token_usage: null,
+      };
+      cappedSetMessages((prev) => [...prev, interruptedMessage]);
+    } else if (appServerTurn.assistantText.trim()) {
+      const assistantMessage: Message = {
+        id: 'temp-assistant-' + Date.now(),
+        session_id: appServerTurn.threadId || activeSessionId,
+        role: 'assistant',
+        content: appServerTurn.assistantText.trim(),
+        created_at: new Date().toISOString(),
+        token_usage: null,
+      };
+      cappedSetMessages((prev) => [...prev, assistantMessage]);
+    }
+
+    setAppServerLocalStreaming(false);
+    pendingOptimisticUserIdRef.current = null;
+  }, [activeSessionId, appServerLocalStreaming, appServerSend, appServerTurn, cappedSetMessages]);
 
   const initializedRef = useRef(false);
   useEffect(() => {
@@ -1168,9 +1208,10 @@ export function ChatView({
         setAppServerLocalStreaming(true);
         setAppServerErrorBanner(null);
         let accepted = false;
+        let handoffToAppServerTurn = false;
 
         try {
-          const completedTurn = await appServerSend({
+          await appServerSend({
             content: trimmed,
             cwd: workingDirectory,
             model: currentModel,
@@ -1189,54 +1230,16 @@ export function ChatView({
               cappedSetMessages((prev) => [...prev, userMessage]);
             },
           });
-          if (completedTurn.status === 'failed') {
-            throw new Error(completedTurn.errorMessage || 'Codex turn failed');
-          }
-
-          if (!accepted) {
-            accepted = true;
-            const userMessage: Message = {
-              id: 'temp-' + Date.now(),
-              session_id: completedTurn.threadId || activeSessionId,
-              role: 'user',
-              content: displayOverride || content,
-              created_at: new Date().toISOString(),
-              token_usage: null,
-            };
-            pendingOptimisticUserIdRef.current = userMessage.id;
-            cappedSetMessages((prev) => [...prev, userMessage]);
-          }
-
-          if (completedTurn.status === 'interrupted') {
-            const interruptedMessage: Message = {
-              id: 'temp-interrupted-' + Date.now(),
-              session_id: completedTurn.threadId || activeSessionId,
-              role: 'assistant',
-              content: 'Codex 已中断。可以继续发送下一轮。',
-              created_at: new Date().toISOString(),
-              token_usage: null,
-            };
-            cappedSetMessages((prev) => [...prev, interruptedMessage]);
-            return;
-          }
-          if (completedTurn.assistantText.trim()) {
-            const assistantMessage: Message = {
-              id: 'temp-assistant-' + Date.now(),
-              session_id: completedTurn.threadId || activeSessionId,
-              role: 'assistant',
-              content: completedTurn.assistantText.trim(),
-              created_at: new Date().toISOString(),
-              token_usage: null,
-            };
-            cappedSetMessages((prev) => [...prev, assistantMessage]);
-          }
+          handoffToAppServerTurn = true;
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error);
           setAppServerErrorBanner({ message: 'Codex 发送失败', description: errMsg });
           if (!accepted) return false;
         } finally {
-          setAppServerLocalStreaming(false);
-          pendingOptimisticUserIdRef.current = null;
+          if (!handoffToAppServerTurn) {
+            setAppServerLocalStreaming(false);
+            pendingOptimisticUserIdRef.current = null;
+          }
         }
         return;
       }

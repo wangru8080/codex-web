@@ -402,7 +402,7 @@ Expected:
 - Final answer says write completed or reports official denial/error.
 - The created file is test artifact. Do not delete it. If cleanup is desired, output a separate “拟执行操作清单” to move it to `/volume2/SSD/Trash/volume2/SSD/codex/Temp/phase6f-write-check.txt` and wait for user confirmation.
 
-- [ ] **Step 6: Validate history route after tool turns**
+- [x] **Step 6: Validate history route after tool turns**
 
 Open or refresh the history route for each tool thread.
 
@@ -410,6 +410,12 @@ Expected:
 
 - If `thread/read` history includes tool items, historical process group remains visible and default collapsed; expanding shows status/source/output.
 - If `thread/read` history does not include tool items, no fake tool cell appears; document that only assistant summary is recoverable in fallback.
+
+Observed on 2026-07-10 after completion fix:
+
+- New write thread `/chat/019f4ccb-3432-7692-a164-f631394a66de` restored only the user message and assistant `写入成功` summary.
+- No fake tool cell appeared when fallback history did not expose recoverable tool items.
+- Page showed `thread/turns/list requires experimentalApi capability` and used the stable fallback path.
 
 - [x] **Step 7: Stop dev server and inspect artifacts**
 
@@ -444,6 +450,12 @@ git commit -m "docs: 更新 Phase 6F 工具历史验证"
 ```
 
 Expected: commit succeeds after approved artifact cleanup.
+
+Follow-up implementation notes on 2026-07-10:
+
+- `turn/start` / `thread/start` Web action semantics now match official TUI: accepted request returns after app-server accepts the turn; terminal state is notification-driven.
+- `curl -I https://www.baidu.com/` was rechecked in the browser. Without proxy it failed with DNS resolution; with proxy env it failed to connect to `192.168.3.12:7899` from the app-server command environment. Both errors were visible and no completion timeout occurred.
+- Write/fileChange was rechecked in the browser. `Allow Once` created `/volume2/SSD/codex/Temp/phase6f-write-check.txt` with `phase6f-write-ok`, and the page completed with `写入成功`.
 
 ---
 
