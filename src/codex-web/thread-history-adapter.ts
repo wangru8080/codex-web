@@ -1,9 +1,9 @@
 import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 import type { Turn } from "@/codex/protocol/generated/v2/Turn";
-import type { ChatSession, Message, MessageContentBlock } from "@/types";
+import type { ChatSession, Message } from "@/types";
 
-import { codexWebToolResultFromItem, codexWebToolUseFromItem } from "./tool-item-adapter";
+import { turnItemsToMessageContent } from "./app-server-message-blocks";
 
 const CODEX_PROVIDER_ID = "codex_account";
 const CODEX_RUNTIME_PIN = "codex_runtime";
@@ -54,7 +54,6 @@ export function threadToMessages(thread: Thread): ThreadMessagesResult {
   let unsupportedItemCount = 0;
 
   for (const turn of thread.turns) {
-    const assistantBlocks: MessageContentBlock[] = [];
     let assistantMessageId: string | null = null;
 
     for (const item of turn.items) {
@@ -64,23 +63,24 @@ export function threadToMessages(thread: Thread): ThreadMessagesResult {
         continue;
       }
 
-      const blocks = assistantItemToBlocks(item);
-      if (blocks.length > 0) {
+      if (isSupportedAssistantItem(item)) {
         assistantMessageId ??= item.id;
-        assistantBlocks.push(...blocks);
       } else if (isUnsupportedHistoryItem(item)) {
         unsupportedItemCount += 1;
       }
     }
 
-    if (assistantBlocks.length > 0) {
+    if (assistantMessageId) {
       messages.push(
         createMessage(
           thread,
           turn,
           assistantMessageId ?? `${turn.id}-assistant-history`,
           "assistant",
-          JSON.stringify(assistantBlocks),
+          turnItemsToMessageContent({
+            items: turn.items,
+            durationMs: turn.durationMs ?? undefined,
+          }),
         ),
       );
     }
@@ -103,38 +103,6 @@ function userItemToMessage(
   return createMessage(thread, turn, item.id, "user", content);
 }
 
-function assistantItemToBlocks(item: ThreadItem): MessageContentBlock[] {
-  if (item.type === "agentMessage") {
-    const text = item.text.trim();
-    return text ? [{ type: "text", text }] : [];
-  }
-
-  const toolUse = codexWebToolUseFromItem(item);
-  if (toolUse) {
-    const result = codexWebToolResultFromItem(item);
-    return [
-      {
-        type: "tool_use",
-        id: toolUse.id,
-        name: toolUse.name,
-        input: toolUse.input,
-      },
-      ...(result
-        ? [
-            {
-              type: "tool_result" as const,
-              tool_use_id: result.tool_use_id,
-              content: result.content,
-              is_error: result.is_error,
-            },
-          ]
-        : []),
-    ];
-  }
-
-  return [];
-}
-
 function createMessage(
   thread: Thread,
   turn: Turn,
@@ -150,6 +118,18 @@ function createMessage(
     created_at: secondsToIso(role === "user" ? turn.startedAt : turn.completedAt || turn.startedAt),
     token_usage: null,
   };
+}
+
+function isSupportedAssistantItem(item: ThreadItem): boolean {
+  return (
+    (item.type === "agentMessage" && item.text.trim().length > 0) ||
+    item.type === "reasoning" ||
+    item.type === "commandExecution" ||
+    item.type === "fileChange" ||
+    item.type === "mcpToolCall" ||
+    item.type === "dynamicToolCall" ||
+    item.type === "collabAgentToolCall"
+  );
 }
 
 function isUnsupportedHistoryItem(item: ThreadItem): boolean {

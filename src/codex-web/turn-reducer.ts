@@ -10,6 +10,8 @@ export type AppServerTurnState = {
   threadId: string;
   turnId: string;
   assistantText: string;
+  reasoningText: string;
+  durationMs?: number;
   items: ThreadItem[];
   toolOutputs: Record<string, string>;
   filePatchChanges: Record<string, FileUpdateChange[]>;
@@ -22,12 +24,18 @@ export const initialAppServerTurnState: AppServerTurnState = {
   threadId: "",
   turnId: "",
   assistantText: "",
+  reasoningText: "",
+  durationMs: undefined,
   items: [],
   toolOutputs: {},
   filePatchChanges: {},
   mcpProgress: {},
   errorMessage: "",
 };
+
+export function appServerTurnSnapshotKey(threadId: string, turnId: string): string {
+  return `${threadId}:${turnId}`;
+}
 
 export function createStartingTurnState(): AppServerTurnState {
   return {
@@ -119,6 +127,16 @@ export function reduceAppServerTurnNotification(
       };
     }
 
+    case "item/reasoning/summaryTextDelta": {
+      const data = readRecord(params);
+      const delta = data.delta;
+      if (typeof delta !== "string") return state;
+      return {
+        ...state,
+        reasoningText: state.reasoningText + delta,
+      };
+    }
+
     case "item/commandExecution/outputDelta":
     case "item/fileChange/outputDelta": {
       const data = readRecord(params);
@@ -165,6 +183,7 @@ export function reduceAppServerTurnNotification(
         status,
         threadId: typeof data.threadId === "string" ? data.threadId : state.threadId,
         turnId: typeof turn.id === "string" ? turn.id : state.turnId,
+        durationMs: readFiniteNumber(turn.durationMs) ?? state.durationMs,
         errorMessage: readTurnErrorMessage(turn.error),
       };
     }
@@ -198,6 +217,10 @@ function isTerminalTurnStatus(status: unknown): status is "completed" | "failed"
 function readTurnErrorMessage(error: unknown): string {
   const data = readRecord(error);
   return typeof data.message === "string" ? data.message : "";
+}
+
+function readFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function upsertItem(items: ThreadItem[], item: ThreadItem): ThreadItem[] {

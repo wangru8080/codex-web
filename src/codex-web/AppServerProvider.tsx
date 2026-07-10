@@ -35,6 +35,7 @@ import {
   type ApprovalResponseGuardState,
 } from "./approval-response-guard";
 import { AppServerBrowserClient } from "./app-server-browser-client";
+import { appServerInitializeCapabilities } from "./app-server-capabilities";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
 import {
   selectTurnInterruptParams,
@@ -42,6 +43,7 @@ import {
 } from "./interrupt-adapter";
 import { buildThreadResumeParams } from "./resume-adapter";
 import {
+  appServerTurnSnapshotKey,
   createAcceptedTurnState,
   createStartingTurnState,
   initialAppServerTurnState,
@@ -141,14 +143,29 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     client.onNotification((notification) => {
       setState((current) => {
+        const notificationTurnIds = readNotificationTurnIds(notification);
+        const notificationSnapshot =
+          notificationTurnIds.threadId && notificationTurnIds.turnId
+            ? current.turnSnapshots[
+                appServerTurnSnapshotKey(notificationTurnIds.threadId, notificationTurnIds.turnId)
+              ]?.data
+            : null;
         const activeTurn = reduceAppServerTurnNotification(
           current.activeTurn?.data ?? initialAppServerTurnState,
           notification,
+        );
+        const snapshotTurn = normalizeSnapshotTurn(
+          reduceAppServerTurnNotification(
+            notificationSnapshot ?? current.activeTurn?.data ?? initialAppServerTurnState,
+            notification,
+          ),
+          notificationTurnIds,
         );
         const pendingApprovals = resolvePendingApprovals(current.pendingApprovals, notification);
         const next = {
           ...current,
           activeTurn: { source: "app-server.notification" as const, data: activeTurn },
+          turnSnapshots: rememberTurnSnapshot(current.turnSnapshots, snapshotTurn),
           pendingApprovals,
           pendingApproval: sourcedApproval(firstApproval(pendingApprovals)),
           diagnostics: appendDiagnostic(current.diagnostics, {
@@ -167,7 +184,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         await client.connect();
         const initialize = (await client.request("initialize", {
           clientInfo: { name: "codex_web", title: "Codex Web", version: "0.0.0" },
-          capabilities: null,
+          capabilities: appServerInitializeCapabilities(),
         })) as InitializeResponse;
         client.notify("initialized");
         const [models, account, threads] = await Promise.all([
@@ -510,6 +527,48 @@ function appendDiagnostic(
   entry: CodexWebAppServerState["diagnostics"][number],
 ): CodexWebAppServerState["diagnostics"] {
   return [...diagnostics, entry].slice(-100);
+}
+
+function rememberTurnSnapshot(
+  snapshots: CodexWebAppServerState["turnSnapshots"],
+  turn: AppServerTurnState,
+): CodexWebAppServerState["turnSnapshots"] {
+  if (!turn.threadId || !turn.turnId) {
+    return snapshots;
+  }
+
+  return {
+    ...snapshots,
+    [appServerTurnSnapshotKey(turn.threadId, turn.turnId)]: {
+      source: "app-server.notification",
+      data: turn,
+    },
+  };
+}
+
+function normalizeSnapshotTurn(
+  turn: AppServerTurnState,
+  ids: { threadId?: string; turnId?: string },
+): AppServerTurnState {
+  return {
+    ...turn,
+    threadId: ids.threadId ?? turn.threadId,
+    turnId: ids.turnId ?? turn.turnId,
+  };
+}
+
+function readNotificationTurnIds(notification: { params?: unknown }): { threadId?: string; turnId?: string } {
+  const params = readRecord(notification.params);
+  const turn = readRecord(params.turn);
+  const threadId = typeof params.threadId === "string" ? params.threadId : undefined;
+  const turnId =
+    typeof params.turnId === "string"
+      ? params.turnId
+      : typeof turn.id === "string"
+        ? turn.id
+        : undefined;
+
+  return { threadId, turnId };
 }
 
 function resolvePendingApprovals(

@@ -23,7 +23,18 @@ describe("AppServerSession", () => {
     expect(result.models.source).toBe("app-server.model/list");
     expect(result.account.source).toBe("app-server.account/read");
     expect(client.calls).toEqual([
-      ["request", "initialize", { clientInfo: { name: "codex_web", title: "Codex Web", version: "0.0.0" }, capabilities: null }],
+      [
+        "request",
+        "initialize",
+        {
+          clientInfo: { name: "codex_web", title: "Codex Web", version: "0.0.0" },
+          capabilities: {
+            experimentalApi: true,
+            requestAttestation: false,
+            mcpServerOpenaiFormElicitation: false,
+          },
+        },
+      ],
       ["notify", "initialized", undefined],
       ["request", "model/list", { includeHidden: false }],
       ["request", "account/read", { refreshToken: false }],

@@ -17,6 +17,7 @@ import {
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 import {
+  applyTurnSnapshotsToMessages,
   latestHistoryTurnFromPage,
   mergeThreadTurnMessages,
   threadTurnsPageToMessages,
@@ -71,6 +72,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const targetFilePath = searchParams.get('file') || undefined;
   const { t } = useTranslation();
   const defaultPanelAppliedRef = useRef(false);
+  const turnSnapshotsRef = useRef(appServerState.turnSnapshots);
+
+  useEffect(() => {
+    turnSnapshotsRef.current = appServerState.turnSnapshots;
+  }, [appServerState.turnSnapshots]);
 
   useEffect(() => {
     // Reset state when switching sessions
@@ -115,7 +121,9 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
               itemsView: "full",
             });
             if (cancelled) return;
-            setMessages(threadTurnsPageToMessages(response.thread, turnsPage.data, "desc"));
+            setMessages(
+              threadTurnsPageToMessages(response.thread, turnsPage.data, "desc", turnSnapshotsRef.current),
+            );
             setLatestHistoryTurn(
               latestHistoryTurnFromPage(
                 turnsPage.data,
@@ -137,6 +145,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
               // 保留 metadata-only thread；错误 banner 会说明分页失败。
             }
             const result = threadToMessages(fallbackThread);
+            const snapshotMessages = applyTurnSnapshotsToMessages(
+              fallbackThread,
+              result.messages,
+              turnSnapshotsRef.current,
+            );
             setLatestHistoryTurn(
               latestHistoryTurnFromPage(
                 fallbackThread.turns,
@@ -144,7 +157,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
                 "app-server.thread/read",
               ),
             );
-            setMessages(result.messages);
+            setMessages(snapshotMessages);
             setHasMore(false);
             setTurnsNextCursor(null);
             setPaginationNotice({
@@ -225,7 +238,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     loadSessionAndMessages();
 
     return () => { cancelled = true; };
-  }, [appServerState.connection.data, id, readThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t]);
+  }, [appServerState.connection.data, id, readThread, listThreadTurns, setWorkingDirectory, setSessionId, setPanelSessionTitle, t]);
 
   // Auto-open file tree when jumping from a file search result
   useEffect(() => {
@@ -409,7 +422,12 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
               sortDirection: "desc",
               itemsView: "full",
             });
-            const incoming = threadTurnsPageToMessages(appServerThread, turnsPage.data, "desc");
+            const incoming = threadTurnsPageToMessages(
+              appServerThread,
+              turnsPage.data,
+              "desc",
+              turnSnapshotsRef.current,
+            );
             const mergedMessages = mergeThreadTurnMessages(messages, incoming, "prepend");
             setMessages(mergedMessages);
             setHasMore(!!turnsPage.nextCursor);

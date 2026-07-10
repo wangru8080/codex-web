@@ -4,6 +4,7 @@ import type { InitializeParams } from "../src/codex/protocol/generated/Initializ
 import type { InitializeResponse } from "../src/codex/protocol/generated/InitializeResponse";
 import type { GetAccountResponse } from "../src/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "../src/codex/protocol/generated/v2/ModelListResponse";
+import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
 
 export type SourceBreadcrumb =
   | "app-server.initialize"
@@ -68,7 +69,7 @@ export class AppServerSession {
   async initialize(): Promise<Sourced<InitializeResponse>> {
     const params: InitializeParams = {
       clientInfo,
-      capabilities: null,
+      capabilities: appServerInitializeCapabilities(),
     };
 
     const result = await this.client.request("initialize", params);

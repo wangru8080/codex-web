@@ -66,6 +66,7 @@ import {
   respondToPermission,
 } from '@/lib/stream-session-manager';
 import type { AppServerApprovalDecision, AppServerApprovalRequest } from '@/codex-web/approval-adapter';
+import { appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
 import { deriveCodexWebToolState } from '@/codex-web/tool-adapter';
 import type { AppServerTurnState } from '@/codex-web/turn-reducer';
 
@@ -522,7 +523,7 @@ export function ChatView({
   const toolUses = appServerSend ? appServerToolState.toolUses : streamSnapshot?.toolUses ?? [];
   const toolResults = appServerSend ? appServerToolState.toolResults : streamSnapshot?.toolResults ?? [];
   const streamingToolOutput = appServerSend ? appServerToolState.streamingToolOutput : streamSnapshot?.streamingToolOutput ?? '';
-  const streamingThinkingContent = appServerSend ? '' : streamSnapshot?.streamingThinkingContent ?? '';
+  const streamingThinkingContent = appServerSend ? appServerTurn?.reasoningText ?? '' : streamSnapshot?.streamingThinkingContent ?? '';
   const statusText = appServerSend ? appServerStatusText : streamSnapshot?.statusText;
   const pendingPermission = appServerApproval?.permission ?? streamSnapshot?.pendingPermission ?? null;
   const permissionResolved = streamSnapshot?.permissionResolved ?? null;
@@ -721,12 +722,12 @@ export function ChatView({
         token_usage: null,
       };
       cappedSetMessages((prev) => [...prev, interruptedMessage]);
-    } else if (appServerTurn.assistantText.trim()) {
+    } else if (appServerTurn.assistantText.trim() || appServerTurn.items.length > 0) {
       const assistantMessage: Message = {
         id: 'temp-assistant-' + Date.now(),
         session_id: appServerTurn.threadId || activeSessionId,
         role: 'assistant',
-        content: appServerTurn.assistantText.trim(),
+        content: appServerTurnToMessageContent(appServerTurn),
         created_at: new Date().toISOString(),
         token_usage: null,
       };

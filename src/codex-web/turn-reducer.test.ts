@@ -29,6 +29,10 @@ describe("reduceAppServerTurnNotification", () => {
       },
     });
     state = reduceAppServerTurnNotification(state, {
+      method: "item/reasoning/summaryTextDelta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "reasoning-1", delta: "先确认上下文。" },
+    });
+    state = reduceAppServerTurnNotification(state, {
       method: "item/agentMessage/delta",
       params: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: "你好" },
     });
@@ -48,7 +52,7 @@ describe("reduceAppServerTurnNotification", () => {
       method: "turn/completed",
       params: {
         threadId: "thread-1",
-        turn: { id: "turn-1", status: "completed", error: null },
+        turn: { id: "turn-1", status: "completed", error: null, durationMs: 3000 },
       },
     });
 
@@ -57,6 +61,8 @@ describe("reduceAppServerTurnNotification", () => {
       threadId: "thread-1",
       turnId: "turn-1",
       assistantText: "你好，Codex。",
+      reasoningText: "先确认上下文。",
+      durationMs: 3000,
       errorMessage: "",
     });
     expect(state.items).toHaveLength(1);

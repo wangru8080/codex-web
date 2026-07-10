@@ -4,10 +4,12 @@ import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 
 import {
+  applyTurnSnapshotsToMessages,
   latestHistoryTurnFromPage,
   mergeThreadTurnMessages,
   threadTurnsPageToMessages,
 } from "./thread-turns-page-adapter";
+import { appServerTurnSnapshotKey, createAcceptedTurnState } from "./turn-reducer";
 
 describe("thread-turns-page-adapter", () => {
   it("把 desc turns page 转成按时间正序展示的消息", () => {
@@ -86,6 +88,49 @@ describe("thread-turns-page-adapter", () => {
       latestHistoryTurnFromPage([], "desc", "app-server.thread/turns/list"),
     ).toBeNull();
   });
+
+  it("用当前进程内 notification 快照恢复同一 turn 的 completed 过程块", () => {
+    const turn = createTurnWithAssistant("turn-1", "user-1", "agent-1", "final answer", 10);
+    const thread = { ...createThread(), turns: [turn] };
+    const messages = threadTurnsPageToMessages(thread, [turn], "asc");
+    const snapshot = {
+      ...createAcceptedTurnState(thread.id, turn.id),
+      status: "completed" as const,
+      assistantText: "final answer",
+      durationMs: 1200,
+      items: [
+        {
+          type: "commandExecution" as const,
+          id: "cmd-1",
+          command: "pwd",
+          cwd: "/repo/web",
+          processId: null,
+          source: "agent" as const,
+          status: "completed" as const,
+          commandActions: [],
+          aggregatedOutput: "/repo/web\n",
+          exitCode: 0,
+          durationMs: 10,
+        },
+      ],
+    };
+
+    const restored = applyTurnSnapshotsToMessages(thread, messages, {
+      [appServerTurnSnapshotKey(thread.id, turn.id)]: {
+        source: "app-server.notification",
+        data: snapshot,
+      },
+    });
+    const assistantContent = JSON.parse(restored[1].content);
+
+    expect(messages[1].content).toBe("final answer");
+    expect(assistantContent).toEqual([
+      expect.objectContaining({ type: "tool_use", id: "cmd-1", name: "bash" }),
+      expect.objectContaining({ type: "tool_result", tool_use_id: "cmd-1" }),
+      { type: "codex_summary", elapsed_ms: 1200, process_count: 1 },
+      { type: "text", text: "final answer" },
+    ]);
+  });
 });
 
 function createThread(): Thread {
@@ -123,6 +168,39 @@ function createTurn(turnId: string, itemId: string, text: string, startedAt: num
         id: itemId,
         clientId: null,
         content: [{ type: "text", text, text_elements: [] }],
+      },
+    ],
+    itemsView: "full",
+    status: "completed",
+    error: null,
+    startedAt,
+    completedAt: startedAt + 1,
+    durationMs: 1000,
+  };
+}
+
+function createTurnWithAssistant(
+  turnId: string,
+  userItemId: string,
+  agentItemId: string,
+  text: string,
+  startedAt: number,
+): Turn {
+  return {
+    id: turnId,
+    items: [
+      {
+        type: "userMessage",
+        id: userItemId,
+        clientId: null,
+        content: [{ type: "text", text: "user prompt", text_elements: [] }],
+      },
+      {
+        type: "agentMessage",
+        id: agentItemId,
+        text,
+        phase: null,
+        memoryCitation: null,
       },
     ],
     itemsView: "full",

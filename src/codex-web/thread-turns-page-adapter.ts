@@ -8,7 +8,10 @@ import type {
   HistoryTurnStatusSource,
   LatestHistoryTurn,
 } from "./active-turn-visibility-adapter";
+import { appServerTurnToMessageContent } from "./app-server-message-blocks";
+import type { Sourced } from "./app-server-state";
 import { threadToMessages } from "./thread-history-adapter";
+import { appServerTurnSnapshotKey, type AppServerTurnState } from "./turn-reducer";
 
 export type ThreadTurnsListParams = {
   threadId: string;
@@ -30,9 +33,15 @@ export function threadTurnsPageToMessages(
   thread: Thread,
   turns: Turn[],
   sortDirection: SortDirection = "desc",
+  turnSnapshots: Record<string, Sourced<AppServerTurnState>> = {},
 ): Message[] {
   const chronologicalTurns = sortDirection === "desc" ? [...turns].reverse() : turns;
-  return threadToMessages({ ...thread, turns: chronologicalTurns }).messages;
+  const pageThread = { ...thread, turns: chronologicalTurns };
+  return applyTurnSnapshotsToMessages(
+    pageThread,
+    threadToMessages(pageThread).messages,
+    turnSnapshots,
+  );
 }
 
 export function latestHistoryTurnFromPage(
@@ -66,4 +75,39 @@ export function mergeThreadTurnMessages(
   }
 
   return result;
+}
+
+export function applyTurnSnapshotsToMessages(
+  thread: Thread,
+  messages: Message[],
+  turnSnapshots: Record<string, Sourced<AppServerTurnState>>,
+): Message[] {
+  if (messages.length === 0) return messages;
+
+  let next = messages;
+  for (const turn of thread.turns) {
+    const snapshot = turnSnapshots[appServerTurnSnapshotKey(thread.id, turn.id)]?.data;
+    if (!isReplayableCompletedSnapshot(snapshot)) continue;
+
+    const assistantMessageId = findAssistantHistoryMessageId(turn);
+    if (!assistantMessageId) continue;
+
+    next = next.map((message) =>
+      message.id === assistantMessageId && message.session_id === thread.id && message.role === "assistant"
+        ? { ...message, content: appServerTurnToMessageContent(snapshot) }
+        : message,
+    );
+  }
+
+  return next;
+}
+
+function isReplayableCompletedSnapshot(turn: AppServerTurnState | undefined): turn is AppServerTurnState {
+  if (!turn || turn.status !== "completed") return false;
+  return !!turn.assistantText.trim() || turn.reasoningText.trim().length > 0 || turn.items.length > 0;
+}
+
+function findAssistantHistoryMessageId(turn: Turn): string | null {
+  const assistantItem = turn.items.find((item) => item.type !== "userMessage");
+  return assistantItem?.id ?? null;
 }

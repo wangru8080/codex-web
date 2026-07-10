@@ -36,6 +36,7 @@ export type CodexWebAppServerState = {
   selectedThread: Sourced<ThreadReadResponse> | null;
   resumedThread: Sourced<ThreadResumeResponse> | null;
   activeTurn: Sourced<AppServerTurnState> | null;
+  turnSnapshots: Record<string, Sourced<AppServerTurnState>>;
   pendingApprovals: AppServerApprovalRequest[];
   pendingApproval: Sourced<AppServerApprovalRequest> | null;
   diagnostics: Array<Sourced<JsonRpcNotification | JsonRpcRequest | { message: string }>>;
@@ -50,6 +51,7 @@ export const initialAppServerState: CodexWebAppServerState = {
   selectedThread: null,
   resumedThread: null,
   activeTurn: null,
+  turnSnapshots: {},
   pendingApprovals: [],
   pendingApproval: null,
   diagnostics: [],

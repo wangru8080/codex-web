@@ -22,6 +22,7 @@ import { useNativeFolderPicker } from '@/hooks/useNativeFolderPicker';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
 import {
   deriveCodexWebToolState,
   type CodexWebToolResultInfo,
@@ -208,6 +209,7 @@ function NewChatPageInner() {
     if (!appServerTurn) return;
     const toolState = deriveCodexWebToolState(appServerTurn);
     setStreamingContent(appServerTurn.assistantText);
+    setStreamingThinkingContent(appServerTurn.reasoningText);
     setToolUses(toolState.toolUses);
     setToolResults(toolState.toolResults);
     setStreamingToolOutput(toolState.streamingToolOutput);
@@ -245,12 +247,12 @@ function NewChatPageInner() {
         token_usage: null,
       };
       setMessages((prev) => [...prev, assistantMessage]);
-    } else if (appServerTurn.assistantText.trim()) {
+    } else if (appServerTurn.assistantText.trim() || appServerTurn.items.length > 0) {
       const assistantMessage: Message = {
         id: 'temp-assistant-' + Date.now(),
         session_id: appServerTurn.threadId || createdSessionId || '',
         role: 'assistant',
-        content: appServerTurn.assistantText.trim(),
+        content: appServerTurnToMessageContent(appServerTurn),
         created_at: new Date().toISOString(),
         token_usage: null,
       };

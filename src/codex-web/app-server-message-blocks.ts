@@ -1,0 +1,164 @@
+import type { FileUpdateChange } from "@/codex/protocol/generated/v2/FileUpdateChange";
+import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
+import type { MessageContentBlock } from "@/types";
+
+import type { AppServerTurnState } from "./turn-reducer";
+import {
+  codexWebToolResultFromItem,
+  codexWebToolUseFromItem,
+  type ToolItemContext,
+} from "./tool-item-adapter";
+
+type TurnItemsToMessageContentArgs = {
+  items: ThreadItem[];
+  assistantText?: string;
+  durationMs?: number;
+  reasoningText?: string;
+  toolOutputs?: Record<string, string>;
+  filePatchChanges?: Record<string, FileUpdateChange[]>;
+  mcpProgress?: Record<string, string>;
+};
+
+export function appServerTurnToMessageContent(turn: AppServerTurnState): string {
+  return turnItemsToMessageContent({
+    items: turn.items,
+    assistantText: turn.assistantText,
+    durationMs: turn.durationMs,
+    reasoningText: turn.reasoningText,
+    toolOutputs: turn.toolOutputs,
+    filePatchChanges: turn.filePatchChanges,
+    mcpProgress: turn.mcpProgress,
+  });
+}
+
+export function turnItemsToMessageContent(args: TurnItemsToMessageContentArgs): string {
+  const blocks = turnItemsToMessageBlocks(args);
+  const hasProcessBlocks = blocks.some(
+    (block) =>
+      block.type === "thinking" ||
+      block.type === "codex_process_text" ||
+      block.type === "tool_use" ||
+      block.type === "tool_result",
+  );
+  const finalOnlyText =
+    blocks.length === 1 && blocks[0]?.type === "text" ? blocks[0].text.trim() : "";
+
+  if (!hasProcessBlocks && finalOnlyText) {
+    return finalOnlyText;
+  }
+
+  return JSON.stringify(blocks);
+}
+
+export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): MessageContentBlock[] {
+  const blocks: MessageContentBlock[] = [];
+  const reasoningText = collectReasoningText(args.items, args.reasoningText);
+  const finalText = collectFinalText(args.items, args.assistantText);
+  let processCount = 0;
+
+  if (reasoningText) {
+    blocks.push({ type: "thinking", thinking: reasoningText });
+    processCount += 1;
+  }
+
+  for (const item of args.items) {
+    const context = toolContext(item, args);
+    const toolUse = codexWebToolUseFromItem(item, context);
+    if (!toolUse) continue;
+
+    blocks.push({
+      type: "tool_use",
+      id: toolUse.id,
+      name: toolUse.name,
+      input: toolUse.input,
+    });
+    processCount += 1;
+
+    const result = codexWebToolResultFromItem(item, context);
+    if (result) {
+      blocks.push({
+        type: "tool_result",
+        tool_use_id: result.tool_use_id,
+        content: result.content,
+        is_error: result.is_error,
+      });
+    }
+  }
+
+  if (processCount > 0) {
+    blocks.push({
+      type: "codex_summary",
+      ...(typeof args.durationMs === "number" ? { elapsed_ms: args.durationMs } : {}),
+      ...(processCount > 0 ? { process_count: processCount } : {}),
+    });
+  }
+
+  if (finalText) {
+    blocks.push({ type: "text", text: finalText });
+  }
+
+  return blocks;
+}
+
+function collectReasoningText(items: ThreadItem[], reasoningText?: string): string {
+  const parts: string[] = [];
+  if (reasoningText?.trim()) {
+    parts.push(reasoningText.trim());
+  }
+
+  for (const item of items) {
+    if (item.type !== "reasoning") continue;
+    const summary = item.summary.join("").trim();
+    if (summary) {
+      parts.push(summary);
+    }
+  }
+
+  return uniqueJoined(parts);
+}
+
+function collectFinalText(items: ThreadItem[], assistantText?: string): string {
+  if (assistantText?.trim()) {
+    return assistantText.trim();
+  }
+
+  return items
+    .filter((item): item is Extract<ThreadItem, { type: "agentMessage" }> => item.type === "agentMessage")
+    .map((item) => item.text.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function uniqueJoined(parts: string[]): string {
+  const seen = new Set<string>();
+  return parts
+    .filter((part) => {
+      if (seen.has(part)) return false;
+      seen.add(part);
+      return true;
+    })
+    .join("\n\n");
+}
+
+function toolContext(item: ThreadItem, args: TurnItemsToMessageContentArgs): ToolItemContext {
+  if (item.type === "fileChange") {
+    return {
+      output: args.toolOutputs?.[item.id],
+      fileChanges: args.filePatchChanges?.[item.id] ?? item.changes,
+    };
+  }
+
+  if (item.type === "mcpToolCall") {
+    return {
+      mcpProgress: args.mcpProgress?.[item.id],
+    };
+  }
+
+  if (item.type === "commandExecution") {
+    return {
+      output: args.toolOutputs?.[item.id],
+    };
+  }
+
+  return {};
+}

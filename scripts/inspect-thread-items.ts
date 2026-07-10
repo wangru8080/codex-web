@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
 
 type JsonRpcMessage = {
   id?: number;
@@ -117,6 +118,7 @@ function summarizeItem(item: JsonRecord): ThreadItemSummary {
 try {
   const initialize = await request("initialize", {
     clientInfo: { name: "codex-web-phase6f-inspector", version: "0.0.0" },
+    capabilities: appServerInitializeCapabilities(),
   });
   notify("initialized");
 

@@ -62,6 +62,11 @@ describe("thread-history-adapter", () => {
         is_error: false,
       },
       {
+        type: "codex_summary",
+        elapsed_ms: 3000,
+        process_count: 1,
+      },
+      {
         type: "text",
         text: "你好，Codex。",
       },
@@ -118,6 +123,11 @@ describe("thread-history-adapter", () => {
         content: "{\n  \"ok\": true\n}\nstatus: completed\nduration: 15ms\nsource: app-server.mcpToolCall",
         is_error: false,
       },
+      {
+        type: "codex_summary",
+        elapsed_ms: 1000,
+        process_count: 2,
+      },
     ]);
     expect(result.unsupportedItemCount).toBe(0);
   });
@@ -163,6 +173,11 @@ describe("thread-history-adapter", () => {
         content: expect.stringContaining("source: app-server.collabAgentToolCall"),
         is_error: false,
       }),
+      {
+        type: "codex_summary",
+        elapsed_ms: 1000,
+        process_count: 2,
+      },
     ]);
     expect(result.unsupportedItemCount).toBe(0);
   });
@@ -176,6 +191,28 @@ describe("thread-history-adapter", () => {
       tool_use_id: "mcp-error",
       is_error: true,
     });
+    expect(result.unsupportedItemCount).toBe(0);
+  });
+
+  it("把历史 reasoning 映射为 CodexWeb thinking 过程块", () => {
+    const result = threadToMessages(createThreadWithReasoning());
+    const assistantContent = JSON.parse(result.messages[0].content);
+
+    expect(assistantContent).toEqual([
+      {
+        type: "thinking",
+        thinking: "我会先确认当前状态。",
+      },
+      {
+        type: "codex_summary",
+        elapsed_ms: 1000,
+        process_count: 1,
+      },
+      {
+        type: "text",
+        text: "已确认。",
+      },
+    ]);
     expect(result.unsupportedItemCount).toBe(0);
   });
 
@@ -374,6 +411,38 @@ function createThreadWithMcpContentError(): Thread {
         error: null,
         startedAt: 1783570350,
         completedAt: 1783570351,
+        durationMs: 1000,
+      },
+    ],
+  };
+}
+
+function createThreadWithReasoning(): Thread {
+  return {
+    ...createThread(),
+    turns: [
+      {
+        id: "turn-reasoning",
+        items: [
+          {
+            type: "reasoning",
+            id: "reasoning-1",
+            summary: ["我会先确认当前状态。"],
+            content: ["raw reasoning should stay hidden"],
+          },
+          {
+            type: "agentMessage",
+            id: "assistant-1",
+            text: "已确认。",
+            phase: null,
+            memoryCitation: null,
+          },
+        ],
+        itemsView: "full",
+        status: "completed",
+        error: null,
+        startedAt: 1783570360,
+        completedAt: 1783570361,
         durationMs: 1000,
       },
     ],
