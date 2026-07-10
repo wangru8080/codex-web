@@ -68,6 +68,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6C | Approval 队列与过期响应硬化 | Code complete | 多个 approval request 排队处理，resolved 时移除，历史页按 thread 过滤可见 approval |
 | Phase 6D | 工具状态完整映射 | Code complete | 实时和历史工具 item 统一复用 app-server 状态映射，覆盖 command、fileChange、MCP、dynamic 和 collab |
 | Phase 6E | 工具状态与中断反例验证 | Smoke passed | 普通、success、failed、interrupted 四类路径已用单元测试、build、smoke 和真实浏览器验证；当前隔离环境刷新后 interrupted 使用 `app-server.thread/read` fallback breadcrumb |
+| Phase 6F Task 1 | 协议观察脚本和真实 fallback 数据判定 | Code complete | `thread/read(includeTurns:true)` 已用只读脚本观察；当前目标 thread 不含可恢复工具 item，Web 不从 assistant 文本伪造工具 cell |
 
 ## Phase 0：协议和项目基线
 
@@ -770,6 +771,18 @@ Phase 6E 记录：
 - 2026-07-10：真实浏览器 interrupted 路径：停止当前运行 turn 后页面显示“Codex 已中断。可以继续发送下一轮。”；刷新同一 route 后 ErrorBanner 显示 `Codex 已中断` 和 `此状态来自 app-server.thread/read 的最新 turn；可以继续发送下一轮。`
 - 2026-07-10：当前隔离环境中 `thread/turns/list` 返回 `requires experimentalApi capability`，因此真实浏览器刷新后 interrupted breadcrumb 走 fallback `app-server.thread/read`；主路径 `app-server.thread/turns/list` 已由单元测试覆盖。
 - 2026-07-10：真实浏览器 console 检查：0 errors / 0 warnings；验证后已停止 dev server。
+
+## Phase 6F：工具历史 fallback 与独立工具验证
+
+目标：先用只读协议观察区分 fallback 历史是否包含真实工具 item；如果 `thread/read(includeTurns:true)` 不返回工具 item，Web 只能展示 app-server 返回的普通历史消息和明确 degraded 结论，不从 assistant 汇总文本推断或伪造工具 cell。
+
+Phase 6F Task 1 记录：
+
+- 2026-07-10：新增只读脚本 `scripts/inspect-thread-items.ts`，要求显式设置 `CODEX_HOME`，通过 `codex app-server --stdio` 调用 `thread/read { threadId, includeTurns: true }`，输出 thread、turn 和 item 摘要。
+- 2026-07-10：使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 读取 Phase 6E thread `019f4a15-70d7-7d02-93e9-1b780fefab7f`；结果为 `turns=3`，turn 状态依次为 `completed`、`completed`、`interrupted`，item 数依次为 2、2、1。
+- 2026-07-10：实际 item types 只有 `userMessage` 和 `agentMessage`；`thread/read(includeTurns:true)` 未返回 `commandExecution`、`fileChange`、`mcpToolCall`、`dynamicToolCall`、`collabAgentToolCall` 等工具 item。
+- 2026-07-10：因此当前 fallback 历史没有可恢复的真实工具 item；Web 不从 assistant 汇总文本伪造工具 cell，后续 Phase 6F 只能在独立工具验证或 app-server 返回真实工具 item 时展示工具过程区。
+- 2026-07-10：已运行单文件自检 `npm exec -- tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --types node scripts/inspect-thread-items.ts`，通过。
 
 ## 决策日志
 

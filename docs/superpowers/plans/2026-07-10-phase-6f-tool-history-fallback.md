@@ -50,7 +50,7 @@
 - Produces:
   - Console summary with `thread.id`, `turns.length`, each `turn.status`, each item `type/status/id`.
 
-- [ ] **Step 1: Write the read-only inspection script**
+- [x] **Step 1: Write the read-only inspection script**
 
 Create `scripts/inspect-thread-items.ts`:
 
@@ -159,7 +159,7 @@ try {
 }
 ```
 
-- [ ] **Step 2: Run inspector against the Phase 6E browser thread**
+- [x] **Step 2: Run inspector against the Phase 6E browser thread**
 
 Run:
 
@@ -175,7 +175,7 @@ Expected:
 - PASS if it prints turn/item summaries.
 - Record whether item types include `commandExecution`, `fileChange`, `mcpToolCall`, `dynamicToolCall`, or `collabAgentToolCall`.
 
-- [ ] **Step 3: Update active plan with observation result**
+- [x] **Step 3: Update active plan with observation result**
 
 Append a Phase 6F observation note to `docs/exec-plans/active/web-mvp-phase-0-4.md`.
 
@@ -195,7 +195,7 @@ If the inspector output does not contain any tool item, write this concrete form
 - 2026-07-10：该 fallback 历史只含 `userMessage` / `agentMessage`，不含可恢复的工具 item；Web 不从 assistant 汇总文本伪造工具 cell，Phase 6F 后续转为独立工具验证。
 ```
 
-- [ ] **Step 4: Commit Task 1**
+- [x] **Step 4: Commit Task 1**
 
 Run:
 
