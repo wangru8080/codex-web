@@ -44,7 +44,7 @@ generated schema 中的工具状态：
 
 - `commandExecution`：保留 `command`、`cwd`、`source`、`status`、`durationMs`、`exitCode`、`commandActions`；完成后结果包含输出预览和 exit code；`failed`、`declined`、非零 exit code 都视为 error。
 - `fileChange`：保留 `status`、文件列表、change kind 和 diff 来源；完成后结果包含状态、文件数和路径摘要；`failed`、`declined` 视为 error。
-- `mcpToolCall`：保留 `server`、`tool`、`arguments`、`appContext`、`pluginId`、`status`、`durationMs`；完成后展示 structured content / content / error；`failed`、error、result `isError` 视为 error。
+- `mcpToolCall`：保留 `server`、`tool`、`arguments`、`appContext`、`pluginId`、`status`、`durationMs`；完成后展示 structured content / content / error；`failed`、error 或 content block 中的官方 `is_error` 标记视为 error。当前 generated `McpToolCallResult` 不包含顶层 `isError` 字段，Web 只解析 `result.content[]` 内的官方错误标记，不访问不存在的顶层字段。
 - `dynamicToolCall`：映射为 `dynamic:<namespace>/<tool>` 或 `dynamic:<tool>`；保留 `arguments`、`status`、`success`、`durationMs`；完成后展示 `contentItems`；`failed` 或 `success === false` 视为 error。
 - `collabAgentToolCall`：映射为 `collab:<tool>`；保留 sender、receivers、prompt、model、reasoning effort、agentsStates、status；完成后展示接收线程和 agent 状态摘要；`failed` 视为 error。
 
@@ -87,7 +87,7 @@ Phase 6D 只补齐状态与 source breadcrumb，不做完整 transcript 弹窗�
 
 - 实时 adapter 覆盖 command `completed / failed / declined / non-zero exit`。
 - 实时 adapter 覆盖 fileChange `completed / failed / declined`。
-- 实时 adapter 覆盖 MCP `completed / failed / result isError`。
+- 实时 adapter 覆盖 MCP `completed / failed / error message / content block is_error`。
 - 实时 adapter 覆盖 dynamic tool `completed / failed / success false`。
 - 实时 adapter 覆盖 collab tool `completed / failed`。
 - 历史 adapter 验证与实时 adapter 对同类 item 的 result/error/status 语义一致。
