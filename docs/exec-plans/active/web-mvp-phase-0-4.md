@@ -72,6 +72,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6F Task 3 | 独立工具路径真实浏览器验证 | Smoke passed | file read、web direct、write/fileChange 和历史 route 复查完成；curl baidu 在当前 app-server 命令环境仍受网络/代理限制但错误可见；write completion timeout 已修复 |
 | Phase 6F Process Blocks | TUI 等价过程块 replay | Smoke passed | completed 工具 turn 显示 `已处理 + 时间 + 中间过程 + final answer`；同一浏览器进程切 session 再切回仍保留；刷新后只信 app-server 历史，不伪造工具过程 |
 | Phase 6G | 历史分页 capability 复查 | Smoke passed | `experimentalApi: true` 后 `thread/turns/list` 主路径可用；历史 route 不再显示 capability fallback notice |
+| Phase 6H | 官方 TUI / app-server 历史工具边界复查 | Review passed | 官方 TUI replay 只显示 app-server 返回的 `Turn.items`；官方 app-server 历史 API 明确不返回 command execution，Web 不做额外持久化或伪造恢复 |
 
 ## Phase 0：协议和项目基线
 
@@ -828,11 +829,28 @@ Phase 6G 记录：
 - 2026-07-11：真实浏览器打开 `/chat/019f4d56-297b-7743-93e1-a65f8747d73a`，页面显示 final answer `6`；未出现 `历史分页暂不可用`、`requires experimentalApi capability` 或 `experimentalApi` 错误文本。当前导航增量 console 为 0 warning / 0 error；旧 HMR 断连日志来自前一次 dev server 停止后的浏览器累计 console，不计入本轮页面错误。
 - 2026-07-11：验证命令已完成：`npm run test` 17 个测试文件、90 个测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`models=7`，`accountSource=app-server.account/read`。
 
+## Phase 6H：官方 TUI / app-server 历史工具边界复查
+
+目标：针对“切换 session 后同进程保留中间过程，刷新后中间过程消失”的现象，复查官方 TUI 和 app-server 历史实现，确认是否需要继续改 Web 消息 block 构造。
+
+Phase 6H 记录：
+
+- 2026-07-11：官方 TUI `chatwidget/replay.rs` 的 `replay_thread_turns()` 只遍历 app-server 返回的 `Turn.items` 并调用 `replay_thread_item()`；terminal turn 再通过 `handle_turn_completed_notification()` 补齐完成状态和 duration，不从 rollout 额外恢复命令过程。
+- 2026-07-11：官方 app-server 测试 `app-server/tests/suite/v2/thread_shell_command.rs` 明确断言 `thread/read`、`thread/turns/list`、`thread/fork` 返回的历史 turn 不包含 `ThreadItem::CommandExecution`，断言文案为这些接口应始终排除 command executions。
+- 2026-07-11：官方 `ThreadHistoryBuilder::handle_response_item()` 只把特定 hook prompt 的 user message 转成历史 item；普通 `function_call` / `function_call_output` 即使存在于 rollout，也不会被该路径还原成历史工具 block。
+- 2026-07-11：真实隔离 session `019f4d56-297b-7743-93e1-a65f8747d73a` 的 rollout 文件包含 `function_call` 和 `function_call_output`，但 `thread/read(includeTurns:true)` 与 `thread/turns/list(itemsView:"full")` 都只返回 `userMessage` / `agentMessage` 两个 item，和官方实现一致。
+- 2026-07-11：结论：当前 Web 已按官方 TUI 行为实现。实时生成和同一浏览器进程切 session 返回时，Web 可用 notification-derived in-memory snapshot 保留 `已处理 + 时间 + 中间过程`；刷新或重启后只能 replay app-server 历史 `Turn.items`，不写入 localStorage / IndexedDB，也不从 rollout 或 final answer 伪造工具过程。
+- 2026-07-11：补充确认模型上下文边界：官方 core resume 并不使用 UI replay 的 `Turn.items` 作为下一轮上下文，而是通过 `stored_thread_to_initial_history()` 把 persisted rollout items 装入 `InitialHistory::Resumed`，再由 `reconstruct_history_from_rollout()` 重建 `ResponseItem` 历史并安装到 `ContextManager`。
+- 2026-07-11：官方 `ContextManager::record_items()` 的 `is_api_message()` 保留 `FunctionCall`、`FunctionCallOutput`、`LocalShellCall`、`CustomToolCall`、`CustomToolCallOutput`、`ToolSearch*`、`WebSearchCall` 和 `ImageGenerationCall` 等 API 消息；模型请求使用 `clone_history().for_prompt(...)`，所以重启后 UI 不显示 command execution 过程块，不代表模型上下文丢失工具调用/输出历史。
+- 2026-07-11：Web 对照：历史页继续发送时先调用 `thread/resume`，随后 `turn/start` 只发送当前用户输入；Web 不把页面 `messages`、history route、in-memory process block、localStorage 或 IndexedDB 重组成上下文。上下文结构完全由官方 app-server/core resume 管理，和官方 TUI 保持一致。
+
 ## 决策日志
 
 - 2026-07-06：第一版采用 TUI-first Web 化。官方 TUI 是业务语义基准，Web bridge 连接已安装的 `codex app-server --stdio`，不改 `codex-core`。
 - 2026-07-06：`CodexBrowser` 和 `CodePilot` 只用于借鉴 app-server 经验、开发流程和测试经验，禁止作为代码来源。
 - 2026-07-06：开发、测试和 smoke 默认使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`；最终验收才在用户明确同意后使用本地真实 `CODEX_HOME`。
+- 2026-07-11：Phase 6H 确认刷新后历史工具过程不恢复是官方 app-server 历史 API 边界；Web 保持 TUI 等价，不新增本地持久化、不直接解析 rollout、不伪造 command execution 历史 item。
+- 2026-07-11：Phase 6H 进一步确认“UI 历史展示”和“模型上下文历史”是两种官方投影：UI replay 使用 `Turn.items`，续聊上下文使用 rollout 重建出的 `ResponseItem` 历史；Web 续聊只接入官方 `thread/resume` / `turn/start`，不自行改变上下文结构。
 - 2026-07-08：Web UI 基于 `/home/rrssnas/code/CodexWeb` 开发；开发前阅读其 README，保持 CodexWeb 既有 UI 样式和 Demo 结构，不直接修改 CodexWeb 目录，只在当前项目中接入真实 app-server 后端。
 - 2026-07-11：过程块保留策略保持官方 TUI 等价：同一浏览器进程内切换 session 使用 notification-derived 内存 snapshot replay；刷新或重启后只使用 app-server 历史 API 返回的真实 `Turn.items`，不引入 IndexedDB / localStorage 持久缓存，也不从 assistant final text 反推工具 cell。
 
