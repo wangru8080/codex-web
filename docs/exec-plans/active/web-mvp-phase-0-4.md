@@ -71,6 +71,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6F Task 1 | 协议观察脚本和真实 fallback 数据判定 | Code complete | `thread/read(includeTurns:true)` 已用只读脚本观察；当前目标 thread 不含可恢复工具 item，Web 不从 assistant 文本伪造工具 cell |
 | Phase 6F Task 3 | 独立工具路径真实浏览器验证 | Smoke passed | file read、web direct、write/fileChange 和历史 route 复查完成；curl baidu 在当前 app-server 命令环境仍受网络/代理限制但错误可见；write completion timeout 已修复 |
 | Phase 6F Process Blocks | TUI 等价过程块 replay | Smoke passed | completed 工具 turn 显示 `已处理 + 时间 + 中间过程 + final answer`；同一浏览器进程切 session 再切回仍保留；刷新后只信 app-server 历史，不伪造工具过程 |
+| Phase 6G | 历史分页 capability 复查 | Smoke passed | `experimentalApi: true` 后 `thread/turns/list` 主路径可用；历史 route 不再显示 capability fallback notice |
 
 ## Phase 0：协议和项目基线
 
@@ -362,7 +363,7 @@ Phase 5C 记录：
 | Tools | 大输出与增量输出截断策略 | Code complete | Phase 6B | 大 stdout/stderr 不撑爆页面；截断信息可见，原始输出保留在可诊断来源中 |
 | Interrupt | 运行中 turn 中断 | 已完成 | Phase 5D-B | 点击停止后调用官方中断路径，turn 进入 interrupted 或等价官方状态 |
 | Interrupt | interrupted 后继续下一轮 | 已完成 | Phase 5D-B | 中断后的同一 thread 可以继续发送新 turn，历史消息不丢失 |
-| Interrupt | 页面刷新后恢复 interrupted 状态 | Smoke passed | Phase 6E | 刷新后历史页能从最新历史 turn 显示 interrupted；当前隔离环境 `thread/turns/list` 无 experimental capability，已验证 fallback breadcrumb 为 `app-server.thread/read` |
+| Interrupt | 页面刷新后恢复 interrupted 状态 | Smoke passed | Phase 6E/6G | 刷新后历史页能从最新历史 turn 显示 interrupted；Phase 6G 已确认 `thread/turns/list` capability 主路径可用，旧 fallback 仅作为稳定降级路径保留 |
 | Diagnostics | app-server transport close 与 pending request fail-fast | 部分完成 | Phase 6 | bridge/app-server 退出时 pending request 快速失败，UI 显示 diagnostics，不长时间挂起 |
 | Diagnostics | 未知 notification 可见诊断 | 部分完成 | Phase 6 | 未知 notification 不静默丢弃，在 diagnostics 中保留 method、source 和摘要 |
 | E2E / Smoke | 普通消息 vs 工具消息反例 | Smoke passed | Phase 6E | 普通文本消息无工具状态；触发 shell 命令时实时工具 cell 显示 success / failed 状态 |
@@ -772,6 +773,7 @@ Phase 6E 记录：
 - 2026-07-10：真实浏览器 failed 路径：同一历史 route 触发 `sh -c 'echo phase6e-failed >&2; sleep 3; exit 7'`，approval 后实时工具 cell 显示 `运行失败`，最终 assistant 汇总退出码 7 和 `phase6e-failed` 输出。
 - 2026-07-10：真实浏览器 interrupted 路径：停止当前运行 turn 后页面显示“Codex 已中断。可以继续发送下一轮。”；刷新同一 route 后 ErrorBanner 显示 `Codex 已中断` 和 `此状态来自 app-server.thread/read 的最新 turn；可以继续发送下一轮。`
 - 2026-07-10：当前隔离环境中 `thread/turns/list` 返回 `requires experimentalApi capability`，因此真实浏览器刷新后 interrupted breadcrumb 走 fallback `app-server.thread/read`；主路径 `app-server.thread/turns/list` 已由单元测试覆盖。
+- 2026-07-11：Phase 6G 复查后确认上述 capability 错误是旧 initialize capability 问题；当前 Web/bridge/inspector 初始化都发送 `experimentalApi: true`，`thread/turns/list` 主路径已可用。
 - 2026-07-10：真实浏览器 console 检查：0 errors / 0 warnings；验证后已停止 dev server。
 
 ## Phase 6F：工具历史 fallback 与独立工具验证
@@ -813,6 +815,18 @@ Phase 6F Task 3 记录：
 - 2026-07-11：真实浏览器切换 session 回归：从工具 thread `019f4d56-297b-7743-93e1-a65f8747d73a` 切到 `019f4d55-366f-7742-89a4-90b9581ad266` 后再切回，过程块仍可展开，保留 `已运行`、真实 shell 命令和 final answer。
 - 2026-07-11：刷新反例验证：刷新 `/chat/019f4d56-297b-7743-93e1-a65f8747d73a` 后页面只显示 app-server 历史可恢复的 final answer `6`，没有 `已处理` 或工具命令；这符合官方 TUI 重启后只 replay app-server 历史 `Turn.items` 的边界，Web 不从 final answer 伪造工具过程。
 - 2026-07-11：验证命令已完成：targeted tests 4 个文件 22 个测试通过；`npm run test` 17 个文件 90 个测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`models=7`，`accountSource=app-server.account/read`；真实浏览器 console 0 error / 0 warning。
+
+## Phase 6G：历史分页 capability 复查
+
+目标：确认 Phase 6F 中记录的 `thread/turns/list requires experimentalApi capability` 是否已由统一 initialize capability 修复，并保留稳定 fallback 的边界说明。
+
+Phase 6G 记录：
+
+- 2026-07-11：扩展只读脚本 `scripts/inspect-thread-items.ts`，在同一个 initialized app-server 会话中先调用 `thread/read(includeTurns:true)`，再调用 `thread/turns/list { threadId, cursor:null, limit:30, sortDirection:"desc", itemsView:"full" }`，用于复查 experimental capability 主路径。
+- 2026-07-11：使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 读取真实浏览器生成的 thread `019f4d56-297b-7743-93e1-a65f8747d73a`；`thread/read` 返回 `turns=1`，仍只有 `userMessage` / `agentMessage`，说明刷新后没有可恢复工具 item 的边界不变。
+- 2026-07-11：同一 inspector 会话调用 `thread/turns/list` 返回 `data:1 nextCursor=null`，不再出现 `requires experimentalApi capability`；返回 turn id `019f4d56-29c0-7d10-9ef5-132d439a6da9`，status `completed`，items=2。
+- 2026-07-11：真实浏览器打开 `/chat/019f4d56-297b-7743-93e1-a65f8747d73a`，页面显示 final answer `6`；未出现 `历史分页暂不可用`、`requires experimentalApi capability` 或 `experimentalApi` 错误文本。当前导航增量 console 为 0 warning / 0 error；旧 HMR 断连日志来自前一次 dev server 停止后的浏览器累计 console，不计入本轮页面错误。
+- 2026-07-11：验证命令已完成：`npm run test` 17 个测试文件、90 个测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`models=7`，`accountSource=app-server.account/read`。
 
 ## 决策日志
 

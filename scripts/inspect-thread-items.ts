@@ -143,6 +143,27 @@ try {
     }
   }
 
+  try {
+    const turnsPage = asRecord(await request("thread/turns/list", {
+      threadId,
+      cursor: null,
+      limit: 30,
+      sortDirection: "desc",
+      itemsView: "full",
+    }));
+    const pageTurns = Array.isArray(turnsPage?.data) ? turnsPage.data : [];
+    console.log(`turns/list=data:${pageTurns.length} nextCursor=${String(turnsPage?.nextCursor ?? null)}`);
+
+    for (const [turnIndex, rawTurn] of pageTurns.entries()) {
+      const turn = asRecord(rawTurn) ?? {};
+      const items = Array.isArray(turn.items) ? turn.items : [];
+      console.log(`turns/list[${turnIndex}] id=${String(turn.id)} status=${String(turn.status)} items=${items.length}`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`turns/list:error=${message}`);
+  }
+
   console.log(`initialize=${JSON.stringify(initialize)}`);
 } finally {
   rl.close();

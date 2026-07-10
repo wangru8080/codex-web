@@ -417,6 +417,11 @@ Observed on 2026-07-10 after completion fix:
 - No fake tool cell appeared when fallback history did not expose recoverable tool items.
 - Page showed `thread/turns/list requires experimentalApi capability` and used the stable fallback path.
 
+Follow-up on 2026-07-11:
+
+- Phase 6G confirmed the capability error was a stale initialize-capability issue. After Web、server 和 inspector initialize all send `experimentalApi: true`, direct `thread/turns/list` returns a page successfully and the history route no longer shows the capability fallback notice.
+- The history item boundary is unchanged: the tested thread still returns only `userMessage` / `agentMessage`, so Web continues to avoid fake tool cells after refresh when app-server history does not expose tool items.
+
 - [x] **Step 7: Stop dev server and inspect artifacts**
 
 Stop dev server with `Ctrl+C`.
