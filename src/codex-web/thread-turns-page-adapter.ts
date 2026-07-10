@@ -4,6 +4,10 @@ import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 import type { TurnItemsView } from "@/codex/protocol/generated/v2/TurnItemsView";
 import type { Message } from "@/types";
 
+import type {
+  HistoryTurnStatusSource,
+  LatestHistoryTurn,
+} from "./active-turn-visibility-adapter";
 import { threadToMessages } from "./thread-history-adapter";
 
 export type ThreadTurnsListParams = {
@@ -29,6 +33,20 @@ export function threadTurnsPageToMessages(
 ): Message[] {
   const chronologicalTurns = sortDirection === "desc" ? [...turns].reverse() : turns;
   return threadToMessages({ ...thread, turns: chronologicalTurns }).messages;
+}
+
+export function latestHistoryTurnFromPage(
+  turns: Turn[],
+  sortDirection: SortDirection,
+  source: HistoryTurnStatusSource,
+): LatestHistoryTurn | null {
+  const latestTurn = sortDirection === "desc" ? turns[0] : turns[turns.length - 1];
+  if (!latestTurn) return null;
+
+  return {
+    status: latestTurn.status,
+    source,
+  };
 }
 
 export function mergeThreadTurnMessages(

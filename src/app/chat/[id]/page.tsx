@@ -10,10 +10,14 @@ import { usePanel } from '@/hooks/usePanel';
 import { useWorkspaceSidebarOptional } from '@/hooks/useWorkspaceSidebar';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
-import { selectVisibleActiveTurn } from '@/codex-web/active-turn-visibility-adapter';
+import {
+  selectVisibleActiveTurn,
+  type LatestHistoryTurn,
+} from '@/codex-web/active-turn-visibility-adapter';
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 import {
+  latestHistoryTurnFromPage,
   mergeThreadTurnMessages,
   threadTurnsPageToMessages,
 } from '@/codex-web/thread-turns-page-adapter';
@@ -58,6 +62,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [resumedCwd, setResumedCwd] = useState<string>('');
   const [appServerThread, setAppServerThread] = useState<Thread | null>(null);
   const [turnsNextCursor, setTurnsNextCursor] = useState<string | null>(null);
+  const [latestHistoryTurn, setLatestHistoryTurn] = useState<LatestHistoryTurn | null>(null);
   const [paginationNotice, setPaginationNotice] = useState<{ message: string; description?: string } | null>(null);
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle, setFileTreeOpen } = usePanel();
   const appServerState = useAppServerState();
@@ -86,6 +91,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setResumedCwd('');
     setAppServerThread(null);
     setTurnsNextCursor(null);
+    setLatestHistoryTurn(null);
     setPaginationNotice(null);
     setSessionInfoLoaded(false);
 
@@ -110,6 +116,13 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             });
             if (cancelled) return;
             setMessages(threadTurnsPageToMessages(response.thread, turnsPage.data, "desc"));
+            setLatestHistoryTurn(
+              latestHistoryTurnFromPage(
+                turnsPage.data,
+                "desc",
+                "app-server.thread/turns/list",
+              ),
+            );
             setHasMore(!!turnsPage.nextCursor);
             setTurnsNextCursor(turnsPage.nextCursor);
           } catch (pageError) {
@@ -124,6 +137,13 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
               // 保留 metadata-only thread；错误 banner 会说明分页失败。
             }
             const result = threadToMessages(fallbackThread);
+            setLatestHistoryTurn(
+              latestHistoryTurnFromPage(
+                fallbackThread.turns,
+                "asc",
+                "app-server.thread/read",
+              ),
+            );
             setMessages(result.messages);
             setHasMore(false);
             setTurnsNextCursor(null);
@@ -300,7 +320,13 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const messageApiBase = `/api/chat/sessions/${encodeURIComponent(id)}`;
   const activeAppServerTurn = appServerState.activeTurn?.data ?? null;
   const activeTurnVisibility = isAppServerThread
-    ? selectVisibleActiveTurn({ activeTurn: activeAppServerTurn, routeThreadId: id, resumedThreadId, thread: appServerThread })
+    ? selectVisibleActiveTurn({
+        activeTurn: activeAppServerTurn,
+        routeThreadId: id,
+        resumedThreadId,
+        thread: appServerThread,
+        latestHistoryTurn,
+      })
     : { visibleTurn: null, notice: null };
   const appServerTurn = activeTurnVisibility.visibleTurn;
   const appServerNotice = activeTurnVisibility.notice ?? paginationNotice;

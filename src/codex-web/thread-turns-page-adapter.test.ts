@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 
-import { mergeThreadTurnMessages, threadTurnsPageToMessages } from "./thread-turns-page-adapter";
+import {
+  latestHistoryTurnFromPage,
+  mergeThreadTurnMessages,
+  threadTurnsPageToMessages,
+} from "./thread-turns-page-adapter";
 
 describe("thread-turns-page-adapter", () => {
   it("把 desc turns page 转成按时间正序展示的消息", () => {
@@ -43,6 +47,44 @@ describe("thread-turns-page-adapter", () => {
 
     expect(merged.map((message) => message.content)).toEqual(["first", "second", "third"]);
     expect(merged.map((message) => message.id)).toEqual(["user-1", "user-2", "user-3"]);
+  });
+
+  it("desc page 第一项是最新历史 turn", () => {
+    const latest = latestHistoryTurnFromPage(
+      [
+        { ...createTurn("turn-3", "user-3", "third", 30), status: "interrupted" },
+        createTurn("turn-2", "user-2", "second", 20),
+      ],
+      "desc",
+      "app-server.thread/turns/list",
+    );
+
+    expect(latest).toEqual({
+      status: "interrupted",
+      source: "app-server.thread/turns/list",
+    });
+  });
+
+  it("asc page 最后一项是最新历史 turn", () => {
+    const latest = latestHistoryTurnFromPage(
+      [
+        { ...createTurn("turn-1", "user-1", "first", 10), status: "interrupted" },
+        createTurn("turn-2", "user-2", "second", 20),
+      ],
+      "asc",
+      "app-server.thread/read",
+    );
+
+    expect(latest).toEqual({
+      status: "completed",
+      source: "app-server.thread/read",
+    });
+  });
+
+  it("空 turns page 没有最新历史状态", () => {
+    expect(
+      latestHistoryTurnFromPage([], "desc", "app-server.thread/turns/list"),
+    ).toBeNull();
   });
 });
 
