@@ -65,6 +65,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 5A-5G | 历史恢复、继续发送、approval、中断、刷新 degraded 提示 | 已完成 | 历史 thread 可恢复、继续发送和中断；approval 按官方 schema 闭环；刷新后 running 状态显示明确 degraded |
 | Phase 6A | 历史分页加载 | 已完成 | `thread/read` metadata-first，`thread/turns/list` 分页加载更早 turn，失败时回退稳定历史读取 |
 | Phase 6B | 工具大输出展示截断 | Code complete | 实时和历史工具输出进入 CodexWeb 消息结构前按官方 1 MiB 前缀上限做展示保护 |
+| Phase 6C | Approval 队列与过期响应硬化 | Code complete | 多个 approval request 排队处理，resolved 时移除，历史页按 thread 过滤可见 approval |
 
 ## Phase 0：协议和项目基线
 
@@ -350,7 +351,7 @@ Phase 5C 记录：
 | Approval | 历史会话继续发送时触发 approval | 已完成 | Phase 5E-B | resume 后触发 command/file/permission approval，PermissionPrompt 出现并按官方 schema 返回 response |
 | Approval | approval pending 时 composer 与状态栏 | 已完成 | Phase 5E-B | pending approval 期间 composer 不产生并发 turn；用户 approve/deny 后状态恢复 |
 | Approval | approve / deny 后同一个 turn 继续完成 | 已完成 | Phase 5E-B | approve 后 turn 继续到 completed；deny 后显示官方返回的失败/中断语义 |
-| Approval | 多个 approval 或过期 approval | 未开始 | Phase 6 | 多个 server request 不串线；已完成/过期 approval 不再接受重复响应 |
+| Approval | 多个 approval 或过期 approval | Code complete | Phase 6C | 多个 server request 不串线；已完成/过期 approval 不再接受重复响应 |
 | Tools | exec / patch / file change / MCP / skill 完整状态映射 | 部分完成 | Phase 6 | running、success、failed、cancelled、interrupted 都有真实 source breadcrumb 和 CodexWeb 展示 |
 | Tools | 工具结果默认折叠、展开详情 | 部分完成 | Phase 6 | 历史工具和新 turn 工具都默认折叠，展开后展示 stdout、stderr、patch 或 MCP 详情 |
 | Tools | 大输出与增量输出截断策略 | Code complete | Phase 6B | 大 stdout/stderr 不撑爆页面；截断信息可见，原始输出保留在可诊断来源中 |
@@ -637,6 +638,48 @@ Phase 6B 记录：
 - 2026-07-10：官方一致调整后已重新运行 `npm run test`，包含 `tsc --noEmit`，14 个测试文件、58 个测试通过。
 - 2026-07-10：官方一致调整后已重新运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建；构建后 `next-env.d.ts` 已按用户要求再次还原。
 - 2026-07-10：官方一致调整后已重新运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+
+## Phase 6C：Approval 队列与过期响应硬化
+
+目标：补齐多个 app-server approval server request 的队列语义。连续 approval 不得互相覆盖；`serverRequest/resolved` 或用户响应成功后必须按 requestId 移除；历史页只显示当前 thread 的 approval，避免跨 thread 串线。
+
+架构：对照官方 TUI `chatwidget/interrupts.rs` 的 `VecDeque<QueuedInterrupt>` 和 `remove_resolved_prompt()` 语义。Web 新增纯函数 `approval-queue-adapter` 管理队列；`AppServerProvider` 新增 `pendingApprovals`，继续派生兼容字段 `pendingApproval`；页面可按 thread 过滤队列中的可见 approval，并把 requestId 传回 `respondToApproval()`。
+
+本阶段不做：approval 列表 UI、MCP elicitation、requestUserInput 队列、真实 `CODEX_HOME` 验收。
+
+实施清单：
+
+- [x] 新增 `src/codex-web/approval-queue-adapter.ts`，支持入队、按 requestId 去重、移除、查找和 thread 过滤。
+- [x] `CodexWebAppServerState` 新增 `pendingApprovals`，`pendingApproval` 保持为全局队首兼容字段。
+- [x] `AppServerProvider` 收到 approval server request 时入队，收到 `serverRequest/resolved` 时按 requestId 移除。
+- [x] `respondToApproval(decision, requestId?)` 支持精确响应当前可见 approval；stale/duplicate 继续通过 guard 失败并写 diagnostics。
+- [x] 历史页从队列中选择当前 route thread 或 resumed thread 的第一个 approval，避免其它 thread 的队首 approval 遮住当前页。
+- [x] 在隔离 `CODEX_HOME` 下完成 targeted、全量、build 和 smoke 验证。
+
+验证：
+
+```bash
+export NODE_HOME="/volume2/SSD/node-v24.14.0"
+export PATH=$NODE_HOME/bin:$PATH
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web/approval-queue-adapter.test.ts
+npm run test -- src/codex-web
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 6C 记录：
+
+- 2026-07-10：新增 `docs/superpowers/specs/2026-07-10-phase-6c-approval-queue-design.md` 和 `docs/superpowers/plans/2026-07-10-phase-6c-approval-queue.md`，记录官方 TUI 队列语义和 Web 实施边界。
+- 2026-07-10：对照官方 TUI：`chatwidget/interrupts.rs` 使用 `VecDeque<QueuedInterrupt>` 排队 approval / permission / elicitation，并用 `remove_resolved_prompt()` 按 resolved request 移除；Phase 6C 在 Web 中实现 approval 子集。
+- 2026-07-10：新增 `approval-queue-adapter`，并接入 `AppServerProvider`、`/chat` 和 `/chat/[id]`。
+- 2026-07-10：已运行 `npm run test -- src/codex-web/approval-queue-adapter.test.ts`，包含 `tsc --noEmit`，1 个测试文件、5 个测试通过。
+- 2026-07-10：已运行 `npm run test -- src/codex-web`，包含 `tsc --noEmit`，11 个测试文件、45 个测试通过。
+- 2026-07-10：已运行 `npm run test`，包含 `tsc --noEmit`，15 个测试文件、63 个测试通过。
+- 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
+- 2026-07-10：`npm run build` 后 `next-env.d.ts` 被 Next 自动改为 `./.next/types/routes.d.ts`，已按用户要求还原为 `./.next/dev/types/routes.d.ts`，不纳入本阶段提交。
+- 2026-07-10：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
 
 ## 决策日志
 

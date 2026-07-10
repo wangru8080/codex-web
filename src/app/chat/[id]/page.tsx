@@ -11,6 +11,7 @@ import { useWorkspaceSidebarOptional } from '@/hooks/useWorkspaceSidebar';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
 import { selectVisibleActiveTurn } from '@/codex-web/active-turn-visibility-adapter';
+import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 import {
   mergeThreadTurnMessages,
@@ -303,12 +304,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     : { visibleTurn: null, notice: null };
   const appServerTurn = activeTurnVisibility.visibleTurn;
   const appServerNotice = activeTurnVisibility.notice ?? paginationNotice;
-  const appServerApproval =
-    isAppServerThread &&
-    appServerState.pendingApproval?.data &&
-    (appServerState.pendingApproval.data.threadId === id || appServerState.pendingApproval.data.threadId === resumedThreadId)
-      ? appServerState.pendingApproval.data
-      : null;
+  const appServerApproval = isAppServerThread
+    ? firstApproval(appServerState.pendingApprovals, (approval) =>
+        approvalRequestMatchesThread(approval, [id, resumedThreadId]),
+      )
+    : null;
   const defaultAppServerModel =
     appServerState.models?.data.data.find((model) => !model.hidden && model.isDefault)?.id ||
     appServerState.models?.data.data.find((model) => !model.hidden)?.id ||
@@ -336,7 +336,9 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         appServerTurn={appServerTurn}
         appServerApproval={appServerApproval}
         appServerNotice={appServerNotice}
-        onAppServerApprovalDecision={respondToApproval}
+        onAppServerApprovalDecision={(decision) =>
+          appServerApproval ? respondToApproval(decision, appServerApproval.requestId) : respondToApproval(decision)
+        }
         appServerInterrupt={appServerTurn ? async () => {
           await interruptTurn({
             threadId: appServerTurn.threadId || resumedThreadId || id,

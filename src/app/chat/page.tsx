@@ -364,7 +364,7 @@ function NewChatPageInner() {
       setPermissionResolved(decision === 'deny' ? 'deny' : 'allow');
       setPendingApprovalSessionId('');
       try {
-        await respondToApproval(decision);
+        await respondToApproval(decision, appServerApproval.requestId);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : 'Unknown error';
         setErrorBanner({ message: 'Approval response failed', description: errMsg });

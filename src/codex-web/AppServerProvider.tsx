@@ -15,11 +15,19 @@ import type { ThreadStartResponse } from "@/codex/protocol/generated/v2/ThreadSt
 import type { TurnInterruptResponse } from "@/codex/protocol/generated/v2/TurnInterruptResponse";
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
 import type { TurnStartResponse } from "@/codex/protocol/generated/v2/TurnStartResponse";
+import type { JsonRpcId } from "@/codex/protocol/json-rpc";
 import {
   buildApprovalResponse,
   mapServerRequestToApproval,
   type AppServerApprovalDecision,
 } from "./approval-adapter";
+import {
+  enqueueApproval,
+  findApprovalByRequestId,
+  firstApproval,
+  removeApproval,
+  sourcedApproval,
+} from "./approval-queue-adapter";
 import {
   beginApprovalResponse,
   completeApprovalResponse,
@@ -75,7 +83,7 @@ export type AppServerActions = {
   refreshThreads: () => Promise<ThreadListResponse>;
   readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
   listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
-  respondToApproval: (decision: AppServerApprovalDecision) => Promise<void>;
+  respondToApproval: (decision: AppServerApprovalDecision, requestId?: JsonRpcId) => Promise<void>;
   resetTurn: () => void;
 };
 
@@ -116,14 +124,18 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      setState((current) => ({
-        ...current,
-        pendingApproval: { source: "app-server.serverRequest", data: approval },
-        diagnostics: appendDiagnostic(current.diagnostics, {
-          source: "app-server.serverRequest",
-          data: request,
-        }),
-      }));
+      setState((current) => {
+        const pendingApprovals = enqueueApproval(current.pendingApprovals, approval);
+        return {
+          ...current,
+          pendingApprovals,
+          pendingApproval: sourcedApproval(firstApproval(pendingApprovals)),
+          diagnostics: appendDiagnostic(current.diagnostics, {
+            source: "app-server.serverRequest",
+            data: request,
+          }),
+        };
+      });
     });
 
     client.onNotification((notification) => {
@@ -132,10 +144,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           current.activeTurn?.data ?? initialAppServerTurnState,
           notification,
         );
+        const pendingApprovals = resolvePendingApprovals(current.pendingApprovals, notification);
         const next = {
           ...current,
           activeTurn: { source: "app-server.notification" as const, data: activeTurn },
-          pendingApproval: resolvePendingApproval(current.pendingApproval, notification),
+          pendingApprovals,
+          pendingApproval: sourcedApproval(firstApproval(pendingApprovals)),
           diagnostics: appendDiagnostic(current.diagnostics, {
             source: "app-server.notification",
             data: notification,
@@ -212,17 +226,21 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     setState((current) => ({
       ...current,
       activeTurn: null,
+      pendingApprovals: [],
       pendingApproval: null,
     }));
   }, []);
 
-  const respondToApproval = useCallback(async (decision: AppServerApprovalDecision) => {
+  const respondToApproval = useCallback(async (decision: AppServerApprovalDecision, requestId?: JsonRpcId) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
     }
 
-    const approval = state.pendingApproval?.data ?? null;
+    const approval =
+      requestId === undefined
+        ? state.pendingApproval?.data ?? null
+        : findApprovalByRequestId(state.pendingApprovals, requestId);
     if (!approval) {
       throw new Error("没有待处理的 app-server approval");
     }
@@ -251,12 +269,15 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         key: guard.key,
         state: approvalResponseStateRef.current,
       });
-      const requestId = approval.requestId;
-      setState((current) => ({
-        ...current,
-        pendingApproval:
-          current.pendingApproval?.data.requestId === requestId ? null : current.pendingApproval,
-      }));
+      const respondedRequestId = approval.requestId;
+      setState((current) => {
+        const pendingApprovals = removeApproval(current.pendingApprovals, respondedRequestId);
+        return {
+          ...current,
+          pendingApprovals,
+          pendingApproval: sourcedApproval(firstApproval(pendingApprovals)),
+        };
+      });
     } catch (error) {
       approvalResponseStateRef.current = failApprovalResponse({
         key: guard.key,
@@ -264,7 +285,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       });
       throw error;
     }
-  }, [state.pendingApproval]);
+  }, [state.pendingApproval, state.pendingApprovals]);
 
   const refreshThreads = useCallback(async () => {
     const client = clientRef.current;
@@ -511,16 +532,19 @@ function isTerminalTurn(turn: AppServerTurnState): boolean {
   return turn.status === "completed" || turn.status === "failed" || turn.status === "interrupted";
 }
 
-function resolvePendingApproval(
-  pendingApproval: CodexWebAppServerState["pendingApproval"],
+function resolvePendingApprovals(
+  pendingApprovals: CodexWebAppServerState["pendingApprovals"],
   notification: { method: string; params?: unknown },
-): CodexWebAppServerState["pendingApproval"] {
-  if (!pendingApproval || notification.method !== "serverRequest/resolved") {
-    return pendingApproval;
+): CodexWebAppServerState["pendingApprovals"] {
+  if (notification.method !== "serverRequest/resolved") {
+    return pendingApprovals;
   }
 
   const params = readRecord(notification.params);
-  return params.requestId === pendingApproval.data.requestId ? null : pendingApproval;
+  if (typeof params.requestId !== "string" && typeof params.requestId !== "number") {
+    return pendingApprovals;
+  }
+  return removeApproval(pendingApprovals, params.requestId);
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
