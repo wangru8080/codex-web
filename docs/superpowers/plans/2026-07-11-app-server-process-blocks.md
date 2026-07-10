@@ -31,7 +31,7 @@
 - Produces: `appServerInitializeCapabilities(): InitializeCapabilities`
 - Consumes: generated `InitializeCapabilities`
 
-- [ ] **Step 1: Add shared capabilities helper**
+- [x] **Step 1: Add shared capabilities helper**
 
 Create `src/codex-web/app-server-capabilities.ts`:
 
@@ -47,11 +47,11 @@ export function appServerInitializeCapabilities(): InitializeCapabilities {
 }
 ```
 
-- [ ] **Step 2: Use helper in all initialize paths**
+- [x] **Step 2: Use helper in all initialize paths**
 
 Replace `capabilities: null` or omitted capabilities in Web bootstrap, server bootstrap, and inspector script with `appServerInitializeCapabilities()`.
 
-- [ ] **Step 3: Update bootstrap test**
+- [x] **Step 3: Update bootstrap test**
 
 Expect initialize request params to include `experimentalApi: true` and `requestAttestation: false`.
 
@@ -65,15 +65,15 @@ Expect initialize request params to include `experimentalApi: true` and `request
 - Produces: `AppServerTurnState.durationMs?: number`
 - Produces: `AppServerTurnState.reasoningText: string`
 
-- [ ] **Step 1: Extend state**
+- [x] **Step 1: Extend state**
 
 Add `durationMs?: number` and `reasoningText: string` to `AppServerTurnState` and defaults.
 
-- [ ] **Step 2: Capture reasoning deltas**
+- [x] **Step 2: Capture reasoning deltas**
 
 Append `item/reasoning/summaryTextDelta` to `reasoningText`. If raw reasoning is enabled later, the raw text path can be added separately; this task preserves official summary behavior only.
 
-- [ ] **Step 3: Capture completed duration**
+- [x] **Step 3: Capture completed duration**
 
 On `turn/completed`, read `turn.durationMs` and store it if it is a finite number.
 
@@ -88,19 +88,19 @@ On `turn/completed`, read `turn.durationMs` and store it if it is a finite numbe
 - Produces: `appServerTurnToMessageContent(turn: AppServerTurnState): string`
 - Produces: `turnItemsToMessageContent(args: { items: ThreadItem[]; assistantText?: string; durationMs?: number; reasoningText?: string }): string`
 
-- [ ] **Step 1: Build blocks from ThreadItem**
+- [x] **Step 1: Build blocks from ThreadItem**
 
 Emit `thinking` from reasoning summary, `tool_use` and `tool_result` from supported tool items, `codex_summary` from duration/process count, and final `text` from agent message or assistantText.
 
-- [ ] **Step 2: Keep final-only turns simple**
+- [x] **Step 2: Keep final-only turns simple**
 
 If a turn has no reasoning and no tool blocks, return the final answer text instead of JSON so direct answers keep the original simple rendering.
 
-- [ ] **Step 3: Test tool turn**
+- [x] **Step 3: Test tool turn**
 
 A commandExecution plus final answer must produce JSON blocks containing `tool_use`, `tool_result`, `codex_summary`, and final `text`.
 
-- [ ] **Step 4: Test reasoning-only turn**
+- [x] **Step 4: Test reasoning-only turn**
 
 Reasoning summary plus final answer must produce `thinking`, `codex_summary`, and final `text`.
 
@@ -116,15 +116,15 @@ Reasoning summary plus final answer must produce `thinking`, `codex_summary`, an
 - Consumes: `appServerTurnToMessageContent`
 - Consumes: `turnItemsToMessageContent`
 
-- [ ] **Step 1: Preserve completed turn process blocks**
+- [x] **Step 1: Preserve completed turn process blocks**
 
 In both chat completion effects, store `appServerTurnToMessageContent(appServerTurn)` as assistant message content.
 
-- [ ] **Step 2: Preserve history process blocks**
+- [x] **Step 2: Preserve history process blocks**
 
 Replace duplicated history block construction with `turnItemsToMessageContent`, passing `turn.items` and `turn.durationMs`.
 
-- [ ] **Step 3: Keep interrupted and failed behavior unchanged**
+- [x] **Step 3: Keep interrupted and failed behavior unchanged**
 
 Do not create process blocks for failed or interrupted notices unless app-server provided completed assistant/tool items.
 
@@ -175,3 +175,5 @@ After browser refresh there is no Web-side snapshot. The UI only renders what ap
 - 2026-07-11：已运行 `npm run test`，17 个测试文件、90 个测试通过。
 - 2026-07-11：已运行 `npm run build`，构建通过；仍有既有 `next.config.mjs` / `theme/loader.ts` NFT trace warning。构建后已把 `next-env.d.ts` 还原为 `.next/dev/types/routes.d.ts`。
 - 2026-07-11：已运行 `npm run test:smoke`，隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，bridge smoke 通过，`models=7`，`accountSource=app-server.account/read`。
+- 2026-07-11：真实浏览器回归通过：工具 turn 完成后显示 `已处理 7s`，展开可见 `已运行 /bin/bash -lc ... package.json`，final answer 为 `6`；同一浏览器进程切到其它 session 再切回仍保留过程块；刷新后只显示 app-server 历史可恢复的 final answer，不伪造工具过程；console 0 error / 0 warning。
+- 2026-07-11：验证后 `.playwright-mcp` 诊断目录已按用户确认移动到 `/volume2/SSD/Trash/home/rrssnas/code/codex/web/.playwright-mcp-20260711-0244`，保留原路径层级和既有 Trash 同名目录。

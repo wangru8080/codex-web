@@ -70,6 +70,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6E | 工具状态与中断反例验证 | Smoke passed | 普通、success、failed、interrupted 四类路径已用单元测试、build、smoke 和真实浏览器验证；当前隔离环境刷新后 interrupted 使用 `app-server.thread/read` fallback breadcrumb |
 | Phase 6F Task 1 | 协议观察脚本和真实 fallback 数据判定 | Code complete | `thread/read(includeTurns:true)` 已用只读脚本观察；当前目标 thread 不含可恢复工具 item，Web 不从 assistant 文本伪造工具 cell |
 | Phase 6F Task 3 | 独立工具路径真实浏览器验证 | Smoke passed | file read、web direct、write/fileChange 和历史 route 复查完成；curl baidu 在当前 app-server 命令环境仍受网络/代理限制但错误可见；write completion timeout 已修复 |
+| Phase 6F Process Blocks | TUI 等价过程块 replay | Smoke passed | completed 工具 turn 显示 `已处理 + 时间 + 中间过程 + final answer`；同一浏览器进程切 session 再切回仍保留；刷新后只信 app-server 历史，不伪造工具过程 |
 
 ## Phase 0：协议和项目基线
 
@@ -806,6 +807,12 @@ Phase 6F Task 3 记录：
 - 2026-07-10：修复后真实浏览器 write 路径：请求创建 `/volume2/SSD/codex/Temp/phase6f-write-check.txt`，approval 显示目标路径，`Allow Once` 后文件实际创建，内容为 `phase6f-write-ok`，页面正常回复“写入成功”，未再出现“等待 turn/completed 超时”。
 - 2026-07-10：Step 6 历史 route 复查完成：打开 `/chat/019f4ccb-3432-7692-a164-f631394a66de` 后历史只恢复用户消息和 assistant “写入成功”，没有伪造工具 cell；页面显示 `thread/turns/list requires experimentalApi capability` 后回退到 `thread/read`，符合 fallback 不伪造工具过程区的原则。
 - 2026-07-10：修复后真实浏览器 console 检查：0 errors / 0 warnings；验证后已停止 dev server。
+- 2026-07-11：对齐官方 TUI 过程块 replay：Web bootstrap、server bootstrap 和只读 inspector 都发送 `experimentalApi: true` capability；live/completed/history 统一通过 `app-server-message-blocks` 从真实 `ThreadItem` / notification turn 构造 CodexWeb 过程块，普通 final-only turn 仍保持纯文本。
+- 2026-07-11：对齐官方 TUI `ThreadEventStore` 的同进程 replay 边界：`AppServerProvider` 在内存中按 `threadId:turnId` 保存 notification-derived turn snapshot；`/chat/[id]` 历史 route 重建消息时仅用同一进程 snapshot 覆盖同一 turn 的 assistant 消息，不写入 localStorage / IndexedDB。
+- 2026-07-11：真实浏览器过程块回归：在 `/chat` 发送“必须使用工具读取当前仓库 package.json，然后只回复 scripts 里有多少个脚本。”，完成后显示 `已处理 7s`，展开可见 `已运行 /bin/bash -lc ... package.json`，final answer 为 `6`。
+- 2026-07-11：真实浏览器切换 session 回归：从工具 thread `019f4d56-297b-7743-93e1-a65f8747d73a` 切到 `019f4d55-366f-7742-89a4-90b9581ad266` 后再切回，过程块仍可展开，保留 `已运行`、真实 shell 命令和 final answer。
+- 2026-07-11：刷新反例验证：刷新 `/chat/019f4d56-297b-7743-93e1-a65f8747d73a` 后页面只显示 app-server 历史可恢复的 final answer `6`，没有 `已处理` 或工具命令；这符合官方 TUI 重启后只 replay app-server 历史 `Turn.items` 的边界，Web 不从 final answer 伪造工具过程。
+- 2026-07-11：验证命令已完成：targeted tests 4 个文件 22 个测试通过；`npm run test` 17 个文件 90 个测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`models=7`，`accountSource=app-server.account/read`；真实浏览器 console 0 error / 0 warning。
 
 ## 决策日志
 
@@ -813,6 +820,7 @@ Phase 6F Task 3 记录：
 - 2026-07-06：`CodexBrowser` 和 `CodePilot` 只用于借鉴 app-server 经验、开发流程和测试经验，禁止作为代码来源。
 - 2026-07-06：开发、测试和 smoke 默认使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`；最终验收才在用户明确同意后使用本地真实 `CODEX_HOME`。
 - 2026-07-08：Web UI 基于 `/home/rrssnas/code/CodexWeb` 开发；开发前阅读其 README，保持 CodexWeb 既有 UI 样式和 Demo 结构，不直接修改 CodexWeb 目录，只在当前项目中接入真实 app-server 后端。
+- 2026-07-11：过程块保留策略保持官方 TUI 等价：同一浏览器进程内切换 session 使用 notification-derived 内存 snapshot replay；刷新或重启后只使用 app-server 历史 API 返回的真实 `Turn.items`，不引入 IndexedDB / localStorage 持久缓存，也不从 assistant final text 反推工具 cell。
 
 ## 剩余风险
 
@@ -822,3 +830,4 @@ Phase 6F Task 3 记录：
 - 浏览器 UI 可能偏离 TUI 语义或 CodexWeb 既有体验，所有新增功能必须先对照 TUI 业务语义和 CodexWeb UI Demo。
 - 从 CodexWeb 复制 UI 代码时可能引入 mock 数据路径或前端预览逻辑，接入当前项目前必须替换为 app-server 真实数据来源并保留 source breadcrumb。
 - 真实模型调用需要账号、网络和额度，smoke 失败时要区分认证、网络、额度和协议问题。
+- 历史 session 如果 app-server 历史 API 只返回 `userMessage` / `agentMessage`，刷新后无法恢复工具中间过程；这是与官方 TUI 重启恢复一致的边界。后续若要跨刷新保留，需要另立非 TUI 等价的持久缓存设计并明确 source breadcrumb。
