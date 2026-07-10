@@ -69,6 +69,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6D | 工具状态完整映射 | Code complete | 实时和历史工具 item 统一复用 app-server 状态映射，覆盖 command、fileChange、MCP、dynamic 和 collab |
 | Phase 6E | 工具状态与中断反例验证 | Smoke passed | 普通、success、failed、interrupted 四类路径已用单元测试、build、smoke 和真实浏览器验证；当前隔离环境刷新后 interrupted 使用 `app-server.thread/read` fallback breadcrumb |
 | Phase 6F Task 1 | 协议观察脚本和真实 fallback 数据判定 | Code complete | `thread/read(includeTurns:true)` 已用只读脚本观察；当前目标 thread 不含可恢复工具 item，Web 不从 assistant 文本伪造工具 cell |
+| Phase 6F Task 3 | 独立工具路径真实浏览器验证 | 部分完成 | file read 成功；web direct 成功；curl 网络工具因 DNS 失败但失败 UI 可见；write 文件实际落地但 turn completion 超时 |
 
 ## Phase 0：协议和项目基线
 
@@ -783,6 +784,20 @@ Phase 6F Task 1 记录：
 - 2026-07-10：实际 item types 只有 `userMessage` 和 `agentMessage`；`thread/read(includeTurns:true)` 未返回 `commandExecution`、`fileChange`、`mcpToolCall`、`dynamicToolCall`、`collabAgentToolCall` 等工具 item。
 - 2026-07-10：因此当前 fallback 历史没有可恢复的真实工具 item；Web 不从 assistant 汇总文本伪造工具 cell，后续 Phase 6F 只能在独立工具验证或 app-server 返回真实工具 item 时展示工具过程区。
 - 2026-07-10：已运行单文件自检 `npm exec -- tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --types node scripts/inspect-thread-items.ts`，通过。
+
+Phase 6F Task 3 记录：
+
+- 2026-07-10：独立工具验证前已运行 `npm run test`，包含 `tsc --noEmit`，16 个测试文件、83 个测试通过。
+- 2026-07-10：已运行 `npm run build`，通过；仍有既有 Turbopack `theme/loader.ts` / `next.config.mjs` NFT trace warning，未阻塞构建。
+- 2026-07-10：`npm run build` 后 `next-env.d.ts` 被 Next 自动改为 `./.next/types/routes.d.ts`，已按用户要求还原为 `./.next/dev/types/routes.d.ts`，不纳入本阶段提交。
+- 2026-07-10：已运行 `npm run test:smoke`，真实 bridge bootstrap 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=5，accountSource=`app-server.account/read`。
+- 2026-07-10：真实浏览器 file read/search 路径：`/chat` 请求读取 `package.json` scripts；approval 后实时工具 cell 显示 `已运行`，命令为只读 shell，最终回复 scripts 摘要。
+- 2026-07-10：真实浏览器 web direct 路径：请求访问 `https://example.com/`，页面最终回复 `Example Domain`；该路径未出现可见 shell/tool cell，记录为模型直接完成或非 shell 工具不可见路径。
+- 2026-07-10：真实浏览器 web/network shell 路径：显式请求 `curl -I https://example.com/`；approval 后实时工具 cell 显示 `运行失败`，展开可见 `curl: (6) Could not resolve host: example.com`，属于隔离环境 DNS/网络限制，UI 正确显示失败状态和错误输出。
+- 2026-07-10：真实浏览器 write 路径：请求写入 `/volume2/SSD/codex/Temp/phase6f-write-check.txt`，权限面板显示目标路径并支持 `Allow Once`；允许后文件实际创建，内容为 `phase6f-write-ok`。
+- 2026-07-10：write 路径残留风险：虽然文件写入成功，页面最终显示“创建会话失败 / 等待 turn/completed 超时”，未进入正常 completed 收口；需后续单独调查 approval 后 completion timeout。
+- 2026-07-10：本轮没有完成新工具 thread 的历史 route 复查；dev server 停止后浏览器标签进入 `chrome-error://chromewebdata/`，无法再从 DOM 取本轮新 thread 链接。当前可确定结论仍以 Task 1 的 `thread/read` 协议观察为准：fallback 不含可恢复工具 item 时 Web 不伪造工具 cell。
+- 2026-07-10：真实浏览器 console 检查：0 errors / 0 warnings；验证后已停止 dev server。
 
 ## 决策日志
 

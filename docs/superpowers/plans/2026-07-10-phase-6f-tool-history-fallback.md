@@ -322,7 +322,7 @@ Expected: commit succeeds.
 - Produces:
   - Smoke Ledger for read/search、web/network、write/fileChange tool paths.
 
-- [ ] **Step 1: Run full verification before browser**
+- [x] **Step 1: Run full verification before browser**
 
 Run:
 
@@ -343,7 +343,7 @@ Expected:
 - If `next-env.d.ts` changed to `./.next/types/routes.d.ts`, restore it to `./.next/dev/types/routes.d.ts`.
 - `npm run test:smoke`: PASS with isolated `CODEX_HOME`.
 
-- [ ] **Step 2: Start dev server**
+- [x] **Step 2: Start dev server**
 
 Run:
 
@@ -356,7 +356,7 @@ npm run dev
 
 Expected: dev server starts and prints URL.
 
-- [ ] **Step 3: Validate file read/search tool path**
+- [x] **Step 3: Validate file read/search tool path**
 
 In real browser `/chat`, send:
 
@@ -371,7 +371,7 @@ Expected:
 - Final answer references `package.json` scripts.
 - Console has 0 errors / 0 warnings.
 
-- [ ] **Step 4: Validate web/network tool path**
+- [x] **Step 4: Validate web/network tool path**
 
 In a new chat, send:
 
@@ -385,7 +385,7 @@ Expected:
 - If network succeeds, realtime tool cell shows success and final answer mentions `Example Domain` or `example.com`.
 - If network fails due to sandbox、proxy、账号或权限，record exact visible error; do not count it as UI failure if the tool state and error are visible.
 
-- [ ] **Step 5: Validate write/fileChange tool path**
+- [x] **Step 5: Validate write/fileChange tool path**
 
 Before running this step, choose a deterministic path under `/volume2/SSD/codex/Temp/phase6f-write-check.txt`.
 
@@ -411,7 +411,7 @@ Expected:
 - If `thread/read` history includes tool items, historical process group remains visible and default collapsed; expanding shows status/source/output.
 - If `thread/read` history does not include tool items, no fake tool cell appears; document that only assistant summary is recoverable in fallback.
 
-- [ ] **Step 7: Stop dev server and inspect artifacts**
+- [x] **Step 7: Stop dev server and inspect artifacts**
 
 Stop dev server with `Ctrl+C`.
 
@@ -427,7 +427,7 @@ Expected:
 - If `.playwright-mcp` contains files, output a separate “拟执行操作清单” to move it to `/volume2/SSD/Trash/home/rrssnas/code/codex/web/.playwright-mcp/` and wait for confirmation.
 - If write-check file exists and user wants cleanup, output a separate “拟执行操作清单” for that file.
 
-- [ ] **Step 8: Update execution plan and commit**
+- [x] **Step 8: Update execution plan and commit**
 
 Update `docs/exec-plans/active/web-mvp-phase-0-4.md` with:
 
