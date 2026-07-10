@@ -7,6 +7,7 @@ import {
   codexWebToolResultFromItem,
   codexWebToolUseFromItem,
 } from "./tool-item-adapter";
+import { TOOL_OUTPUT_DISPLAY_BYTE_LIMIT } from "./tool-output-display";
 
 describe("tool-item-adapter", () => {
   it("映射 commandExecution 的状态、breadcrumb 和非零 exit code", () => {
@@ -169,6 +170,32 @@ describe("tool-item-adapter", () => {
     expect(codexWebRunningOutputFromItem(item, { output: "still running\n" })).toBe(
       "still running\n",
     );
+  });
+
+  it("截断超大 command 输出时仍保留状态和 exit code", () => {
+    const largeOutput = `head\n${"x".repeat(TOOL_OUTPUT_DISPLAY_BYTE_LIMIT + 1000)}\ntail`;
+    const item: ThreadItem = {
+      type: "commandExecution",
+      id: "cmd-large",
+      command: "cat big.log",
+      cwd: "/repo",
+      processId: null,
+      source: "agent",
+      status: "completed",
+      commandActions: [],
+      aggregatedOutput: largeOutput,
+      exitCode: 0,
+      durationMs: 42,
+    };
+
+    const result = codexWebToolResultFromItem(item);
+
+    expect(result?.content).toContain("已按官方 DEFAULT_OUTPUT_BYTES_CAP 截断");
+    expect(result?.content).toContain("head");
+    expect(result?.content).not.toContain("tail");
+    expect(result?.content).toContain("status: completed");
+    expect(result?.content).toContain("exit code: 0");
+    expect(result?.content).toContain("source: app-server.commandExecution");
   });
 
   it("非工具 item 不产生工具信息", () => {

@@ -40,6 +40,74 @@ describe("deriveCodexWebToolState", () => {
     expect(state.streamingToolOutput).toBe("running tests\n");
   });
 
+  it("实时 adapter 保留 command 状态 breadcrumb 且不把 interrupted turn 写成工具状态", () => {
+    const turn: AppServerTurnState = {
+      ...createStartingTurnState(),
+      status: "interrupted",
+      items: [
+        {
+          type: "commandExecution",
+          id: "cmd-1",
+          command: "sleep 60",
+          cwd: "/repo",
+          processId: "proc-1",
+          source: "agent",
+          status: "completed",
+          commandActions: [],
+          aggregatedOutput: "",
+          exitCode: 0,
+          durationMs: 100,
+        },
+      ],
+    };
+
+    const state = deriveCodexWebToolState(turn);
+
+    expect(state.toolUses[0].input).toMatchObject({
+      status: "completed",
+      sourceBreadcrumb: "app-server.commandExecution",
+    });
+    expect(state.toolUses[0].input).not.toMatchObject({ status: "interrupted" });
+    expect(state.toolResults[0]).toMatchObject({ is_error: false });
+  });
+
+  it("实时 adapter 显示 dynamic 和 collab 工具 item", () => {
+    const turn: AppServerTurnState = {
+      ...createStartingTurnState(),
+      items: [
+        {
+          type: "dynamicToolCall",
+          id: "dyn-1",
+          namespace: null,
+          tool: "analyze",
+          arguments: { file: "a.ts" },
+          status: "completed",
+          contentItems: [{ type: "inputText", text: "done" }],
+          success: true,
+          durationMs: 12,
+        },
+        {
+          type: "collabAgentToolCall",
+          id: "collab-1",
+          tool: "spawnAgent",
+          status: "completed",
+          senderThreadId: "thread-a",
+          receiverThreadIds: ["thread-b"],
+          prompt: "review",
+          model: null,
+          reasoningEffort: null,
+          agentsStates: { "thread-b": { status: "completed", message: null } },
+        },
+      ],
+    };
+
+    const state = deriveCodexWebToolState(turn);
+
+    expect(state.toolUses.map((tool) => tool.name)).toEqual(["dynamic:analyze", "collab:spawnAgent"]);
+    expect(state.toolResults).toHaveLength(2);
+    expect(state.toolResults.every((result) => result.is_error === false)).toBe(true);
+  });
+
   it("把完成的 fileChange 映射为结果摘要", () => {
     const turn: AppServerTurnState = {
       ...createStartingTurnState(),

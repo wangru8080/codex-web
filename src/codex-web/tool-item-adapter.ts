@@ -121,11 +121,7 @@ export function codexWebToolResultFromItem(
 
     return {
       tool_use_id: item.id,
-      content: display(
-        formatCommandExecutionResult(item, context.output),
-        context,
-        "app-server commandExecution item / diagnostics",
-      ),
+      content: formatCommandExecutionResult(item, context),
       is_error:
         item.status === "failed" || item.status === "declined" || (item.exitCode ?? 0) !== 0,
     };
@@ -207,11 +203,12 @@ function display(output: string, context: ToolItemContext, fallbackSourceLabel: 
 
 function formatCommandExecutionResult(
   item: Extract<ThreadItem, { type: "commandExecution" }>,
-  outputOverride = "",
+  context: ToolItemContext,
 ): string {
-  const output = (item.aggregatedOutput ?? outputOverride).trimEnd();
+  const output = (item.aggregatedOutput ?? context.output ?? "").trimEnd();
+  const displayOutput = display(output, context, "app-server commandExecution item / diagnostics");
   return [
-    output,
+    displayOutput,
     `status: ${item.status}`,
     typeof item.exitCode === "number" ? `exit code: ${item.exitCode}` : "",
     typeof item.durationMs === "number" ? `duration: ${item.durationMs}ms` : "",
