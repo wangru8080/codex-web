@@ -77,6 +77,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6J | 多 active turn 并发状态模型 | Smoke passed | 多个 thread active turn 按 threadId 隔离；新建 B 不打断 A，客户端切回 A 保留 `已处理 + 时间 + 过程 + final answer` |
 | Phase 6K | 多 active turn 失败/中断/approval 并发回归 | Smoke passed | approval、interrupt、failed/completed 在多个 active thread 之间不串线；真实浏览器验证 B approval 与 A interrupt 互不影响 |
 | Phase 6L | 新建页多轮发送归属修复 | Smoke passed | `/chat?new=...` 首轮完成后继续发送复用同一个 app-server thread，不再创建第二个新 thread |
+| Phase 6M | 历史页多轮续聊归属回归 | Smoke passed | 历史页首次 `thread/resume` 后，后续多轮复用 `resumedThreadId`，不重复 resume 或串回 route id |
 
 ## Phase 0：协议和项目基线
 
@@ -926,6 +927,19 @@ Phase 6K 记录：
 - 2026-07-11：历史页验证：打开 `/chat/019f4fab-d6e3-75e2-847a-a60a9f325013` 后能看到第一轮 `phase6l-first-done` 和第二轮 `phase6l-second-done`，证明两轮归属同一个 app-server thread；console 增量 0 warning / 0 error。
 - 2026-07-11：验证命令已完成：targeted `npm run test -- src/codex-web/new-chat-turn-routing.test.ts src/lib/new-chat-url.test.ts src/codex-web/active-turns-adapter.test.ts` 3 个测试文件、11 条测试通过；`npm run test` 20 个测试文件、104 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
 - 2026-07-11：官方边界不变：刷新/重启后仍只按 app-server 历史 API replay，不新增 localStorage / IndexedDB 过程块持久化。
+
+## Phase 6M：历史页多轮续聊归属回归
+
+目标：对称验证 Phase 6L 的历史页路径。打开 `/chat/[id]` 历史页后，第一轮继续发送需要调用 `thread/resume`；一旦拿到真实 `resumedThreadId`，后续同页多轮发送必须直接走 `sendTurnInThread(resumedThreadId)`，不重复 resume、不串回原 route id。
+
+实施记录：
+
+- 2026-07-11：新增 `history-turn-routing` helper，把历史页发送目标显式拆成 `requiresResume`、`threadId`、`cwd` 和 `model`；首次发送使用 route thread id 触发 resume，resume 后续发送优先使用 `resumedThreadId`、`resumedCwd` 和 `resumedModel`。
+- 2026-07-11：`/chat/[id]` 的 `appServerSend` 改为通过 `resolveHistoryTurnTarget()` 选择目标；`target.requiresResume` 为 true 时调用 `thread/resume`，否则直接调用 `sendTurnInThread()`。
+- 2026-07-11：真实浏览器验证：打开历史页 `/chat/019f4fab-d6e3-75e2-847a-a60a9f325013`，连续发送“请只回复 phase6m-history-first-done。”和“请只回复 phase6m-history-second-done。”；页面 URL 始终保持同一历史 thread，正文同时显示两轮 final。
+- 2026-07-11：左侧归属反例：第二轮完成后，左侧没有新增 `phase6m` 会话链接；目标历史 thread 链接仍只有 1 个，说明第二轮没有新建 thread。
+- 2026-07-11：真实浏览器 console 增量检查 0 warning / 0 error；验证后已停止 dev server。
+- 2026-07-11：验证命令已完成：targeted `npm run test -- src/codex-web/history-turn-routing.test.ts src/codex-web/resume-adapter.test.ts src/codex-web/active-turns-adapter.test.ts src/codex-web/active-turn-visibility-adapter.test.ts` 4 个测试文件、23 条测试通过；`npm run test` 21 个测试文件、107 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
 
 ## 决策日志
 

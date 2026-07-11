@@ -19,6 +19,7 @@ import {
   selectOtherRunningActiveTurns,
 } from '@/codex-web/active-turns-adapter';
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
+import { resolveHistoryTurnTarget } from '@/codex-web/history-turn-routing';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 import {
   applyTurnSnapshotsToMessages,
@@ -392,16 +393,26 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           });
         } : undefined}
         appServerSend={canResumeAppServerThread ? async ({ content, cwd, model, onAccepted }) => {
-          const nextModel = resumedModel || model || sessionModel || defaultAppServerModel;
-          let threadId = resumedThreadId;
-          let turnCwd = resumedCwd || cwd || sessionWorkingDirectory;
-          let turnModel = nextModel;
+          const target = resolveHistoryTurnTarget({
+            routeThreadId: id,
+            resumedThreadId,
+            requestedCwd: cwd,
+            routeCwd: sessionWorkingDirectory,
+            resumedCwd,
+            requestedModel: model,
+            routeModel: sessionModel,
+            resumedModel,
+            defaultModel: defaultAppServerModel,
+          });
+          let threadId = target.threadId;
+          let turnCwd = target.cwd;
+          let turnModel = target.model;
 
-          if (!threadId) {
+          if (target.requiresResume) {
             const resume = await resumeThread({
-              threadId: id,
+              threadId,
               cwd: turnCwd,
-              model: nextModel,
+              model: turnModel,
             });
             threadId = resume.thread.id;
             turnCwd = resume.cwd || turnCwd;
