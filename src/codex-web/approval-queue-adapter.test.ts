@@ -51,6 +51,25 @@ describe("approval-queue-adapter", () => {
 
     expect(visible?.requestId).toBe("current");
   });
+
+  it("多个 pending approval 并发时只暴露当前 thread 的 requestId", () => {
+    const queue = [
+      approval("req-a", "thread-a"),
+      approval("req-b", "thread-b"),
+      approval("req-c", "thread-c"),
+    ];
+
+    const visibleForB = firstApproval(queue, (item) =>
+      approvalRequestMatchesThread(item, ["thread-b"]),
+    );
+    const visibleForA = firstApproval(queue, (item) =>
+      approvalRequestMatchesThread(item, ["thread-a"]),
+    );
+
+    expect(visibleForB?.requestId).toBe("req-b");
+    expect(visibleForA?.requestId).toBe("req-a");
+    expect(approvalRequestMatchesThread(queue[1], ["thread-a"])).toBe(false);
+  });
 });
 
 function approval(requestId: string | number, threadId: string): AppServerApprovalRequest {

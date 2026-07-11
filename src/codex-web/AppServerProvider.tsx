@@ -479,7 +479,9 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Web bridge 尚未连接");
     }
 
-    const activeTurn = state.activeTurn?.data ?? null;
+    const activeTurn = params?.threadId
+      ? state.activeTurnsByThreadId[params.threadId]?.data ?? null
+      : state.activeTurn?.data ?? null;
     const interruptParams = selectTurnInterruptParams({ activeTurn, params });
     if (!interruptParams) {
       return;
@@ -489,7 +491,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       "turn/interrupt",
       interruptParams,
     ) as TurnInterruptResponse;
-  }, [state.activeTurn]);
+  }, [state.activeTurn, state.activeTurnsByThreadId]);
 
   const actions = useMemo<AppServerActions>(
     () => ({

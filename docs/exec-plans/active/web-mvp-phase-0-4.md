@@ -75,6 +75,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6H | 官方 TUI / app-server 历史工具边界复查 | Review passed | 官方 TUI replay 只显示 app-server 返回的 `Turn.items`；官方 app-server 历史 API 明确不返回 command execution，Web 不做额外持久化或伪造恢复 |
 | Phase 6I | 历史续聊上下文真实回归 | Smoke passed | 重启 Web/bridge 后历史 UI 不显示过程块，但续聊仍能从官方 resume 上下文回答上一轮工具读取到的 scripts |
 | Phase 6J | 多 active turn 并发状态模型 | Smoke passed | 多个 thread active turn 按 threadId 隔离；新建 B 不打断 A，客户端切回 A 保留 `已处理 + 时间 + 过程 + final answer` |
+| Phase 6K | 多 active turn 失败/中断/approval 并发回归 | Smoke passed | approval、interrupt、failed/completed 在多个 active thread 之间不串线；真实浏览器验证 B approval 与 A interrupt 互不影响 |
 
 ## Phase 0：协议和项目基线
 
@@ -874,6 +875,42 @@ Phase 6J 记录：
 - 2026-07-11：真实浏览器回归反例：A3 运行 `sleep 45 && echo phase6j-a3-45` 时点击“新对话”创建 B3，B3 立即完成 `phase6j-b3-done`，A3 侧栏入口仍存在；通过侧栏 link 客户端切回 A3 后页面显示 `已处理 53s` 和 final answer `phase6j-a3-45-done`，console 增量 0 warning / 0 error。
 - 2026-07-11：刷新/硬导航反例：使用 `page.goto` 进入已完成 A2 时 Provider 重建，内存 active turn snapshot 丢失，页面只显示 app-server 历史文本；该行为和官方 TUI 重启后不恢复工具过程块一致，不作为缺陷修复。
 - 2026-07-11：验证命令已完成：targeted `npm run test -- src/lib/new-chat-url.test.ts src/codex-web/active-turns-adapter.test.ts src/codex-web/active-turn-visibility-adapter.test.ts src/codex-web/turn-reducer.test.ts` 4 个测试文件、26 个测试通过；`npm run test` 19 个测试文件、98 个测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+
+## Phase 6K：多 active turn 失败/中断/approval 并发回归
+
+目标：在 Phase 6J 的多 active turn 状态模型上，补齐 approval、interrupt、failed/completed 三类高风险并发反例。多个 thread 同时 active 时，页面只消费本 thread 的 turn、approval 和错误状态；对某一 thread 的 approval response 或 interrupt 不影响其它 thread。
+
+实施计划：
+
+- [ ] 单元测试覆盖 approval 按 threadId 过滤：B 触发 approval 时，A 的 route 不显示 PermissionPrompt，B 的 route 精确匹配 requestId。
+- [x] 单元测试覆盖 approval 按 threadId 过滤：B 触发 approval 时，A 的 route 不显示 PermissionPrompt，B 的 route 精确匹配 requestId。
+- [x] 单元测试覆盖 interrupt 参数选择：A/B 同时 active 时，中断 A 只构造 A 的 `{ threadId, turnId }`，不回退到最后一个全局 `activeTurn`。
+- [x] 单元测试覆盖 failed/completed 隔离：A failed、B completed 时，selector 和渲染输入分别只返回本 thread 状态。
+- [x] 真实浏览器反例验证：A running 时 B 触发 approval；B approval 决策后不影响 A；随后只中断 A，确认 B 继续完成或保持自身状态。
+- [x] 更新 Smoke Ledger，记录刷新/硬导航仍按官方 TUI 边界不恢复过程块，不新增 localStorage / IndexedDB 持久化。
+
+验证命令：
+
+```bash
+export NODE_HOME="/volume2/SSD/node-v24.14.0"
+export PATH=$NODE_HOME/bin:$PATH
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web/approval-queue-adapter.test.ts src/codex-web/interrupt-adapter.test.ts src/codex-web/active-turns-adapter.test.ts src/codex-web/active-turn-visibility-adapter.test.ts
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 6K 记录：
+
+- 2026-07-11：补充 `approval-queue-adapter` 并发测试：多个 pending approval 同时存在时，`firstApproval(queue, approvalRequestMatchesThread(...))` 只返回当前 thread 的 requestId，B 的 approval 不暴露给 A。
+- 2026-07-11：补充 `interrupt-adapter` 反例测试并修复：显式 `{ threadId, turnId }` 中断不再被其它 terminal active turn 阻止；`AppServerProvider.interruptTurn()` 在传入 `params.threadId` 时优先读取 `activeTurnsByThreadId[threadId]`，不回退到最后一个全局 `activeTurn`。
+- 2026-07-11：补充 `active-turns-adapter` 测试：failed 和 completed turn 仍按 threadId 隔离选择，但不会被 `selectOtherRunningActiveTurns()` 当作其它 running notice。
+- 2026-07-11：真实浏览器回归：A `sleep 90 && echo phase6k-a-long` running 时，B `curl -I https://www.baidu.com/` 触发 command approval；客户端切到 A 后没有 `Deny / Allow Once / 本次会话允许` approval 按钮，A 最终显示 `已处理 1m 39s` 与 `phase6k-a-long-done`。
+- 2026-07-11：真实浏览器 interrupt 反例：在 B approval 仍 pending 时新建 A2 执行 `sleep 120 && echo phase6k-a2-interrupt`，点击 A2 停止后页面显示“Codex 已中断。可以继续发送下一轮。”；切回 B curl thread 后 approval 仍可见，且没有 A2 的中断文本。
+- 2026-07-11：真实浏览器 failed/approval 收口：对 B curl approval 点击 Deny 后，B 收口为 completed 面板，显示真实错误 `curl: (6) Could not resolve host: www.baidu.com`；approval 和 stop button 均消失，console 增量 0 warning / 0 error。
+- 2026-07-11：验证命令已完成：targeted `npm run test -- src/codex-web/approval-queue-adapter.test.ts src/codex-web/interrupt-adapter.test.ts src/codex-web/active-turns-adapter.test.ts src/codex-web/active-turn-visibility-adapter.test.ts` 4 个测试文件、31 条测试通过；`npm run test` 19 个测试文件、101 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+- 2026-07-11：刷新/重启边界保持 Phase 6H/6J 决策：Web 不新增 localStorage / IndexedDB 过程块持久化，不从 final answer 反推工具过程；硬导航后仍只按官方 app-server 历史 API replay。
 
 ## 决策日志
 

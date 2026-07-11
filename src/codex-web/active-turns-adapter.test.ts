@@ -57,4 +57,25 @@ describe("active-turns-adapter", () => {
 
     expect(selectOtherRunningActiveTurns(activeTurns, ["thread-a"])).toEqual([runningB]);
   });
+
+  it("failed 和 completed turn 按 threadId 隔离选择，但不算其它 running turn", () => {
+    const failedA = {
+      ...createAcceptedTurnState("thread-a", "turn-a"),
+      status: "failed" as const,
+      errorMessage: "boom",
+    };
+    const completedB = {
+      ...createAcceptedTurnState("thread-b", "turn-b"),
+      status: "completed" as const,
+      assistantText: "done",
+    };
+    const activeTurns = [failedA, completedB].reduce(
+      (map, turn) => rememberActiveTurnByThread(map, turn),
+      {},
+    );
+
+    expect(selectActiveTurnByThreadIds(activeTurns, ["thread-a"])).toBe(failedA);
+    expect(selectActiveTurnByThreadIds(activeTurns, ["thread-b"])).toBe(completedB);
+    expect(selectOtherRunningActiveTurns(activeTurns, ["thread-a"])).toEqual([]);
+  });
 });

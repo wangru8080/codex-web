@@ -52,4 +52,16 @@ describe("buildTurnInterruptParams", () => {
 
     expect(params).toBeNull();
   });
+
+  it("显式 thread 参数不受其它 terminal active turn 影响", () => {
+    const params = selectTurnInterruptParams({
+      activeTurn: { threadId: "thread-b", turnId: "turn-b", status: "completed" },
+      params: { threadId: "thread-a", turnId: "turn-a" },
+    });
+
+    expect(params).toEqual({
+      threadId: "thread-a",
+      turnId: "turn-a",
+    });
+  });
 });

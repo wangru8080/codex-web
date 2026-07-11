@@ -35,7 +35,10 @@ export function selectTurnInterruptParams({
 }): TurnInterruptParams | null {
   const threadId = params?.threadId || activeTurn?.threadId || "";
   const turnId = params?.turnId ?? activeTurn?.turnId;
-  if (!threadId || isTerminalTurnStatus(activeTurn?.status)) {
+  const statusAppliesToSelectedThread =
+    !!activeTurn?.threadId && activeTurn.threadId === threadId;
+  const selectedStatus = statusAppliesToSelectedThread ? activeTurn?.status : undefined;
+  if (!threadId || isTerminalTurnStatus(selectedStatus)) {
     return null;
   }
 
