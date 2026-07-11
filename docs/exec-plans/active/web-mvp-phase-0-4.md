@@ -80,6 +80,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6M | 历史页多轮续聊归属回归 | Smoke passed | 历史页首次 `thread/resume` 后，后续多轮复用 `resumedThreadId`，不重复 resume 或串回 route id |
 | Phase 6N | 多轮历史列表/分页一致性回归 | Smoke passed | 四轮历史 thread 通过 `thread/turns/list` 正序展示，刷新和切 session 后仍保留全部文本且不出现分页 fallback notice |
 | Phase 6O | 长历史 Load Earlier 真实回归 | Smoke passed | 35-turn 隔离历史 thread 首屏加载最近 30 turn，点击“加载更早”后 prepend 早期 5 turn，35 条 final answer 无重复无缺失 |
+| Phase 6P | 长历史分页后续聊上下文回归 | Smoke passed | 未 Load Earlier 与已 Load Earlier 两条路径都通过官方 resume 找到最早 answer，并落回同一 thread 的第 36 个 turn |
 
 ## Phase 0：协议和项目基线
 
@@ -969,6 +970,20 @@ Phase 6K 记录：
 - 2026-07-12：真实浏览器回归：打开 `/chat/7b531c06-1bf8-4855-ac46-24603b6352a9`，首屏存在“加载更早的消息”按钮；初始页面可见 `phase6o-answer-06` 和 `phase6o-answer-35`，`phase6o-answer-01` 尚未进入正文，符合最近 30 turn 首屏加载。
 - 2026-07-12：点击“加载更早的消息”后，页面正文包含 `phase6o-answer-01` 到 `phase6o-answer-35` 全部 35 条 final answer；每条 answer 计数为 1，没有缺失或重复；按钮消失，说明 `nextCursor=null` 已反映到 UI。
 - 2026-07-12：反例验证：断线恢复期间 console 历史里出现过 HMR / API connection refused 旧错误；Load Earlier 完成后的增量 console 为 0 warning / 0 error。首次 `/chat/[id]` Turbopack 编译耗时约 98s，属于 dev server 冷启动噪声，不影响分页结果。
+- 2026-07-12：验证命令已完成：`npm run test` 21 个测试文件、107 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+
+## Phase 6P：长历史分页后续聊上下文回归
+
+目标：验证长历史 thread 在分页 UI 状态不同的情况下继续发送，仍由官方 `thread/resume` / `turn/start` 决定模型上下文和 thread 归属。Web 不应因为首屏只加载最近 page 或用户点击过 Load Earlier 而改变 resume 历史、重复 resume 或新建错误 thread。
+
+实施记录：
+
+- 2026-07-12：更新 `scripts/create-long-history-fixture.ts`，保持 `EventMsg` 用于 UI replay，同时写入 user/assistant `response_item`，用于官方 resume 的模型上下文；新增可选 marker prefix，便于生成互不混淆的回归 thread。
+- 2026-07-12：生成两个隔离 fixture：`phase6p-a` thread `f357ae15-5c92-4f45-a9c8-98c14d35dae8` 用于不点击 Load Earlier 直接续聊；`phase6p-b` thread `d8935155-42b7-44d1-98be-53bc19562587` 用于 Load Earlier 后续聊。两者分页检查均为 30+5，累计 35 个 turn 且 unique=35。
+- 2026-07-12：真实浏览器 A 路径：打开 `/chat/f357ae15-5c92-4f45-a9c8-98c14d35dae8`，首屏有 Load Earlier，正文没有 `phase6p-a-answer-01`，但有 `phase6p-a-answer-06` 和 `phase6p-a-answer-35`；不点击 Load Earlier 直接发送“根据历史记录只回复最早一轮 assistant final answer”，模型返回 `phase6p-a-answer-01`。
+- 2026-07-12：真实浏览器 B 路径：打开 `/chat/d8935155-42b7-44d1-98be-53bc19562587`，先点击“加载更早的消息”，页面正文包含 `phase6p-b-answer-01` 到 `phase6p-b-answer-35` 且无重复；随后发送相同 prompt，模型返回 `phase6p-b-answer-01`，该文本计数从历史中的 1 次变成 2 次。
+- 2026-07-12：只读 app-server 复查：两个原 thread 续聊后都变成 36 个 turn，`thread/turns/list(limit=40)` 最新 turn 是本次 prompt + `phase6p-*-answer-01`，最旧 turn 仍为原 `phase6p-*-user-01 | phase6p-*-answer-01`，`uniqueTurns=36`，没有新 thread 分裂。
+- 2026-07-12：浏览器增量 console 为 0 warning / 0 error；验证后已停止 dev server。
 - 2026-07-12：验证命令已完成：`npm run test` 21 个测试文件、107 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
 
 ## 决策日志

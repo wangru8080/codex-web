@@ -10,11 +10,12 @@ if (!codexHome) {
 
 const turnCount = Number.parseInt(process.argv[2] ?? "35", 10);
 if (!Number.isInteger(turnCount) || turnCount < 31) {
-  console.error("Usage: tsx scripts/create-long-history-fixture.ts <turn-count>=35");
+  console.error("Usage: tsx scripts/create-long-history-fixture.ts <turn-count=35> <marker-prefix=phase6o>");
   console.error("turn-count must be an integer >= 31");
   process.exit(1);
 }
 
+const markerPrefix = process.argv[3] ?? "phase6o";
 const threadId = randomUUID();
 const createdAt = new Date("2026-07-11T15:30:00.000Z");
 const dayDir = path.join(codexHome, "sessions", "2026", "07", "11");
@@ -40,10 +41,10 @@ lines.push(
       id: threadId,
       timestamp: iso(0),
       cwd,
-      originator: "codex_web_phase6o_fixture",
+      originator: `codex_web_${markerPrefix}_fixture`,
       cli_version: "0.144.1",
       source: "cli",
-      thread_source: "codex_web_phase6o",
+      thread_source: `codex_web_${markerPrefix}`,
       model_provider: "OpenAI",
     },
   }),
@@ -54,8 +55,8 @@ for (let index = 1; index <= turnCount; index += 1) {
   const startedAt = 1783783800 + index * 10;
   const completedAt = startedAt + 1;
   const padded = String(index).padStart(2, "0");
-  const userText = `phase6o-user-${padded}`;
-  const assistantText = `phase6o-answer-${padded}`;
+  const userText = `${markerPrefix}-user-${padded}`;
+  const assistantText = `${markerPrefix}-answer-${padded}`;
 
   lines.push(
     line({
@@ -67,6 +68,16 @@ for (let index = 1; index <= turnCount; index += 1) {
         started_at: startedAt,
         model_context_window: 258400,
         collaboration_mode_kind: "default",
+      },
+    }),
+    line({
+      timestamp: iso(index * 10 + 1),
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: userText }],
+        internal_chat_message_metadata_passthrough: { turn_id: turnId },
       },
     }),
     line({
@@ -88,6 +99,18 @@ for (let index = 1; index <= turnCount; index += 1) {
         message: assistantText,
         phase: "final_answer",
         memory_citation: null,
+      },
+    }),
+    line({
+      timestamp: iso(index * 10 + 2),
+      type: "response_item",
+      payload: {
+        type: "message",
+        id: `msg_${turnId.replaceAll("-", "")}`,
+        role: "assistant",
+        content: [{ type: "output_text", text: assistantText }],
+        phase: "final_answer",
+        internal_chat_message_metadata_passthrough: { turn_id: turnId },
       },
     }),
     line({
@@ -115,4 +138,5 @@ try {
 
 console.log(`threadId=${threadId}`);
 console.log(`turnCount=${turnCount}`);
+console.log(`markerPrefix=${markerPrefix}`);
 console.log(`rolloutPath=${rolloutPath}`);
