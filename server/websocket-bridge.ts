@@ -5,6 +5,9 @@ import WebSocket, { WebSocketServer } from "ws";
 import { startCodexAppServer, type CodexProcessOptions } from "./codex-process";
 import { JsonRpcClient } from "./json-rpc-client";
 import { validateBridgeRequest } from "./security";
+import type { JsonRpcMessage, JsonRpcResponse } from "../src/codex/protocol/json-rpc";
+
+export type ClientMessageInterceptor = (message: JsonRpcMessage) => JsonRpcResponse | null | undefined;
 
 export type WebSocketBridgeOptions = CodexProcessOptions & {
   host?: string;
@@ -12,6 +15,7 @@ export type WebSocketBridgeOptions = CodexProcessOptions & {
   token?: string;
   allowedOrigins?: string[];
   allowRemoteConnections?: boolean;
+  clientMessageInterceptor?: ClientMessageInterceptor;
 };
 
 export type WebSocketBridge = {
@@ -98,7 +102,7 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
 function attachAppServer(
   webSocket: WebSocket,
   _request: IncomingMessage,
-  options: CodexProcessOptions,
+  options: WebSocketBridgeOptions,
 ): void {
   const process = startCodexAppServer(options);
   const rpc = new JsonRpcClient({
@@ -118,7 +122,13 @@ function attachAppServer(
   webSocket.on("message", (data) => {
     try {
       const text = data.toString("utf8");
-      rpc.sendRaw(JSON.parse(text));
+      const message = JSON.parse(text) as JsonRpcMessage;
+      const intercepted = options.clientMessageInterceptor?.(message);
+      if (intercepted) {
+        webSocket.send(JSON.stringify(intercepted));
+        return;
+      }
+      rpc.sendRaw(message);
     } catch (error) {
       sendBridgeError(webSocket, error instanceof Error ? error.message : String(error));
     }

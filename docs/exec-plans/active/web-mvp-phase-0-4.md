@@ -82,6 +82,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6O | 长历史 Load Earlier 真实回归 | Smoke passed | 35-turn 隔离历史 thread 首屏加载最近 30 turn，点击“加载更早”后 prepend 早期 5 turn，35 条 final answer 无重复无缺失 |
 | Phase 6P | 长历史分页后续聊上下文回归 | Smoke passed | 未 Load Earlier 与已 Load Earlier 两条路径都通过官方 resume 找到最早 answer，并落回同一 thread 的第 36 个 turn |
 | Phase 6Q | 历史分页失败边界硬化 | Smoke passed | `thread/turns/list` 失败时保留当前消息、关闭后续分页并显示统一 notice；resume 失败不写入 resumed thread 状态 |
+| Phase 6R | Load Earlier 真实失败路径回归 | Smoke passed | 测试专用 bridge 拦截第二次 `thread/turns/list`；真实浏览器验证已有消息保留、早期 page 不伪造、notice 可见 |
 
 ## Phase 0：协议和项目基线
 
@@ -998,6 +999,19 @@ Phase 6K 记录：
 - 2026-07-12：补充单元测试覆盖 Error/string 两类失败描述，以及 Load Earlier 失败时返回同一个 messages 数组，防止后续误改成清空历史。
 - 2026-07-12：resume 边界保持 Phase 6M 实现：`resolveHistoryTurnTarget()` 只负责计算目标；`/chat/[id]` 只有在 `resumeThread()` 成功返回后才设置 `resumedThreadId`、`resumedCwd` 和 `resumedModel`，失败时 ChatView 只显示 `Codex 发送失败` banner，不固定错误 thread。
 - 2026-07-12：验证命令已完成：targeted `npm run test -- src/codex-web/history-pagination-state.test.ts src/codex-web/thread-turns-page-adapter.test.ts src/codex-web/history-turn-routing.test.ts` 3 个测试文件、13 条测试通过；`npm run test` 22 个测试文件、110 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+
+## Phase 6R：Load Earlier 真实失败路径回归
+
+目标：在真实浏览器中强制制造 Load Earlier 的 `thread/turns/list` 失败，验证 Phase 6Q 的状态收口确实落到 UI：当前消息不能丢，早期 page 不能被伪造，后续分页入口关闭，并展示可见失败 notice。
+
+实施记录：
+
+- 2026-07-12：为 `createWebSocketBridge()` 增加测试专用 `clientMessageInterceptor` 钩子；默认不传入时不改变 bridge 行为。该钩子只用于开发/回归验证时直接返回 JSON-RPC error，不修改 app-server、UI reducer 或历史数据结构。
+- 2026-07-12：新增 `createThreadTurnsListFailureInterceptor()`，可配置第 N 次 `thread/turns/list` 失败；`scripts/dev-next-with-bridge.ts` 通过 `CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL` 启用，默认关闭。
+- 2026-07-12：真实浏览器验证：以 `CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL=2` 启动 dev server，打开长历史 thread `7b531c06-1bf8-4855-ac46-24603b6352a9`；初始页面有“加载更早的消息”，无 `phase6o-answer-01`，有 `phase6o-answer-06` 和 `phase6o-answer-35`。
+- 2026-07-12：点击“加载更早的消息”后，第二次 `thread/turns/list` 被注入失败；页面不再显示 Load Earlier，显示 `历史分页暂不可用` 和注入错误文本；`phase6o-answer-06`、`phase6o-answer-35` 仍各 1 次，`phase6o-answer-01` 仍不可见，说明已展示消息被保留且早期 page 没有被伪造。
+- 2026-07-12：反例验证：第一次尝试曾因 dev 冷编译超时使失败落到初始分页 fallback；重启并关闭旧标签页后重新验证，确认失败准确落在 Load Earlier 路径。
+- 2026-07-12：验证命令已完成：targeted `npm run test -- server/thread-turns-list-failure-interceptor.test.ts src/codex-web/history-pagination-state.test.ts` 2 个测试文件、5 条测试通过；`npm run test` 23 个测试文件、112 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
 
 ## 决策日志
 

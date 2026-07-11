@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 
+import { createThreadTurnsListFailureInterceptor } from "../server/thread-turns-list-failure-interceptor";
 import { createWebSocketBridge } from "../server/websocket-bridge";
 
 const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
@@ -12,6 +13,7 @@ if (process.env.CODEX_HOME !== requiredCodexHome) {
 }
 
 const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "192.168.3.12";
+const failThreadTurnsListOnCall = parsePositiveInteger(process.env.CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL);
 const bridge = createWebSocketBridge({
   host: "0.0.0.0",
   allowedOrigins: [
@@ -20,6 +22,9 @@ const bridge = createWebSocketBridge({
     `http://${publicHost}:3000`,
   ],
   allowRemoteConnections: true,
+  clientMessageInterceptor: failThreadTurnsListOnCall
+    ? createThreadTurnsListFailureInterceptor({ failOnCall: failThreadTurnsListOnCall })
+    : undefined,
 });
 await waitForListening(bridge.server);
 
@@ -56,4 +61,10 @@ function waitForListening(server: import("node:http").Server): Promise<void> {
     return Promise.resolve();
   }
   return new Promise((resolve) => server.once("listening", resolve));
+}
+
+function parsePositiveInteger(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
