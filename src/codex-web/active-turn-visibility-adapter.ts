@@ -18,13 +18,18 @@ export type ActiveTurnVisibility = {
 
 export function selectVisibleActiveTurn(params: {
   activeTurn: AppServerTurnState | null;
+  otherActiveTurns?: AppServerTurnState[];
   routeThreadId: string;
   resumedThreadId?: string | null;
   thread?: Thread | null;
   latestHistoryTurn?: LatestHistoryTurn | null;
 }): ActiveTurnVisibility {
-  const { activeTurn, routeThreadId, resumedThreadId, thread, latestHistoryTurn } = params;
+  const { activeTurn, otherActiveTurns = [], routeThreadId, resumedThreadId, thread, latestHistoryTurn } = params;
   if (!activeTurn || !activeTurn.threadId) {
+    const otherRunningTurn = otherActiveTurns.find((turn) => turn.status === "starting" || turn.status === "running");
+    if (otherRunningTurn) {
+      return otherRunningNotice();
+    }
     return selectHistoryNotice(thread, latestHistoryTurn);
   }
 
@@ -36,6 +41,10 @@ export function selectVisibleActiveTurn(params: {
     return selectHistoryNotice(thread, latestHistoryTurn);
   }
 
+  return otherRunningNotice();
+}
+
+function otherRunningNotice(): ActiveTurnVisibility {
   return {
     visibleTurn: null,
     notice: {

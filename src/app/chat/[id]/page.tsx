@@ -14,6 +14,10 @@ import {
   selectVisibleActiveTurn,
   type LatestHistoryTurn,
 } from '@/codex-web/active-turn-visibility-adapter';
+import {
+  selectActiveTurnByThreadIds,
+  selectOtherRunningActiveTurns,
+} from '@/codex-web/active-turns-adapter';
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 import {
@@ -331,10 +335,13 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
 
   const isAppServerThread = appServerState.connection.data === 'connected';
   const messageApiBase = `/api/chat/sessions/${encodeURIComponent(id)}`;
-  const activeAppServerTurn = appServerState.activeTurn?.data ?? null;
+  const currentThreadIds = [id, resumedThreadId];
+  const activeAppServerTurn = selectActiveTurnByThreadIds(appServerState.activeTurnsByThreadId, currentThreadIds);
+  const otherActiveTurns = selectOtherRunningActiveTurns(appServerState.activeTurnsByThreadId, currentThreadIds);
   const activeTurnVisibility = isAppServerThread
     ? selectVisibleActiveTurn({
         activeTurn: activeAppServerTurn,
+        otherActiveTurns,
         routeThreadId: id,
         resumedThreadId,
         thread: appServerThread,

@@ -74,6 +74,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6G | 历史分页 capability 复查 | Smoke passed | `experimentalApi: true` 后 `thread/turns/list` 主路径可用；历史 route 不再显示 capability fallback notice |
 | Phase 6H | 官方 TUI / app-server 历史工具边界复查 | Review passed | 官方 TUI replay 只显示 app-server 返回的 `Turn.items`；官方 app-server 历史 API 明确不返回 command execution，Web 不做额外持久化或伪造恢复 |
 | Phase 6I | 历史续聊上下文真实回归 | Smoke passed | 重启 Web/bridge 后历史 UI 不显示过程块，但续聊仍能从官方 resume 上下文回答上一轮工具读取到的 scripts |
+| Phase 6J | 多 active turn 并发状态模型 | Smoke passed | 多个 thread active turn 按 threadId 隔离；新建 B 不打断 A，客户端切回 A 保留 `已处理 + 时间 + 过程 + final answer` |
 
 ## Phase 0：协议和项目基线
 
@@ -858,6 +859,22 @@ Phase 6I 记录：
 - 2026-07-11：结论：Web 续聊路径与官方 TUI 一致。UI replay 不展示历史 command execution，不影响 app-server/core resume 的模型上下文；Web 没有把 UI 消息或本地缓存重组成上下文，真实续聊结果来自官方 `thread/resume` 后的恢复历史。
 - 2026-07-11：真实浏览器 console 增量检查：0 warning / 0 error；验证后已停止 dev server。
 
+## Phase 6J：多 active turn 并发状态模型
+
+目标：修复 Web 端全局单一 `activeTurn` 对多会话并发的限制。多个 thread 同时运行时，UI 必须按 threadId 隔离 turn、approval、过程块和完成状态；在 `/chat` 已承载新建会话 A 时再次点击“新对话”，必须进入独立 B 入口，不中断 A。
+
+Phase 6J 记录：
+
+- 2026-07-11：对照官方 TUI 行为和 Phase 6H/6I 决策，Web 不新增跨刷新持久化；同一浏览器进程内的多 active turn 使用 notification-derived 内存状态，刷新后仍只信 app-server 历史 API。
+- 2026-07-11：`CodexWebAppServerState` 新增 `activeTurnsByThreadId`，`AppServerProvider` 收到 notification 后按 threadId 记住对应 active turn；保留旧 `activeTurn` 仅作为兼容最后事件和 threadless starting turn。
+- 2026-07-11：新增 `active-turns-adapter`，提供按当前 route/resumed threadId 选择 active turn、筛出其它运行中 turn、仅清理指定 thread starting turn 的纯函数；单元测试覆盖 A/B 独立保存、历史 route/resumed id、单 thread 失败清理和其它 running notice 反例。
+- 2026-07-11：`/chat/[id]` 改为只选择当前历史 thread 或 resumed thread 的 active turn；其它 thread 正在运行时只显示“其它 Codex 会话正在运行” notice，不把工具输出、approval 或 delta 串到当前页。
+- 2026-07-11：`/chat` 新建页在已有 A 会话时点击侧栏“新对话”会跳转到唯一 `/chat?new=...`，并清空本页临时 `createdSessionId`、messages、stream/tool/permission 状态；A 已交给 app-server 的 turn 不会被 interrupt。
+- 2026-07-11：`MessageList` 支持“显示过程面板”和“是否仍在 streaming”分离；客户端切回已完成的 active turn 时能显示 completed 过程面板，不显示运行中 status bar，并在历史 final 已存在时隐藏重复 final。
+- 2026-07-11：真实浏览器回归反例：A3 运行 `sleep 45 && echo phase6j-a3-45` 时点击“新对话”创建 B3，B3 立即完成 `phase6j-b3-done`，A3 侧栏入口仍存在；通过侧栏 link 客户端切回 A3 后页面显示 `已处理 53s` 和 final answer `phase6j-a3-45-done`，console 增量 0 warning / 0 error。
+- 2026-07-11：刷新/硬导航反例：使用 `page.goto` 进入已完成 A2 时 Provider 重建，内存 active turn snapshot 丢失，页面只显示 app-server 历史文本；该行为和官方 TUI 重启后不恢复工具过程块一致，不作为缺陷修复。
+- 2026-07-11：验证命令已完成：targeted `npm run test -- src/lib/new-chat-url.test.ts src/codex-web/active-turns-adapter.test.ts src/codex-web/active-turn-visibility-adapter.test.ts src/codex-web/turn-reducer.test.ts` 4 个测试文件、26 个测试通过；`npm run test` 19 个测试文件、98 个测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+
 ## 决策日志
 
 - 2026-07-06：第一版采用 TUI-first Web 化。官方 TUI 是业务语义基准，Web bridge 连接已安装的 `codex app-server --stdio`，不改 `codex-core`。
@@ -868,6 +885,7 @@ Phase 6I 记录：
 - 2026-07-11：Phase 6I 真实浏览器验证通过：重启 Web/bridge 后历史 UI 没有过程块，第二轮禁止工具调用时仍能回答上一轮工具输出中的 scripts；该行为证明 Web 保持官方 resume 上下文，不额外持久化或重组 UI 历史。
 - 2026-07-08：Web UI 基于 `/home/rrssnas/code/CodexWeb` 开发；开发前阅读其 README，保持 CodexWeb 既有 UI 样式和 Demo 结构，不直接修改 CodexWeb 目录，只在当前项目中接入真实 app-server 后端。
 - 2026-07-11：过程块保留策略保持官方 TUI 等价：同一浏览器进程内切换 session 使用 notification-derived 内存 snapshot replay；刷新或重启后只使用 app-server 历史 API 返回的真实 `Turn.items`，不引入 IndexedDB / localStorage 持久缓存，也不从 assistant final text 反推工具 cell。
+- 2026-07-11：多 active turn 状态以 `threadId -> AppServerTurnState` 为 Web 内存事实源；页面只选择本 route/resumed thread 的 turn，其它 running turn 只作为 notice，不允许跨 session 复用全局 `activeTurn`。
 
 ## 剩余风险
 

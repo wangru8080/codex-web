@@ -527,6 +527,40 @@ export function ChatView({
   const statusText = appServerSend ? appServerStatusText : streamSnapshot?.statusText;
   const pendingPermission = appServerApproval?.permission ?? streamSnapshot?.pendingPermission ?? null;
   const permissionResolved = streamSnapshot?.permissionResolved ?? null;
+  const appServerTurnIsTerminal =
+    appServerTurn?.status === 'completed' ||
+    appServerTurn?.status === 'failed' ||
+    appServerTurn?.status === 'interrupted';
+  const showAppServerTurnPanel =
+    !!appServerSend &&
+    !!appServerTurn &&
+    (appServerTurn.status === 'running' ||
+      (appServerTurnIsTerminal &&
+        (!!appServerTurn.assistantText.trim() ||
+          !!appServerTurn.reasoningText.trim() ||
+          appServerTurn.items.length > 0)));
+  const appServerPanelStartedAt =
+    appServerTurnIsTerminal && typeof appServerTurn?.durationMs === 'number'
+      ? Date.now() - appServerTurn.durationMs
+      : streamSnapshot?.startedAt;
+  const renderedMessages = useMemo(() => {
+    if (!showAppServerTurnPanel || !appServerTurnIsTerminal || !appServerTurn?.assistantText.trim()) {
+      return messages;
+    }
+
+    const assistantText = appServerTurn.assistantText.trim();
+    let duplicateIndex = -1;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === 'assistant' && message.content.includes(assistantText)) {
+        duplicateIndex = index;
+        break;
+      }
+    }
+
+    if (duplicateIndex < 0) return messages;
+    return messages.filter((_, index) => index !== duplicateIndex);
+  }, [appServerTurn, appServerTurnIsTerminal, messages, showAppServerTurnPanel]);
   const rewindPoints = getRewindPoints(activeSessionId);
   const finalizedAppServerTurnRef = useRef<string>('');
 
@@ -1638,9 +1672,10 @@ export function ChatView({
       ) : (
         <>
         <MessageList
-        messages={messages}
+        messages={renderedMessages}
         streamingContent={streamingContent}
         isStreaming={isStreaming}
+        showStreamingMessage={showAppServerTurnPanel || isStreaming}
         toolUses={toolUses}
         toolResults={toolResults}
         streamingToolOutput={streamingToolOutput}
@@ -1652,7 +1687,7 @@ export function ChatView({
         onLoadMore={loadEarlierMessages}
         rewindPoints={rewindPoints}
         sessionId={activeSessionId}
-        startedAt={streamSnapshot?.startedAt}
+        startedAt={appServerPanelStartedAt}
         isAssistantProject={isAssistantProject}
         assistantName={assistantName}
         taskRuns={taskRuns}

@@ -14,6 +14,7 @@ import { RunCockpit } from '@/components/chat/RunCockpit';
 import { RunCheckpoint } from '@/components/chat/RunCheckpoint';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { buildCheckpoints } from '@/lib/run-checkpoint';
+import { readNewChatKey } from '@/lib/new-chat-url';
 // 聊天首屏内存约束（2026-05-09）：NewChatPage 不得静态引用
 // useOverviewData。RunCheckpoint 只承载“本次能否发送”的会话级原因；
 // 全局健康信息属于 /settings/codex 和懒加载的 RunCockpit 弹层。
@@ -23,6 +24,8 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
 import { appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
+import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
+import { selectActiveTurnByThreadIds } from '@/codex-web/active-turns-adapter';
 import {
   deriveCodexWebToolState,
   type CodexWebToolResultInfo,
@@ -53,6 +56,7 @@ export default function NewChatPage() {
 function NewChatPageInner() {
   const searchParams = useSearchParams();
   const prefillText = searchParams.get('prefill') || '';
+  const newChatKey = readNewChatKey(searchParams);
   // #4/#5 (Codex P2) — the prefill enters the composer via `initialValue`, which
   // MessageInput prioritises OVER the draft. So clearing only the sessionStorage
   // draft at send-accept (below) leaves the URL prefill, and the accept-time
@@ -201,9 +205,49 @@ function NewChatPageInner() {
   // Provider options (thinking mode + 1M context)
   const [thinkingMode, setThinkingMode] = useState<string>('adaptive');
   const [context1m, setContext1m] = useState(false);
-  const appServerTurn = appServerState.activeTurn?.data ?? null;
-  const appServerApproval = appServerState.pendingApproval?.data ?? null;
+  const lastNewChatKeyRef = useRef<string>('');
+  const pendingNewChatTurn =
+    appServerState.activeTurn?.data && !appServerState.activeTurn.data.threadId
+      ? appServerState.activeTurn.data
+      : null;
+  const appServerTurn = createdSessionId
+    ? selectActiveTurnByThreadIds(appServerState.activeTurnsByThreadId, [createdSessionId])
+    : pendingNewChatTurn;
+  const appServerApproval = createdSessionId
+    ? firstApproval(appServerState.pendingApprovals, (approval) =>
+        approvalRequestMatchesThread(approval, [createdSessionId]),
+      )
+    : null;
   const visiblePendingPermission = appServerApproval?.permission ?? pendingPermission;
+
+  const resetLocalNewChatState = useCallback(() => {
+    setCreatedSessionId(undefined);
+    setMessages([]);
+    setStreamingContent('');
+    setStreamingThinkingContent('');
+    setIsStreaming(false);
+    setToolUses([]);
+    setToolResults([]);
+    setStatusText(undefined);
+    setErrorBanner(null);
+    setPendingPermission(null);
+    setPermissionResolved(null);
+    setStreamingToolOutput('');
+    setPendingContextTokens(0);
+    setPendingContextSubTotals(undefined);
+    setConsumedPrefill(null);
+    setPendingApprovalSessionId('');
+    abortControllerRef.current = null;
+    finalizedAppServerTurnRef.current = '';
+    firstSendInFlightRef.current = false;
+    try { sessionStorage.removeItem(composerDraftKey()); } catch { /* unavailable */ }
+  }, [setPendingApprovalSessionId]);
+
+  useEffect(() => {
+    if (!newChatKey || lastNewChatKeyRef.current === newChatKey) return;
+    lastNewChatKeyRef.current = newChatKey;
+    resetLocalNewChatState();
+  }, [newChatKey, resetLocalNewChatState]);
 
   useEffect(() => {
     if (!appServerTurn) return;

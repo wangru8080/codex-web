@@ -29,6 +29,11 @@ import {
   sourcedApproval,
 } from "./approval-queue-adapter";
 import {
+  rememberActiveTurnByThread,
+  removeStartingActiveTurnByThread,
+  sourcedActiveTurn,
+} from "./active-turns-adapter";
+import {
   beginApprovalResponse,
   completeApprovalResponse,
   failApprovalResponse,
@@ -150,13 +155,16 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
                 appServerTurnSnapshotKey(notificationTurnIds.threadId, notificationTurnIds.turnId)
               ]?.data
             : null;
-        const activeTurn = reduceAppServerTurnNotification(
-          current.activeTurn?.data ?? initialAppServerTurnState,
-          notification,
+        const activeTurn = normalizeSnapshotTurn(
+          reduceAppServerTurnNotification(
+            selectNotificationBaseTurn(current, notificationTurnIds),
+            notification,
+          ),
+          notificationTurnIds,
         );
         const snapshotTurn = normalizeSnapshotTurn(
           reduceAppServerTurnNotification(
-            notificationSnapshot ?? current.activeTurn?.data ?? initialAppServerTurnState,
+            notificationSnapshot ?? selectNotificationBaseTurn(current, notificationTurnIds),
             notification,
           ),
           notificationTurnIds,
@@ -164,7 +172,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         const pendingApprovals = resolvePendingApprovals(current.pendingApprovals, notification);
         const next = {
           ...current,
-          activeTurn: { source: "app-server.notification" as const, data: activeTurn },
+          activeTurn: sourcedActiveTurn(activeTurn),
+          activeTurnsByThreadId: rememberActiveTurnByThread(current.activeTurnsByThreadId, activeTurn),
           turnSnapshots: rememberTurnSnapshot(current.turnSnapshots, snapshotTurn),
           pendingApprovals,
           pendingApproval: sourcedApproval(firstApproval(pendingApprovals)),
@@ -234,6 +243,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     setState((current) => ({
       ...current,
       activeTurn: null,
+      activeTurnsByThreadId: {},
       pendingApprovals: [],
       pendingApproval: null,
     }));
@@ -363,13 +373,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     setState((current) => ({
       ...current,
-      activeTurn: {
-        source: "app-server.notification",
-        data: {
-          ...createStartingTurnState(),
-          threadId,
-        },
-      },
+      ...setActiveTurnState(current, {
+        ...createStartingTurnState(),
+        threadId,
+      }),
     }));
 
     const turnParams: TurnStartParams = {
@@ -396,6 +403,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         return {
           ...current,
           activeTurn: null,
+          activeTurnsByThreadId: removeStartingActiveTurnByThread(current.activeTurnsByThreadId, threadId),
         };
       });
       throw error;
@@ -404,10 +412,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const acceptedTurn = createAcceptedTurnState(threadId, turnResponse.turn.id);
     setState((current) => ({
       ...current,
-      activeTurn: {
-        source: "app-server.notification",
-        data: mergeAcceptedTurnState(current.activeTurn?.data, acceptedTurn),
-      },
+      ...setActiveTurnState(
+        current,
+        mergeAcceptedTurnState(current.activeTurnsByThreadId[threadId]?.data, acceptedTurn),
+      ),
     }));
 
     void refreshThreads().catch(() => undefined);
@@ -456,13 +464,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     setState((current) => ({
       ...current,
-      activeTurn: {
-        source: "app-server.notification",
-        data: {
-          ...(current.activeTurn?.data ?? createStartingTurnState()),
-          threadId,
-        },
-      },
+      ...setActiveTurnState(current, {
+        ...(current.activeTurn?.data ?? createStartingTurnState()),
+        threadId,
+      }),
     }));
 
     return sendTurnInThread({ threadId, content: trimmed, cwd, model });
@@ -527,6 +532,41 @@ function appendDiagnostic(
   entry: CodexWebAppServerState["diagnostics"][number],
 ): CodexWebAppServerState["diagnostics"] {
   return [...diagnostics, entry].slice(-100);
+}
+
+function setActiveTurnState(
+  current: CodexWebAppServerState,
+  turn: AppServerTurnState,
+): Pick<CodexWebAppServerState, "activeTurn" | "activeTurnsByThreadId"> {
+  return {
+    activeTurn: sourcedActiveTurn(turn),
+    activeTurnsByThreadId: rememberActiveTurnByThread(current.activeTurnsByThreadId, turn),
+  };
+}
+
+function selectNotificationBaseTurn(
+  state: CodexWebAppServerState,
+  ids: { threadId?: string; turnId?: string },
+): AppServerTurnState {
+  if (ids.threadId) {
+    const activeTurn = state.activeTurnsByThreadId[ids.threadId]?.data;
+    if (activeTurn) {
+      return activeTurn;
+    }
+  }
+
+  if (ids.threadId && ids.turnId) {
+    const snapshot = state.turnSnapshots[appServerTurnSnapshotKey(ids.threadId, ids.turnId)]?.data;
+    if (snapshot) {
+      return snapshot;
+    }
+  }
+
+  if (!ids.threadId && !ids.turnId && state.activeTurn?.data) {
+    return state.activeTurn.data;
+  }
+
+  return initialAppServerTurnState;
 }
 
 function rememberTurnSnapshot(

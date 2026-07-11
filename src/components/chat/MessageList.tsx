@@ -164,6 +164,7 @@ interface MessageListProps {
   messages: Message[];
   streamingContent: string;
   isStreaming: boolean;
+  showStreamingMessage?: boolean;
   toolUses?: ToolUseInfo[];
   toolResults?: ToolResultInfo[];
   streamingToolOutput?: string;
@@ -206,6 +207,7 @@ export function MessageList({
   messages,
   streamingContent,
   isStreaming,
+  showStreamingMessage = isStreaming,
   toolUses = [],
   toolResults = [],
   streamingToolOutput,
@@ -403,12 +405,12 @@ export function MessageList({
           return <TaskWaitingForPermissionPanel run={run} onAction={onTaskRunAction} />;
         })()}
 
-        {isStreaming && (
+        {showStreamingMessage && (
           <StreamingMessage
             content={streamingContent}
             isStreaming={isStreaming}
             sessionId={sessionId}
-            startedAt={startedAt!}
+            startedAt={startedAt ?? 0}
             toolUses={toolUses}
             toolResults={toolResults}
             streamingToolOutput={streamingToolOutput}

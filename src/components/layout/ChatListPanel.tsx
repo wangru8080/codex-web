@@ -20,6 +20,7 @@ import { usePanel } from "@/hooks/usePanel";
 import { useSplit } from "@/hooks/useSplit";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
+import { createNewChatHref } from "@/lib/new-chat-url";
 import { useNativeFolderPicker } from "@/hooks/useNativeFolderPicker";
 import { cn } from "@/lib/utils";
 import { useAppServerActions, useAppServerState } from "@/codex-web/AppServerProvider";
@@ -110,7 +111,7 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   }, [isElectron, openNativePicker, t, handleFolderSelect]);
 
   const handleNewChat = useCallback(async () => {
-    router.push('/chat');
+    router.push(createNewChatHref());
   }, [router]);
 
   const toggleProject = useCallback((wd: string) => {

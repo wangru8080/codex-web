@@ -49,6 +49,23 @@ describe("selectVisibleActiveTurn", () => {
     expect(result.notice?.description).toContain("不会串到本页");
   });
 
+  it("当前 thread 没有 active turn 时也能提示其它 thread 正在运行", () => {
+    const otherTurn = {
+      ...createStartingTurnState(),
+      threadId: "thread-b",
+      turnId: "turn-b",
+    };
+
+    const result = selectVisibleActiveTurn({
+      activeTurn: null,
+      otherActiveTurns: [otherTurn],
+      routeThreadId: "thread-a",
+    });
+
+    expect(result.visibleTurn).toBeNull();
+    expect(result.notice?.message).toContain("其它 Codex 会话正在运行");
+  });
+
   it("其它 thread 已结束时不显示 degraded 提示", () => {
     const activeTurn = {
       ...createStartingTurnState(),
