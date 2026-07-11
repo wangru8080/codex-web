@@ -73,6 +73,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6F Process Blocks | TUI 等价过程块 replay | Smoke passed | completed 工具 turn 显示 `已处理 + 时间 + 中间过程 + final answer`；同一浏览器进程切 session 再切回仍保留；刷新后只信 app-server 历史，不伪造工具过程 |
 | Phase 6G | 历史分页 capability 复查 | Smoke passed | `experimentalApi: true` 后 `thread/turns/list` 主路径可用；历史 route 不再显示 capability fallback notice |
 | Phase 6H | 官方 TUI / app-server 历史工具边界复查 | Review passed | 官方 TUI replay 只显示 app-server 返回的 `Turn.items`；官方 app-server 历史 API 明确不返回 command execution，Web 不做额外持久化或伪造恢复 |
+| Phase 6I | 历史续聊上下文真实回归 | Smoke passed | 重启 Web/bridge 后历史 UI 不显示过程块，但续聊仍能从官方 resume 上下文回答上一轮工具读取到的 scripts |
 
 ## Phase 0：协议和项目基线
 
@@ -844,6 +845,19 @@ Phase 6H 记录：
 - 2026-07-11：官方 `ContextManager::record_items()` 的 `is_api_message()` 保留 `FunctionCall`、`FunctionCallOutput`、`LocalShellCall`、`CustomToolCall`、`CustomToolCallOutput`、`ToolSearch*`、`WebSearchCall` 和 `ImageGenerationCall` 等 API 消息；模型请求使用 `clone_history().for_prompt(...)`，所以重启后 UI 不显示 command execution 过程块，不代表模型上下文丢失工具调用/输出历史。
 - 2026-07-11：Web 对照：历史页继续发送时先调用 `thread/resume`，随后 `turn/start` 只发送当前用户输入；Web 不把页面 `messages`、history route、in-memory process block、localStorage 或 IndexedDB 重组成上下文。上下文结构完全由官方 app-server/core resume 管理，和官方 TUI 保持一致。
 
+## Phase 6I：历史续聊上下文真实回归
+
+目标：用真实浏览器验证 Phase 6H 的上下文结论：重启后 Web UI 不恢复工具过程块，但历史续聊的模型上下文仍包含官方 core 从 rollout 恢复的工具调用/输出。
+
+Phase 6I 记录：
+
+- 2026-07-11：使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 启动 `npm run dev`，新建真实浏览器会话 `019f4e7d-f2cb-7a82-a496-2ca28a0d1248`；第一轮提示要求必须读取 `package.json`，但 final 只回复“已读取”，不列出 scripts 数量或名称。
+- 2026-07-11：第一轮完成后 UI 显示 `已处理 7s`，展开过程块可见真实命令 `/bin/bash -lc "sed -n '1,220p' package.json"`；final answer 只有“已读取。”，没有泄露 scripts 列表。
+- 2026-07-11：停止并重新启动 `npm run dev`，bridge URL 变化，Web/bridge 进程内 snapshot 被清空；打开 `/chat/019f4e7d-f2cb-7a82-a496-2ca28a0d1248` 后页面 `hasProcessed=false`、`hasCommand=false`、`hasFinal=true`，说明历史 UI 只按官方 `Turn.items` 恢复普通消息，不显示工具过程块。
+- 2026-07-11：在重启后的历史页继续发送“不要调用任何工具或命令。根据上一轮工具读取到的 package.json 内容，回答 scripts 的数量和名称”；第二轮未出现过程块或命令文本，最终回复 `{"count":6,"names":["dev","typecheck","test","build","build:server","test:smoke"]}`。
+- 2026-07-11：结论：Web 续聊路径与官方 TUI 一致。UI replay 不展示历史 command execution，不影响 app-server/core resume 的模型上下文；Web 没有把 UI 消息或本地缓存重组成上下文，真实续聊结果来自官方 `thread/resume` 后的恢复历史。
+- 2026-07-11：真实浏览器 console 增量检查：0 warning / 0 error；验证后已停止 dev server。
+
 ## 决策日志
 
 - 2026-07-06：第一版采用 TUI-first Web 化。官方 TUI 是业务语义基准，Web bridge 连接已安装的 `codex app-server --stdio`，不改 `codex-core`。
@@ -851,6 +865,7 @@ Phase 6H 记录：
 - 2026-07-06：开发、测试和 smoke 默认使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`；最终验收才在用户明确同意后使用本地真实 `CODEX_HOME`。
 - 2026-07-11：Phase 6H 确认刷新后历史工具过程不恢复是官方 app-server 历史 API 边界；Web 保持 TUI 等价，不新增本地持久化、不直接解析 rollout、不伪造 command execution 历史 item。
 - 2026-07-11：Phase 6H 进一步确认“UI 历史展示”和“模型上下文历史”是两种官方投影：UI replay 使用 `Turn.items`，续聊上下文使用 rollout 重建出的 `ResponseItem` 历史；Web 续聊只接入官方 `thread/resume` / `turn/start`，不自行改变上下文结构。
+- 2026-07-11：Phase 6I 真实浏览器验证通过：重启 Web/bridge 后历史 UI 没有过程块，第二轮禁止工具调用时仍能回答上一轮工具输出中的 scripts；该行为证明 Web 保持官方 resume 上下文，不额外持久化或重组 UI 历史。
 - 2026-07-08：Web UI 基于 `/home/rrssnas/code/CodexWeb` 开发；开发前阅读其 README，保持 CodexWeb 既有 UI 样式和 Demo 结构，不直接修改 CodexWeb 目录，只在当前项目中接入真实 app-server 后端。
 - 2026-07-11：过程块保留策略保持官方 TUI 等价：同一浏览器进程内切换 session 使用 notification-derived 内存 snapshot replay；刷新或重启后只使用 app-server 历史 API 返回的真实 `Turn.items`，不引入 IndexedDB / localStorage 持久缓存，也不从 assistant final text 反推工具 cell。
 
