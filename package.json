@@ -9,7 +9,8 @@
     "test": "npm run typecheck && vitest run",
     "build": "next build",
     "build:server": "tsc -p tsconfig.build.json",
-    "test:smoke": "tsx scripts/smoke.ts"
+    "test:smoke": "tsx scripts/smoke.ts",
+    "regression:history-pagination": "tsx scripts/history-pagination-regression.ts"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",

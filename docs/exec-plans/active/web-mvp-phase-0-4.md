@@ -84,6 +84,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6Q | 历史分页失败边界硬化 | Smoke passed | `thread/turns/list` 失败时保留当前消息、关闭后续分页并显示统一 notice；resume 失败不写入 resumed thread 状态 |
 | Phase 6R | Load Earlier 真实失败路径回归 | Smoke passed | 测试专用 bridge 拦截第二次 `thread/turns/list`；真实浏览器验证已有消息保留、早期 page 不伪造、notice 可见 |
 | Phase 6S | 失败注入能力防误用收口 | Smoke passed | `CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL` 解析集中在测试 helper，默认/非法值不创建拦截器，只有 dev 脚本显式接入 |
+| Phase 6T | 历史分页回归入口整理 | Smoke passed | 新增 `npm run regression:history-pagination`，集中打印 fixture、inspect、失败注入浏览器验证和提交前验证清单 |
 
 ## Phase 0：协议和项目基线
 
@@ -1024,6 +1025,18 @@ Phase 6K 记录：
 - 2026-07-12：新增单元测试覆盖默认 env、`0`、非数字字符串都不创建拦截器；只有正整数 env 会创建测试专用 `thread/turns/list` 失败注入器。
 - 2026-07-12：`rg` 复查确认 env 开关只出现在 dev 脚本、测试 helper、单测和本执行计划中；生产 build、标准 smoke、Web UI 和 app-server 语义路径没有隐式读取。
 - 2026-07-12：验证命令已完成：targeted `npm run test -- server/thread-turns-list-failure-interceptor.test.ts` 1 个测试文件、4 条测试通过；`npm run test` 23 个测试文件、114 条测试通过；`npm run build` 在沙箱中因 Turbopack 创建子进程/绑定端口被拒绝失败，提权重跑后通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 在沙箱中因 `tsx` IPC pipe listen EPERM 失败，提权重跑后通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+
+## Phase 6T：历史分页回归入口整理
+
+目标：把 Phase 6O-6S 已验证的长历史分页、续聊上下文、Load Earlier 失败和失败注入边界整理成可重复执行的入口。该入口只打印命令和断言，不自动创建 fixture、不启动 dev server、不写入临时文件，避免误碰用户环境。
+
+实施记录：
+
+- 2026-07-12：新增 `history-pagination-regression-plan` helper，集中生成历史分页回归步骤：创建隔离长历史 fixture、通过真实 app-server inspect 30+5 分页、用 `CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL=2` 启动失败注入 dev server、真实浏览器断言初始分页和 Load Earlier 失败、最后运行 test/build/smoke。
+- 2026-07-12：新增 `scripts/history-pagination-regression.ts` 和 package script `npm run regression:history-pagination`；脚本启动前强制校验 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，可传入已有 thread id 和 marker prefix，用于复用 Phase 6O/6P fixture 或生成新的 marker 命令。
+- 2026-07-12：补充单元测试覆盖回归清单标题、命令必须带隔离 `CODEX_HOME`、失败注入 env、30+5 分页断言、无 thread id 时保留 `<thread-id-from-fixture-output>` 占位，以及非隔离 `CODEX_HOME` 会失败。
+- 2026-07-12：验证命令已完成：targeted `npm run test -- server/history-pagination-regression-plan.test.ts` 1 个测试文件、4 条测试通过；`npm run regression:history-pagination -- 7b531c06-1bf8-4855-ac46-24603b6352a9 phase6o` 在沙箱中因 `tsx` IPC pipe listen EPERM 失败，提权重跑后成功打印 6 步回归清单；`npm run test` 24 个测试文件、118 条测试通过；`npm run build` 提权运行通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 提权运行通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+- 2026-07-12：复查 `.playwright-mcp` 目录无文件；本阶段未运行真实浏览器，不产生新的 Playwright 生成物。
 
 ## 决策日志
 
