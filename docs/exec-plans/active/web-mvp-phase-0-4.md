@@ -79,6 +79,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6L | 新建页多轮发送归属修复 | Smoke passed | `/chat?new=...` 首轮完成后继续发送复用同一个 app-server thread，不再创建第二个新 thread |
 | Phase 6M | 历史页多轮续聊归属回归 | Smoke passed | 历史页首次 `thread/resume` 后，后续多轮复用 `resumedThreadId`，不重复 resume 或串回 route id |
 | Phase 6N | 多轮历史列表/分页一致性回归 | Smoke passed | 四轮历史 thread 通过 `thread/turns/list` 正序展示，刷新和切 session 后仍保留全部文本且不出现分页 fallback notice |
+| Phase 6O | 长历史 Load Earlier 真实回归 | Smoke passed | 35-turn 隔离历史 thread 首屏加载最近 30 turn，点击“加载更早”后 prepend 早期 5 turn，35 条 final answer 无重复无缺失 |
 
 ## Phase 0：协议和项目基线
 
@@ -955,6 +956,20 @@ Phase 6K 记录：
 - 2026-07-11：反例验证：该 thread 的 `nextCursor=null`，页面没有“加载更早”入口，也没有“历史分页暂不可用”notice；浏览器 console 全程 0 warning / 0 error。
 - 2026-07-11：本阶段未修改产品代码；定位结论是 Phase 6L/6M 后当前多轮历史分页和切换恢复路径符合官方 app-server 投影。刷新后工具过程块边界仍保持 Phase 6H 决策：只显示 app-server 历史 API 返回的真实 `Turn.items`，不做 localStorage / IndexedDB 持久化。
 - 2026-07-11：验证命令已完成：targeted `npm run test -- src/codex-web/thread-turns-page-adapter.test.ts src/codex-web/thread-history-adapter.test.ts` 2 个测试文件、14 条测试通过；`npm run test` 21 个测试文件、107 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`；真实浏览器验证同样使用隔离 `CODEX_HOME`。
+
+## Phase 6O：长历史 Load Earlier 真实回归
+
+目标：补齐 Phase 6A/6N 未覆盖的长历史分页场景。使用真实 `codex app-server --stdio` 和真实浏览器验证超过第一页的历史 thread：首屏只加载最近 page，`nextCursor` 驱动“加载更早”，prepend 后消息时间顺序正确、无重复、无缺失。
+
+实施记录：
+
+- 2026-07-12：新增只读回归辅助脚本 `scripts/create-long-history-fixture.ts` 和 `scripts/inspect-thread-pagination.ts`。前者在隔离 `CODEX_HOME` 中创建不覆盖的 legacy rollout fixture，后者通过真实 app-server 初始化和 `thread/turns/list` 分页打印 page 边界；两者不参与 Web 运行时代码。
+- 2026-07-12：在 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 创建 35-turn fixture thread `7b531c06-1bf8-4855-ac46-24603b6352a9`，rollout 路径为 `/volume2/SSD/codex/Temp/codex-dev-home/sessions/2026/07/11/rollout-2026-07-11T15-30-00-7b531c06-1bf8-4855-ac46-24603b6352a9.jsonl`。
+- 2026-07-12：真实 app-server 分页验证：`thread/read(includeTurns:false)` preview 为 `phase6o-user-01`；`thread/turns/list(limit=30, sortDirection:"desc", itemsView:"full")` 第一页返回 30 个 turn，最新 `phase6o-user-35 | phase6o-answer-35`，最旧 `phase6o-user-06 | phase6o-answer-06`，`nextCursor` 存在；第二页返回 5 个 turn，最新 `phase6o-user-05 | phase6o-answer-05`，最旧 `phase6o-user-01 | phase6o-answer-01`；累计 35 个 turn 且 unique=35。
+- 2026-07-12：真实浏览器回归：打开 `/chat/7b531c06-1bf8-4855-ac46-24603b6352a9`，首屏存在“加载更早的消息”按钮；初始页面可见 `phase6o-answer-06` 和 `phase6o-answer-35`，`phase6o-answer-01` 尚未进入正文，符合最近 30 turn 首屏加载。
+- 2026-07-12：点击“加载更早的消息”后，页面正文包含 `phase6o-answer-01` 到 `phase6o-answer-35` 全部 35 条 final answer；每条 answer 计数为 1，没有缺失或重复；按钮消失，说明 `nextCursor=null` 已反映到 UI。
+- 2026-07-12：反例验证：断线恢复期间 console 历史里出现过 HMR / API connection refused 旧错误；Load Earlier 完成后的增量 console 为 0 warning / 0 error。首次 `/chat/[id]` Turbopack 编译耗时约 98s，属于 dev server 冷启动噪声，不影响分页结果。
+- 2026-07-12：验证命令已完成：`npm run test` 21 个测试文件、107 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
 
 ## 决策日志
 
