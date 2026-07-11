@@ -6,6 +6,8 @@ export type ThreadTurnsListFailureInterceptorOptions = {
   message?: string;
 };
 
+export const failThreadTurnsListOnCallEnvName = "CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL";
+
 export function createThreadTurnsListFailureInterceptor(
   options: ThreadTurnsListFailureInterceptorOptions,
 ): ClientMessageInterceptor {
@@ -31,4 +33,19 @@ export function createThreadTurnsListFailureInterceptor(
       },
     };
   };
+}
+
+export function createThreadTurnsListFailureInterceptorFromEnv(
+  env: Partial<NodeJS.ProcessEnv>,
+): ClientMessageInterceptor | undefined {
+  const failOnCall = parsePositiveInteger(env[failThreadTurnsListOnCallEnvName]);
+  return failOnCall
+    ? createThreadTurnsListFailureInterceptor({ failOnCall })
+    : undefined;
+}
+
+function parsePositiveInteger(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }

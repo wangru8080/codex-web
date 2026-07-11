@@ -83,6 +83,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6P | 长历史分页后续聊上下文回归 | Smoke passed | 未 Load Earlier 与已 Load Earlier 两条路径都通过官方 resume 找到最早 answer，并落回同一 thread 的第 36 个 turn |
 | Phase 6Q | 历史分页失败边界硬化 | Smoke passed | `thread/turns/list` 失败时保留当前消息、关闭后续分页并显示统一 notice；resume 失败不写入 resumed thread 状态 |
 | Phase 6R | Load Earlier 真实失败路径回归 | Smoke passed | 测试专用 bridge 拦截第二次 `thread/turns/list`；真实浏览器验证已有消息保留、早期 page 不伪造、notice 可见 |
+| Phase 6S | 失败注入能力防误用收口 | Smoke passed | `CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL` 解析集中在测试 helper，默认/非法值不创建拦截器，只有 dev 脚本显式接入 |
 
 ## Phase 0：协议和项目基线
 
@@ -1012,6 +1013,17 @@ Phase 6K 记录：
 - 2026-07-12：点击“加载更早的消息”后，第二次 `thread/turns/list` 被注入失败；页面不再显示 Load Earlier，显示 `历史分页暂不可用` 和注入错误文本；`phase6o-answer-06`、`phase6o-answer-35` 仍各 1 次，`phase6o-answer-01` 仍不可见，说明已展示消息被保留且早期 page 没有被伪造。
 - 2026-07-12：反例验证：第一次尝试曾因 dev 冷编译超时使失败落到初始分页 fallback；重启并关闭旧标签页后重新验证，确认失败准确落在 Load Earlier 路径。
 - 2026-07-12：验证命令已完成：targeted `npm run test -- server/thread-turns-list-failure-interceptor.test.ts src/codex-web/history-pagination-state.test.ts` 2 个测试文件、5 条测试通过；`npm run test` 23 个测试文件、112 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+
+## Phase 6S：失败注入能力防误用收口
+
+目标：把 Phase 6R 新增的失败注入能力明确限制为测试/开发验证工具，避免未来被误当成产品功能或被普通 bridge/smoke 路径隐式启用。
+
+实施记录：
+
+- 2026-07-12：将 `CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL` 解析集中到 `createThreadTurnsListFailureInterceptorFromEnv()`；`scripts/dev-next-with-bridge.ts` 只显式传入返回的 `clientMessageInterceptor`，默认标准 bridge 不读取该 env。
+- 2026-07-12：新增单元测试覆盖默认 env、`0`、非数字字符串都不创建拦截器；只有正整数 env 会创建测试专用 `thread/turns/list` 失败注入器。
+- 2026-07-12：`rg` 复查确认 env 开关只出现在 dev 脚本、测试 helper、单测和本执行计划中；生产 build、标准 smoke、Web UI 和 app-server 语义路径没有隐式读取。
+- 2026-07-12：验证命令已完成：targeted `npm run test -- server/thread-turns-list-failure-interceptor.test.ts` 1 个测试文件、4 条测试通过；`npm run test` 23 个测试文件、114 条测试通过；`npm run build` 在沙箱中因 Turbopack 创建子进程/绑定端口被拒绝失败，提权重跑后通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 在沙箱中因 `tsx` IPC pipe listen EPERM 失败，提权重跑后通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
 
 ## 决策日志
 
