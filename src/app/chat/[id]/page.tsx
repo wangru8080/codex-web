@@ -19,6 +19,10 @@ import {
   selectOtherRunningActiveTurns,
 } from '@/codex-web/active-turns-adapter';
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
+import {
+  historyPaginationFailureNotice,
+  preserveMessagesAfterPaginationFailure,
+} from '@/codex-web/history-pagination-state';
 import { resolveHistoryTurnTarget } from '@/codex-web/history-turn-routing';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 import {
@@ -165,11 +169,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             setMessages(snapshotMessages);
             setHasMore(false);
             setTurnsNextCursor(null);
-            setPaginationNotice({
-              message: "历史分页暂不可用",
-              description:
-                pageError instanceof Error ? pageError.message : String(pageError),
-            });
+            setPaginationNotice(historyPaginationFailureNotice(pageError));
             if (result.unsupportedItemCount > 0) {
               console.info(`Phase 5A 暂未渲染 ${result.unsupportedItemCount} 个历史工具 item`);
             }
@@ -453,13 +453,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             setPaginationNotice(null);
             return { messages: mergedMessages, hasMore: !!turnsPage.nextCursor };
           } catch (pageError) {
-            setHasMore(false);
-            setTurnsNextCursor(null);
-            setPaginationNotice({
-              message: "历史分页暂不可用",
-              description: pageError instanceof Error ? pageError.message : String(pageError),
-            });
-            return { messages, hasMore: false };
+            const failure = preserveMessagesAfterPaginationFailure(messages, pageError);
+            setHasMore(failure.hasMore);
+            setTurnsNextCursor(failure.nextCursor);
+            setPaginationNotice(failure.notice);
+            return { messages: failure.messages, hasMore: failure.hasMore };
           }
         } : undefined}
       />

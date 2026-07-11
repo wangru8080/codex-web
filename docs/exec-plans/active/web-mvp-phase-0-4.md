@@ -81,6 +81,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6N | 多轮历史列表/分页一致性回归 | Smoke passed | 四轮历史 thread 通过 `thread/turns/list` 正序展示，刷新和切 session 后仍保留全部文本且不出现分页 fallback notice |
 | Phase 6O | 长历史 Load Earlier 真实回归 | Smoke passed | 35-turn 隔离历史 thread 首屏加载最近 30 turn，点击“加载更早”后 prepend 早期 5 turn，35 条 final answer 无重复无缺失 |
 | Phase 6P | 长历史分页后续聊上下文回归 | Smoke passed | 未 Load Earlier 与已 Load Earlier 两条路径都通过官方 resume 找到最早 answer，并落回同一 thread 的第 36 个 turn |
+| Phase 6Q | 历史分页失败边界硬化 | Smoke passed | `thread/turns/list` 失败时保留当前消息、关闭后续分页并显示统一 notice；resume 失败不写入 resumed thread 状态 |
 
 ## Phase 0：协议和项目基线
 
@@ -985,6 +986,18 @@ Phase 6K 记录：
 - 2026-07-12：只读 app-server 复查：两个原 thread 续聊后都变成 36 个 turn，`thread/turns/list(limit=40)` 最新 turn 是本次 prompt + `phase6p-*-answer-01`，最旧 turn 仍为原 `phase6p-*-user-01 | phase6p-*-answer-01`，`uniqueTurns=36`，没有新 thread 分裂。
 - 2026-07-12：浏览器增量 console 为 0 warning / 0 error；验证后已停止 dev server。
 - 2026-07-12：验证命令已完成：`npm run test` 21 个测试文件、107 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+
+## Phase 6Q：历史分页失败边界硬化
+
+目标：补齐历史分页失败和切换 session 的边界回归。Web 仍保持官方 TUI / app-server 历史语义：分页数据来自 `thread/turns/list`，失败时不伪造历史、不清空已展示消息；历史页继续发送只有 `thread/resume` 成功后才写入 `resumedThreadId`。
+
+实施记录：
+
+- 2026-07-12：复查 `/chat/[id]` 历史加载路径：session id 变化时会重置 messages、cursor、pagination notice 和 resumed thread 状态；`appServerLoadEarlier` 失败路径已经保留闭包中的当前 messages，不会清空页面正文。
+- 2026-07-12：新增 `history-pagination-state` helper，将分页失败收口为统一状态：保留当前 messages、`hasMore=false`、`nextCursor=null`，并生成 `历史分页暂不可用` notice；初始分页 fallback 和 Load Earlier 失败共用同一 notice 构造。
+- 2026-07-12：补充单元测试覆盖 Error/string 两类失败描述，以及 Load Earlier 失败时返回同一个 messages 数组，防止后续误改成清空历史。
+- 2026-07-12：resume 边界保持 Phase 6M 实现：`resolveHistoryTurnTarget()` 只负责计算目标；`/chat/[id]` 只有在 `resumeThread()` 成功返回后才设置 `resumedThreadId`、`resumedCwd` 和 `resumedModel`，失败时 ChatView 只显示 `Codex 发送失败` banner，不固定错误 thread。
+- 2026-07-12：验证命令已完成：targeted `npm run test -- src/codex-web/history-pagination-state.test.ts src/codex-web/thread-turns-page-adapter.test.ts src/codex-web/history-turn-routing.test.ts` 3 个测试文件、13 条测试通过；`npm run test` 22 个测试文件、110 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
 
 ## 决策日志
 
