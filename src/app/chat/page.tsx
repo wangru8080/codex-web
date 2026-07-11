@@ -26,6 +26,7 @@ import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerPro
 import { appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import { selectActiveTurnByThreadIds } from '@/codex-web/active-turns-adapter';
+import { getExistingNewChatThreadId } from '@/codex-web/new-chat-turn-routing';
 import {
   deriveCodexWebToolState,
   type CodexWebToolResultInfo,
@@ -79,7 +80,7 @@ function NewChatPageInner() {
   useEffect(() => { prefillTextRef.current = prefillText; }, [prefillText]);
   const { setPendingApprovalSessionId } = usePanel();
   const appServerState = useAppServerState();
-  const { sendOneTurn, interruptTurn, respondToApproval } = useAppServerActions();
+  const { sendOneTurn, sendTurnInThread, interruptTurn, respondToApproval } = useAppServerActions();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -562,8 +563,24 @@ function NewChatPageInner() {
       let handoffToAppServerTurn = false;
 
       try {
-        const virtualSessionId = `app-server-${Date.now()}`;
-        setCreatedSessionId(virtualSessionId);
+        const existingThreadId = getExistingNewChatThreadId(createdSessionId);
+        const messageSessionId = existingThreadId || `app-server-${Date.now()}`;
+        if (!existingThreadId) {
+          setCreatedSessionId(messageSessionId);
+        }
+
+        const acceptedTurn = existingThreadId
+          ? await sendTurnInThread({
+              threadId: existingThreadId,
+              content,
+              cwd: workingDir.trim(),
+              model: currentModel,
+            })
+          : await sendOneTurn({
+              content,
+              cwd: workingDir.trim(),
+              model: currentModel,
+            });
 
         accepted = true;
         // #4/#5 — clear the persisted composer draft at accept. The imminent
@@ -593,20 +610,14 @@ function NewChatPageInner() {
             : displayUserContent;
           const userMessage: Message = {
             id: 'temp-' + Date.now(),
-            session_id: virtualSessionId,
+            session_id: acceptedTurn.threadId || messageSessionId,
             role: 'user',
             content: contentWithFileMeta,
             created_at: new Date().toISOString(),
             token_usage: null,
           };
-          setMessages([userMessage]);
+          setMessages((prev) => existingThreadId ? [...prev, userMessage] : [userMessage]);
         }
-
-        const acceptedTurn = await sendOneTurn({
-          content,
-          cwd: workingDir.trim(),
-          model: currentModel,
-        });
         if (acceptedTurn.threadId) {
           setCreatedSessionId(acceptedTurn.threadId);
         }
@@ -640,7 +651,7 @@ function NewChatPageInner() {
         }
       }
     },
-    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, sendOneTurn]
+    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread]
   );
 
   const handleCommand = useCallback((command: string) => {

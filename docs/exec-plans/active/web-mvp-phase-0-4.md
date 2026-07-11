@@ -76,6 +76,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6I | 历史续聊上下文真实回归 | Smoke passed | 重启 Web/bridge 后历史 UI 不显示过程块，但续聊仍能从官方 resume 上下文回答上一轮工具读取到的 scripts |
 | Phase 6J | 多 active turn 并发状态模型 | Smoke passed | 多个 thread active turn 按 threadId 隔离；新建 B 不打断 A，客户端切回 A 保留 `已处理 + 时间 + 过程 + final answer` |
 | Phase 6K | 多 active turn 失败/中断/approval 并发回归 | Smoke passed | approval、interrupt、failed/completed 在多个 active thread 之间不串线；真实浏览器验证 B approval 与 A interrupt 互不影响 |
+| Phase 6L | 新建页多轮发送归属修复 | Smoke passed | `/chat?new=...` 首轮完成后继续发送复用同一个 app-server thread，不再创建第二个新 thread |
 
 ## Phase 0：协议和项目基线
 
@@ -911,6 +912,20 @@ Phase 6K 记录：
 - 2026-07-11：真实浏览器 failed/approval 收口：对 B curl approval 点击 Deny 后，B 收口为 completed 面板，显示真实错误 `curl: (6) Could not resolve host: www.baidu.com`；approval 和 stop button 均消失，console 增量 0 warning / 0 error。
 - 2026-07-11：验证命令已完成：targeted `npm run test -- src/codex-web/approval-queue-adapter.test.ts src/codex-web/interrupt-adapter.test.ts src/codex-web/active-turns-adapter.test.ts src/codex-web/active-turn-visibility-adapter.test.ts` 4 个测试文件、31 条测试通过；`npm run test` 19 个测试文件、101 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
 - 2026-07-11：刷新/重启边界保持 Phase 6H/6J 决策：Web 不新增 localStorage / IndexedDB 过程块持久化，不从 final answer 反推工具过程；硬导航后仍只按官方 app-server 历史 API replay。
+
+## Phase 6L：新建页多轮发送归属修复
+
+目标：修复 `/chat?new=...` 页面首轮完成后继续发送仍走 `sendOneTurn()` 的问题。首轮接受后，页面应固定真实 app-server threadId；后续发送走 `sendTurnInThread()`，保持同一个 thread 的多轮上下文、左侧列表归属和历史页 replay。
+
+实施记录：
+
+- 2026-07-11：新增 `new-chat-turn-routing` helper，明确区分临时 `app-server-*` session id 和真实 app-server thread id；只有真实 thread id 才允许作为新建页后续 turn 的目标。
+- 2026-07-11：`/chat` 新建页 `sendFirstMessage()` 在 `createdSessionId` 已是真实 threadId 时改用 `sendTurnInThread({ threadId })`；没有真实 threadId 的首轮仍使用 `sendOneTurn()` 创建 thread。
+- 2026-07-11：新建页第二轮 optimistic user message 改为追加到现有消息列表；首轮仍保持单消息初始化，避免影响新建页 hero 到 active layout 的既有切换。
+- 2026-07-11：真实浏览器验证：打开 `/chat?new=phase6l`，连续发送“请只回复 phase6l-first-done。”和“请只回复 phase6l-second-done。”；页面同时显示两轮 final，左侧只出现 1 个 phase6l 会话链接，href 固定为第一轮 thread `019f4fab-d6e3-75e2-847a-a60a9f325013`。
+- 2026-07-11：历史页验证：打开 `/chat/019f4fab-d6e3-75e2-847a-a60a9f325013` 后能看到第一轮 `phase6l-first-done` 和第二轮 `phase6l-second-done`，证明两轮归属同一个 app-server thread；console 增量 0 warning / 0 error。
+- 2026-07-11：验证命令已完成：targeted `npm run test -- src/codex-web/new-chat-turn-routing.test.ts src/lib/new-chat-url.test.ts src/codex-web/active-turns-adapter.test.ts` 3 个测试文件、11 条测试通过；`npm run test` 20 个测试文件、104 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+- 2026-07-11：官方边界不变：刷新/重启后仍只按 app-server 历史 API replay，不新增 localStorage / IndexedDB 过程块持久化。
 
 ## 决策日志
 
