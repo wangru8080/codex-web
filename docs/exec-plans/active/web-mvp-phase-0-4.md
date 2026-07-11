@@ -78,6 +78,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6K | 多 active turn 失败/中断/approval 并发回归 | Smoke passed | approval、interrupt、failed/completed 在多个 active thread 之间不串线；真实浏览器验证 B approval 与 A interrupt 互不影响 |
 | Phase 6L | 新建页多轮发送归属修复 | Smoke passed | `/chat?new=...` 首轮完成后继续发送复用同一个 app-server thread，不再创建第二个新 thread |
 | Phase 6M | 历史页多轮续聊归属回归 | Smoke passed | 历史页首次 `thread/resume` 后，后续多轮复用 `resumedThreadId`，不重复 resume 或串回 route id |
+| Phase 6N | 多轮历史列表/分页一致性回归 | Smoke passed | 四轮历史 thread 通过 `thread/turns/list` 正序展示，刷新和切 session 后仍保留全部文本且不出现分页 fallback notice |
 
 ## Phase 0：协议和项目基线
 
@@ -940,6 +941,20 @@ Phase 6K 记录：
 - 2026-07-11：左侧归属反例：第二轮完成后，左侧没有新增 `phase6m` 会话链接；目标历史 thread 链接仍只有 1 个，说明第二轮没有新建 thread。
 - 2026-07-11：真实浏览器 console 增量检查 0 warning / 0 error；验证后已停止 dev server。
 - 2026-07-11：验证命令已完成：targeted `npm run test -- src/codex-web/history-turn-routing.test.ts src/codex-web/resume-adapter.test.ts src/codex-web/active-turns-adapter.test.ts src/codex-web/active-turn-visibility-adapter.test.ts` 4 个测试文件、23 条测试通过；`npm run test` 21 个测试文件、107 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+
+## Phase 6N：多轮历史列表/分页一致性回归
+
+目标：在 Phase 6L/6M 修复后，回归同一个 app-server thread 的多轮历史读取、分页顺序、刷新恢复和切换 session 恢复。Web 必须继续以 app-server `thread/read` metadata 和 `thread/turns/list` page 为事实源，不从本地缓存或 assistant 文本伪造历史过程。
+
+实施记录：
+
+- 2026-07-11：复查 `thread-history-adapter`、`thread-turns-page-adapter` 和 `/chat/[id]` 接线；当前实现仍为 metadata-first `thread/read(includeTurns:false)`，再通过 `thread/turns/list(limit=30, sortDirection:"desc", itemsView:"full")` 获取第一页，Web 端反转为时间正序展示，加载更早使用 cursor + prepend 去重。
+- 2026-07-11：只读 inspector 验证隔离环境 thread `019f4fab-d6e3-75e2-847a-a60a9f325013`：`thread/read(includeTurns:true)` 返回 4 个 completed turn；`thread/turns/list(desc, full)` 返回同 4 个 turn，顺序为最新到最旧，`nextCursor=null`，没有 `requires experimentalApi capability`。
+- 2026-07-11：rollout 文件反查确认四轮文本都属于同一 thread：`phase6l-first-done`、`phase6l-second-done`、`phase6m-history-first-done`、`phase6m-history-second-done`。
+- 2026-07-11：真实浏览器回归：打开 `/chat/019f4fab-d6e3-75e2-847a-a60a9f325013` 后四轮 user/assistant 文本按时间正序展示；硬导航刷新后四轮仍在；切到 `/chat` 再回目标历史 session 后四轮仍在。
+- 2026-07-11：反例验证：该 thread 的 `nextCursor=null`，页面没有“加载更早”入口，也没有“历史分页暂不可用”notice；浏览器 console 全程 0 warning / 0 error。
+- 2026-07-11：本阶段未修改产品代码；定位结论是 Phase 6L/6M 后当前多轮历史分页和切换恢复路径符合官方 app-server 投影。刷新后工具过程块边界仍保持 Phase 6H 决策：只显示 app-server 历史 API 返回的真实 `Turn.items`，不做 localStorage / IndexedDB 持久化。
+- 2026-07-11：验证命令已完成：targeted `npm run test -- src/codex-web/thread-turns-page-adapter.test.ts src/codex-web/thread-history-adapter.test.ts` 2 个测试文件、14 条测试通过；`npm run test` 21 个测试文件、107 条测试通过；`npm run build` 通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`；真实浏览器验证同样使用隔离 `CODEX_HOME`。
 
 ## 决策日志
 
