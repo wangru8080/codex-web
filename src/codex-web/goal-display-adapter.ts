@@ -89,6 +89,10 @@ export function goalProgressLabel(goal: ThreadGoal): string {
   }
 }
 
+export function goalObjectiveLabel(goal: ThreadGoal): string {
+  return goal.objective.trim() || "Untitled goal";
+}
+
 export function goalSummaryLines(goal: ThreadGoal): string[] {
   const lines = [
     "Goal",

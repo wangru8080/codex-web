@@ -1085,6 +1085,9 @@ Phase 6U 记录：
 - 2026-07-12：修复 live turn 第一帧被误判为 history replay 导致 `Implement this plan?` 不显示的问题；prompt gating 改为 completion effect 标记的 live plan turn。
 - 2026-07-12：新聊天页和历史页均接入 `/goal <objective>`、pause/resume/clear；clear context implement 在新 thread 中发送完整 plan markdown，不复用旧 thread。
 - 2026-07-12：`collaborationMode` 的 schema lag 风险已收口到 `src/codex-web/app-server-request-overrides.ts`，不再通过泛型 helper 隐式绕行 generated params；后续 generated schema 更新后可删除该兼容类型。
+- 2026-07-12：新增 `npm run test:smoke:goal-plan` 协议级 smoke，直接走 Web bridge + 真实 app-server 验证 `thread/goal/set` / `thread/goal/get` 和 Plan mode `turn/start`；Plan source 当前由 `item/completed` 中的 `<proposed_plan>` 捕获。
+- 2026-07-12：Goal progress row 保留官方状态文案，并增加目标 objective 第二行；空白 objective 使用 `Untitled goal` 兜底，避免 active goal 控制条只显示 “Pursuing goal”。
+- 2026-07-12：`npm run dev` 的 bridge Origin 白名单增加 3001 fallback，避免 Next dev 在 3000 被占用时自动切到 3001 后被 Web bridge Origin 校验拒绝。
 
 Smoke Ledger：
 
@@ -1102,6 +1105,10 @@ Smoke Ledger：
 | 2026-07-12 | Vitest，隔离 `CODEX_HOME` | `77e651e` 后 collaborationMode schema lag 类型收口 | 通过 | `npm run test -- src/codex-web/app-server-collaboration-mode.test.ts`，1 file / 5 tests passed；`npm run test`，28 files / 143 tests passed |
 | 2026-07-12 | Next production build，隔离 `CODEX_HOME` | `77e651e` 后生产构建回归 | 通过 | `npm run build` 沙箱内因 Turbopack port bind EPERM 失败，提升权限重跑通过；仅有既有 NFT tracing warning，`next-env.d.ts` 生成噪声已还原 |
 | 2026-07-12 | local bridge smoke，隔离 `CODEX_HOME` | `77e651e` 后 bridge smoke 回归 | 通过 | `npm run test:smoke` 沙箱内因 `tsx` IPC pipe listen EPERM 失败，提升权限重跑通过：models=7，accountSource=`app-server.account/read` |
+| 2026-07-12 | Vitest，隔离 `CODEX_HOME` | Goal progress row 显示 objective 补强 | 通过 | `npm run test -- src/codex-web/goal-display-adapter.test.ts`，1 file / 7 tests passed |
+| 2026-07-12 | local app-server smoke，隔离 `CODEX_HOME` | `+ -> 目标` / `+ -> 计划模式` 的真实协议接线反例：goal set/get 与 Plan mode proposed plan | 通过 | `npm run test:smoke:goal-plan` 沙箱内因 `tsx` IPC pipe listen EPERM 失败，提升权限重跑通过：thread=`019f5689-9558-7ef0-b317-7bf84d9274a3`，model=`gpt-5.6-sol`，planSource=`item/completed` |
+| 2026-07-12 | Vitest，隔离 `CODEX_HOME` | Goal/Plan 补强后全量单元测试 | 通过 | `npm run test`，29 files / 150 tests passed |
+| 2026-07-12 | Next production build，隔离 `CODEX_HOME` | Goal/Plan 补强后生产构建 | 通过 | `npm run build` 沙箱内因 Turbopack port bind EPERM 失败，提升权限重跑通过；仅有既有 NFT tracing warning，`next-env.d.ts` 生成噪声已还原 |
 
 ## 决策日志
 
@@ -1127,3 +1134,4 @@ Smoke Ledger：
 - 历史 session 如果 app-server 历史 API 只返回 `userMessage` / `agentMessage`，刷新后无法恢复工具中间过程；这是与官方 TUI 重启恢复一致的边界。后续若要跨刷新保留，需要另立非 TUI 等价的持久缓存设计并明确 source breadcrumb。
 - Goal / Plan 公开 app 文档对视觉细节描述有限，Phase 6U 实现需以官方 app-server 协议和 `codex-rs/tui` 代码快照为主基准；后续若官方 Codex app 文档补充 UI 截图，需要复核 Web 等价层。
 - `collaborationMode` 当前仍是 Web 兼容类型覆盖 generated schema lag；真实 app-server 已验证接受，后续 schema 生成文件包含该字段后应删除 `app-server-request-overrides.ts`。
+- 当前 `.next` 目录约 2.8G，Next dev 曾提示慢文件系统，首次 `/chat/[id]` 编译慢更像环境/缓存 I/O 风险；本轮只修复 3001 fallback Origin，未清理 `.next` 缓存。

@@ -2,7 +2,7 @@
 
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
-import { goalProgressLabel } from '@/codex-web/goal-display-adapter';
+import { goalObjectiveLabel, goalProgressLabel } from '@/codex-web/goal-display-adapter';
 import { Button } from '@/components/ui/button';
 import { NotePencil, Play, X } from '@/components/ui/icon';
 import { Pause, Target } from '@phosphor-icons/react';
@@ -35,6 +35,9 @@ export function GoalProgressRow({
       <Target size={15} className="shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-foreground">{goalProgressLabel(goal)}</div>
+        <div className="truncate text-xs text-muted-foreground" title={goal.objective}>
+          {goalObjectiveLabel(goal)}
+        </div>
         <div className="truncate text-[10px] text-muted-foreground/60">{sourceBreadcrumb}</div>
       </div>
       <div className="flex shrink-0 items-center gap-1">

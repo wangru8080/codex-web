@@ -7,6 +7,7 @@ import {
   editedGoalStatus,
   formatGoalElapsedSeconds,
   formatGoalTokensCompact,
+  goalObjectiveLabel,
   goalProgressLabel,
   goalStatusLabel,
   goalSummaryLines,
@@ -36,6 +37,11 @@ describe("goal-display-adapter", () => {
     expect(goalProgressLabel(goal("active", { tokenBudget: null, timeUsedSeconds: 120 }))).toBe(
       "Pursuing goal (2m)",
     );
+  });
+
+  it("目标控制条显示裁剪后的目标内容，空目标使用兜底文案", () => {
+    expect(goalObjectiveLabel(goal("active", { objective: "  完成 Phase 6U  " }))).toBe("完成 Phase 6U");
+    expect(goalObjectiveLabel(goal("active", { objective: "   " }))).toBe("Untitled goal");
   });
 
   it("覆盖 paused/blocked/usageLimited/budgetLimited/complete 官方文案", () => {

@@ -13,13 +13,14 @@ if (process.env.CODEX_HOME !== requiredCodexHome) {
 }
 
 const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "192.168.3.12";
+const devOrigins = [3000, 3001].flatMap((port) => [
+  `http://localhost:${port}`,
+  `http://127.0.0.1:${port}`,
+  `http://${publicHost}:${port}`,
+]);
 const bridge = createWebSocketBridge({
   host: "0.0.0.0",
-  allowedOrigins: [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    `http://${publicHost}:3000`,
-  ],
+  allowedOrigins: devOrigins,
   allowRemoteConnections: true,
   clientMessageInterceptor: createThreadTurnsListFailureInterceptorFromEnv(process.env),
 });

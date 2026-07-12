@@ -10,6 +10,7 @@
     "build": "next build",
     "build:server": "tsc -p tsconfig.build.json",
     "test:smoke": "tsx scripts/smoke.ts",
+    "test:smoke:goal-plan": "tsx scripts/goal-plan-plus-smoke.ts",
     "regression:history-pagination": "tsx scripts/history-pagination-regression.ts"
   },
   "devDependencies": {
