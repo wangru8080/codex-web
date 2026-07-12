@@ -47,6 +47,10 @@ import { AppServerBrowserClient } from "./app-server-browser-client";
 import { withPlanCollaborationMode } from "./app-server-collaboration-mode";
 import { appServerInitializeCapabilities } from "./app-server-capabilities";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
+import type {
+  ThreadStartParamsWithCollaborationMode,
+  TurnStartParamsWithCollaborationMode,
+} from "./app-server-request-overrides";
 import {
   selectTurnInterruptParams,
   type InterruptTurnParams,
@@ -444,7 +448,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }),
     }));
 
-    const turnParams = withPlanCollaborationMode<TurnStartParams>({
+    const turnParams: TurnStartParamsWithCollaborationMode = withPlanCollaborationMode({
       threadId,
       input: [{ type: "text", text: trimmed, text_elements: [] }],
       cwd,
@@ -502,7 +506,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       activeTurn: { source: "app-server.notification", data: createStartingTurnState() },
     }));
 
-    const threadParams = withPlanCollaborationMode<ThreadStartParams>({
+    const threadParams: ThreadStartParamsWithCollaborationMode = withPlanCollaborationMode({
       cwd,
       model: model || null,
       approvalPolicy: "on-request",

@@ -1084,6 +1084,7 @@ Phase 6U 记录：
 - 2026-07-12：修复 `/plan` 只切 UI mode 但未向 app-server 发送 `collaborationMode` 的问题；`thread/start` 与 `turn/start` 均按官方 Plan mode schema 发送 `collaborationMode.mode = "plan"`，implement plan 时显式回到 code/default 路径。
 - 2026-07-12：修复 live turn 第一帧被误判为 history replay 导致 `Implement this plan?` 不显示的问题；prompt gating 改为 completion effect 标记的 live plan turn。
 - 2026-07-12：新聊天页和历史页均接入 `/goal <objective>`、pause/resume/clear；clear context implement 在新 thread 中发送完整 plan markdown，不复用旧 thread。
+- 2026-07-12：`collaborationMode` 的 schema lag 风险已收口到 `src/codex-web/app-server-request-overrides.ts`，不再通过泛型 helper 隐式绕行 generated params；后续 generated schema 更新后可删除该兼容类型。
 
 Smoke Ledger：
 
@@ -1122,3 +1123,4 @@ Smoke Ledger：
 - 真实模型调用需要账号、网络和额度，smoke 失败时要区分认证、网络、额度和协议问题。
 - 历史 session 如果 app-server 历史 API 只返回 `userMessage` / `agentMessage`，刷新后无法恢复工具中间过程；这是与官方 TUI 重启恢复一致的边界。后续若要跨刷新保留，需要另立非 TUI 等价的持久缓存设计并明确 source breadcrumb。
 - Goal / Plan 公开 app 文档对视觉细节描述有限，Phase 6U 实现需以官方 app-server 协议和 `codex-rs/tui` 代码快照为主基准；后续若官方 Codex app 文档补充 UI 截图，需要复核 Web 等价层。
+- `collaborationMode` 当前仍是 Web 兼容类型覆盖 generated schema lag；真实 app-server 已验证接受，后续 schema 生成文件包含该字段后应删除 `app-server-request-overrides.ts`。
