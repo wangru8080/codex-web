@@ -1088,6 +1088,7 @@ Phase 6U 记录：
 - 2026-07-12：新增 `npm run test:smoke:goal-plan` 协议级 smoke，直接走 Web bridge + 真实 app-server 验证 `thread/goal/set` / `thread/goal/get` 和 Plan mode `turn/start`；Plan source 当前由 `item/completed` 中的 `<proposed_plan>` 捕获。
 - 2026-07-12：Goal progress row 保留官方状态文案，并增加目标 objective 第二行；空白 objective 使用 `Untitled goal` 兜底，避免 active goal 控制条只显示 “Pursuing goal”。
 - 2026-07-12：`npm run dev` 的 bridge Origin 白名单增加 3001 fallback，避免 Next dev 在 3000 被占用时自动切到 3001 后被 Web bridge Origin 校验拒绝。
+- 2026-07-12：修复新聊天页在尚无 app-server thread 时执行 `/goal <objective>` 只能提示“Create a thread before setting a goal”的回归；现在会先通过 `thread/start` 创建真实 thread，再调用 `thread/goal/set`，Goal row 仍只来自 app-server goal 状态。
 
 Smoke Ledger：
 
@@ -1109,6 +1110,8 @@ Smoke Ledger：
 | 2026-07-12 | local app-server smoke，隔离 `CODEX_HOME` | `+ -> 目标` / `+ -> 计划模式` 的真实协议接线反例：goal set/get 与 Plan mode proposed plan | 通过 | `npm run test:smoke:goal-plan` 沙箱内因 `tsx` IPC pipe listen EPERM 失败，提升权限重跑通过：thread=`019f5689-9558-7ef0-b317-7bf84d9274a3`，model=`gpt-5.6-sol`，planSource=`item/completed` |
 | 2026-07-12 | Vitest，隔离 `CODEX_HOME` | Goal/Plan 补强后全量单元测试 | 通过 | `npm run test`，29 files / 150 tests passed |
 | 2026-07-12 | Next production build，隔离 `CODEX_HOME` | Goal/Plan 补强后生产构建 | 通过 | `npm run build` 沙箱内因 Turbopack port bind EPERM 失败，提升权限重跑通过；仅有既有 NFT tracing warning，`next-env.d.ts` 生成噪声已还原 |
+| 2026-07-12 | 浏览器，隔离 `CODEX_HOME`，真实 app-server/模型 | `+ -> 目标` / `+ -> 计划模式` UI 回归；新聊天页无 thread 时先创建真实 thread 再设置 goal | 通过 | 首次复现 `Create a thread before setting a goal` 后修复；复测显示 `Pursuing goal`、objective `浏览器 UI 回归目标 phase6u-ui-goal-2219`、source `app-server.thread/goal/updated`；计划模式 X 取消可恢复默认 placeholder；发送 `phase6u-ui-plan-2219` 后时间线显示 `Updated Plan` 和 `Proposed Plan` |
+| 2026-07-12 | Vitest + Next production build，隔离 `CODEX_HOME` | 新聊天页 Goal thread 创建修复后回归 | 通过 | `npm run test`，29 files / 150 tests passed；`npm run build` 沙箱内因 Turbopack port bind EPERM 失败，提升权限重跑通过；仅有既有 NFT tracing warning，`next-env.d.ts` 生成噪声已还原 |
 
 ## 决策日志
 

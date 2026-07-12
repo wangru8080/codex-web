@@ -80,6 +80,12 @@ export type SendOneTurnParams = {
   mode?: string;
 };
 
+export type StartThreadParams = {
+  cwd: string;
+  model?: string;
+  mode?: string;
+};
+
 export type ResumeThreadParams = {
   threadId: string;
   cwd?: string;
@@ -96,6 +102,7 @@ export type SendTurnInThreadParams = {
 };
 
 export type AppServerActions = {
+  startThread: (params: StartThreadParams) => Promise<ThreadStartResponse>;
   sendOneTurn: (params: SendOneTurnParams) => Promise<AppServerTurnState>;
   resumeThread: (params: ResumeThreadParams) => Promise<ThreadResumeResponse>;
   sendTurnInThread: (params: SendTurnInThreadParams) => Promise<AppServerTurnState>;
@@ -395,6 +402,24 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
+  const startThread = useCallback(async ({ cwd, model, mode }: StartThreadParams) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    const threadParams: ThreadStartParamsWithCollaborationMode = withPlanCollaborationMode({
+      cwd,
+      model: model || null,
+      approvalPolicy: "on-request",
+      threadSource: "codex_web",
+      serviceName: "codex_web",
+    }, mode, model);
+    const response = (await client.request("thread/start", threadParams)) as ThreadStartResponse;
+    void refreshThreads().catch(() => undefined);
+    return response;
+  }, [refreshThreads]);
+
   const clearThreadGoal = useCallback(async (threadId: string) => {
     const client = clientRef.current;
     if (!client) {
@@ -564,6 +589,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
   const actions = useMemo<AppServerActions>(
     () => ({
+      startThread,
       sendOneTurn,
       resumeThread,
       sendTurnInThread,
@@ -577,7 +603,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       respondToApproval,
       resetTurn,
     }),
-    [sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn],
   );
 
   return (

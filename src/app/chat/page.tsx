@@ -86,6 +86,7 @@ function NewChatPageInner() {
   const { setPendingApprovalSessionId } = usePanel();
   const appServerState = useAppServerState();
   const {
+    startThread,
     sendOneTurn,
     sendTurnInThread,
     interruptTurn,
@@ -745,17 +746,34 @@ function NewChatPageInner() {
         handleGoalEdit();
         return;
       }
-      const threadId = getExistingNewChatThreadId(createdSessionId);
-      if (!threadId) {
-        appendGoalMessage('Create a thread before setting a goal.');
-        return;
-      }
-      void setThreadGoal({ threadId, objective: action, status: 'active' }).catch((error) => {
-        setErrorBanner({
-          message: 'Goal update failed',
-          description: error instanceof Error ? error.message : String(error),
-        });
-      });
+      void (async () => {
+        try {
+          let threadId = getExistingNewChatThreadId(createdSessionId);
+          if (!threadId) {
+            if (!modelReady) {
+              appendGoalMessage('Wait for model list before setting a goal.');
+              return;
+            }
+            if (!workingDir.trim()) {
+              setErrorBanner({ message: t('chat.empty.noDirectory') });
+              return;
+            }
+            const response = await startThread({
+              cwd: workingDir.trim(),
+              model: currentModel,
+              mode,
+            });
+            threadId = response.thread.id;
+            setCreatedSessionId(threadId);
+          }
+          await setThreadGoal({ threadId, objective: action, status: 'active' });
+        } catch (error) {
+          setErrorBanner({
+            message: 'Goal update failed',
+            description: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
       return;
     }
 
@@ -790,7 +808,7 @@ function NewChatPageInner() {
       default:
         sendFirstMessage(command);
     }
-  }, [appServerGoal, createdSessionId, handleGoalClear, handleGoalEdit, handleGoalStatusChange, sendFirstMessage, setThreadGoal]);
+  }, [appServerGoal, createdSessionId, currentModel, handleGoalClear, handleGoalEdit, handleGoalStatusChange, mode, modelReady, sendFirstMessage, setThreadGoal, startThread, t, workingDir]);
 
   // New-chat layout (2026-05-21): when there are no messages and no
   // streaming, replace the bottom-pinned composer + top scrolling
