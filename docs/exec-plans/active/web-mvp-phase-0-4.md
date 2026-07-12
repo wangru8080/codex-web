@@ -1099,6 +1099,9 @@ Smoke Ledger：
 | 2026-07-12 | 浏览器，隔离 `CODEX_HOME`，真实 app-server/模型 | 真实 `update_plan` 更新 checklist | 通过 | 时间线显示 `Updated Plan`，来自 `app-server.turn/plan/updated`，普通消息路径不生成 plan cell |
 | 2026-07-12 | 浏览器，隔离 `CODEX_HOME`，真实 app-server/模型 | Goal active、pause、resume、clear | 通过 | Goal 仅显示在 composer 上方 progress row；状态变化跟随 `thread/goal/updated` / `thread/goal/cleared` |
 | 2026-07-12 | 浏览器，隔离 `CODEX_HOME`，真实 app-server/模型 | `Yes, clear context and implement` | 通过 | 点击后创建新 `thread/start`；后续 `turn/start` 不带 Plan mode `collaborationMode`，输入包含 clear-context prefix 和完整 plan markdown |
+| 2026-07-12 | Vitest，隔离 `CODEX_HOME` | `77e651e` 后 collaborationMode schema lag 类型收口 | 通过 | `npm run test -- src/codex-web/app-server-collaboration-mode.test.ts`，1 file / 5 tests passed；`npm run test`，28 files / 143 tests passed |
+| 2026-07-12 | Next production build，隔离 `CODEX_HOME` | `77e651e` 后生产构建回归 | 通过 | `npm run build` 沙箱内因 Turbopack port bind EPERM 失败，提升权限重跑通过；仅有既有 NFT tracing warning，`next-env.d.ts` 生成噪声已还原 |
+| 2026-07-12 | local bridge smoke，隔离 `CODEX_HOME` | `77e651e` 后 bridge smoke 回归 | 通过 | `npm run test:smoke` 沙箱内因 `tsx` IPC pipe listen EPERM 失败，提升权限重跑通过：models=7，accountSource=`app-server.account/read` |
 
 ## 决策日志
 

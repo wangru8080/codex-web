@@ -34,3 +34,15 @@
 - [x] 改 provider 请求变量类型。
 - [x] 补测试覆盖 `thread/start` 与 `turn/start` 请求 shape。
 - [x] 跑 targeted test 和 full test。
+
+## 验证记录
+
+- 2026-07-12：`npm run test -- src/codex-web/app-server-collaboration-mode.test.ts` 通过，1 个测试文件、5 条测试。
+- 2026-07-12：`npm run test` 通过，28 个测试文件、143 条测试。
+- 2026-07-12：`npm run build` 沙箱内因 Turbopack 绑定端口 `EPERM` 失败，提升权限重跑通过；仅有既有 NFT tracing warning。
+- 2026-07-12：`npm run test:smoke` 沙箱内因 `tsx` IPC pipe listen `EPERM` 失败，提升权限重跑通过；`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
+
+## Review 记录
+
+- 2026-07-12：最终 review 确认兼容类型只位于 Web app-server 接线层，没有修改 `src/codex/protocol/generated/**`。
+- 2026-07-12：后续删除路径明确：当 generated schema 在 `ThreadStartParams` / `TurnStartParams` 中包含 `collaborationMode` 时，删除 `src/codex-web/app-server-request-overrides.ts`，并把 helper 返回类型切回 generated params。
