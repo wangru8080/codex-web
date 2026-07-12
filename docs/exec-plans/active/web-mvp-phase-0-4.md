@@ -1114,6 +1114,7 @@ Smoke Ledger：
 | 2026-07-12 | Next production build，隔离 `CODEX_HOME` | Goal/Plan 补强后生产构建 | 通过 | `npm run build` 沙箱内因 Turbopack port bind EPERM 失败，提升权限重跑通过；仅有既有 NFT tracing warning，`next-env.d.ts` 生成噪声已还原 |
 | 2026-07-12 | 浏览器，隔离 `CODEX_HOME`，真实 app-server/模型 | `+ -> 目标` / `+ -> 计划模式` UI 回归；新聊天页无 thread 时先创建真实 thread 再设置 goal | 通过 | 首次复现 `Create a thread before setting a goal` 后修复；复测显示 `Pursuing goal`、objective `浏览器 UI 回归目标 phase6u-ui-goal-2219`、source `app-server.thread/goal/updated`；计划模式 X 取消可恢复默认 placeholder；发送 `phase6u-ui-plan-2219` 后时间线显示 `Updated Plan` 和 `Proposed Plan` |
 | 2026-07-12 | Vitest + Next production build，隔离 `CODEX_HOME` | 新聊天页 Goal thread 创建修复后回归 | 通过 | `npm run test`，29 files / 150 tests passed；`npm run build` 沙箱内因 Turbopack port bind EPERM 失败，提升权限重跑通过；仅有既有 NFT tracing warning，`next-env.d.ts` 生成噪声已还原 |
+| 2026-07-13 | Vitest + Next production build，隔离 `CODEX_HOME` | `next-env` postbuild 护栏收口 | 通过 | `npm run test -- src/codex-web/next-env-guard.test.ts` 通过；`npm run build` 提升权限重跑通过，`postbuild` 自动将 `next-env.d.ts` 恢复为 `./.next/dev/types/routes.d.ts`；`npm run test` 通过，31 files / 153 tests passed |
 
 ## 决策日志
 

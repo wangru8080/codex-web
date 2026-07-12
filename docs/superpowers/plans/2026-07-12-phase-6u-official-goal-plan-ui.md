@@ -296,12 +296,14 @@ npm run test:smoke
 - 2026-07-12：真实浏览器验证 `Yes, clear context and implement`：创建新 thread，退出 Plan mode，发送 clear-context prefix 和完整 plan markdown。
 - 2026-07-12：协议级 `npm run test:smoke:goal-plan` 通过，直接验证 `thread/goal/set` / `thread/goal/get` 和 Plan mode proposed plan；`npm run test` 通过，29 个测试文件、150 个测试；`npm run build` 提权后通过，仅有既有 NFT tracing warning。
 - 2026-07-12：真实浏览器复测 `+ -> 目标` / `+ -> 计划模式`：首次复现并修复新聊天页无 thread 时 goal 设置失败；复测显示 `Pursuing goal`、objective `浏览器 UI 回归目标 phase6u-ui-goal-2219`、source `app-server.thread/goal/updated`；计划模式 X 取消恢复默认 placeholder，发送 `phase6u-ui-plan-2219` 后时间线显示 `Updated Plan` 和 `Proposed Plan`。
+- 2026-07-13：新增 `next-env` postbuild 护栏与单测，`npm run build` 后自动恢复 `next-env.d.ts` 到 `./.next/dev/types/routes.d.ts`，避免 Next 生成噪声污染提交；这属于 Phase 6U 收口后的工程稳定性补强，不影响 Goal / Plan 语义。
 
 剩余维护风险：
 
 - 真实模型路径依赖账号、网络、额度和当前 app-server 版本；失败时需先区分外部环境问题与 Web 实现问题。
 - Goal / Plan 公开 app 文档对视觉细节描述有限；若官方 Codex app 后续补充截图或交互说明，需要复核 Web 等价层。
 - `collaborationMode` 仍依赖 Web 兼容类型覆盖 generated schema lag；后续 generated schema 更新后，应删除兼容覆盖并复跑 Phase 6U targeted tests。
+- `next-env.d.ts` 的 Next 生成噪声已被 `postbuild` 护栏自动恢复；若未来 Next 行为变化，仍需复查 `scripts/restore-next-env.ts` 与 `next-env-guard.test.ts`。
 
 ## 决策日志
 
