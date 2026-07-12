@@ -6,6 +6,8 @@
 
 **目标：** 让 Web 的 Goal / Plan 展示与官方 Codex app 和 `codex-rs/tui` 语义一致。
 
+**状态：** Review passed。2026-07-12 已完成真实浏览器 UI 回归、协议级 app-server smoke、全量单元测试和生产构建；剩余项均为后续维护风险，不阻塞 Phase 6U 收口。
+
 **架构：** app-server notification 是事实源；`codex-rs/tui` 的转换逻辑是行为基准；CodexWeb 组件只承担 Web 等价呈现。新增纯 adapter 承接 `ThreadGoal`、`ThreadItem::Plan`、`TurnPlanUpdatedNotification` 和 plan implementation prompt gating，避免 UI 层直接散落协议判断。
 
 **技术栈：** TypeScript、React、Next.js、Vitest、Playwright smoke、Codex app-server generated schema。
@@ -276,6 +278,10 @@ npm run test:smoke
   - `update_plan`：显示 Updated Plan checklist。
   - Goal：active 显示 progress row，pause/resume/clear 后 UI 跟随 app-server 状态。
   - 反例：无 token usage 不显示 `0`，无 MCP 状态不显示“正常”。
+- [x] 收口审计：
+  - `+ -> 目标`：目标 pill 位于审批按钮右侧，X 可取消；新聊天页无 thread 时先 `thread/start`，再 `thread/goal/set`；Goal row 显示 objective 和 `app-server.thread/goal/updated`。
+  - `+ -> 计划模式`：计划 pill 位于审批按钮右侧，X 可取消；发送 prompt 后走 Plan mode `turn/start`，时间线显示 `Updated Plan` 和 `Proposed Plan`。
+  - 状态提升为 `Review passed`，不再有 Phase 6U 阻塞项。
 
 验证记录：
 
@@ -288,11 +294,14 @@ npm run test:smoke
 - 2026-07-12：真实浏览器验证 `turn/plan/updated` 显示 `Updated Plan` checklist，source breadcrumb 来自 `app-server.turn/plan/updated`。
 - 2026-07-12：真实浏览器验证 `/goal <objective>`、pause、resume、clear；Goal 只显示在 composer 上方 progress row，并跟随 `thread/goal/updated` / `thread/goal/cleared`。
 - 2026-07-12：真实浏览器验证 `Yes, clear context and implement`：创建新 thread，退出 Plan mode，发送 clear-context prefix 和完整 plan markdown。
+- 2026-07-12：协议级 `npm run test:smoke:goal-plan` 通过，直接验证 `thread/goal/set` / `thread/goal/get` 和 Plan mode proposed plan；`npm run test` 通过，29 个测试文件、150 个测试；`npm run build` 提权后通过，仅有既有 NFT tracing warning。
+- 2026-07-12：真实浏览器复测 `+ -> 目标` / `+ -> 计划模式`：首次复现并修复新聊天页无 thread 时 goal 设置失败；复测显示 `Pursuing goal`、objective `浏览器 UI 回归目标 phase6u-ui-goal-2219`、source `app-server.thread/goal/updated`；计划模式 X 取消恢复默认 placeholder，发送 `phase6u-ui-plan-2219` 后时间线显示 `Updated Plan` 和 `Proposed Plan`。
 
-剩余风险：
+剩余维护风险：
 
 - 真实模型路径依赖账号、网络、额度和当前 app-server 版本；失败时需先区分外部环境问题与 Web 实现问题。
 - Goal / Plan 公开 app 文档对视觉细节描述有限；若官方 Codex app 后续补充截图或交互说明，需要复核 Web 等价层。
+- `collaborationMode` 仍依赖 Web 兼容类型覆盖 generated schema lag；后续 generated schema 更新后，应删除兼容覆盖并复跑 Phase 6U targeted tests。
 
 ## 决策日志
 

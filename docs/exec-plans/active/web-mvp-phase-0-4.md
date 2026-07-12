@@ -85,7 +85,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6R | Load Earlier 真实失败路径回归 | Smoke passed | 测试专用 bridge 拦截第二次 `thread/turns/list`；真实浏览器验证已有消息保留、早期 page 不伪造、notice 可见 |
 | Phase 6S | 失败注入能力防误用收口 | Smoke passed | `CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL` 解析集中在测试 helper，默认/非法值不创建拦截器，只有 dev 脚本显式接入 |
 | Phase 6T | 历史分页回归入口整理 | Smoke passed | 新增 `npm run regression:history-pagination`，集中打印 fixture、inspect、失败注入浏览器验证和提交前验证清单 |
-| Phase 6U | 官方 Goal / Plan UI | Smoke passed | Goal 为 composer 上方 progress row；Proposed Plan / Updated Plan 为消息时间线 cell；Plan implementation prompt 在 composer 附近；真实浏览器 Plan mode、update_plan、Goal pause/resume/clear 和 clear context implement 已验证 |
+| Phase 6U | 官方 Goal / Plan UI | Review passed | Goal 为 composer 上方 progress row；Proposed Plan / Updated Plan 为消息时间线 cell；Plan implementation prompt 在 composer 附近；`+ -> 目标` / `+ -> 计划模式`、真实 Plan mode、update_plan、Goal pause/resume/clear 和 clear context implement 已验证 |
 
 ## Phase 0：协议和项目基线
 
@@ -380,7 +380,7 @@ Phase 5C 记录：
 | Interrupt | 页面刷新后恢复 interrupted 状态 | Smoke passed | Phase 6E/6G | 刷新后历史页能从最新历史 turn 显示 interrupted；Phase 6G 已确认 `thread/turns/list` capability 主路径可用，旧 fallback 仅作为稳定降级路径保留 |
 | Diagnostics | app-server transport close 与 pending request fail-fast | 部分完成 | Phase 6 | bridge/app-server 退出时 pending request 快速失败，UI 显示 diagnostics，不长时间挂起 |
 | Diagnostics | 未知 notification 可见诊断 | 部分完成 | Phase 6 | 未知 notification 不静默丢弃，在 diagnostics 中保留 method、source 和摘要 |
-| Goal / Plan | 官方 Codex app 等价 UI | Smoke passed | Phase 6U | Goal 显示为 composer 上方 progress row；Proposed Plan / Updated Plan 显示为消息时间线 cell；`Implement this plan?` 在 composer 附近确认；真实 Plan/Goal 端到端浏览器路径已验证 |
+| Goal / Plan | 官方 Codex app 等价 UI | Review passed | Phase 6U | Goal 显示为 composer 上方 progress row；Proposed Plan / Updated Plan 显示为消息时间线 cell；`Implement this plan?` 在 composer 附近确认；真实 Plan/Goal 端到端浏览器路径已验证 |
 | E2E / Smoke | 普通消息 vs 工具消息反例 | Smoke passed | Phase 6E | 普通文本消息无工具状态；触发 shell 命令时实时工具 cell 显示 success / failed 状态 |
 | E2E / Smoke | 无 approval vs approval 反例 | 已完成 | Phase 5E-B | 同一轮验证普通消息无 PermissionPrompt，触发权限时才出现 PermissionPrompt |
 | E2E / Smoke | 新 thread vs resume thread 反例 | 已完成 | Phase 5D-B | 新建会话走 `thread/start`，历史继续发送先走 `thread/resume`，两者日志和 UI 行为可区分 |
@@ -1061,6 +1061,7 @@ Phase 6K 记录：
 - [x] 消息时间线显示 `Proposed Plan` 和 `Updated Plan`；普通消息不显示 plan cell。
 - [x] Plan mode 完成 proposed plan 后显示 `Implement this plan?`，history replay 和 queued message 反例由 adapter 覆盖。
 - [x] Smoke Ledger 记录 adapter/reducer/history 反例、普通页无 Goal/Plan 的浏览器反例、build、bridge smoke、真实 Plan mode、`update_plan`、Goal active/pause/resume/clear 和 clear-context implement。
+- [x] 收口审计：`+ -> 目标` / `+ -> 计划模式` 真实浏览器 UI 回归、协议级 app-server smoke、全量单元测试和生产构建均通过；Phase 6U 状态提升为 `Review passed`。
 
 验证：
 
@@ -1089,6 +1090,7 @@ Phase 6U 记录：
 - 2026-07-12：Goal progress row 保留官方状态文案，并增加目标 objective 第二行；空白 objective 使用 `Untitled goal` 兜底，避免 active goal 控制条只显示 “Pursuing goal”。
 - 2026-07-12：`npm run dev` 的 bridge Origin 白名单增加 3001 fallback，避免 Next dev 在 3000 被占用时自动切到 3001 后被 Web bridge Origin 校验拒绝。
 - 2026-07-12：修复新聊天页在尚无 app-server thread 时执行 `/goal <objective>` 只能提示“Create a thread before setting a goal”的回归；现在会先通过 `thread/start` 创建真实 thread，再调用 `thread/goal/set`，Goal row 仍只来自 app-server goal 状态。
+- 2026-07-12：Phase 6U 收口审计完成：实现范围、UI 放置、app-server source breadcrumb、TUI 对齐、真实浏览器回归、协议级 smoke、全量测试和生产构建均已记录；状态更新为 `Review passed`。
 
 Smoke Ledger：
 
