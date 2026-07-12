@@ -110,6 +110,67 @@ describe("reduceAppServerTurnNotification", () => {
     expect(state.mcpProgress["mcp-1"]).toBe("查询中\n");
   });
 
+  it("把 plan delta、completed plan 和 updated plan 纳入 turn 状态", () => {
+    let state = createAcceptedTurnState("thread-1", "turn-1");
+
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/plan/delta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "plan-1", delta: "1. 写测试" },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/plan/delta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "plan-1", delta: "\n2. 实现" },
+    });
+    expect(state.planBlocks).toEqual([
+      {
+        type: "codex_proposed_plan",
+        text: "1. 写测试\n2. 实现",
+        sourceBreadcrumb: "app-server.item/plan/delta",
+      },
+    ]);
+
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "plan", id: "plan-1", text: "1. 写测试\n2. 实现\n3. 验证" },
+      },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "turn/plan/updated",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        explanation: "同步进度。",
+        plan: [
+          { step: "写测试", status: "completed" },
+          { step: "实现", status: "inProgress" },
+        ],
+      },
+    });
+
+    expect(state.latestProposedPlanMarkdown).toBe("1. 写测试\n2. 实现\n3. 验证");
+    expect(state.taskProgress).toEqual({ completed: 1, total: 2 });
+    expect(state.planBlocks).toEqual([
+      {
+        type: "codex_proposed_plan",
+        text: "1. 写测试\n2. 实现\n3. 验证",
+        sourceBreadcrumb: "app-server.item/completed",
+      },
+      {
+        type: "codex_updated_plan",
+        explanation: "同步进度。",
+        steps: [
+          { step: "写测试", status: "completed" },
+          { step: "实现", status: "inProgress" },
+        ],
+        sourceBreadcrumb: "app-server.turn/plan/updated",
+        progress: { completed: 1, total: 2 },
+      },
+    ]);
+  });
+
   it("turn/start accepted 只进入 running，不要求等待 turn/completed", () => {
     const accepted = createAcceptedTurnState("thread-1", "turn-1");
 

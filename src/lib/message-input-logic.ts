@@ -290,6 +290,10 @@ export function resolveKeyAction(
 export function resolveDirectSlash(content: string): DirectSlashResult {
   if (!content.startsWith('/')) return { action: 'not_slash' };
 
+  if (content === '/goal' || content.startsWith('/goal ') || content === '/plan') {
+    return { action: 'immediate_command', commandValue: content };
+  }
+
   const cmd = BUILT_IN_COMMANDS.find((c) => c.value === content);
   if (cmd) {
     if (cmd.immediate) {

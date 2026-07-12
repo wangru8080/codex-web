@@ -12,6 +12,8 @@ import { ChatEmptyState } from '@/components/chat/ChatEmptyState';
 import { NewChatWelcome } from '@/components/chat/NewChatWelcome';
 import { RunCockpit } from '@/components/chat/RunCockpit';
 import { RunCheckpoint } from '@/components/chat/RunCheckpoint';
+import { GoalProgressRow } from '@/components/chat/GoalProgressRow';
+import { PlanImplementationPromptBar } from '@/components/chat/PlanImplementationPromptBar';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { buildCheckpoints } from '@/lib/run-checkpoint';
 import { readNewChatKey } from '@/lib/new-chat-url';
@@ -27,6 +29,9 @@ import { appServerTurnToMessageContent } from '@/codex-web/app-server-message-bl
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import { selectActiveTurnByThreadIds } from '@/codex-web/active-turns-adapter';
 import { getExistingNewChatThreadId } from '@/codex-web/new-chat-turn-routing';
+import { editedGoalStatus, goalSummaryLines } from '@/codex-web/goal-display-adapter';
+import { selectPlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
+import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
 import {
   deriveCodexWebToolState,
   type CodexWebToolResultInfo,
@@ -80,7 +85,14 @@ function NewChatPageInner() {
   useEffect(() => { prefillTextRef.current = prefillText; }, [prefillText]);
   const { setPendingApprovalSessionId } = usePanel();
   const appServerState = useAppServerState();
-  const { sendOneTurn, sendTurnInThread, interruptTurn, respondToApproval } = useAppServerActions();
+  const {
+    sendOneTurn,
+    sendTurnInThread,
+    interruptTurn,
+    respondToApproval,
+    setThreadGoal,
+    clearThreadGoal,
+  } = useAppServerActions();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -195,6 +207,8 @@ function NewChatPageInner() {
   const [createdSessionId, setCreatedSessionId] = useState<string | undefined>();
   const abortControllerRef = useRef<AbortController | null>(null);
   const finalizedAppServerTurnRef = useRef<string>('');
+  const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
+  const [dismissedPlanPromptKey, setDismissedPlanPromptKey] = useState('');
   // #615: guards the first-message send while it's mid-flight. We defer the
   // isStreaming / optimistic-bubble flips until the backend ACCEPTS the message
   // (otherwise flipping `isNewChat` remounts the composer and eats the
@@ -240,6 +254,7 @@ function NewChatPageInner() {
     setPendingApprovalSessionId('');
     abortControllerRef.current = null;
     finalizedAppServerTurnRef.current = '';
+    setLivePlanPromptTurnKey('');
     firstSendInFlightRef.current = false;
     try { sessionStorage.removeItem(composerDraftKey()); } catch { /* unavailable */ }
   }, [setPendingApprovalSessionId]);
@@ -276,6 +291,7 @@ function NewChatPageInner() {
     const finalKey = `${appServerTurn.threadId}:${appServerTurn.turnId}:${appServerTurn.status}`;
     if (finalizedAppServerTurnRef.current === finalKey) return;
     finalizedAppServerTurnRef.current = finalKey;
+    setLivePlanPromptTurnKey(finalKey);
 
     if (appServerTurn.status === 'failed') {
       setErrorBanner({
@@ -506,8 +522,41 @@ function NewChatPageInner() {
     }, 1000);
   }, [appServerApproval, pendingPermission, respondToApproval, setPendingApprovalSessionId]);
 
+  const handleGoalStatusChange = useCallback((status: ThreadGoalStatus) => {
+    const goal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId]?.data : null;
+    if (!goal) return;
+    void setThreadGoal({ threadId: goal.threadId, status }).catch((error) => {
+      setErrorBanner({ message: 'Goal update failed', description: error instanceof Error ? error.message : String(error) });
+    });
+  }, [appServerState.goalsByThreadId, createdSessionId, setThreadGoal]);
+
+  const handleGoalEdit = useCallback(() => {
+    const goal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId]?.data : null;
+    if (!goal) return;
+    const objective = window.prompt('Edit goal', goal.objective);
+    if (objective === null) return;
+    const trimmed = objective.trim();
+    if (!trimmed) return;
+    void setThreadGoal({
+      threadId: goal.threadId,
+      objective: trimmed,
+      status: editedGoalStatus(goal.status),
+      tokenBudget: goal.tokenBudget,
+    }).catch((error) => {
+      setErrorBanner({ message: 'Goal update failed', description: error instanceof Error ? error.message : String(error) });
+    });
+  }, [appServerState.goalsByThreadId, createdSessionId, setThreadGoal]);
+
+  const handleGoalClear = useCallback(() => {
+    const goal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId]?.data : null;
+    if (!goal) return;
+    void clearThreadGoal(goal.threadId).catch((error) => {
+      setErrorBanner({ message: 'Goal clear failed', description: error instanceof Error ? error.message : String(error) });
+    });
+  }, [appServerState.goalsByThreadId, clearThreadGoal, createdSessionId]);
+
   const sendFirstMessage = useCallback(
-    async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[]) => {
+    async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], modeOverride?: string, forceNewThread = false) => {
       // Each early-out below is a NOT-delivered case: return false so the
       // composer preserves the user's text + attachments instead of letting
       // PromptInput clear a first-message screenshot that never got sent (#615).
@@ -563,7 +612,7 @@ function NewChatPageInner() {
       let handoffToAppServerTurn = false;
 
       try {
-        const existingThreadId = getExistingNewChatThreadId(createdSessionId);
+        const existingThreadId = forceNewThread ? undefined : getExistingNewChatThreadId(createdSessionId);
         const messageSessionId = existingThreadId || `app-server-${Date.now()}`;
         if (!existingThreadId) {
           setCreatedSessionId(messageSessionId);
@@ -575,11 +624,13 @@ function NewChatPageInner() {
               content,
               cwd: workingDir.trim(),
               model: currentModel,
+              mode: modeOverride ?? mode,
             })
           : await sendOneTurn({
               content,
               cwd: workingDir.trim(),
               model: currentModel,
+              mode: modeOverride ?? mode,
             });
 
         accepted = true;
@@ -651,10 +702,63 @@ function NewChatPageInner() {
         }
       }
     },
-    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread]
+    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, mode, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread]
   );
 
+  const appServerGoal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId] ?? null : null;
+
   const handleCommand = useCallback((command: string) => {
+    if (command === '/plan') {
+      setMode('plan');
+      return;
+    }
+    if (command === '/goal' || command.startsWith('/goal ')) {
+      const action = command.slice('/goal'.length).trim();
+      const appendGoalMessage = (content: string) => {
+        const message: Message = {
+          id: 'cmd-' + Date.now(),
+          session_id: createdSessionId || '',
+          role: 'assistant',
+          content,
+          created_at: new Date().toISOString(),
+          token_usage: null,
+        };
+        setMessages((prev) => [...prev, message]);
+      };
+      if (!action) {
+        appendGoalMessage(appServerGoal ? goalSummaryLines(appServerGoal.data).join('\n') : 'No goal set.');
+        return;
+      }
+      if (action === 'pause') {
+        handleGoalStatusChange('paused');
+        return;
+      }
+      if (action === 'resume') {
+        handleGoalStatusChange('active');
+        return;
+      }
+      if (action === 'clear') {
+        handleGoalClear();
+        return;
+      }
+      if (action === 'edit') {
+        handleGoalEdit();
+        return;
+      }
+      const threadId = getExistingNewChatThreadId(createdSessionId);
+      if (!threadId) {
+        appendGoalMessage('Create a thread before setting a goal.');
+        return;
+      }
+      void setThreadGoal({ threadId, objective: action, status: 'active' }).catch((error) => {
+        setErrorBanner({
+          message: 'Goal update failed',
+          description: error instanceof Error ? error.message : String(error),
+        });
+      });
+      return;
+    }
+
     switch (command) {
       case '/help': {
         const helpMessage: Message = {
@@ -686,7 +790,7 @@ function NewChatPageInner() {
       default:
         sendFirstMessage(command);
     }
-  }, [sendFirstMessage]);
+  }, [appServerGoal, createdSessionId, handleGoalClear, handleGoalEdit, handleGoalStatusChange, sendFirstMessage, setThreadGoal]);
 
   // New-chat layout (2026-05-21): when there are no messages and no
   // streaming, replace the bottom-pinned composer + top scrolling
@@ -707,6 +811,22 @@ function NewChatPageInner() {
       onSelectProject={handleSelectProject}
     />
   );
+  const appServerFinalTurnKey =
+    appServerTurn && ['completed', 'failed', 'interrupted'].includes(appServerTurn.status)
+      ? `${appServerTurn.threadId}:${appServerTurn.turnId}:${appServerTurn.status}`
+      : '';
+  const planImplementationPrompt = useMemo(() => {
+    const prompt = selectPlanImplementationPrompt({
+      mode,
+      isHistoryReplay: !appServerFinalTurnKey || livePlanPromptTurnKey !== appServerFinalTurnKey,
+      turnCompleted: appServerTurn?.status === 'completed',
+      proposedPlanMarkdown: appServerTurn?.latestProposedPlanMarkdown,
+      hasQueuedMessage: false,
+      defaultModeAvailable: true,
+    });
+    if (!prompt || dismissedPlanPromptKey === appServerFinalTurnKey) return null;
+    return prompt;
+  }, [appServerFinalTurnKey, appServerTurn, dismissedPlanPromptKey, livePlanPromptTurnKey, mode]);
 
   // Single composer stack — reused in both the new-chat hero (centered)
   // and the active-chat layout (bottom-pinned). Avoids duplicating
@@ -729,6 +849,37 @@ function NewChatPageInner() {
           actions={[
             { label: t('error.retry'), onClick: () => setErrorBanner(null) },
           ]}
+        />
+      )}
+      {planImplementationPrompt && (
+        <PlanImplementationPromptBar
+          key="composer-plan-implementation"
+          prompt={planImplementationPrompt}
+          disabled={isStreaming}
+          onImplement={(message) => {
+            if (appServerFinalTurnKey) setDismissedPlanPromptKey(appServerFinalTurnKey);
+            setMode('code');
+            void sendFirstMessage(message, undefined, undefined, undefined, undefined, undefined, 'code');
+          }}
+          onClearContextImplement={(message) => {
+            if (appServerFinalTurnKey) setDismissedPlanPromptKey(appServerFinalTurnKey);
+            setMode('code');
+            void sendFirstMessage(message, undefined, undefined, undefined, undefined, undefined, 'code', true);
+          }}
+          onStay={() => {
+            if (appServerFinalTurnKey) setDismissedPlanPromptKey(appServerFinalTurnKey);
+          }}
+        />
+      )}
+      {appServerGoal && (
+        <GoalProgressRow
+          key="composer-goal-progress"
+          goal={appServerGoal.data}
+          sourceBreadcrumb={appServerGoal.source}
+          disabled={isStreaming}
+          onStatusChange={handleGoalStatusChange}
+          onEdit={handleGoalEdit}
+          onClear={handleGoalClear}
         />
       )}
       <RunCheckpoint key="composer-run-checkpoint" reasons={checkpointReasons} className="mb-2" onAction={handleCheckpointAction} />
@@ -813,6 +964,7 @@ function NewChatPageInner() {
             toolUses={toolUses}
             toolResults={toolResults}
             streamingToolOutput={streamingToolOutput}
+            planBlocks={appServerTurn?.planBlocks}
             statusText={statusText}
           />
           {composerStack}

@@ -123,6 +123,7 @@ function createMessage(
 function isSupportedAssistantItem(item: ThreadItem): boolean {
   return (
     (item.type === "agentMessage" && item.text.trim().length > 0) ||
+    (item.type === "plan" && item.text.trim().length > 0) ||
     item.type === "reasoning" ||
     item.type === "commandExecution" ||
     item.type === "fileChange" ||
@@ -136,6 +137,7 @@ function isUnsupportedHistoryItem(item: ThreadItem): boolean {
   return (
     item.type !== "userMessage" &&
     item.type !== "agentMessage" &&
+    item.type !== "plan" &&
     item.type !== "commandExecution" &&
     item.type !== "fileChange" &&
     item.type !== "mcpToolCall" &&

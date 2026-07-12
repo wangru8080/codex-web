@@ -20,6 +20,7 @@ import { ImageGenConfirmation } from './ImageGenConfirmation';
 import { ImageGenCard } from './ImageGenCard';
 import { BatchPlanInlinePreview } from './batch-image-gen/BatchPlanInlinePreview';
 import { WidgetRenderer } from './WidgetRenderer';
+import { ProposedPlanMessageBlock, UpdatedPlanMessageBlock } from './PlanMessageBlock';
 import { buildReferenceImages } from '@/lib/image-ref-store';
 // SPECIES_IMAGE_URL / EGG_IMAGE_URL / RARITY_BG_GRADIENT were used by
 // the assistant-chat avatar (removed 2026-05-21); the imports are kept
@@ -439,7 +440,15 @@ interface PairedTool {
 
 type AssistantRenderPart =
   | { type: 'text'; text: string; variant: 'process' | 'final' }
-  | { type: 'tools'; tools: ToolBlock[] };
+  | { type: 'tools'; tools: ToolBlock[] }
+  | { type: 'proposed_plan'; text: string; sourceBreadcrumb: string }
+  | {
+      type: 'updated_plan';
+      explanation?: string | null;
+      steps: Array<{ step: string; status: 'pending' | 'inProgress' | 'completed' }>;
+      sourceBreadcrumb: string;
+      progress?: { completed: number; total: number } | null;
+    };
 
 function parseToolBlocks(content: string): {
   text: string;
@@ -494,6 +503,10 @@ function parseToolBlocks(content: string): {
         elapsed_ms?: number;
         process_count?: number;
         media?: MediaBlock[];
+        sourceBreadcrumb?: string;
+        explanation?: string | null;
+        steps?: Array<{ step?: string; status?: string }>;
+        progress?: { completed?: number; total?: number } | null;
       }>;
 
       for (const block of blocks) {
@@ -510,6 +523,31 @@ function parseToolBlocks(content: string): {
           if (typeof block.process_count === 'number' && Number.isFinite(block.process_count)) {
             processCount = block.process_count;
           }
+        } else if (block.type === 'codex_proposed_plan' && block.text) {
+          flushPendingTools();
+          renderParts.push({
+            type: 'proposed_plan',
+            text: block.text,
+            sourceBreadcrumb: block.sourceBreadcrumb || 'app-server.item/completed',
+          });
+        } else if (block.type === 'codex_updated_plan') {
+          flushPendingTools();
+          renderParts.push({
+            type: 'updated_plan',
+            explanation: block.explanation ?? null,
+            steps: Array.isArray(block.steps)
+              ? block.steps
+                  .filter((step) =>
+                    typeof step.step === 'string' &&
+                    (step.status === 'pending' || step.status === 'inProgress' || step.status === 'completed')
+                  )
+                  .map((step) => ({ step: step.step as string, status: step.status as 'pending' | 'inProgress' | 'completed' }))
+              : [],
+            sourceBreadcrumb: block.sourceBreadcrumb || 'app-server.turn/plan/updated',
+            progress: block.progress && typeof block.progress.completed === 'number' && typeof block.progress.total === 'number'
+              ? { completed: block.progress.completed, total: block.progress.total }
+              : null,
+          });
         } else if (block.type === 'tool_use') {
           pushToolPart({
             type: 'tool_use',
@@ -725,8 +763,9 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
   });
 
   const shouldRenderAssistantSummary =
-    !isUser && (!!thinking || renderParts.some((part) => part.type === 'tools' || part.variant === 'process'));
-  const processParts = renderParts.filter((part) => part.type === 'tools' || part.variant === 'process');
+    !isUser && (!!thinking || renderParts.some((part) => part.type === 'tools' || (part.type === 'text' && part.variant === 'process')));
+  const processParts = renderParts.filter((part) => part.type === 'tools' || (part.type === 'text' && part.variant === 'process'));
+  const planParts = renderParts.filter((part) => part.type === 'proposed_plan' || part.type === 'updated_plan');
   const finalParts = renderParts.filter((part) => part.type === 'text' && part.variant === 'final');
   const renderAssistantPart = (part: AssistantRenderPart, index: number) => {
     if (part.type === 'tools') {
@@ -747,6 +786,28 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
           />
           {segmentMedia.length > 0 && <MediaPreview media={segmentMedia} />}
         </Fragment>
+      );
+    }
+    if (part.type === 'proposed_plan') {
+      return (
+        <ProposedPlanMessageBlock
+          key={`assistant-proposed-plan-${index}`}
+          block={{ type: 'codex_proposed_plan', text: part.text, sourceBreadcrumb: part.sourceBreadcrumb }}
+        />
+      );
+    }
+    if (part.type === 'updated_plan') {
+      return (
+        <UpdatedPlanMessageBlock
+          key={`assistant-updated-plan-${index}`}
+          block={{
+            type: 'codex_updated_plan',
+            explanation: part.explanation,
+            steps: part.steps,
+            sourceBreadcrumb: part.sourceBreadcrumb,
+            progress: part.progress,
+          }}
+        />
       );
     }
     return (
@@ -844,8 +905,9 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
                 {processParts.map((part, index) => renderAssistantPart(part, index))}
               </ProcessCollapseGroup>
             )}
+            {planParts.map((part, index) => renderAssistantPart(part, index))}
             {finalParts.map((part, index) => renderAssistantPart(part, index))}
-            {finalParts.length === 0 && !shouldRenderAssistantSummary && renderParts.map((part, index) => renderAssistantPart(part, index))}
+            {finalParts.length === 0 && planParts.length === 0 && !shouldRenderAssistantSummary && renderParts.map((part, index) => renderAssistantPart(part, index))}
           </>
         )}
       </MessageContent>

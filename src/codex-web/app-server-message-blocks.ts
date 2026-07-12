@@ -8,12 +8,14 @@ import {
   codexWebToolUseFromItem,
   type ToolItemContext,
 } from "./tool-item-adapter";
+import { proposedPlanBlockFromText } from "./plan-display-adapter";
 
 type TurnItemsToMessageContentArgs = {
   items: ThreadItem[];
   assistantText?: string;
   durationMs?: number;
   reasoningText?: string;
+  planBlocks?: MessageContentBlock[];
   toolOutputs?: Record<string, string>;
   filePatchChanges?: Record<string, FileUpdateChange[]>;
   mcpProgress?: Record<string, string>;
@@ -25,6 +27,7 @@ export function appServerTurnToMessageContent(turn: AppServerTurnState): string 
     assistantText: turn.assistantText,
     durationMs: turn.durationMs,
     reasoningText: turn.reasoningText,
+    planBlocks: turn.planBlocks,
     toolOutputs: turn.toolOutputs,
     filePatchChanges: turn.filePatchChanges,
     mcpProgress: turn.mcpProgress,
@@ -37,6 +40,8 @@ export function turnItemsToMessageContent(args: TurnItemsToMessageContentArgs): 
     (block) =>
       block.type === "thinking" ||
       block.type === "codex_process_text" ||
+      block.type === "codex_proposed_plan" ||
+      block.type === "codex_updated_plan" ||
       block.type === "tool_use" ||
       block.type === "tool_result",
   );
@@ -62,6 +67,14 @@ export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): M
   }
 
   for (const item of args.items) {
+    if (item.type === "plan") {
+      const block = proposedPlanBlockFromText(item.text, "app-server.item/completed");
+      if (block) {
+        blocks.push(block);
+      }
+      continue;
+    }
+
     const context = toolContext(item, args);
     const toolUse = codexWebToolUseFromItem(item, context);
     if (!toolUse) continue;
@@ -91,6 +104,16 @@ export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): M
       ...(typeof args.durationMs === "number" ? { elapsed_ms: args.durationMs } : {}),
       ...(processCount > 0 ? { process_count: processCount } : {}),
     });
+  }
+
+  for (const block of args.planBlocks ?? []) {
+    if (
+      block.type === "codex_proposed_plan" &&
+      blocks.some((existing) => existing.type === "codex_proposed_plan")
+    ) {
+      continue;
+    }
+    blocks.push(block);
   }
 
   if (finalText) {

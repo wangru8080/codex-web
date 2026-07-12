@@ -229,6 +229,31 @@ describe("thread-history-adapter", () => {
     expect(assistantContent[3].content).toContain("mcp-head");
     expect(assistantContent[3].content).not.toContain("mcp-tail");
   });
+
+  it("把历史 ThreadItem::Plan 映射为 Proposed Plan", () => {
+    const result = threadToMessages(createThreadWithPlan());
+    const assistantContent = JSON.parse(result.messages[0].content);
+
+    expect(assistantContent).toEqual([
+      {
+        type: "codex_proposed_plan",
+        text: "1. 写测试\n2. 实现",
+        sourceBreadcrumb: "app-server.item/completed",
+      },
+      {
+        type: "text",
+        text: "计划已准备好。",
+      },
+    ]);
+    expect(result.unsupportedItemCount).toBe(0);
+  });
+
+  it("assistant final answer 中含 plan 文本不生成 Proposed Plan", () => {
+    const result = threadToMessages(createThreadWithPlanTextOnly());
+
+    expect(result.messages[0].content).toBe("Here is a plan-shaped sentence, but it is final answer text.");
+    expect(result.unsupportedItemCount).toBe(0);
+  });
 });
 
 function createThread(): Thread {
@@ -494,6 +519,59 @@ function createThreadWithLargeToolOutput(): Thread {
         error: null,
         startedAt: 1783570300,
         completedAt: 1783570301,
+        durationMs: 1000,
+      },
+    ],
+  };
+}
+
+function createThreadWithPlan(): Thread {
+  return {
+    ...createThread(),
+    turns: [
+      {
+        id: "turn-plan",
+        items: [
+          { type: "plan", id: "plan-1", text: "1. 写测试\n2. 实现" },
+          {
+            type: "agentMessage",
+            id: "assistant-plan",
+            text: "计划已准备好。",
+            phase: null,
+            memoryCitation: null,
+          },
+        ],
+        itemsView: "full",
+        status: "completed",
+        error: null,
+        startedAt: 1783570400,
+        completedAt: 1783570401,
+        durationMs: 1000,
+      },
+    ],
+  };
+}
+
+function createThreadWithPlanTextOnly(): Thread {
+  return {
+    ...createThread(),
+    turns: [
+      {
+        id: "turn-plan-text",
+        items: [
+          {
+            type: "agentMessage",
+            id: "assistant-plan-text",
+            text: "Here is a plan-shaped sentence, but it is final answer text.",
+            phase: null,
+            memoryCitation: null,
+          },
+        ],
+        itemsView: "full",
+        status: "completed",
+        error: null,
+        startedAt: 1783570410,
+        completedAt: 1783570411,
         durationMs: 1000,
       },
     ],

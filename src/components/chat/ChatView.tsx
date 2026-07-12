@@ -69,6 +69,12 @@ import type { AppServerApprovalDecision, AppServerApprovalRequest } from '@/code
 import { appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
 import { deriveCodexWebToolState } from '@/codex-web/tool-adapter';
 import type { AppServerTurnState } from '@/codex-web/turn-reducer';
+import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
+import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
+import { editedGoalStatus, goalSummaryLines } from '@/codex-web/goal-display-adapter';
+import { selectPlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
+import { GoalProgressRow } from './GoalProgressRow';
+import { PlanImplementationPromptBar } from './PlanImplementationPromptBar';
 
 interface QueuedMessage {
   content: string;
@@ -106,9 +112,15 @@ interface ChatViewProps {
   projectName?: string;
   appServerTurn?: AppServerTurnState | null;
   appServerApproval?: AppServerApprovalRequest | null;
+  appServerGoal?: { source: string; data: ThreadGoal } | null;
   appServerNotice?: { message: string; description?: string } | null;
   onAppServerApprovalDecision?: (decision: AppServerApprovalDecision) => Promise<void>;
-  appServerSend?: (params: { content: string; cwd: string; model?: string; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
+  onAppServerGoalSet?: (objective: string) => Promise<void>;
+  onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
+  onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
+  onAppServerGoalClear?: () => Promise<void>;
+  appServerSend?: (params: { content: string; cwd: string; model?: string; mode?: string; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
+  appServerClearContextAndSend?: (content: string) => Promise<void>;
   appServerInterrupt?: () => Promise<void>;
   appServerLoadEarlier?: () => Promise<MessagesResponse>;
 }
@@ -144,9 +156,15 @@ export function ChatView({
   projectName,
   appServerTurn,
   appServerApproval,
+  appServerGoal,
   appServerNotice,
   onAppServerApprovalDecision,
+  onAppServerGoalSet,
+  onAppServerGoalStatusChange,
+  onAppServerGoalEdit,
+  onAppServerGoalClear,
   appServerSend,
+  appServerClearContextAndSend,
   appServerInterrupt,
   appServerLoadEarlier,
 }: ChatViewProps) {
@@ -563,6 +581,8 @@ export function ChatView({
   }, [appServerTurn, appServerTurnIsTerminal, messages, showAppServerTurnPanel]);
   const rewindPoints = getRewindPoints(activeSessionId);
   const finalizedAppServerTurnRef = useRef<string>('');
+  const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
+  const [dismissedPlanPromptKey, setDismissedPlanPromptKey] = useState('');
 
   // ── Skill nudge banner ──
   // Listens for 'skill-nudge' window events dispatched by stream-session-manager
@@ -611,7 +631,7 @@ export function ChatView({
 
   // Pending image generation notices
   const pendingImageNoticesRef = useRef<string[]>([]);
-  const sendMessageRef = useRef<(content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[]) => Promise<boolean | void>>(undefined);
+  const sendMessageRef = useRef<(content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], modeOverride?: string) => Promise<boolean | void>>(undefined);
   const initMetaRef = useRef<{ tools?: unknown; slash_commands?: unknown; skills?: unknown } | null>(null);
 
   const handleModeChange = useCallback((newMode: string) => {
@@ -740,6 +760,7 @@ export function ChatView({
     const finalKey = `${appServerTurn.threadId}:${appServerTurn.turnId}:${appServerTurn.status}`;
     if (finalizedAppServerTurnRef.current === finalKey) return;
     finalizedAppServerTurnRef.current = finalKey;
+    setLivePlanPromptTurnKey(finalKey);
 
     if (appServerTurn.status === 'failed') {
       setAppServerErrorBanner({
@@ -1128,6 +1149,44 @@ export function ChatView({
     [activeSessionId, appServerApproval, onAppServerApprovalDecision, setPendingApprovalSessionId]
   );
 
+  const handleGoalEdit = useCallback(() => {
+    if (!appServerGoal || !onAppServerGoalEdit) return;
+    const objective = window.prompt('Edit goal', appServerGoal.data.objective);
+    if (objective === null) return;
+    const trimmed = objective.trim();
+    if (!trimmed) return;
+    void onAppServerGoalEdit(
+      trimmed,
+      editedGoalStatus(appServerGoal.data.status),
+      appServerGoal.data.tokenBudget,
+    ).catch((error) => {
+      setAppServerErrorBanner({
+        message: 'Goal update failed',
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [appServerGoal, onAppServerGoalEdit]);
+
+  const handleGoalStatusChange = useCallback((status: ThreadGoalStatus) => {
+    if (!onAppServerGoalStatusChange) return;
+    void onAppServerGoalStatusChange(status).catch((error) => {
+      setAppServerErrorBanner({
+        message: 'Goal update failed',
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [onAppServerGoalStatusChange]);
+
+  const handleGoalClear = useCallback(() => {
+    if (!onAppServerGoalClear) return;
+    void onAppServerGoalClear().catch((error) => {
+      setAppServerErrorBanner({
+        message: 'Goal clear failed',
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [onAppServerGoalClear]);
+
   /** Start an API stream for the given content. Does NOT add a user message to the list. */
   const doStartStream = useCallback(
     (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], sessionIdOverride?: string) => {
@@ -1219,7 +1278,7 @@ export function ChatView({
   );
 
   const sendMessage = useCallback(
-    async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[]) => {
+    async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], modeOverride?: string) => {
       if (readOnly) return false;
       if (appServerSend) {
         if (appServerApproval) {
@@ -1250,6 +1309,7 @@ export function ChatView({
             content: trimmed,
             cwd: workingDirectory,
             model: currentModel,
+            mode: modeOverride ?? mode,
             onAccepted: (threadId) => {
               if (accepted) return;
               accepted = true;
@@ -1378,7 +1438,7 @@ export function ChatView({
       cappedSetMessages((prev) => [...prev, userMessage]);
       doStartStream(content, files, systemPromptAppend, displayOverride, mentions, selectedSkills, effectiveSessionId);
     },
-    [readOnly, appServerSend, appServerApproval, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]
+    [readOnly, appServerSend, appServerApproval, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, mode, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]
   );
 
   sendMessageRef.current = sendMessage;
@@ -1523,7 +1583,88 @@ export function ChatView({
     return () => window.removeEventListener('dashboard-command', handler);
   }, []);
 
-  const handleCommand = useChatCommands({ sessionId: settingsLocked ? '' : activeSessionId, messages, setMessages: cappedSetMessages, sendMessage });
+  const appendCommandMessage = useCallback((content: string) => {
+    const message: Message = {
+      id: 'cmd-' + Date.now(),
+      session_id: activeSessionId,
+      role: 'assistant',
+      content,
+      created_at: new Date().toISOString(),
+      token_usage: null,
+    };
+    cappedSetMessages((prev) => [...prev, message]);
+  }, [activeSessionId, cappedSetMessages]);
+
+  const handleGoalCommand = useCallback((command: string) => {
+    const action = command.slice('/goal'.length).trim();
+    if (!action) {
+      appendCommandMessage(appServerGoal ? goalSummaryLines(appServerGoal.data).join('\n') : 'No goal set.');
+      return;
+    }
+    if (action === 'pause') {
+      handleGoalStatusChange('paused');
+      return;
+    }
+    if (action === 'resume') {
+      handleGoalStatusChange('active');
+      return;
+    }
+    if (action === 'clear') {
+      handleGoalClear();
+      return;
+    }
+    if (action === 'edit') {
+      handleGoalEdit();
+      return;
+    }
+    if (!onAppServerGoalSet) {
+      appendCommandMessage('Create a thread before setting a goal.');
+      return;
+    }
+    void onAppServerGoalSet(action).catch((error) => {
+      setAppServerErrorBanner({
+        message: 'Goal update failed',
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [appendCommandMessage, appServerGoal, handleGoalClear, handleGoalEdit, handleGoalStatusChange, onAppServerGoalSet]);
+
+  const handleCommand = useChatCommands({
+    sessionId: settingsLocked ? '' : activeSessionId,
+    messages,
+    setMessages: cappedSetMessages,
+    sendMessage,
+    onGoalCommand: handleGoalCommand,
+    onPlanCommand: () => handleModeChange('plan'),
+  });
+  const appServerFinalTurnKey =
+    appServerTurn && appServerTurnIsTerminal
+      ? `${appServerTurn.threadId}:${appServerTurn.turnId}:${appServerTurn.status}`
+      : '';
+  const planImplementationPrompt = useMemo(() => {
+    const prompt = selectPlanImplementationPrompt({
+      mode,
+      isHistoryReplay: !appServerFinalTurnKey || livePlanPromptTurnKey !== appServerFinalTurnKey,
+      turnCompleted: appServerTurn?.status === 'completed',
+      proposedPlanMarkdown: appServerTurn?.latestProposedPlanMarkdown,
+      hasQueuedMessage: messageQueue.length > 0,
+      defaultModeAvailable: !!appServerSend,
+    });
+    if (!prompt || dismissedPlanPromptKey === appServerFinalTurnKey) return null;
+    return prompt;
+  }, [appServerFinalTurnKey, appServerSend, appServerTurn, dismissedPlanPromptKey, livePlanPromptTurnKey, messageQueue.length, mode]);
+
+  const handleImplementPlan = useCallback((message: string) => {
+    if (appServerFinalTurnKey) setDismissedPlanPromptKey(appServerFinalTurnKey);
+    handleModeChange('code');
+    sendMessageRef.current?.(message, undefined, undefined, undefined, undefined, undefined, 'code');
+  }, [appServerFinalTurnKey, handleModeChange]);
+
+  const handleClearContextAndImplementPlan = useCallback((message: string) => {
+    if (appServerFinalTurnKey) setDismissedPlanPromptKey(appServerFinalTurnKey);
+    handleModeChange('code');
+    void appServerClearContextAndSend?.(message);
+  }, [appServerClearContextAndSend, appServerFinalTurnKey, handleModeChange]);
 
   // Listen for image generation completion
   useEffect(() => {
@@ -1680,6 +1821,7 @@ export function ChatView({
         toolResults={toolResults}
         streamingToolOutput={streamingToolOutput}
         streamingThinkingContent={streamingThinkingContent}
+        planBlocks={appServerTurn?.planBlocks}
         statusText={statusText}
         onForceStop={stopStreaming}
         hasMore={hasMore}
@@ -1807,6 +1949,29 @@ export function ChatView({
             </div>
           ))}
         </div>
+      )}
+
+      {planImplementationPrompt && (
+        <PlanImplementationPromptBar
+          prompt={planImplementationPrompt}
+          disabled={isStreaming}
+          onImplement={handleImplementPlan}
+          onClearContextImplement={appServerClearContextAndSend ? handleClearContextAndImplementPlan : undefined}
+          onStay={() => {
+            if (appServerFinalTurnKey) setDismissedPlanPromptKey(appServerFinalTurnKey);
+          }}
+        />
+      )}
+
+      {appServerGoal && (
+        <GoalProgressRow
+          goal={appServerGoal.data}
+          sourceBreadcrumb={appServerGoal.source}
+          disabled={isStreaming}
+          onStatusChange={handleGoalStatusChange}
+          onEdit={handleGoalEdit}
+          onClear={handleGoalClear}
+        />
       )}
 
       {/* Phase 2 — subscription rate-limit banner (allowed_warning / rejected) */}

@@ -13,10 +13,11 @@ import { Button } from '@/components/ui/button';
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { ImageGenConfirmation } from './ImageGenConfirmation';
 import { BatchPlanInlinePreview } from './batch-image-gen/BatchPlanInlinePreview';
+import { ProposedPlanMessageBlock, UpdatedPlanMessageBlock } from './PlanMessageBlock';
 import { WidgetRenderer } from './WidgetRenderer';
 import { parseAllShowWidgets, computePartialWidgetKey, MalformedWidgetNotice } from './MessageItem';
 import { PENDING_KEY, buildReferenceImages } from '@/lib/image-ref-store';
-import type { PlannerOutput, MediaBlock } from '@/types';
+import type { PlannerOutput, MediaBlock, MessageContentBlock } from '@/types';
 
 interface ImageGenRequest {
   prompt: string;
@@ -111,6 +112,7 @@ interface StreamingMessageProps {
   toolResults?: ToolResultInfo[];
   streamingToolOutput?: string;
   thinkingContent?: string;
+  planBlocks?: MessageContentBlock[];
   statusText?: string;
   onForceStop?: () => void;
 }
@@ -292,6 +294,7 @@ export function StreamingMessage({
   toolResults = [],
   streamingToolOutput,
   thinkingContent,
+  planBlocks = [],
   statusText,
   onForceStop,
 }: StreamingMessageProps) {
@@ -386,6 +389,16 @@ export function StreamingMessage({
           const allMedia = toolResults.flatMap(r => r.media || []);
           return allMedia.length > 0 ? <MediaPreview media={allMedia} /> : null;
         })()}
+
+        {planBlocks.map((block, index) => {
+          if (block.type === 'codex_proposed_plan') {
+            return <ProposedPlanMessageBlock key={`stream-proposed-plan-${index}`} block={block} />;
+          }
+          if (block.type === 'codex_updated_plan') {
+            return <UpdatedPlanMessageBlock key={`stream-updated-plan-${index}`} block={block} />;
+          }
+          return null;
+        })}
 
         {/* Streaming text content rendered via Streamdown */}
         {content && (() => {

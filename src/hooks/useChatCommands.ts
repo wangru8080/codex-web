@@ -6,11 +6,21 @@ interface UseChatCommandsOpts {
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   sendMessage: (content: string) => void;
+  onGoalCommand?: (command: string) => void;
+  onPlanCommand?: () => void;
 }
 
-export function useChatCommands({ sessionId, messages, setMessages, sendMessage }: UseChatCommandsOpts): (command: string) => void {
+export function useChatCommands({ sessionId, messages, setMessages, sendMessage, onGoalCommand, onPlanCommand }: UseChatCommandsOpts): (command: string) => void {
   return useCallback((command: string) => {
+    if (command === '/goal' || command.startsWith('/goal ')) {
+      onGoalCommand?.(command);
+      return;
+    }
+
     switch (command) {
+      case '/plan':
+        onPlanCommand?.();
+        break;
       case '/help': {
         const helpMessage: Message = {
           id: 'cmd-' + Date.now(),
@@ -81,5 +91,5 @@ export function useChatCommands({ sessionId, messages, setMessages, sendMessage 
         // This shouldn't be reached since non-immediate commands are handled via badge
         sendMessage(command);
     }
-  }, [sessionId, sendMessage, messages, setMessages]);
+  }, [sessionId, sendMessage, messages, setMessages, onGoalCommand, onPlanCommand]);
 }

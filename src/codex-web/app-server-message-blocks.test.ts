@@ -54,6 +54,46 @@ describe("app-server-message-blocks", () => {
     ]);
   });
 
+  it("把 plan item 和 updated plan block 转为时间线消息块", () => {
+    const content = turnItemsToMessageContent({
+      items: [
+        { type: "plan", id: "plan-1", text: "1. 写测试\n2. 实现" },
+        {
+          type: "agentMessage",
+          id: "assistant-1",
+          text: "计划已准备好。",
+          phase: null,
+          memoryCitation: null,
+        },
+      ],
+      planBlocks: [
+        {
+          type: "codex_updated_plan",
+          explanation: null,
+          steps: [{ step: "写测试", status: "completed" }],
+          sourceBreadcrumb: "app-server.turn/plan/updated",
+          progress: { completed: 1, total: 1 },
+        },
+      ],
+    });
+
+    expect(JSON.parse(content)).toEqual([
+      {
+        type: "codex_proposed_plan",
+        text: "1. 写测试\n2. 实现",
+        sourceBreadcrumb: "app-server.item/completed",
+      },
+      {
+        type: "codex_updated_plan",
+        explanation: null,
+        steps: [{ step: "写测试", status: "completed" }],
+        sourceBreadcrumb: "app-server.turn/plan/updated",
+        progress: { completed: 1, total: 1 },
+      },
+      { type: "text", text: "计划已准备好。" },
+    ]);
+  });
+
   it("普通 final-only turn 保持纯文本", () => {
     const content = turnItemsToMessageContent({
       items: [

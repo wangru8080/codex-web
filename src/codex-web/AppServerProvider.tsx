@@ -12,6 +12,10 @@ import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadRea
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
 import type { ThreadStartParams } from "@/codex/protocol/generated/v2/ThreadStartParams";
 import type { ThreadStartResponse } from "@/codex/protocol/generated/v2/ThreadStartResponse";
+import type { ThreadGoalClearResponse } from "@/codex/protocol/generated/v2/ThreadGoalClearResponse";
+import type { ThreadGoalGetResponse } from "@/codex/protocol/generated/v2/ThreadGoalGetResponse";
+import type { ThreadGoalSetParams } from "@/codex/protocol/generated/v2/ThreadGoalSetParams";
+import type { ThreadGoalSetResponse } from "@/codex/protocol/generated/v2/ThreadGoalSetResponse";
 import type { TurnInterruptResponse } from "@/codex/protocol/generated/v2/TurnInterruptResponse";
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
 import type { TurnStartResponse } from "@/codex/protocol/generated/v2/TurnStartResponse";
@@ -40,6 +44,7 @@ import {
   type ApprovalResponseGuardState,
 } from "./approval-response-guard";
 import { AppServerBrowserClient } from "./app-server-browser-client";
+import { withPlanCollaborationMode } from "./app-server-collaboration-mode";
 import { appServerInitializeCapabilities } from "./app-server-capabilities";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
 import {
@@ -68,6 +73,7 @@ export type SendOneTurnParams = {
   content: string;
   cwd: string;
   model?: string;
+  mode?: string;
 };
 
 export type ResumeThreadParams = {
@@ -81,6 +87,7 @@ export type SendTurnInThreadParams = {
   content: string;
   cwd: string;
   model?: string;
+  mode?: string;
   onAccepted?: (threadId: string) => void;
 };
 
@@ -92,6 +99,9 @@ export type AppServerActions = {
   refreshThreads: () => Promise<ThreadListResponse>;
   readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
   listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
+  getThreadGoal: (threadId: string) => Promise<ThreadGoalGetResponse>;
+  setThreadGoal: (params: ThreadGoalSetParams) => Promise<ThreadGoalSetResponse>;
+  clearThreadGoal: (threadId: string) => Promise<ThreadGoalClearResponse>;
   respondToApproval: (decision: AppServerApprovalDecision, requestId?: JsonRpcId) => Promise<void>;
   resetTurn: () => void;
 };
@@ -148,6 +158,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     client.onNotification((notification) => {
       setState((current) => {
+        const goalStatePatch = reduceGoalNotification(current, notification);
         const notificationTurnIds = readNotificationTurnIds(notification);
         const notificationSnapshot =
           notificationTurnIds.threadId && notificationTurnIds.turnId
@@ -172,6 +183,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         const pendingApprovals = resolvePendingApprovals(current.pendingApprovals, notification);
         const next = {
           ...current,
+          ...goalStatePatch,
           activeTurn: sourcedActiveTurn(activeTurn),
           activeTurnsByThreadId: rememberActiveTurnByThread(current.activeTurnsByThreadId, activeTurn),
           turnSnapshots: rememberTurnSnapshot(current.turnSnapshots, snapshotTurn),
@@ -343,6 +355,59 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return (await client.request("thread/turns/list", params)) as ThreadTurnsListResponse;
   }, []);
 
+  const getThreadGoal = useCallback(async (threadId: string) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    const response = (await client.request("thread/goal/get", { threadId })) as ThreadGoalGetResponse;
+    setState((current) => {
+      const goalsByThreadId = { ...current.goalsByThreadId };
+      if (response.goal) {
+        goalsByThreadId[threadId] = { source: "app-server.thread/goal/get", data: response.goal };
+      } else {
+        delete goalsByThreadId[threadId];
+      }
+      return { ...current, goalsByThreadId };
+    });
+    return response;
+  }, []);
+
+  const setThreadGoal = useCallback(async (params: ThreadGoalSetParams) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    const response = (await client.request("thread/goal/set", params)) as ThreadGoalSetResponse;
+    setState((current) => ({
+      ...current,
+      goalsByThreadId: {
+        ...current.goalsByThreadId,
+        [response.goal.threadId]: { source: "app-server.thread/goal/updated", data: response.goal },
+      },
+    }));
+    return response;
+  }, []);
+
+  const clearThreadGoal = useCallback(async (threadId: string) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+
+    const response = (await client.request("thread/goal/clear", { threadId })) as ThreadGoalClearResponse;
+    if (response.cleared) {
+      setState((current) => {
+        const goalsByThreadId = { ...current.goalsByThreadId };
+        delete goalsByThreadId[threadId];
+        return { ...current, goalsByThreadId };
+      });
+    }
+    return response;
+  }, []);
+
   const resumeThread = useCallback(async ({ threadId, cwd, model }: ResumeThreadParams) => {
     const client = clientRef.current;
     if (!client) {
@@ -361,7 +426,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
-  const sendTurnInThread = useCallback(async ({ threadId, content, cwd, model, onAccepted }: SendTurnInThreadParams) => {
+  const sendTurnInThread = useCallback(async ({ threadId, content, cwd, model, mode, onAccepted }: SendTurnInThreadParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -379,13 +444,13 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }),
     }));
 
-    const turnParams: TurnStartParams = {
+    const turnParams = withPlanCollaborationMode<TurnStartParams>({
       threadId,
       input: [{ type: "text", text: trimmed, text_elements: [] }],
       cwd,
       model: model || null,
       approvalPolicy: "on-request",
-    };
+    }, mode, model);
     let turnResponse: TurnStartResponse;
     try {
       turnResponse = (await client.request("turn/start", turnParams)) as TurnStartResponse;
@@ -422,7 +487,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return acceptedTurn;
   }, [refreshThreads]);
 
-  const sendOneTurn = useCallback(async ({ content, cwd, model }: SendOneTurnParams) => {
+  const sendOneTurn = useCallback(async ({ content, cwd, model, mode }: SendOneTurnParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -437,13 +502,13 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       activeTurn: { source: "app-server.notification", data: createStartingTurnState() },
     }));
 
-    const threadParams: ThreadStartParams = {
+    const threadParams = withPlanCollaborationMode<ThreadStartParams>({
       cwd,
       model: model || null,
       approvalPolicy: "on-request",
       threadSource: "codex_web",
       serviceName: "codex_web",
-    };
+    }, mode, model);
     let threadResponse: ThreadStartResponse;
     try {
       threadResponse = (await client.request("thread/start", threadParams)) as ThreadStartResponse;
@@ -470,7 +535,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }),
     }));
 
-    return sendTurnInThread({ threadId, content: trimmed, cwd, model });
+    return sendTurnInThread({ threadId, content: trimmed, cwd, model, mode });
   }, [sendTurnInThread]);
 
   const interruptTurn = useCallback(async (params?: InterruptTurnParams) => {
@@ -502,10 +567,13 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       refreshThreads,
       readThread,
       listThreadTurns,
+      getThreadGoal,
+      setThreadGoal,
+      clearThreadGoal,
       respondToApproval,
       resetTurn,
     }),
-    [sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, respondToApproval, resetTurn],
+    [sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn],
   );
 
   return (
@@ -626,6 +694,60 @@ function resolvePendingApprovals(
     return pendingApprovals;
   }
   return removeApproval(pendingApprovals, params.requestId);
+}
+
+function reduceGoalNotification(
+  current: CodexWebAppServerState,
+  notification: { method: string; params?: unknown },
+): Pick<CodexWebAppServerState, "goalsByThreadId"> {
+  if (notification.method === "thread/goal/updated") {
+    const params = readRecord(notification.params);
+    const goal = readRecord(params.goal);
+    const threadId = typeof params.threadId === "string"
+      ? params.threadId
+      : typeof goal.threadId === "string"
+        ? goal.threadId
+        : "";
+    if (!threadId || !isThreadGoal(goal)) {
+      return { goalsByThreadId: current.goalsByThreadId };
+    }
+    return {
+      goalsByThreadId: {
+        ...current.goalsByThreadId,
+        [threadId]: { source: "app-server.thread/goal/updated", data: goal },
+      },
+    };
+  }
+
+  if (notification.method === "thread/goal/cleared") {
+    const params = readRecord(notification.params);
+    if (typeof params.threadId !== "string") {
+      return { goalsByThreadId: current.goalsByThreadId };
+    }
+    const goalsByThreadId = { ...current.goalsByThreadId };
+    delete goalsByThreadId[params.threadId];
+    return { goalsByThreadId };
+  }
+
+  return { goalsByThreadId: current.goalsByThreadId };
+}
+
+function isThreadGoal(value: Record<string, unknown>): value is CodexWebAppServerState["goalsByThreadId"][string]["data"] {
+  return (
+    typeof value.threadId === "string" &&
+    typeof value.objective === "string" &&
+    (value.status === "active" ||
+      value.status === "paused" ||
+      value.status === "blocked" ||
+      value.status === "usageLimited" ||
+      value.status === "budgetLimited" ||
+      value.status === "complete") &&
+    (typeof value.tokenBudget === "number" || value.tokenBudget === null) &&
+    typeof value.tokensUsed === "number" &&
+    typeof value.timeUsedSeconds === "number" &&
+    typeof value.createdAt === "number" &&
+    typeof value.updatedAt === "number"
+  );
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

@@ -276,6 +276,14 @@ export type MessageContentBlock =
   | { type: 'thinking'; thinking: string }
   | { type: 'codex_summary'; elapsed_ms?: number; process_count?: number }
   | { type: 'codex_process_text'; text: string }
+  | { type: 'codex_proposed_plan'; text: string; sourceBreadcrumb: string }
+  | {
+      type: 'codex_updated_plan';
+      explanation?: string | null;
+      steps: Array<{ step: string; status: 'pending' | 'inProgress' | 'completed' }>;
+      sourceBreadcrumb: string;
+      progress?: { completed: number; total: number } | null;
+    }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean; media?: MediaBlock[] }
   | { type: 'code'; language: string; code: string };

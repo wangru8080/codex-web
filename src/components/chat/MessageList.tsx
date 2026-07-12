@@ -5,7 +5,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { useStickToBottomContext } from 'use-stick-to-bottom';
 import { Button } from '@/components/ui/button';
-import type { Message } from '@/types';
+import type { Message, MessageContentBlock } from '@/types';
 import {
   Conversation,
   ConversationContent,
@@ -169,6 +169,7 @@ interface MessageListProps {
   toolResults?: ToolResultInfo[];
   streamingToolOutput?: string;
   streamingThinkingContent?: string;
+  planBlocks?: MessageContentBlock[];
   statusText?: string;
   onForceStop?: () => void;
   hasMore?: boolean;
@@ -212,6 +213,7 @@ export function MessageList({
   toolResults = [],
   streamingToolOutput,
   streamingThinkingContent,
+  planBlocks,
   statusText,
   onForceStop,
   hasMore,
@@ -415,6 +417,7 @@ export function MessageList({
             toolResults={toolResults}
             streamingToolOutput={streamingToolOutput}
             thinkingContent={streamingThinkingContent}
+            planBlocks={planBlocks}
             statusText={statusText}
             onForceStop={onForceStop}
           />

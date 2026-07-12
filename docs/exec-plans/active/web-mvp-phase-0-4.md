@@ -85,6 +85,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 | Phase 6R | Load Earlier 真实失败路径回归 | Smoke passed | 测试专用 bridge 拦截第二次 `thread/turns/list`；真实浏览器验证已有消息保留、早期 page 不伪造、notice 可见 |
 | Phase 6S | 失败注入能力防误用收口 | Smoke passed | `CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL` 解析集中在测试 helper，默认/非法值不创建拦截器，只有 dev 脚本显式接入 |
 | Phase 6T | 历史分页回归入口整理 | Smoke passed | 新增 `npm run regression:history-pagination`，集中打印 fixture、inspect、失败注入浏览器验证和提交前验证清单 |
+| Phase 6U | 官方 Goal / Plan UI | Smoke passed | Goal 为 composer 上方 progress row；Proposed Plan / Updated Plan 为消息时间线 cell；Plan implementation prompt 在 composer 附近；真实浏览器 Plan mode、update_plan、Goal pause/resume/clear 和 clear context implement 已验证 |
 
 ## Phase 0：协议和项目基线
 
@@ -379,6 +380,7 @@ Phase 5C 记录：
 | Interrupt | 页面刷新后恢复 interrupted 状态 | Smoke passed | Phase 6E/6G | 刷新后历史页能从最新历史 turn 显示 interrupted；Phase 6G 已确认 `thread/turns/list` capability 主路径可用，旧 fallback 仅作为稳定降级路径保留 |
 | Diagnostics | app-server transport close 与 pending request fail-fast | 部分完成 | Phase 6 | bridge/app-server 退出时 pending request 快速失败，UI 显示 diagnostics，不长时间挂起 |
 | Diagnostics | 未知 notification 可见诊断 | 部分完成 | Phase 6 | 未知 notification 不静默丢弃，在 diagnostics 中保留 method、source 和摘要 |
+| Goal / Plan | 官方 Codex app 等价 UI | Smoke passed | Phase 6U | Goal 显示为 composer 上方 progress row；Proposed Plan / Updated Plan 显示为消息时间线 cell；`Implement this plan?` 在 composer 附近确认；真实 Plan/Goal 端到端浏览器路径已验证 |
 | E2E / Smoke | 普通消息 vs 工具消息反例 | Smoke passed | Phase 6E | 普通文本消息无工具状态；触发 shell 命令时实时工具 cell 显示 success / failed 状态 |
 | E2E / Smoke | 无 approval vs approval 反例 | 已完成 | Phase 5E-B | 同一轮验证普通消息无 PermissionPrompt，触发权限时才出现 PermissionPrompt |
 | E2E / Smoke | 新 thread vs resume thread 反例 | 已完成 | Phase 5D-B | 新建会话走 `thread/start`，历史继续发送先走 `thread/resume`，两者日志和 UI 行为可区分 |
@@ -388,6 +390,7 @@ Phase 5C 记录：
 
 - Phase 5D 优先补齐“用户已经能触发但还没有完整边界保护”的路径：resume 多轮、approval、interrupt 和反例 smoke。
 - Phase 6 再补齐更重的历史管理、完整工具语义、大输出、分页和诊断深化。
+- Phase 6U 专门处理官方 Codex app 的 Goal / Plan UI：不得实现右侧常驻 GoalPanel / PlanPanel；实现逻辑必须与 `codex-rs/tui` 的 `goal_status`、`goal_menu`、`plans` 和 `plan_implementation` 保持一致。
 - Web 不手工拼接历史 prompt、不使用 unstable `thread/resume.history` 的决策保持不变；复杂场景也必须基于官方 app-server 状态恢复和 notification 驱动。
 
 ## Phase 5D-B：Resume 复杂边界优先
@@ -1038,6 +1041,64 @@ Phase 6K 记录：
 - 2026-07-12：验证命令已完成：targeted `npm run test -- server/history-pagination-regression-plan.test.ts` 1 个测试文件、4 条测试通过；`npm run regression:history-pagination -- 7b531c06-1bf8-4855-ac46-24603b6352a9 phase6o` 在沙箱中因 `tsx` IPC pipe listen EPERM 失败，提权重跑后成功打印 6 步回归清单；`npm run test` 24 个测试文件、118 条测试通过；`npm run build` 提权运行通过且仅有既有 NFT trace warning，`next-env.d.ts` 已还原；`npm run test:smoke` 提权运行通过，`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`，models=7，accountSource=`app-server.account/read`。
 - 2026-07-12：复查 `.playwright-mcp` 目录无文件；本阶段未运行真实浏览器，不产生新的 Playwright 生成物。
 
+## Phase 6U：官方 Goal / Plan UI
+
+目标：按官方 Codex app 和 `codex-rs/tui` 语义接入 Goal / Plan。Goal 不做右侧常驻面板，而是在 composer 上方显示 progress row 和 pause/resume/edit/clear 控制；Plan 不做右侧常驻面板，而是在消息时间线中显示 `Proposed Plan` 和 `Updated Plan` cell，并在 Plan mode 完成 proposed plan 后显示 `Implement this plan?` 确认。
+
+设计和执行计划：
+
+- `docs/superpowers/specs/2026-07-12-phase-6u-official-goal-plan-ui-design.md`
+- `docs/superpowers/plans/2026-07-12-phase-6u-official-goal-plan-ui.md`
+
+实施清单：
+
+- [x] 新增 `goal-display-adapter`，对齐 `codex-rs/tui/src/chatwidget/goal_status.rs`、`goal_menu.rs` 和 `footer.rs`。
+- [x] 新增 `plan-display-adapter`，对齐 `codex-rs/tui/src/history_cell/plans.rs`、`streaming.rs` 和 `thread_transcript.rs`。
+- [x] 新增 `plan-implementation-adapter`，对齐 `codex-rs/tui/src/chatwidget/plan_implementation.rs` 的三选项和 gating。
+- [x] `AppServerProvider` / reducer 接入 `thread/goal/updated`、`thread/goal/cleared`、`item/plan/delta`、`item/completed` 中的 `ThreadItem::Plan`、`turn/plan/updated`。
+- [x] 历史 replay 只显示 app-server 历史 API 返回的真实 `ThreadItem::Plan`，不从 assistant final answer 推断。
+- [x] Composer 上方显示 Goal progress row；无 goal 时不显示。
+- [x] 消息时间线显示 `Proposed Plan` 和 `Updated Plan`；普通消息不显示 plan cell。
+- [x] Plan mode 完成 proposed plan 后显示 `Implement this plan?`，history replay 和 queued message 反例由 adapter 覆盖。
+- [x] Smoke Ledger 记录 adapter/reducer/history 反例、普通页无 Goal/Plan 的浏览器反例、build、bridge smoke、真实 Plan mode、`update_plan`、Goal active/pause/resume/clear 和 clear-context implement。
+
+验证：
+
+```bash
+export NODE_HOME="/volume2/SSD/node-v24.14.0"
+export PATH=$NODE_HOME/bin:$PATH
+export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
+npm run test -- src/codex-web/goal-display-adapter.test.ts src/codex-web/plan-display-adapter.test.ts src/codex-web/plan-implementation-adapter.test.ts
+npm run test
+npm run build
+npm run test:smoke
+```
+
+Phase 6U 记录：
+
+- 2026-07-12：新增 `goal-display-adapter`、`plan-display-adapter`、`plan-implementation-adapter` 及单元测试，覆盖 elapsed/token 文案、goal status、Updated Plan 空 steps、Plan implementation prompt gating。
+- 2026-07-12：`AppServerProvider` 接入 `thread/goal/get`、`thread/goal/set`、`thread/goal/clear` actions，并按 `thread/goal/updated` / `thread/goal/cleared` 更新按 threadId 隔离的 goal 状态。
+- 2026-07-12：`turn-reducer` 接入 `item/plan/delta`、`item/completed` 中的 `ThreadItem::Plan` 和 `turn/plan/updated`；`thread-history-adapter` 只 replay 真实 `ThreadItem::Plan`，assistant final answer 中出现 plan 文本不生成 Proposed Plan。
+- 2026-07-12：消息时间线新增 `Proposed Plan` / `Updated Plan` cell，显示 source breadcrumb；composer 附近新增 Goal progress row 和 `Implement this plan?` prompt；未新增右侧 GoalPanel / PlanPanel。
+- 2026-07-12：`/plan` 切换 Plan mode；`/goal` summary/pause/resume/edit/clear 走 composer 命令入口和 app-server goal 方法，不打开右侧面板。
+- 2026-07-12：修复 `/plan` 只切 UI mode 但未向 app-server 发送 `collaborationMode` 的问题；`thread/start` 与 `turn/start` 均按官方 Plan mode schema 发送 `collaborationMode.mode = "plan"`，implement plan 时显式回到 code/default 路径。
+- 2026-07-12：修复 live turn 第一帧被误判为 history replay 导致 `Implement this plan?` 不显示的问题；prompt gating 改为 completion effect 标记的 live plan turn。
+- 2026-07-12：新聊天页和历史页均接入 `/goal <objective>`、pause/resume/clear；clear context implement 在新 thread 中发送完整 plan markdown，不复用旧 thread。
+
+Smoke Ledger：
+
+| Date | Runtime | 场景 | Result | Evidence |
+|---|---|---|---|---|
+| 2026-07-12 | Vitest，隔离 `CODEX_HOME` | Goal/Plan adapters、reducer、历史 replay 反例：assistant final answer 含 plan 文本不生成 Proposed Plan | 通过 | `npm run test -- src/codex-web/goal-display-adapter.test.ts src/codex-web/plan-display-adapter.test.ts src/codex-web/plan-implementation-adapter.test.ts src/codex-web/turn-reducer.test.ts src/codex-web/app-server-message-blocks.test.ts src/codex-web/thread-history-adapter.test.ts`，6 files / 35 tests passed |
+| 2026-07-12 | local codex app-server，隔离 `CODEX_HOME` | 全量单元测试 | 通过 | `npm run test`，27 files / 138 tests passed |
+| 2026-07-12 | Next production build，隔离 `CODEX_HOME` | 生产构建 | 通过 | `npm run build` 提升权限运行通过；Turbopack 仅报告既有 NFT tracing warning |
+| 2026-07-12 | local bridge smoke，隔离 `CODEX_HOME` | bridge initialize、model/list、account/read | 通过 | `npm run test:smoke` 提升权限运行通过：`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home，models=7，accountSource=app-server.account/read` |
+| 2026-07-12 | 浏览器，`http://192.168.3.12:3000/chat` | 普通新聊天页桌面/390px 窄屏渲染；无 active goal/plan 时不显示 Goal row、Proposed Plan、Updated Plan | 通过 | Playwright snapshot，console 0 errors / 0 warnings；`localhost` 在浏览器环境不可达，网络地址可用 |
+| 2026-07-12 | 浏览器，隔离 `CODEX_HOME`，真实 app-server/模型 | `/plan` 触发完整 Plan mode proposed plan；完成后出现 `Implement this plan?` | 通过 | 捕获 `thread/start` 与 `turn/start` 均包含 `collaborationMode.mode = "plan"`；时间线显示 `Proposed Plan`，source 为 `app-server.item/completed` |
+| 2026-07-12 | 浏览器，隔离 `CODEX_HOME`，真实 app-server/模型 | 真实 `update_plan` 更新 checklist | 通过 | 时间线显示 `Updated Plan`，来自 `app-server.turn/plan/updated`，普通消息路径不生成 plan cell |
+| 2026-07-12 | 浏览器，隔离 `CODEX_HOME`，真实 app-server/模型 | Goal active、pause、resume、clear | 通过 | Goal 仅显示在 composer 上方 progress row；状态变化跟随 `thread/goal/updated` / `thread/goal/cleared` |
+| 2026-07-12 | 浏览器，隔离 `CODEX_HOME`，真实 app-server/模型 | `Yes, clear context and implement` | 通过 | 点击后创建新 `thread/start`；后续 `turn/start` 不带 Plan mode `collaborationMode`，输入包含 clear-context prefix 和完整 plan markdown |
+
 ## 决策日志
 
 - 2026-07-06：第一版采用 TUI-first Web 化。官方 TUI 是业务语义基准，Web bridge 连接已安装的 `codex app-server --stdio`，不改 `codex-core`。
@@ -1049,6 +1110,7 @@ Phase 6K 记录：
 - 2026-07-08：Web UI 基于 `/home/rrssnas/code/CodexWeb` 开发；开发前阅读其 README，保持 CodexWeb 既有 UI 样式和 Demo 结构，不直接修改 CodexWeb 目录，只在当前项目中接入真实 app-server 后端。
 - 2026-07-11：过程块保留策略保持官方 TUI 等价：同一浏览器进程内切换 session 使用 notification-derived 内存 snapshot replay；刷新或重启后只使用 app-server 历史 API 返回的真实 `Turn.items`，不引入 IndexedDB / localStorage 持久缓存，也不从 assistant final text 反推工具 cell。
 - 2026-07-11：多 active turn 状态以 `threadId -> AppServerTurnState` 为 Web 内存事实源；页面只选择本 route/resumed thread 的 turn，其它 running turn 只作为 notice，不允许跨 session 复用全局 `activeTurn`。
+- 2026-07-12：Phase 6U 的 Goal / Plan UI 保持官方 Codex app 一致：Goal 是 composer 上方 progress row，Plan 是消息时间线 cell，Plan implementation 是 composer 附近确认；不得实现右侧常驻 GoalPanel / PlanPanel。代码逻辑必须对齐 `codex-rs/tui` 的 Goal / Plan 分支。
 
 ## 剩余风险
 
@@ -1059,3 +1121,4 @@ Phase 6K 记录：
 - 从 CodexWeb 复制 UI 代码时可能引入 mock 数据路径或前端预览逻辑，接入当前项目前必须替换为 app-server 真实数据来源并保留 source breadcrumb。
 - 真实模型调用需要账号、网络和额度，smoke 失败时要区分认证、网络、额度和协议问题。
 - 历史 session 如果 app-server 历史 API 只返回 `userMessage` / `agentMessage`，刷新后无法恢复工具中间过程；这是与官方 TUI 重启恢复一致的边界。后续若要跨刷新保留，需要另立非 TUI 等价的持久缓存设计并明确 source breadcrumb。
+- Goal / Plan 公开 app 文档对视觉细节描述有限，Phase 6U 实现需以官方 app-server 协议和 `codex-rs/tui` 代码快照为主基准；后续若官方 Codex app 文档补充 UI 截图，需要复核 Web 等价层。

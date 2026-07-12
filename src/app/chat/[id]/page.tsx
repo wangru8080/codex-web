@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, use } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { Message, MessagesResponse, ChatSession, PermissionProfile } from '@/types';
 import { ChatView } from '@/components/chat/ChatView';
 import { SpinnerGap } from "@/components/ui/icon";
@@ -49,6 +49,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const rawParams = use(params);
   const id = safeDecodeSessionId(rawParams.id);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -76,7 +77,17 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [paginationNotice, setPaginationNotice] = useState<{ message: string; description?: string } | null>(null);
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle, setFileTreeOpen } = usePanel();
   const appServerState = useAppServerState();
-  const { readThread, listThreadTurns, resumeThread, sendTurnInThread, interruptTurn, respondToApproval } = useAppServerActions();
+  const {
+    readThread,
+    listThreadTurns,
+    resumeThread,
+    sendOneTurn,
+    sendTurnInThread,
+    interruptTurn,
+    respondToApproval,
+    setThreadGoal,
+    clearThreadGoal,
+  } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
   const { t } = useTranslation();
@@ -356,6 +367,10 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         approvalRequestMatchesThread(approval, [id, resumedThreadId]),
       )
     : null;
+  const appServerGoal =
+    currentThreadIds
+      .map((threadId) => (threadId ? appServerState.goalsByThreadId[threadId] : null))
+      .find((goal): goal is NonNullable<typeof goal> => !!goal) ?? null;
   const defaultAppServerModel =
     appServerState.models?.data.data.find((model) => !model.hidden && model.isDefault)?.id ||
     appServerState.models?.data.data.find((model) => !model.hidden)?.id ||
@@ -382,17 +397,39 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         projectName={sessionProjectName}
         appServerTurn={appServerTurn}
         appServerApproval={appServerApproval}
+        appServerGoal={appServerGoal}
         appServerNotice={appServerNotice}
         onAppServerApprovalDecision={(decision) =>
           appServerApproval ? respondToApproval(decision, appServerApproval.requestId) : respondToApproval(decision)
         }
+        onAppServerGoalSet={canResumeAppServerThread ? async (objective) => {
+          await setThreadGoal({
+            threadId: resumedThreadId || id,
+            objective,
+            status: 'active',
+          });
+        } : undefined}
+        onAppServerGoalStatusChange={appServerGoal ? async (status) => {
+          await setThreadGoal({ threadId: appServerGoal.data.threadId, status });
+        } : undefined}
+        onAppServerGoalEdit={appServerGoal ? async (objective, status, tokenBudget) => {
+          await setThreadGoal({
+            threadId: appServerGoal.data.threadId,
+            objective,
+            status,
+            tokenBudget,
+          });
+        } : undefined}
+        onAppServerGoalClear={appServerGoal ? async () => {
+          await clearThreadGoal(appServerGoal.data.threadId);
+        } : undefined}
         appServerInterrupt={appServerTurn ? async () => {
           await interruptTurn({
             threadId: appServerTurn.threadId || resumedThreadId || id,
             turnId: appServerTurn.turnId,
           });
         } : undefined}
-        appServerSend={canResumeAppServerThread ? async ({ content, cwd, model, onAccepted }) => {
+        appServerSend={canResumeAppServerThread ? async ({ content, cwd, model, mode, onAccepted }) => {
           const target = resolveHistoryTurnTarget({
             routeThreadId: id,
             resumedThreadId,
@@ -428,8 +465,19 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             content,
             cwd: turnCwd,
             model: turnModel,
+            mode,
             onAccepted,
           });
+        } : undefined}
+        appServerClearContextAndSend={canResumeAppServerThread ? async (content) => {
+          const acceptedTurn = await sendOneTurn({
+            content,
+            cwd: resumedCwd || sessionWorkingDirectory,
+            model: resumedModel || sessionModel || defaultAppServerModel,
+          });
+          if (acceptedTurn.threadId) {
+            router.push(`/chat/${encodeURIComponent(acceptedTurn.threadId)}`);
+          }
         } : undefined}
         appServerLoadEarlier={isAppServerThread && appServerThread && turnsNextCursor ? async () => {
           try {

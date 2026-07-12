@@ -4,8 +4,10 @@ import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListR
 import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
 import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadReadResponse";
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
+import type { ThreadGoal } from "@/codex/protocol/generated/v2/ThreadGoal";
 import type { JsonRpcNotification, JsonRpcRequest } from "@/codex/protocol/json-rpc";
 import type { AppServerApprovalRequest } from "./approval-adapter";
+import type { PlanImplementationPrompt } from "./plan-implementation-adapter";
 import type { AppServerTurnState } from "./turn-reducer";
 
 export type SourceBreadcrumb =
@@ -16,6 +18,13 @@ export type SourceBreadcrumb =
   | "app-server.thread/list"
   | "app-server.thread/read"
   | "app-server.thread/resume"
+  | "app-server.thread/goal/get"
+  | "app-server.thread/goal/updated"
+  | "app-server.thread/goal/cleared"
+  | "app-server.item/plan/delta"
+  | "app-server.item/completed"
+  | "app-server.turn/plan/updated"
+  | "app-server.thread/turns/list"
   | "app-server.notification"
   | "app-server.serverRequest"
   | "web-bridge";
@@ -38,6 +47,8 @@ export type CodexWebAppServerState = {
   activeTurn: Sourced<AppServerTurnState> | null;
   activeTurnsByThreadId: Record<string, Sourced<AppServerTurnState>>;
   turnSnapshots: Record<string, Sourced<AppServerTurnState>>;
+  goalsByThreadId: Record<string, Sourced<ThreadGoal>>;
+  planImplementationPromptByThreadId: Record<string, Sourced<PlanImplementationPrompt>>;
   pendingApprovals: AppServerApprovalRequest[];
   pendingApproval: Sourced<AppServerApprovalRequest> | null;
   diagnostics: Array<Sourced<JsonRpcNotification | JsonRpcRequest | { message: string }>>;
@@ -54,6 +65,8 @@ export const initialAppServerState: CodexWebAppServerState = {
   activeTurn: null,
   activeTurnsByThreadId: {},
   turnSnapshots: {},
+  goalsByThreadId: {},
+  planImplementationPromptByThreadId: {},
   pendingApprovals: [],
   pendingApproval: null,
   diagnostics: [],

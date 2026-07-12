@@ -2,6 +2,12 @@ import type { JsonRpcNotification } from "@/codex/protocol/json-rpc";
 import type { FileUpdateChange } from "@/codex/protocol/generated/v2/FileUpdateChange";
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 import type { TurnStatus } from "@/codex/protocol/generated/v2/TurnStatus";
+import type { MessageContentBlock } from "@/types";
+import {
+  planProgressFromSteps,
+  proposedPlanBlockFromText,
+  updatedPlanBlockFromNotification,
+} from "./plan-display-adapter";
 
 export type AppServerTurnStatus = "idle" | "starting" | "running" | "completed" | "failed" | "interrupted";
 
@@ -11,6 +17,10 @@ export type AppServerTurnState = {
   turnId: string;
   assistantText: string;
   reasoningText: string;
+  planText: string;
+  latestProposedPlanMarkdown: string | null;
+  planBlocks: MessageContentBlock[];
+  taskProgress: { completed: number; total: number } | null;
   durationMs?: number;
   items: ThreadItem[];
   toolOutputs: Record<string, string>;
@@ -25,6 +35,10 @@ export const initialAppServerTurnState: AppServerTurnState = {
   turnId: "",
   assistantText: "",
   reasoningText: "",
+  planText: "",
+  latestProposedPlanMarkdown: null,
+  planBlocks: [],
+  taskProgress: null,
   durationMs: undefined,
   items: [],
   toolOutputs: {},
@@ -110,6 +124,20 @@ export function reduceAppServerTurnNotification(
       const data = readRecord(params);
       const item = data.item;
       if (!isThreadItem(item)) return state;
+      if (item.type === "plan") {
+        const streamedPlan = state.planText.trim();
+        const planText = item.text.trim() || streamedPlan;
+        const completedBlock = proposedPlanBlockFromText(planText, "app-server.item/completed");
+        return {
+          ...state,
+          items: upsertItem(state.items, item),
+          planText,
+          latestProposedPlanMarkdown: planText || state.latestProposedPlanMarkdown,
+          planBlocks: completedBlock
+            ? replaceLatestProposedPlanBlock(state.planBlocks, completedBlock)
+            : state.planBlocks,
+        };
+      }
       return {
         ...state,
         items: upsertItem(state.items, item),
@@ -124,6 +152,35 @@ export function reduceAppServerTurnNotification(
       return {
         ...state,
         assistantText: state.assistantText + delta,
+      };
+    }
+
+    case "item/plan/delta": {
+      const data = readRecord(params);
+      const delta = data.delta;
+      if (typeof delta !== "string") return state;
+      const planText = state.planText + delta;
+      const block = proposedPlanBlockFromText(planText, "app-server.item/plan/delta");
+      return {
+        ...state,
+        planText,
+        planBlocks: block ? replaceLatestProposedPlanBlock(state.planBlocks, block) : state.planBlocks,
+      };
+    }
+
+    case "turn/plan/updated": {
+      const data = readRecord(params);
+      const notification = {
+        threadId: typeof data.threadId === "string" ? data.threadId : state.threadId,
+        turnId: typeof data.turnId === "string" ? data.turnId : state.turnId,
+        explanation: typeof data.explanation === "string" ? data.explanation : null,
+        plan: Array.isArray(data.plan) ? data.plan.filter(isTurnPlanStep) : [],
+      };
+      const block = updatedPlanBlockFromNotification(notification, "app-server.turn/plan/updated");
+      return {
+        ...state,
+        planBlocks: [...state.planBlocks, block],
+        taskProgress: planProgressFromSteps(notification.plan),
       };
     }
 
@@ -240,6 +297,17 @@ function appendRecordText(record: Record<string, string>, key: string, text: str
   };
 }
 
+function replaceLatestProposedPlanBlock(
+  blocks: MessageContentBlock[],
+  block: MessageContentBlock,
+): MessageContentBlock[] {
+  const index = blocks.findLastIndex((existing) => existing.type === "codex_proposed_plan");
+  if (index === -1) return [...blocks, block];
+  const next = [...blocks];
+  next[index] = block;
+  return next;
+}
+
 function isThreadItem(value: unknown): value is ThreadItem {
   const data = readRecord(value);
   return typeof data.id === "string" && typeof data.type === "string";
@@ -249,6 +317,14 @@ function isFileUpdateChange(value: unknown): value is FileUpdateChange {
   const data = readRecord(value);
   const kind = readRecord(data.kind);
   return typeof data.path === "string" && typeof kind.type === "string" && typeof data.diff === "string";
+}
+
+function isTurnPlanStep(value: unknown): value is { step: string; status: "pending" | "inProgress" | "completed" } {
+  const data = readRecord(value);
+  return (
+    typeof data.step === "string" &&
+    (data.status === "pending" || data.status === "inProgress" || data.status === "completed")
+  );
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
