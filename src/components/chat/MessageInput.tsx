@@ -62,7 +62,9 @@ import {
   type PendingContextSubTotals,
   composeSubmitPayload,
   GOAL_PROMPT_PLACEHOLDER,
+  PLAN_PROMPT_PLACEHOLDER,
   goalCommandFromPrompt,
+  planPromptFromInput,
 } from '@/lib/message-input-logic';
 import { QuickActions } from './QuickActions';
 import { CaretDown, CaretRight, Check, Gear, X } from '@/components/ui/icon';
@@ -102,7 +104,7 @@ interface MessageInputProps {
   // loading / no compatible provider / runtime-incompatible). The composer then
   // preserves the user's text + attachments. true / void means accepted — either
   // sent or queued — so the composer clears. (#615 screenshot-eaten fix)
-  onSend: (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[]) => boolean | void | Promise<boolean | void>;
+  onSend: (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], modeOverride?: string) => boolean | void | Promise<boolean | void>;
   onCommand?: (command: string) => void;
   onStop?: () => void;
   disabled?: boolean;
@@ -237,6 +239,23 @@ function GoalPromptModePill({ onCancel }: { onCancel: () => void }) {
       <button
         type="button"
         aria-label="取消目标"
+        onClick={onCancel}
+        className="pointer-events-auto ml-0.5 rounded p-0.5 text-muted-foreground/70 hover:bg-background/80 hover:text-foreground"
+      >
+        <X size={12} />
+      </button>
+    </span>
+  );
+}
+
+function PlanPromptModePill({ onCancel }: { onCancel: () => void }) {
+  return (
+    <span className="pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-muted/60 px-2.5 text-sm font-medium text-muted-foreground">
+      <ListChecks size={18} />
+      <span>计划</span>
+      <button
+        type="button"
+        aria-label="取消计划"
         onClick={onCancel}
         className="pointer-events-auto ml-0.5 rounded p-0.5 text-muted-foreground/70 hover:bg-background/80 hover:text-foreground"
       >
@@ -696,6 +715,7 @@ export function MessageInput({
     try { return sessionStorage.getItem(draftKey) || ''; } catch { return ''; }
   });
   const [goalPromptActive, setGoalPromptActive] = useState(false);
+  const [planPromptActive, setPlanPromptActive] = useState(false);
   // Track the last `initialValue` we've reconciled so the warm-navigation
   // sync below fires only when the prop ACTUALLY transitions (not on every
   // render where it's stable). State (not a ref) so the reconcile can run
@@ -849,12 +869,26 @@ export function MessageInput({
   const activateGoalPrompt = useCallback(() => {
     clearBadgesWithOrder();
     popover.closePopover();
+    setPlanPromptActive(false);
     setGoalPromptActive(true);
     setTimeout(() => textareaRef.current?.focus(), 0);
   }, [clearBadgesWithOrder, popover]);
 
   const cancelGoalPrompt = useCallback(() => {
     setGoalPromptActive(false);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
+
+  const activatePlanPrompt = useCallback(() => {
+    clearBadgesWithOrder();
+    popover.closePopover();
+    setGoalPromptActive(false);
+    setPlanPromptActive(true);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, [clearBadgesWithOrder, popover]);
+
+  const cancelPlanPrompt = useCallback(() => {
+    setPlanPromptActive(false);
     setTimeout(() => textareaRef.current?.focus(), 0);
   }, []);
 
@@ -1022,6 +1056,20 @@ export function MessageInput({
       setInputValue('');
       setGoalPromptActive(false);
       onCommand(goalCommand);
+      return;
+    }
+
+    if (planPromptActive) {
+      const planPrompt = planPromptFromInput(content);
+      if (!planPrompt) return;
+      if (disabled) abortComposerSubmit('composer-disabled');
+      if (isStreaming) abortComposerSubmit('composer-plan-streaming');
+      if (!onModeChange) abortComposerSubmit('composer-plan-mode-unavailable');
+      onModeChange('plan');
+      const accepted = await onSend(planPrompt, undefined, undefined, undefined, undefined, undefined, 'plan');
+      if (accepted === false) abortComposerSubmit('composer-plan-not-accepted');
+      setInputValue('');
+      setPlanPromptActive(false);
       return;
     }
 
@@ -1242,7 +1290,7 @@ export function MessageInput({
     // Note: nothing to clear post-await — text and dirs were
     // cleared optimistically above, and we must NOT re-clear (the user may have
     // typed the next message while the turn streamed, and that must survive).
-  }, [inputValue, goalPromptActive, mentionNodeTypes, directoryRefs, onSend, onCommand, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
+  }, [inputValue, goalPromptActive, planPromptActive, mentionNodeTypes, directoryRefs, onSend, onCommand, onModeChange, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1580,6 +1628,8 @@ export function MessageInput({
                 placeholder={
                   goalPromptActive
                     ? GOAL_PROMPT_PLACEHOLDER
+                    : planPromptActive
+                    ? PLAN_PROMPT_PLACEHOLDER
                     : isProviderLoading
                     ? t('messageInput.placeholderLoading' as TranslationKey)
                     : badges.length > 0
@@ -1616,7 +1666,7 @@ export function MessageInput({
                       label="计划模式"
                       description="开启计划模式"
                       disabled={modeChangeDisabled || !onModeChange}
-                      onSelect={() => onModeChange?.('plan')}
+                      onSelect={activatePlanPrompt}
                     />
                   </PromptInputActionMenuContent>
                 </PromptInputActionMenu>
@@ -1628,6 +1678,7 @@ export function MessageInput({
                   disabled={!onPermissionChange}
                 />
                 {goalPromptActive && <GoalPromptModePill onCancel={cancelGoalPrompt} />}
+                {planPromptActive && <PlanPromptModePill onCancel={cancelPlanPrompt} />}
               </PromptInputTools>
 
               <div className="ml-auto flex items-center gap-1">

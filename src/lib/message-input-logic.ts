@@ -51,6 +51,7 @@ export interface DirectSlashResult {
 }
 
 export const GOAL_PROMPT_PLACEHOLDER = '描述你的目标，定义可衡量的成果，以获得最佳效果';
+export const PLAN_PROMPT_PLACEHOLDER = '描述你的任务以生成计划...';
 
 // ─── Functions ───────────────────────────────────────────────────
 
@@ -332,6 +333,12 @@ export function goalCommandFromPrompt(prompt: string): string | null {
   const objective = prompt.trim();
   if (!objective) return null;
   return `/goal ${objective}`;
+}
+
+export function planPromptFromInput(prompt: string): string | null {
+  const task = prompt.trim();
+  if (!task) return null;
+  return task;
 }
 
 /**
