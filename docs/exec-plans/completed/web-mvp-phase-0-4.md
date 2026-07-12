@@ -1,7 +1,7 @@
 # Codex Web MVP Phase 0-4 执行计划
 
 > 创建时间：2026-07-06  
-> 状态：进行中  
+> 状态：Review passed  
 > 主线：围绕官方 `codex-rs/tui` 做 TUI-first Web 化。  
 > UI 基准：基于 `/home/rrssnas/code/CodexWeb` 的既有 UI 样式、布局和 Demo 展示接入真实 app-server；不得直接修改 `CodexWeb` 目录。  
 > 范围：只实现本地 Web bridge + CodexWeb 风格浏览器基础 UI + Thread / Turn / Item 生命周期。  
@@ -240,7 +240,7 @@ Phase 3 记录：
 - [x] 将 `item/commandExecution/requestApproval` 接入 CodexWeb 权限确认 UI，并按官方 schema 返回 response。
 - [x] 将 `item/fileChange/requestApproval` 接入 CodexWeb 权限确认 UI，并按官方 schema 返回 response。
 - [x] 将 `item/permissions/requestApproval` 接入 CodexWeb 权限确认 UI，并按官方 schema 返回 response。
-- [ ] 将 app-server item / tool / delta 状态映射到 CodexWeb 历史消息结构。
+- [x] 将 app-server item / tool / delta 状态映射到 CodexWeb 历史消息结构；Phase 6D/6F/6H 已补齐实时与历史映射，并明确刷新后只 replay app-server 历史 API 返回的真实 item，不伪造工具过程。
 - [x] Composer 在 active turn 期间禁用或进入可控状态，并保持 CodexWeb 输入框交互风格。
 
 验证：
@@ -894,7 +894,6 @@ Phase 6J 记录：
 
 实施计划：
 
-- [ ] 单元测试覆盖 approval 按 threadId 过滤：B 触发 approval 时，A 的 route 不显示 PermissionPrompt，B 的 route 精确匹配 requestId。
 - [x] 单元测试覆盖 approval 按 threadId 过滤：B 触发 approval 时，A 的 route 不显示 PermissionPrompt，B 的 route 精确匹配 requestId。
 - [x] 单元测试覆盖 interrupt 参数选择：A/B 同时 active 时，中断 A 只构造 A 的 `{ threadId, turnId }`，不回退到最后一个全局 `activeTurn`。
 - [x] 单元测试覆盖 failed/completed 隔离：A failed、B completed 时，selector 和渲染输入分别只返回本 thread 状态。
