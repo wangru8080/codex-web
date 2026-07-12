@@ -5,7 +5,7 @@
  * and can be tested directly without any framework setup.
  */
 
-import { BUILT_IN_COMMANDS, COMMAND_PROMPTS } from '@/lib/constants/commands';
+import { BUILT_IN_COMMANDS, COMMAND_PROMPTS } from './constants/commands';
 import type {
   PopoverItem,
   PopoverMode,
@@ -49,6 +49,8 @@ export interface DirectSlashResult {
   commandValue?: string;
   badge?: CommandBadge;
 }
+
+export const GOAL_PROMPT_PLACEHOLDER = '描述你的目标，定义可衡量的成果，以获得最佳效果';
 
 // ─── Functions ───────────────────────────────────────────────────
 
@@ -324,6 +326,12 @@ export function resolveDirectSlash(content: string): DirectSlashResult {
   }
 
   return { action: 'not_slash' };
+}
+
+export function goalCommandFromPrompt(prompt: string): string | null {
+  const objective = prompt.trim();
+  if (!objective) return null;
+  return `/goal ${objective}`;
 }
 
 /**

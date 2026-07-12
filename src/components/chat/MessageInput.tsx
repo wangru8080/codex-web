@@ -61,9 +61,11 @@ import {
   computePendingContextSubTotals,
   type PendingContextSubTotals,
   composeSubmitPayload,
+  GOAL_PROMPT_PLACEHOLDER,
+  goalCommandFromPrompt,
 } from '@/lib/message-input-logic';
 import { QuickActions } from './QuickActions';
-import { CaretDown, CaretRight, Check, Gear } from '@/components/ui/icon';
+import { CaretDown, CaretRight, Check, Gear, X } from '@/components/ui/icon';
 import { HandPalm, ListChecks, Paperclip, ShieldCheck, ShieldWarning, Target } from '@phosphor-icons/react';
 
 const MAX_MENTION_FILE_BYTES = 256 * 1024; // 256KB per @file mention
@@ -224,6 +226,23 @@ function FileAndFolderMenuItem() {
       label="文件和文件夹"
       onSelect={handleSelect}
     />
+  );
+}
+
+function GoalPromptModePill({ onCancel }: { onCancel: () => void }) {
+  return (
+    <span className="pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-muted/60 px-2.5 text-sm font-medium text-muted-foreground">
+      <Target size={18} />
+      <span>目标</span>
+      <button
+        type="button"
+        aria-label="取消目标"
+        onClick={onCancel}
+        className="pointer-events-auto ml-0.5 rounded p-0.5 text-muted-foreground/70 hover:bg-background/80 hover:text-foreground"
+      >
+        <X size={12} />
+      </button>
+    </span>
   );
 }
 
@@ -676,6 +695,7 @@ export function MessageInput({
     if (initialValue) return initialValue;
     try { return sessionStorage.getItem(draftKey) || ''; } catch { return ''; }
   });
+  const [goalPromptActive, setGoalPromptActive] = useState(false);
   // Track the last `initialValue` we've reconciled so the warm-navigation
   // sync below fires only when the prop ACTUALLY transitions (not on every
   // render where it's stable). State (not a ref) so the reconcile can run
@@ -825,6 +845,18 @@ export function MessageInput({
     clearBadges();
     setBadgeOrder({});
   }, [clearBadges]);
+
+  const activateGoalPrompt = useCallback(() => {
+    clearBadgesWithOrder();
+    popover.closePopover();
+    setGoalPromptActive(true);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, [clearBadgesWithOrder, popover]);
+
+  const cancelGoalPrompt = useCallback(() => {
+    setGoalPromptActive(false);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
 
   // Live refs to badge state so the gated-send restore in handleSubmit
   // reads the CURRENT value and never clobbers a badge the user picked during an
@@ -980,6 +1012,18 @@ export function MessageInput({
     const content = inputValue.trim();
 
     popover.closePopover();
+
+    if (goalPromptActive) {
+      const goalCommand = goalCommandFromPrompt(content);
+      if (!goalCommand) return;
+      if (disabled) abortComposerSubmit('composer-disabled');
+      if (isStreaming) abortComposerSubmit('composer-goal-streaming');
+      if (!onCommand) abortComposerSubmit('composer-goal-command-unavailable');
+      setInputValue('');
+      setGoalPromptActive(false);
+      onCommand(goalCommand);
+      return;
+    }
 
     // Convert PromptInput FileUIParts (with data URLs) to FileAttachment[]
     const convertFiles = async (): Promise<FileAttachment[]> => {
@@ -1198,7 +1242,7 @@ export function MessageInput({
     // Note: nothing to clear post-await — text and dirs were
     // cleared optimistically above, and we must NOT re-clear (the user may have
     // typed the next message while the turn streamed, and that must survive).
-  }, [inputValue, mentionNodeTypes, directoryRefs, onSend, onCommand, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
+  }, [inputValue, goalPromptActive, mentionNodeTypes, directoryRefs, onSend, onCommand, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1534,7 +1578,9 @@ export function MessageInput({
               <PromptInputTextarea
                 ref={textareaRef}
                 placeholder={
-                  isProviderLoading
+                  goalPromptActive
+                    ? GOAL_PROMPT_PLACEHOLDER
+                    : isProviderLoading
                     ? t('messageInput.placeholderLoading' as TranslationKey)
                     : badges.length > 0
                       ? t('messageInput.placeholderWithBadges' as TranslationKey)
@@ -1562,6 +1608,8 @@ export function MessageInput({
                       icon={<Target size={20} />}
                       label="目标"
                       description="设置 Codex 将持续努力实现的目标"
+                      disabled={!onCommand}
+                      onSelect={activateGoalPrompt}
                     />
                     <ComposerPlusMenuItem
                       icon={<ListChecks size={20} />}
@@ -1579,6 +1627,7 @@ export function MessageInput({
                   onPermissionChange={onPermissionChange}
                   disabled={!onPermissionChange}
                 />
+                {goalPromptActive && <GoalPromptModePill onCancel={cancelGoalPrompt} />}
               </PromptInputTools>
 
               <div className="ml-auto flex items-center gap-1">
