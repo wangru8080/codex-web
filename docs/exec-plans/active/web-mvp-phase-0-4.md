@@ -1138,5 +1138,5 @@ Smoke Ledger：
 - 真实模型调用需要账号、网络和额度，smoke 失败时要区分认证、网络、额度和协议问题。
 - 历史 session 如果 app-server 历史 API 只返回 `userMessage` / `agentMessage`，刷新后无法恢复工具中间过程；这是与官方 TUI 重启恢复一致的边界。后续若要跨刷新保留，需要另立非 TUI 等价的持久缓存设计并明确 source breadcrumb。
 - Goal / Plan 公开 app 文档对视觉细节描述有限，Phase 6U 实现需以官方 app-server 协议和 `codex-rs/tui` 代码快照为主基准；后续若官方 Codex app 文档补充 UI 截图，需要复核 Web 等价层。
-- `collaborationMode` 当前仍是 Web 兼容类型覆盖 generated schema lag；真实 app-server 已验证接受，后续 schema 生成文件包含该字段后应删除 `app-server-request-overrides.ts`。
+- `collaborationMode` 当前仍是 Web 兼容类型覆盖 generated schema lag；2026-07-12 用 `codex-cli 0.144.1` 重新生成临时 schema 后确认 `ThreadStartParams` / `TurnStartParams` 仍未包含该字段。已新增 guardrail test，后续 schema 包含该字段时测试会提示删除 `app-server-request-overrides.ts`。
 - 当前 `.next` 目录约 2.8G，Next dev 曾提示慢文件系统，首次 `/chat/[id]` 编译慢更像环境/缓存 I/O 风险；本轮只修复 3001 fallback Origin，未清理 `.next` 缓存。
