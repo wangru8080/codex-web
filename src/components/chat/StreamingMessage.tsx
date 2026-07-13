@@ -112,6 +112,7 @@ interface StreamingMessageProps {
   toolResults?: ToolResultInfo[];
   streamingToolOutput?: string;
   thinkingContent?: string;
+  processBlocks?: MessageContentBlock[];
   planBlocks?: MessageContentBlock[];
   statusText?: string;
   onForceStop?: () => void;
@@ -294,6 +295,7 @@ export function StreamingMessage({
   toolResults = [],
   streamingToolOutput,
   thinkingContent,
+  processBlocks = [],
   planBlocks = [],
   statusText,
   onForceStop,
@@ -326,7 +328,22 @@ export function StreamingMessage({
     }),
     [toolUses, toolResultsById]
   );
-  const hasProcessActivity = toolItems.length > 0 || !!thinkingContent;
+  const orderedProcessBlocks = useMemo(
+    () => processBlocks.filter((block) =>
+      block.type === 'thinking' || block.type === 'codex_process_text' || block.type === 'tool_use',
+    ),
+    [processBlocks],
+  );
+  const processToolResultsById = useMemo(
+    () => new Map(
+      processBlocks
+        .filter((block): block is Extract<MessageContentBlock, { type: 'tool_result' }> => block.type === 'tool_result')
+        .map((block) => [block.tool_use_id, block] as const),
+    ),
+    [processBlocks],
+  );
+  const hasOrderedProcess = orderedProcessBlocks.length > 0;
+  const hasProcessActivity = hasOrderedProcess || toolItems.length > 0 || !!thinkingContent;
 
   // Extract a human-readable summary of the running command
   const getRunningCommandSummary = (): string | undefined => {
@@ -361,6 +378,43 @@ export function StreamingMessage({
               </span>
             )}
           >
+            {hasOrderedProcess ? orderedProcessBlocks.map((block, index) => {
+              if (block.type === 'thinking') {
+                return (
+                  <ToolActionsGroup
+                    key={`process-thinking-${index}`}
+                    tools={[]}
+                    isStreaming={!finalStarted && isStreaming}
+                    thinkingContent={block.thinking}
+                    defaultExpanded={!finalStarted}
+                  />
+                );
+              }
+              if (block.type === 'codex_process_text') {
+                return (
+                  <div key={`process-text-${index}`} className="px-2 py-2 text-sm leading-7">
+                    <MessageResponse>{block.text}</MessageResponse>
+                  </div>
+                );
+              }
+              const result = processToolResultsById.get(block.id);
+              return (
+                <ToolActionsGroup
+                  key={block.id}
+                  tools={[{
+                    id: block.id,
+                    name: block.name,
+                    input: block.input,
+                    result: result?.content,
+                    isError: result?.is_error,
+                    media: result?.media,
+                  }]}
+                  isStreaming={!result}
+                  streamingToolOutput={!result ? streamingToolOutput : undefined}
+                  defaultExpanded={!result}
+                />
+              );
+            }) : <>
             {thinkingContent && (
               <ToolActionsGroup
                 tools={[]}
@@ -381,6 +435,7 @@ export function StreamingMessage({
                 />
               );
             })}
+            </>}
           </ProcessCollapseGroup>
         )}
 

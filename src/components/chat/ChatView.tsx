@@ -66,7 +66,7 @@ import {
   respondToPermission,
 } from '@/lib/stream-session-manager';
 import type { AppServerApprovalDecision, AppServerApprovalRequest } from '@/codex-web/approval-adapter';
-import { appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
+import { appServerTurnToMessageBlocks, appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
 import { deriveCodexWebToolState } from '@/codex-web/tool-adapter';
 import type { AppServerTurnState } from '@/codex-web/turn-reducer';
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
@@ -119,7 +119,7 @@ interface ChatViewProps {
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
   onAppServerGoalClear?: () => Promise<void>;
-  appServerSend?: (params: { content: string; cwd: string; model?: string; mode?: string; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
+  appServerSend?: (params: { content: string; cwd: string; model?: string; mode?: string; permissionProfile?: PermissionProfile; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
   appServerClearContextAndSend?: (content: string) => Promise<void>;
   appServerInterrupt?: () => Promise<void>;
   appServerLoadEarlier?: () => Promise<MessagesResponse>;
@@ -542,6 +542,10 @@ export function ChatView({
     () => deriveCodexWebToolState(appServerTurn ?? null),
     [appServerTurn],
   );
+  const appServerProcessBlocks = useMemo(
+    () => appServerTurn ? appServerTurnToMessageBlocks(appServerTurn) : [],
+    [appServerTurn],
+  );
   const appServerStatusText =
     appServerTurn?.status === 'running'
       ? 'Codex 正在处理...'
@@ -569,7 +573,7 @@ export function ChatView({
     !!appServerSend &&
     !!appServerTurn &&
     (appServerTurn.status === 'running' ||
-      (appServerTurnIsTerminal &&
+      (appServerLocalStreaming && appServerTurnIsTerminal &&
         (!!appServerTurn.assistantText.trim() ||
           !!appServerTurn.reasoningText.trim() ||
           appServerTurn.items.length > 0)));
@@ -577,24 +581,6 @@ export function ChatView({
     appServerTurnIsTerminal && typeof appServerTurn?.durationMs === 'number'
       ? Date.now() - appServerTurn.durationMs
       : streamSnapshot?.startedAt;
-  const renderedMessages = useMemo(() => {
-    if (!showAppServerTurnPanel || !appServerTurnIsTerminal || !appServerTurn?.assistantText.trim()) {
-      return messages;
-    }
-
-    const assistantText = appServerTurn.assistantText.trim();
-    let duplicateIndex = -1;
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (message.role === 'assistant' && message.content.includes(assistantText)) {
-        duplicateIndex = index;
-        break;
-      }
-    }
-
-    if (duplicateIndex < 0) return messages;
-    return messages.filter((_, index) => index !== duplicateIndex);
-  }, [appServerTurn, appServerTurnIsTerminal, messages, showAppServerTurnPanel]);
   const rewindPoints = getRewindPoints(activeSessionId);
   const finalizedAppServerTurnRef = useRef<string>('');
   const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
@@ -1329,6 +1315,7 @@ export function ChatView({
             cwd: workingDirectory,
             model: currentModel,
             mode: modeOverride ?? mode,
+            permissionProfile,
             onAccepted: (threadId) => {
               if (accepted) return;
               accepted = true;
@@ -1832,7 +1819,7 @@ export function ChatView({
       ) : (
         <>
         <MessageList
-        messages={renderedMessages}
+        messages={messages}
         streamingContent={streamingContent}
         isStreaming={isStreaming}
         showStreamingMessage={showAppServerTurnPanel || isStreaming}
@@ -1840,6 +1827,7 @@ export function ChatView({
         toolResults={toolResults}
         streamingToolOutput={streamingToolOutput}
         streamingThinkingContent={streamingThinkingContent}
+        processBlocks={appServerProcessBlocks}
         planBlocks={appServerTurn?.planBlocks}
         statusText={statusText}
         onForceStop={stopStreaming}

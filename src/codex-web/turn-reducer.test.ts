@@ -78,6 +78,40 @@ describe("reduceAppServerTurnNotification", () => {
     expect(state.errorMessage).toBe("模型不可用");
   });
 
+  it("按 itemId 分别累积 commentary 与 final answer", () => {
+    let state = createAcceptedTurnState("thread-1", "turn-1");
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "agentMessage", id: "comment-1", text: "", phase: "commentary", memoryCitation: null },
+      },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/agentMessage/delta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "comment-1", delta: "先搜索。" },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "agentMessage", id: "final-1", text: "", phase: "final_answer", memoryCitation: null },
+      },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/agentMessage/delta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "final-1", delta: "搜索完成。" },
+    });
+
+    expect(state.items).toMatchObject([
+      { id: "comment-1", text: "先搜索。", phase: "commentary" },
+      { id: "final-1", text: "搜索完成。", phase: "final_answer" },
+    ]);
+    expect(state.assistantText).toBe("搜索完成。");
+  });
+
   it("保存工具输出、文件 patch 和 MCP progress 增量", () => {
     let state = createStartingTurnState();
 

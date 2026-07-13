@@ -25,7 +25,7 @@ import { useNativeFolderPicker } from '@/hooks/useNativeFolderPicker';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
-import { appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
+import { appServerTurnToMessageBlocks, appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import { selectActiveTurnByThreadIds } from '@/codex-web/active-turns-adapter';
 import { getExistingNewChatThreadId } from '@/codex-web/new-chat-turn-routing';
@@ -93,6 +93,7 @@ function NewChatPageInner() {
     respondToApproval,
     setThreadGoal,
     clearThreadGoal,
+    readDirectory,
   } = useAppServerActions();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
@@ -372,30 +373,26 @@ function NewChatPageInner() {
     setModelReady(true);
   }, [appServerState.connection.data, appServerState.models]);
 
-  // Initialize workingDir from localStorage (or setup default), validating the path exists
+  // 初始化工作目录，并通过 app-server 验证目录仍然存在。
   useEffect(() => {
     let cancelled = false;
 
     const validateDir = async (path: string): Promise<boolean> => {
       try {
-        const res = await fetch(`/api/files/browse?dir=${encodeURIComponent(path)}`);
-        return res.ok;
+        await readDirectory(path);
+        return true;
       } catch {
         return false;
       }
     };
 
     const tryFallbackToDefault = async () => {
-      try {
-        const res = await fetch('/api/setup');
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (cancelled || !data?.defaultProject) return;
-        if (await validateDir(data.defaultProject) && !cancelled) {
-          setWorkingDir(data.defaultProject);
-          localStorage.setItem('codepilot:last-working-directory', data.defaultProject);
-        }
-      } catch { /* ignore */ }
+      const defaultProject = appServerState.threads?.data.data.find((thread) => thread.cwd.trim())?.cwd;
+      if (!defaultProject || cancelled) return;
+      if (await validateDir(defaultProject) && !cancelled) {
+        setWorkingDir(defaultProject);
+        localStorage.setItem('codepilot:last-working-directory', defaultProject);
+      }
     };
 
     const init = async () => {
@@ -424,15 +421,15 @@ function NewChatPageInner() {
       cancelled = true;
       window.removeEventListener('project-directory-changed', handler);
     };
-  }, []);
+  }, [appServerState.threads, readDirectory]);
 
-  // Load recent projects for empty state
+  // 最近项目来自 app-server thread/list。
   useEffect(() => {
-    fetch('/api/setup/recent-projects')
-      .then(r => r.ok ? r.json() : { projects: [] })
-      .then(data => setRecentProjects(data.projects || []))
-      .catch(() => {});
-  }, []);
+    const projects = appServerState.threads?.data.data
+      .map((thread) => thread.cwd.trim())
+      .filter(Boolean) ?? [];
+    setRecentProjects([...new Set(projects)].slice(0, 8));
+  }, [appServerState.threads]);
 
   const handleSelectFolder = useCallback(async () => {
     if (isElectron) {
@@ -626,12 +623,14 @@ function NewChatPageInner() {
               cwd: workingDir.trim(),
               model: currentModel,
               mode: modeOverride ?? mode,
+              permissionProfile,
             })
           : await sendOneTurn({
               content,
               cwd: workingDir.trim(),
               model: currentModel,
               mode: modeOverride ?? mode,
+              permissionProfile,
             });
 
         accepted = true;
@@ -762,6 +761,7 @@ function NewChatPageInner() {
               cwd: workingDir.trim(),
               model: currentModel,
               mode,
+              permissionProfile,
             });
             threadId = response.thread.id;
             setCreatedSessionId(threadId);
@@ -845,6 +845,10 @@ function NewChatPageInner() {
     if (!prompt || dismissedPlanPromptKey === appServerFinalTurnKey) return null;
     return prompt;
   }, [appServerFinalTurnKey, appServerTurn, dismissedPlanPromptKey, livePlanPromptTurnKey, mode]);
+  const appServerProcessBlocks = useMemo(
+    () => appServerTurn ? appServerTurnToMessageBlocks(appServerTurn) : [],
+    [appServerTurn],
+  );
 
   // Single composer stack — reused in both the new-chat hero (centered)
   // and the active-chat layout (bottom-pinned). Avoids duplicating
@@ -982,6 +986,7 @@ function NewChatPageInner() {
             toolUses={toolUses}
             toolResults={toolResults}
             streamingToolOutput={streamingToolOutput}
+            processBlocks={appServerProcessBlocks}
             planBlocks={appServerTurn?.planBlocks}
             statusText={statusText}
           />

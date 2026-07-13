@@ -34,6 +34,19 @@ export function appServerTurnToMessageContent(turn: AppServerTurnState): string 
   });
 }
 
+export function appServerTurnToMessageBlocks(turn: AppServerTurnState): MessageContentBlock[] {
+  return turnItemsToMessageBlocks({
+    items: turn.items,
+    assistantText: turn.assistantText,
+    durationMs: turn.durationMs,
+    reasoningText: turn.reasoningText,
+    planBlocks: turn.planBlocks,
+    toolOutputs: turn.toolOutputs,
+    filePatchChanges: turn.filePatchChanges,
+    mcpProgress: turn.mcpProgress,
+  });
+}
+
 export function turnItemsToMessageContent(args: TurnItemsToMessageContentArgs): string {
   const blocks = turnItemsToMessageBlocks(args);
   const hasProcessBlocks = blocks.some(
@@ -58,7 +71,8 @@ export function turnItemsToMessageContent(args: TurnItemsToMessageContentArgs): 
 export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): MessageContentBlock[] {
   const blocks: MessageContentBlock[] = [];
   const reasoningText = collectReasoningText(args.items, args.reasoningText);
-  const finalText = collectFinalText(args.items, args.assistantText);
+  const finalAgentMessage = selectFinalAgentMessage(args.items);
+  const finalText = finalAgentMessage?.text.trim() || args.assistantText?.trim() || "";
   let processCount = 0;
 
   if (reasoningText) {
@@ -67,6 +81,19 @@ export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): M
   }
 
   for (const item of args.items) {
+    if (item.type === "agentMessage") {
+      const text = item.text.trim();
+      if (text && item.id !== finalAgentMessage?.id) {
+        blocks.push({ type: "codex_process_text", text });
+        processCount += 1;
+      }
+      continue;
+    }
+
+    if (item.type === "reasoning") {
+      continue;
+    }
+
     if (item.type === "plan") {
       const block = proposedPlanBlockFromText(item.text, "app-server.item/completed");
       if (block) {
@@ -140,16 +167,17 @@ function collectReasoningText(items: ThreadItem[], reasoningText?: string): stri
   return uniqueJoined(parts);
 }
 
-function collectFinalText(items: ThreadItem[], assistantText?: string): string {
-  if (assistantText?.trim()) {
-    return assistantText.trim();
-  }
-
-  return items
-    .filter((item): item is Extract<ThreadItem, { type: "agentMessage" }> => item.type === "agentMessage")
-    .map((item) => item.text.trim())
-    .filter(Boolean)
-    .join("\n\n");
+function selectFinalAgentMessage(
+  items: ThreadItem[],
+): Extract<ThreadItem, { type: "agentMessage" }> | undefined {
+  const messages = items.filter(
+    (item): item is Extract<ThreadItem, { type: "agentMessage" }> =>
+      item.type === "agentMessage" && !!item.text.trim(),
+  );
+  return (
+    messages.findLast((item) => item.phase === "final_answer") ??
+    messages.findLast((item) => item.phase !== "commentary")
+  );
 }
 
 function uniqueJoined(parts: string[]): string {

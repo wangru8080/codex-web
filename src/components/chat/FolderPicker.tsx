@@ -18,18 +18,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAppServerActions } from '@/codex-web/AppServerProvider';
+import { directoryChildren, directoryParent } from '@/codex-web/directory-browser-adapter';
 import { useTranslation } from '@/hooks/useTranslation';
 
 interface FolderEntry {
   name: string;
   path: string;
-}
-
-interface BrowseResponse {
-  current: string;
-  parent: string | null;
-  directories: FolderEntry[];
-  drives?: string[];
 }
 
 interface FolderPickerProps {
@@ -41,35 +36,33 @@ interface FolderPickerProps {
 
 export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: FolderPickerProps) {
   const { t } = useTranslation();
+  const { readDirectory } = useAppServerActions();
   const [currentDir, setCurrentDir] = useState('');
   const [parentDir, setParentDir] = useState<string | null>(null);
   const [directories, setDirectories] = useState<FolderEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [pathInput, setPathInput] = useState('');
   const [drives, setDrives] = useState<string[]>([]);
+  const [error, setError] = useState('');
 
   const browse = useCallback(async (dir?: string) => {
+    const target = dir?.trim() || '/';
     setLoading(true);
+    setError('');
     try {
-      const url = dir
-        ? `/api/files/browse?dir=${encodeURIComponent(dir)}`
-        : '/api/files/browse';
-      const res = await fetch(url);
-      if (res.ok) {
-        const data: BrowseResponse = await res.json();
-        const current = typeof data.current === 'string' ? data.current : '';
-        setCurrentDir(current);
-        setParentDir(typeof data.parent === 'string' ? data.parent : null);
-        setDirectories(Array.isArray(data.directories) ? data.directories : []);
-        setPathInput(current);
-        setDrives(Array.isArray(data.drives) ? data.drives : []);
-      }
-    } catch {
-      // silently fail
+      const response = await readDirectory(target);
+      setCurrentDir(target);
+      setParentDir(directoryParent(target));
+      setDirectories(directoryChildren(target, response.entries));
+      setPathInput(target);
+      setDrives([]);
+    } catch (browseError) {
+      setDirectories([]);
+      setError(browseError instanceof Error ? browseError.message : String(browseError));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [readDirectory]);
 
   useEffect(() => {
     if (open) {
@@ -93,6 +86,7 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
   };
 
   const handleSelect = () => {
+    if (!currentDir) return;
     onSelect(currentDir);
     onOpenChange(false);
   };
@@ -189,11 +183,17 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
           </ScrollArea>
         </div>
 
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('folderPicker.cancel')}
           </Button>
-          <Button onClick={handleSelect} className="gap-2">
+          <Button onClick={handleSelect} disabled={!currentDir || loading || !!error} className="gap-2">
             <FolderOpen size={16} />
             {t('folderPicker.select')}
           </Button>

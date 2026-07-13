@@ -141,17 +141,27 @@ export function reduceAppServerTurnNotification(
       return {
         ...state,
         items: upsertItem(state.items, item),
-        assistantText: item.type === "agentMessage" ? item.text : state.assistantText,
+        assistantText:
+          item.type === "agentMessage" && item.phase !== "commentary"
+            ? item.text
+            : state.assistantText,
       };
     }
 
     case "item/agentMessage/delta": {
       const data = readRecord(params);
       const delta = data.delta;
-      if (typeof delta !== "string") return state;
+      const itemId = data.itemId;
+      if (typeof delta !== "string" || typeof itemId !== "string") return state;
+      const item = state.items.find(
+        (candidate): candidate is Extract<ThreadItem, { type: "agentMessage" }> =>
+          candidate.id === itemId && candidate.type === "agentMessage",
+      );
       return {
         ...state,
-        assistantText: state.assistantText + delta,
+        items: appendAgentMessageDelta(state.items, itemId, delta),
+        assistantText:
+          item?.phase === "commentary" ? state.assistantText : state.assistantText + delta,
       };
     }
 
@@ -295,6 +305,14 @@ function appendRecordText(record: Record<string, string>, key: string, text: str
     ...record,
     [key]: (record[key] ?? "") + text,
   };
+}
+
+function appendAgentMessageDelta(items: ThreadItem[], itemId: string, delta: string): ThreadItem[] {
+  return items.map((item) =>
+    item.id === itemId && item.type === "agentMessage"
+      ? { ...item, text: item.text + delta }
+      : item,
+  );
 }
 
 function replaceLatestProposedPlanBlock(

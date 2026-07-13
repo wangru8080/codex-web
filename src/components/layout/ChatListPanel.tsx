@@ -584,6 +584,7 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
         open={folderPickerOpen}
         onOpenChange={setFolderPickerOpen}
         onSelect={handleFolderSelect}
+        initialPath={workingDirectory || '/'}
       />
 
     </div>

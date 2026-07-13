@@ -8,6 +8,12 @@ describe("buildThreadResumeParams", () => {
       threadId: "thread-1",
       cwd: "/repo/web",
       model: "gpt-5.5",
+      runtimeOptions: {
+        approvalPolicy: "on-request",
+        approvalsReviewer: "user",
+        sandbox: "workspace-write",
+        config: { web_search: "live" },
+      },
     });
 
     expect(params).toEqual({
@@ -15,6 +21,9 @@ describe("buildThreadResumeParams", () => {
       cwd: "/repo/web",
       model: "gpt-5.5",
       approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+      sandbox: "workspace-write",
+      config: { web_search: "live" },
     });
     expect("history" in params).toBe(false);
   });

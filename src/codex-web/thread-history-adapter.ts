@@ -126,6 +126,7 @@ function isSupportedAssistantItem(item: ThreadItem): boolean {
     (item.type === "plan" && item.text.trim().length > 0) ||
     item.type === "reasoning" ||
     item.type === "commandExecution" ||
+    item.type === "webSearch" ||
     item.type === "fileChange" ||
     item.type === "mcpToolCall" ||
     item.type === "dynamicToolCall" ||
@@ -138,6 +139,8 @@ function isUnsupportedHistoryItem(item: ThreadItem): boolean {
     item.type !== "userMessage" &&
     item.type !== "agentMessage" &&
     item.type !== "plan" &&
+    item.type !== "reasoning" &&
+    item.type !== "webSearch" &&
     item.type !== "commandExecution" &&
     item.type !== "fileChange" &&
     item.type !== "mcpToolCall" &&

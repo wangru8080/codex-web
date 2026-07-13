@@ -45,6 +45,35 @@ describe("tool-item-adapter", () => {
     });
   });
 
+  it("映射 app-server webSearch item", () => {
+    const running: ThreadItem = {
+      type: "webSearch",
+      id: "search-1",
+      query: "今天科技新闻",
+      action: null,
+    };
+    const completed: ThreadItem = {
+      ...running,
+      action: { type: "search", query: "今天科技新闻", queries: null },
+    };
+
+    expect(codexWebToolUseFromItem(completed)).toEqual({
+      id: "search-1",
+      name: "web_search",
+      input: {
+        query: "今天科技新闻",
+        action: completed.action,
+        sourceBreadcrumb: "app-server.webSearch",
+      },
+    });
+    expect(codexWebToolResultFromItem(running)).toBeNull();
+    expect(codexWebToolResultFromItem(completed)).toMatchObject({
+      tool_use_id: "search-1",
+      content: expect.stringContaining("source: app-server.webSearch"),
+      is_error: false,
+    });
+  });
+
   it("把 declined command 和 failed fileChange 映射为 error", () => {
     const declinedCommand: ThreadItem = {
       type: "commandExecution",

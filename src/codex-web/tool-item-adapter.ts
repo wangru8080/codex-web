@@ -44,6 +44,18 @@ export function codexWebToolUseFromItem(
     };
   }
 
+  if (item.type === "webSearch") {
+    return {
+      id: item.id,
+      name: "web_search",
+      input: {
+        query: item.query,
+        action: item.action,
+        sourceBreadcrumb: "app-server.webSearch",
+      },
+    };
+  }
+
   if (item.type === "fileChange") {
     const changes = context.fileChanges ?? item.changes;
     return {
@@ -124,6 +136,19 @@ export function codexWebToolResultFromItem(
       content: formatCommandExecutionResult(item, context),
       is_error:
         item.status === "failed" || item.status === "declined" || (item.exitCode ?? 0) !== 0,
+    };
+  }
+
+  if (item.type === "webSearch") {
+    if (!item.action) return null;
+    return {
+      tool_use_id: item.id,
+      content: [
+        `query: ${item.query}`,
+        `action: ${formatWebSearchAction(item.action)}`,
+        "source: app-server.webSearch",
+      ].join("\n"),
+      is_error: false,
     };
   }
 
@@ -295,4 +320,17 @@ function stringifyJson(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function formatWebSearchAction(
+  action: Extract<ThreadItem, { type: "webSearch" }>["action"] & {},
+): string {
+  if (action.type === "search") {
+    return action.query || action.queries?.join(", ") || "search";
+  }
+  if (action.type === "openPage") return action.url || "openPage";
+  if (action.type === "findInPage") {
+    return [action.pattern, action.url].filter(Boolean).join(" in ") || "findInPage";
+  }
+  return "other";
 }

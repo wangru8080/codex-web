@@ -400,7 +400,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             turnId: appServerTurn.turnId,
           });
         } : undefined}
-        appServerSend={canResumeAppServerThread ? async ({ content, cwd, model, mode, onAccepted }) => {
+        appServerSend={canResumeAppServerThread ? async ({ content, cwd, model, mode, permissionProfile, onAccepted }) => {
           const target = resolveHistoryTurnTarget({
             routeThreadId: id,
             resumedThreadId,
@@ -421,6 +421,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
               threadId,
               cwd: turnCwd,
               model: turnModel,
+              permissionProfile,
             });
             threadId = resume.thread.id;
             turnCwd = resume.cwd || turnCwd;
@@ -437,6 +438,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             cwd: turnCwd,
             model: turnModel,
             mode,
+            permissionProfile,
             onAccepted,
           });
         } : undefined}
@@ -445,6 +447,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             content,
             cwd: resumedCwd || sessionWorkingDirectory,
             model: resumedModel || sessionModel || defaultAppServerModel,
+            permissionProfile: sessionPermissionProfile,
           });
           if (acceptedTurn.threadId) {
             router.push(`/chat/${encodeURIComponent(acceptedTurn.threadId)}`);

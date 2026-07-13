@@ -110,6 +110,32 @@ describe("app-server-message-blocks", () => {
 
     expect(content).toBe("直接回答。");
   });
+
+  it("按 commentary、搜索、commentary、final 的原始顺序构建消息", () => {
+    const content = turnItemsToMessageContent({
+      items: [
+        { type: "agentMessage", id: "comment-1", text: "我先检索今天的新闻。", phase: "commentary", memoryCitation: null },
+        {
+          type: "webSearch",
+          id: "search-1",
+          query: "今天科技新闻",
+          action: { type: "search", query: "今天科技新闻", queries: null },
+        },
+        { type: "agentMessage", id: "comment-2", text: "我会核对发布日期。", phase: "commentary", memoryCitation: null },
+        { type: "agentMessage", id: "final-1", text: "这是今天的科技新闻。", phase: "final_answer", memoryCitation: null },
+      ],
+      durationMs: 283000,
+    });
+
+    expect(JSON.parse(content)).toEqual([
+      { type: "codex_process_text", text: "我先检索今天的新闻。" },
+      expect.objectContaining({ type: "tool_use", id: "search-1", name: "web_search" }),
+      expect.objectContaining({ type: "tool_result", tool_use_id: "search-1" }),
+      { type: "codex_process_text", text: "我会核对发布日期。" },
+      { type: "codex_summary", elapsed_ms: 283000, process_count: 3 },
+      { type: "text", text: "这是今天的科技新闻。" },
+    ]);
+  });
 });
 
 function commandExecutionItem(): ThreadItem {

@@ -6,6 +6,26 @@ import { deriveCodexWebToolState } from "./tool-adapter";
 import { TOOL_OUTPUT_DISPLAY_BYTE_LIMIT } from "./tool-output-display";
 
 describe("deriveCodexWebToolState", () => {
+  it("把 webSearch 映射为完成的搜索工具 cell", () => {
+    const turn: AppServerTurnState = {
+      ...createStartingTurnState(),
+      items: [{
+        type: "webSearch",
+        id: "search-1",
+        query: "今天科技新闻",
+        action: { type: "search", query: "今天科技新闻", queries: null },
+      }],
+    };
+
+    const state = deriveCodexWebToolState(turn);
+    expect(state.toolUses).toEqual([
+      expect.objectContaining({ id: "search-1", name: "web_search" }),
+    ]);
+    expect(state.toolResults).toEqual([
+      expect.objectContaining({ tool_use_id: "search-1", is_error: false }),
+    ]);
+  });
+
   it("把运行中的 commandExecution 映射为 CodexWeb 工具 cell", () => {
     const turn: AppServerTurnState = {
       ...createStartingTurnState(),

@@ -3,6 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import type { InitializeResponse } from "@/codex/protocol/generated/InitializeResponse";
+import type { ConfigReadResponse } from "@/codex/protocol/generated/v2/ConfigReadResponse";
+import type { FsReadDirectoryResponse } from "@/codex/protocol/generated/v2/FsReadDirectoryResponse";
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
 import type { ThreadListParams } from "@/codex/protocol/generated/v2/ThreadListParams";
@@ -20,6 +22,7 @@ import type { TurnInterruptResponse } from "@/codex/protocol/generated/v2/TurnIn
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
 import type { TurnStartResponse } from "@/codex/protocol/generated/v2/TurnStartResponse";
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
+import type { PermissionProfile } from "@/types";
 import {
   buildApprovalResponse,
   mapServerRequestToApproval,
@@ -46,6 +49,7 @@ import {
 import { AppServerBrowserClient } from "./app-server-browser-client";
 import { withPlanCollaborationMode } from "./app-server-collaboration-mode";
 import { appServerInitializeCapabilities } from "./app-server-capabilities";
+import { threadRuntimeOptions, turnRuntimeOptions } from "./app-server-runtime-options";
 import { resolveCodexBridgeUrl } from "./bridge-url-runtime";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
 import type {
@@ -79,18 +83,21 @@ export type SendOneTurnParams = {
   cwd: string;
   model?: string;
   mode?: string;
+  permissionProfile?: PermissionProfile;
 };
 
 export type StartThreadParams = {
   cwd: string;
   model?: string;
   mode?: string;
+  permissionProfile?: PermissionProfile;
 };
 
 export type ResumeThreadParams = {
   threadId: string;
   cwd?: string;
   model?: string;
+  permissionProfile?: PermissionProfile;
 };
 
 export type SendTurnInThreadParams = {
@@ -99,6 +106,7 @@ export type SendTurnInThreadParams = {
   cwd: string;
   model?: string;
   mode?: string;
+  permissionProfile?: PermissionProfile;
   onAccepted?: (threadId: string) => void;
 };
 
@@ -111,6 +119,7 @@ export type AppServerActions = {
   refreshThreads: () => Promise<ThreadListResponse>;
   readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
   listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
+  readDirectory: (path: string) => Promise<FsReadDirectoryResponse>;
   getThreadGoal: (threadId: string) => Promise<ThreadGoalGetResponse>;
   setThreadGoal: (params: ThreadGoalSetParams) => Promise<ThreadGoalSetResponse>;
   clearThreadGoal: (threadId: string) => Promise<ThreadGoalClearResponse>;
@@ -405,6 +414,18 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return (await client.request("thread/turns/list", params)) as ThreadTurnsListResponse;
   }, []);
 
+  const readDirectory = useCallback(async (path: string) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+    const normalized = path.trim();
+    if (!normalized) {
+      throw new Error("目录路径不能为空");
+    }
+    return (await client.request("fs/readDirectory", { path: normalized })) as FsReadDirectoryResponse;
+  }, []);
+
   const getThreadGoal = useCallback(async (threadId: string) => {
     const client = clientRef.current;
     if (!client) {
@@ -441,18 +462,19 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
-  const startThread = useCallback(async ({ cwd, model, mode }: StartThreadParams) => {
+  const startThread = useCallback(async ({ cwd, model, mode, permissionProfile = "request_approval" }: StartThreadParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
     }
 
+    const effectiveConfig = await readEffectiveConfig(client, cwd);
     const threadParams: ThreadStartParamsWithCollaborationMode = withPlanCollaborationMode({
       cwd,
       model: model || null,
-      approvalPolicy: "on-request",
       threadSource: "codex_web",
       serviceName: "codex_web",
+      ...threadRuntimeOptions(permissionProfile, effectiveConfig),
     }, mode, model);
     const response = (await client.request("thread/start", threadParams)) as ThreadStartResponse;
     void refreshThreads().catch(() => undefined);
@@ -476,15 +498,21 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
-  const resumeThread = useCallback(async ({ threadId, cwd, model }: ResumeThreadParams) => {
+  const resumeThread = useCallback(async ({ threadId, cwd, model, permissionProfile = "request_approval" }: ResumeThreadParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
     }
 
+    const effectiveConfig = await readEffectiveConfig(client, cwd);
     const response = (await client.request(
       "thread/resume",
-      buildThreadResumeParams({ threadId, cwd, model }),
+      buildThreadResumeParams({
+        threadId,
+        cwd,
+        model,
+        runtimeOptions: threadRuntimeOptions(permissionProfile, effectiveConfig),
+      }),
     )) as ThreadResumeResponse;
     setState((current) => ({
       ...current,
@@ -494,7 +522,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
-  const sendTurnInThread = useCallback(async ({ threadId, content, cwd, model, mode, onAccepted }: SendTurnInThreadParams) => {
+  const sendTurnInThread = useCallback(async ({ threadId, content, cwd, model, mode, permissionProfile = "request_approval", onAccepted }: SendTurnInThreadParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -517,7 +545,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       input: [{ type: "text", text: trimmed, text_elements: [] }],
       cwd,
       model: model || null,
-      approvalPolicy: "on-request",
+      ...turnRuntimeOptions(permissionProfile, cwd),
     }, mode, model);
     let turnResponse: TurnStartResponse;
     try {
@@ -555,7 +583,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return acceptedTurn;
   }, [refreshThreads]);
 
-  const sendOneTurn = useCallback(async ({ content, cwd, model, mode }: SendOneTurnParams) => {
+  const sendOneTurn = useCallback(async ({ content, cwd, model, mode, permissionProfile = "request_approval" }: SendOneTurnParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -570,12 +598,13 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       activeTurn: { source: "app-server.notification", data: createStartingTurnState() },
     }));
 
+    const effectiveConfig = await readEffectiveConfig(client, cwd);
     const threadParams: ThreadStartParamsWithCollaborationMode = withPlanCollaborationMode({
       cwd,
       model: model || null,
-      approvalPolicy: "on-request",
       threadSource: "codex_web",
       serviceName: "codex_web",
+      ...threadRuntimeOptions(permissionProfile, effectiveConfig),
     }, mode, model);
     let threadResponse: ThreadStartResponse;
     try {
@@ -603,7 +632,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }),
     }));
 
-    return sendTurnInThread({ threadId, content: trimmed, cwd, model, mode });
+    return sendTurnInThread({ threadId, content: trimmed, cwd, model, mode, permissionProfile });
   }, [sendTurnInThread]);
 
   const interruptTurn = useCallback(async (params?: InterruptTurnParams) => {
@@ -636,13 +665,14 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       refreshThreads,
       readThread,
       listThreadTurns,
+      readDirectory,
       getThreadGoal,
       setThreadGoal,
       clearThreadGoal,
       respondToApproval,
       resetTurn,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn],
   );
 
   return (
@@ -830,4 +860,14 @@ function threadListParams(): ThreadListParams {
     sortDirection: "desc",
     archived: false,
   };
+}
+
+async function readEffectiveConfig(
+  client: AppServerBrowserClient,
+  cwd?: string,
+): Promise<ConfigReadResponse> {
+  return (await client.request("config/read", {
+    includeLayers: false,
+    cwd: cwd?.trim() || null,
+  })) as ConfigReadResponse;
 }

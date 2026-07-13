@@ -283,25 +283,21 @@ export function ProcessCollapseGroup({
   })();
 
   return (
-    <div className="w-[min(100%,48rem)]">
+    <div className="w-full">
       <button
         type="button"
         onClick={() => setUserExpandedState((prev) => prev !== null ? !prev : !expanded)}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-2 px-2 py-1 text-xs rounded-md transition-colors hover:bg-muted/30"
+        className="flex w-full items-center gap-1.5 border-b border-border/60 py-2.5 text-sm transition-colors hover:text-foreground"
       >
-        {active ? (
-          <SpinnerGap size={14} className="shrink-0 animate-spin text-muted-foreground/60" />
-        ) : (
-          <CodexWebIcon name="terminal" size="sm" className="shrink-0 text-muted-foreground/70" aria-hidden />
-        )}
-        <span className="font-medium text-muted-foreground/70 truncate">
+        <span className="font-normal text-muted-foreground truncate">
           {summary ?? fallbackSummary}
         </span>
+        {active && <SpinnerGap size={14} className="shrink-0 animate-spin text-muted-foreground/60" />}
         <CaretRight
-          size={12}
+          size={15}
           className={cn(
-            "shrink-0 text-muted-foreground/60 transition-transform duration-200 ml-auto",
+            "shrink-0 text-muted-foreground/60 transition-transform duration-200",
             expanded && "rotate-90"
           )}
         />
@@ -321,9 +317,11 @@ export function ProcessCollapseGroup({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.12, ease: 'easeOut' }}
-              className="ml-1.5 mt-0.5 border-l-2 border-border/50 pl-2"
+              className="mt-0.5"
             >
-              {children}
+              <div className="pt-3">
+                {children}
+              </div>
             </motion.div>
           </motion.div>
         )}
