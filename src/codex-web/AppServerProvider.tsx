@@ -46,6 +46,7 @@ import {
 import { AppServerBrowserClient } from "./app-server-browser-client";
 import { withPlanCollaborationMode } from "./app-server-collaboration-mode";
 import { appServerInitializeCapabilities } from "./app-server-capabilities";
+import { resolveCodexBridgeUrl } from "./bridge-url-runtime";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
 import type {
   ThreadStartParamsWithCollaborationMode,
@@ -119,18 +120,56 @@ export type AppServerActions = {
 
 export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<CodexWebAppServerState>(initialAppServerState);
-  const bridgeUrl = useMemo(() => process.env.NEXT_PUBLIC_CODEX_BRIDGE_URL ?? "", []);
+  const publicBridgeUrl = useMemo(() => process.env.NEXT_PUBLIC_CODEX_BRIDGE_URL ?? "", []);
+  const [bridgeUrl, setBridgeUrl] = useState(publicBridgeUrl);
+  const [bridgeUrlResolved, setBridgeUrlResolved] = useState(() => !!publicBridgeUrl);
   const clientRef = useRef<AppServerBrowserClient | null>(null);
   const approvalResponseStateRef = useRef<ApprovalResponseGuardState>({});
 
   useEffect(() => {
+    if (publicBridgeUrl) {
+      return;
+    }
+
+    let disposed = false;
+    setState((current) => ({ ...current, connection: { source: "web-bridge", data: "connecting" } }));
+
+    resolveCodexBridgeUrl("")
+      .then((url) => {
+        if (disposed) return;
+        setBridgeUrl(url);
+        setBridgeUrlResolved(true);
+      })
+      .catch((error) => {
+        if (disposed) return;
+        setBridgeUrlResolved(true);
+        setState((current) => ({
+          ...current,
+          connection: { source: "web-bridge", data: "failed" },
+          diagnostics: appendDiagnostic(current.diagnostics, {
+            source: "web-bridge",
+            data: { message: error instanceof Error ? error.message : String(error) },
+          }),
+        }));
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [publicBridgeUrl]);
+
+  useEffect(() => {
+    if (!bridgeUrlResolved) {
+      return;
+    }
+
     if (!bridgeUrl) {
       setState((current) => ({
         ...current,
         connection: { source: "web-bridge", data: "failed" },
         diagnostics: appendDiagnostic(current.diagnostics, {
           source: "web-bridge",
-          data: { message: "NEXT_PUBLIC_CODEX_BRIDGE_URL 未设置" },
+          data: { message: "CODEX_WEB_BRIDGE_URL 未设置" },
         }),
       }));
       return;
