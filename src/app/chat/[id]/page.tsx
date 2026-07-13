@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, use } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import type { Message, MessagesResponse, ChatSession, PermissionProfile } from '@/types';
+import type { Message, ChatSession, PermissionProfile } from '@/types';
 import { ChatView } from '@/components/chat/ChatView';
 import { SpinnerGap } from "@/components/ui/icon";
 import { usePanel } from '@/hooks/usePanel';
@@ -123,104 +123,75 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
 
     let cancelled = false;
 
+    if (appServerState.connection.data !== 'connected') {
+      if (appServerState.connection.data === 'failed') {
+        setError('Codex app-server connection failed');
+        setSessionInfoLoaded(true);
+        setLoading(false);
+      }
+      return () => { cancelled = true; };
+    }
+
     async function loadSessionAndMessages() {
       try {
-        const encodedId = encodeURIComponent(id);
-        if (appServerState.connection.data === 'connected') {
-          const response = await readThread(id, { includeTurns: false });
+        const response = await readThread(id, { includeTurns: false });
+        if (cancelled) return;
+        setAppServerThread(response.thread);
+        const session = threadToChatSession(response.thread);
+        applySession(session);
+        try {
+          const turnsPage = await listThreadTurns({
+            threadId: id,
+            cursor: null,
+            limit: 30,
+            sortDirection: "desc",
+            itemsView: "full",
+          });
           if (cancelled) return;
-          setAppServerThread(response.thread);
-          const session = threadToChatSession(response.thread);
-          applySession(session);
+          setMessages(
+            threadTurnsPageToMessages(response.thread, turnsPage.data, "desc", turnSnapshotsRef.current),
+          );
+          setLatestHistoryTurn(
+            latestHistoryTurnFromPage(
+              turnsPage.data,
+              "desc",
+              "app-server.thread/turns/list",
+            ),
+          );
+          setHasMore(!!turnsPage.nextCursor);
+          setTurnsNextCursor(turnsPage.nextCursor);
+        } catch (pageError) {
+          if (cancelled) return;
+          let fallbackThread = response.thread;
           try {
-            const turnsPage = await listThreadTurns({
-              threadId: id,
-              cursor: null,
-              limit: 30,
-              sortDirection: "desc",
-              itemsView: "full",
-            });
+            const fallbackResponse = await readThread(id, { includeTurns: true });
             if (cancelled) return;
-            setMessages(
-              threadTurnsPageToMessages(response.thread, turnsPage.data, "desc", turnSnapshotsRef.current),
-            );
-            setLatestHistoryTurn(
-              latestHistoryTurnFromPage(
-                turnsPage.data,
-                "desc",
-                "app-server.thread/turns/list",
-              ),
-            );
-            setHasMore(!!turnsPage.nextCursor);
-            setTurnsNextCursor(turnsPage.nextCursor);
-          } catch (pageError) {
-            if (cancelled) return;
-            let fallbackThread = response.thread;
-            try {
-              const fallbackResponse = await readThread(id, { includeTurns: true });
-              if (cancelled) return;
-              fallbackThread = fallbackResponse.thread;
-              setAppServerThread(fallbackThread);
-            } catch {
-              // 保留 metadata-only thread；错误 banner 会说明分页失败。
-            }
-            const result = threadToMessages(fallbackThread);
-            const snapshotMessages = applyTurnSnapshotsToMessages(
-              fallbackThread,
-              result.messages,
-              turnSnapshotsRef.current,
-            );
-            setLatestHistoryTurn(
-              latestHistoryTurnFromPage(
-                fallbackThread.turns,
-                "asc",
-                "app-server.thread/read",
-              ),
-            );
-            setMessages(snapshotMessages);
-            setHasMore(false);
-            setTurnsNextCursor(null);
-            setPaginationNotice(historyPaginationFailureNotice(pageError));
-            if (result.unsupportedItemCount > 0) {
-              console.info(`Phase 5A 暂未渲染 ${result.unsupportedItemCount} 个历史工具 item`);
-            }
+            fallbackThread = fallbackResponse.thread;
+            setAppServerThread(fallbackThread);
+          } catch {
+            // 保留 metadata-only thread；错误 banner 会说明分页失败。
           }
-          return;
-        }
-
-        const sessionRes = await fetch(`/api/chat/sessions/${encodedId}`);
-        if (cancelled) return;
-        if (sessionRes.ok) {
-          const data: { session: ChatSession } = await sessionRes.json();
-          if (cancelled) return;
-          applySession(data.session);
-          const { resolveSessionModel } = await import('@/lib/resolve-session-model');
-          if (cancelled) return;
-          const resolved = await resolveSessionModel(data.session.model || '', data.session.provider_id || '');
-          if (cancelled) return;
-          setSessionModel(resolved.model);
-          setSessionProviderId(resolved.providerId);
-          setSessionRuntimePin(data.session.runtime_pin || '');
-          setSessionPermissionProfile(data.session.permission_profile || 'request_approval');
-          setSessionMode((data.session.mode as 'code' | 'plan') || 'code');
-          setSessionHasSummary(!!data.session.context_summary);
-          setSessionReadOnly(!!data.session.read_only);
-        }
-
-        const messageUrl = `/api/chat/sessions/${encodedId}/messages?limit=30`;
-        const res = await fetch(messageUrl);
-        if (cancelled) return;
-        if (!res.ok) {
-          if (res.status === 404) {
-            setError('Session not found');
-            return;
+          const result = threadToMessages(fallbackThread);
+          const snapshotMessages = applyTurnSnapshotsToMessages(
+            fallbackThread,
+            result.messages,
+            turnSnapshotsRef.current,
+          );
+          setLatestHistoryTurn(
+            latestHistoryTurnFromPage(
+              fallbackThread.turns,
+              "asc",
+              "app-server.thread/read",
+            ),
+          );
+          setMessages(snapshotMessages);
+          setHasMore(false);
+          setTurnsNextCursor(null);
+          setPaginationNotice(historyPaginationFailureNotice(pageError));
+          if (result.unsupportedItemCount > 0) {
+            console.info(`Phase 5A 暂未渲染 ${result.unsupportedItemCount} 个历史工具 item`);
           }
-          throw new Error('Failed to load messages');
         }
-        const data: MessagesResponse = await res.json();
-        if (cancelled) return;
-        setMessages(data.messages);
-        setHasMore(data.hasMore ?? false);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to load messages');

@@ -55,8 +55,14 @@ interface PolledNotification {
 export function useNotificationPoll() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Codex Web 的真实运行时通知来自 app-server notification stream。
+  // 旧 CodexWeb 任务队列 `/api/tasks/notify` 在当前 Web app-server 模式下
+  // 没有 route，默认禁用以避免生产环境每 5 秒刷 404。
+  const legacyTaskNotificationsEnabled = false;
+
   // Request notification permission on mount (web/dev mode only)
   useEffect(() => {
+    if (!legacyTaskNotificationsEnabled) return;
     if (
       typeof window !== 'undefined' &&
       !window.electronAPI?.notification &&
@@ -68,6 +74,8 @@ export function useNotificationPoll() {
   }, []);
 
   useEffect(() => {
+    if (!legacyTaskNotificationsEnabled) return;
+
     async function poll() {
       try {
         const res = await fetch('/api/tasks/notify');

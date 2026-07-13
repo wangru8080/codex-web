@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { UpdateInfo, UpdateContextValue } from "@/hooks/useUpdate";
 
-const CHECK_INTERVAL = 8 * 60 * 60 * 1000; // 8 hours
 const DISMISSED_VERSION_KEY = "codepilot_dismissed_update_version";
 // Per-session dismiss: clicking "稍后" in this run shouldn't make the
 // dialog re-appear on every page navigation. Stored in sessionStorage
@@ -92,30 +91,11 @@ export function useUpdateChecker(): UpdateContextValue {
     return cleanup;
   }, [isNativeUpdater]);
 
-  // --- Browser-mode update check (fallback for non-Electron) ---
+  // --- Browser-mode update check ---
   const checkForUpdatesBrowser = useCallback(async () => {
-    setChecking(true);
-    try {
-      const res = await fetch("/api/app/updates");
-      if (!res.ok) return;
-      const data = await res.json();
-      const info: UpdateInfo = {
-        ...data,
-        downloadProgress: null,
-        readyToInstall: false,
-        isNativeUpdate: false,
-        lastError: null,
-      };
-      setUpdateInfo(info);
-
-      if (info.updateAvailable && !isVersionDismissed(info.latestVersion)) {
-        setShowDialog(true);
-      }
-    } catch {
-      // silently ignore network errors
-    } finally {
-      setChecking(false);
-    }
+    // Browser Web 版不再调用旧 CodexWeb `/api/app/updates` route。
+    // 更新检查属于桌面壳能力；Electron native updater 仍在上方保留。
+    setChecking(false);
   }, []);
 
   // --- Unified check: native first, browser fallback ---
@@ -131,13 +111,10 @@ export function useUpdateChecker(): UpdateContextValue {
     await checkForUpdatesBrowser();
   }, [isNativeUpdater, checkForUpdatesBrowser]);
 
-  // Browser mode: periodic check (non-Electron or as fallback)
+  // Browser mode: no-op. Native Electron updater handles desktop update checks.
   useEffect(() => {
     if (isNativeUpdater) return; // native updater handles its own initial check
-    checkForUpdatesBrowser();
-    const id = setInterval(checkForUpdatesBrowser, CHECK_INTERVAL);
-    return () => clearInterval(id);
-  }, [isNativeUpdater, checkForUpdatesBrowser]);
+  }, [isNativeUpdater]);
 
   const dismissUpdate = useCallback(() => {
     setShowDialog(false);

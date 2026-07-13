@@ -33,7 +33,6 @@ import { FolderPicker } from "@/components/chat/FolderPicker";
 import {
   formatRelativeTime,
   groupSessionsByProject,
-  mergeSessionsForDisplay,
   loadCollapsedProjects,
   saveCollapsedProjects,
   COLLAPSED_INITIALIZED_KEY,
@@ -76,30 +75,11 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   const [projectListExpanded, setProjectListExpanded] = useState(false);
   const PROJECT_LIST_TRUNCATE_LIMIT = 10;
 
-  /** Read current model + provider_id from localStorage for new session creation */
-  const getCurrentModelAndProvider = useCallback(() => {
-    const model = typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') || '' : '';
-    const provider_id = typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-provider-id') || '' : '';
-    return { model, provider_id };
-  }, []);
-
   const handleFolderSelect = useCallback(async (path: string) => {
-    try {
-      const { model, provider_id } = getCurrentModelAndProvider();
-      const res = await fetch("/api/chat/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ working_directory: path, model, provider_id }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        window.dispatchEvent(new CustomEvent("session-created"));
-        router.push(`/chat/${data.session.id}`);
-      }
-    } catch {
-      // Silently fail
-    }
-  }, [router, getCurrentModelAndProvider]);
+    localStorage.setItem('codepilot:last-working-directory', path);
+    window.dispatchEvent(new CustomEvent('project-directory-changed', { detail: { path } }));
+    router.push(createNewChatHref());
+  }, [router]);
 
   const openFolderPicker = useCallback(async (defaultPath?: string) => {
     if (isElectron) {
@@ -124,8 +104,6 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
     });
   }, []);
 
-  // AbortController ref for cancelling in-flight requests
-  const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchSessions = useCallback(async () => {
@@ -139,26 +117,8 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
       return;
     }
 
-    // Cancel any in-flight request
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    try {
-      const dbPromise = fetch("/api/chat/sessions", { signal: controller.signal });
-      const cwd = workingDirectory
-        || (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-working-directory') || '' : '');
-      const codexPromise = cwd
-        ? fetch(`/api/codex/sessions?cwd=${encodeURIComponent(cwd)}`, { signal: controller.signal })
-        : Promise.resolve(null);
-      const [dbRes, codexRes] = await Promise.all([dbPromise, codexPromise]);
-      const dbSessions: ChatSession[] = dbRes.ok ? ((await dbRes.json()).sessions || []) : [];
-      const codexSessions: ChatSession[] = codexRes && codexRes.ok ? ((await codexRes.json()).sessions || []) : [];
-      setSessions(mergeSessionsForDisplay(dbSessions, codexSessions));
-    } catch (e) {
-      // Ignore abort errors; log others
-      if (e instanceof DOMException && e.name === 'AbortError') return;
-    }
-  }, [appServerSessions, appServerState.connection.data, refreshThreads, workingDirectory]);
+    setSessions(appServerSessions);
+  }, [appServerSessions, appServerState.connection.data, refreshThreads]);
 
   useEffect(() => {
     if (appServerState.connection.data === 'connected') {
@@ -177,7 +137,6 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   useEffect(() => {
     fetchSessions();
     return () => {
-      abortRef.current?.abort();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [fetchSessions]);
@@ -290,21 +249,9 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
     workingDirectory: string
   ) => {
     e.stopPropagation();
-    try {
-      const { model, provider_id } = getCurrentModelAndProvider();
-      const res = await fetch("/api/chat/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ working_directory: workingDirectory, model, provider_id }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        window.dispatchEvent(new CustomEvent("session-created"));
-        router.push(`/chat/${data.session.id}`);
-      }
-    } catch {
-      // Silently fail
-    }
+    localStorage.setItem('codepilot:last-working-directory', workingDirectory);
+    window.dispatchEvent(new CustomEvent('project-directory-changed', { detail: { path: workingDirectory } }));
+    router.push(createNewChatHref());
   };
 
   const filteredSessions = sessions;

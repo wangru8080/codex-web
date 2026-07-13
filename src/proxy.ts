@@ -7,7 +7,11 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  return mockApiResponse(request);
+  if (process.env.CODEX_WEB_DEMO === "1") {
+    return mockApiResponse(request) ?? NextResponse.next();
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {

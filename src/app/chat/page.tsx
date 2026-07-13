@@ -120,7 +120,7 @@ function NewChatPageInner() {
     | null
   >(null);
   const [mode, setMode] = useState('code');
-  // Codex-only 新建聊天：先用稳定默认值占位，再用 /api/codex/models 校正。
+  // Codex-only 新建聊天：先用稳定默认值占位，再用 app-server model/list 校正。
   const [modelReady, setModelReady] = useState(false);
   const [currentModel, setCurrentModel] = useState(DEFAULT_CODEX_MODEL);
   const [currentProviderId, setCurrentProviderId] = useState(DEFAULT_CODEX_PROVIDER_ID);

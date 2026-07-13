@@ -175,8 +175,9 @@ export function ChatView({
   const [activeSessionId, setActiveSessionId] = useState(sessionId);
   useEffect(() => { setActiveSessionId(sessionId); }, [sessionId]);
   const settingsLocked = readOnly || !!adoptCodexSessionId;
-  const resolvedMessageApiBase =
-    adoptCodexSessionId && activeSessionId !== sessionId
+  const resolvedMessageApiBase = appServerSend
+    ? null
+    : adoptCodexSessionId && activeSessionId !== sessionId
       ? `/api/chat/sessions/${encodeURIComponent(activeSessionId)}`
       : messageApiBase ?? `/api/chat/sessions/${encodeURIComponent(activeSessionId)}`;
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -222,6 +223,7 @@ export function ChatView({
    * Called with a delay to ensure pending persists have completed.
    */
   const reconcileWithDb = useCallback(() => {
+    if (!resolvedMessageApiBase) return;
     fetch(`${resolvedMessageApiBase}/messages?limit=50`)
       .then(res => res.ok ? res.json() : null)
       .then((data: MessagesResponse | null) => {
@@ -473,6 +475,12 @@ export function ChatView({
 
   // Fetch provider-specific options (with abort to prevent stale responses on fast switch)
   useEffect(() => {
+    if (isCodexOnlySession) {
+      setThinkingMode('adaptive');
+      setContext1m(false);
+      return;
+    }
+
     const pid = currentProviderId || 'env';
     const controller = new AbortController();
     fetch(`/api/providers/options?providerId=${encodeURIComponent(pid)}`, { signal: controller.signal })
@@ -485,11 +493,19 @@ export function ChatView({
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [currentProviderId]);
+  }, [currentProviderId, isCodexOnlySession]);
 
-  // /api/providers/models already returns upstreamModelId per model on the
-  // returned groups.
+  // Provider groups already carry upstreamModelId per model.
   useEffect(() => {
+    if (isCodexOnlySession) {
+      const models = (
+        providerGroups.find((g) => g.provider_id === currentProviderId)?.models ?? []
+      ) as Array<{ value: string; upstreamModelId?: string }>;
+      const model = findModelOption(models, currentModel);
+      setCurrentModelUpstream(model?.upstreamModelId);
+      return;
+    }
+
     const pid = currentProviderId || 'env';
     const controller = new AbortController();
     fetch('/api/providers/models', { signal: controller.signal })
@@ -506,7 +522,7 @@ export function ChatView({
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [currentProviderId, currentModel]);
+  }, [currentProviderId, currentModel, isCodexOnlySession, providerGroups]);
   useEffect(() => { if (initialPermissionProfile) setPermissionProfile(initialPermissionProfile); }, [initialPermissionProfile]);
 
   // Restore session-scoped last-generated images from sessionStorage
@@ -932,11 +948,13 @@ export function ChatView({
         if (!lastUserMessage) return;
         setContext1m(true);
         // Persist per-provider so future sessions keep 1M until user opts out.
-        fetch(`/api/providers/options?providerId=${encodeURIComponent(currentProviderId || 'env')}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ options: { context_1m: true } }),
-        }).catch(() => {});
+        if (!isCodexOnlySession) {
+          fetch(`/api/providers/options?providerId=${encodeURIComponent(currentProviderId || 'env')}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ options: { context_1m: true } }),
+          }).catch(() => {});
+        }
         setTimeout(() => sendMessageRef.current?.(lastUserMessage), 50);
         break;
       case 'switch_to_sonnet':
@@ -1102,6 +1120,7 @@ export function ChatView({
       const earliest = messages[0];
       const earliestRowId = (earliest as Message & { _rowid?: number })._rowid;
       if (!earliestRowId) return;
+      if (!resolvedMessageApiBase) return;
       const res = await fetch(`${resolvedMessageApiBase}/messages?limit=100&before=${earliestRowId}`);
       if (!res.ok) return;
       const data: MessagesResponse = await res.json();

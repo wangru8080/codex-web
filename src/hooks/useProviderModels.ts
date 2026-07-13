@@ -6,6 +6,11 @@ import type { ProviderModelGroup } from '@/types';
 // the local rule for this hook too.
 import type { ChatRuntimeParam } from '@/lib/chat-runtime-shared';
 import { isRuntimeId, type RuntimeId } from '@/lib/runtime/runtime-id';
+import { useAppServerState } from '@/codex-web/AppServerProvider';
+import {
+  appServerModelsToProviderGroup,
+  CODEX_ACCOUNT_PROVIDER_ID,
+} from '@/codex-web/app-server-model-groups';
 // Canonical-aware model matcher (tech-debt #37) — pure helper shared by the
 // composer (picker / auto-correct / run-status / context upstream) so every
 // surface resolves a saved canonical id the same way. Re-exported below for
@@ -150,6 +155,7 @@ export function useProviderModels(
   options: UseProviderModelsOptions = {},
 ): UseProviderModelsReturn {
   const codexOnly = options.codexOnly === true;
+  const appServerState = useAppServerState();
   const [providerGroups, setProviderGroups] = useState<ProviderModelGroup[]>([]);
   const [defaultProviderId, setDefaultProviderId] = useState<string>('');
   const [globalDefaultModel, setGlobalDefaultModel] = useState<string | undefined>();
@@ -180,39 +186,13 @@ export function useProviderModels(
     const signal = controller.signal;
 
     if (codexOnly) {
-      setFetchState('idle');
-      fetch('/api/codex/models', { signal })
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
-        })
-        .then((data) => {
-          if (signal.aborted) return;
-          const group = data?.group;
-          if (group && Array.isArray(group.models)) {
-            setProviderGroups([group]);
-            setDefaultProviderId('codex_account');
-            setGlobalDefaultProvider('codex_account');
-            setGlobalDefaultModel(group.models[0]?.value || undefined);
-            setRuntimeApplied('codex_runtime');
-          } else {
-            setProviderGroups([]);
-            setDefaultProviderId('');
-            setGlobalDefaultProvider('codex_account');
-            setGlobalDefaultModel(undefined);
-            setRuntimeApplied('codex_runtime');
-          }
-          setFetchState('loaded');
-        })
-        .catch((err) => {
-          if (err?.name === 'AbortError' || signal.aborted) return;
-          setProviderGroups([]);
-          setDefaultProviderId('');
-          setGlobalDefaultProvider('codex_account');
-          setGlobalDefaultModel(undefined);
-          setRuntimeApplied('codex_runtime');
-          setFetchState('failed');
-        });
+      const group = appServerModelsToProviderGroup(appServerState.models?.data);
+      setProviderGroups(group ? [group] : []);
+      setDefaultProviderId(group ? CODEX_ACCOUNT_PROVIDER_ID : '');
+      setGlobalDefaultProvider(CODEX_ACCOUNT_PROVIDER_ID);
+      setGlobalDefaultModel(group?.models[0]?.value || undefined);
+      setRuntimeApplied('codex_runtime');
+      setFetchState(appServerState.connection.data === 'connected' ? 'loaded' : 'idle');
       return;
     }
 
@@ -277,7 +257,7 @@ export function useProviderModels(
         setGlobalDefaultProvider(data?.options?.default_model_provider || undefined);
       })
       .catch(() => { /* aborted or network — silent best-effort */ });
-  }, [runtime, codexOnly]);
+  }, [appServerState.connection.data, appServerState.models, runtime, codexOnly]);
 
   // Load on mount and listen for provider changes.
   // fetchAll's first line is `setFetchState('idle')` to gate refetches —
