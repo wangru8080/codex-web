@@ -34,7 +34,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import type { ChatStatus } from 'ai';
-import type { FileAttachment, MentionRef, ProviderModelGroup, PermissionProfile } from '@/types';
+import type { FileAttachment, MentionRef, PermissionProfile } from '@/types';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
 import { useMentionTokenEstimate } from '@/hooks/useMentionTokenEstimate';
@@ -433,14 +433,6 @@ type ComposerModelOption = {
   supportedEffortLevels?: string[];
 };
 
-const FIXED_MODEL_OPTIONS = [
-  { label: 'GPT-5.5', value: 'gpt-5.5' },
-  { label: 'GPT-5.4', value: 'gpt-5.4' },
-  { label: 'GPT-5.4-Mini', value: 'gpt-5.4-mini' },
-  { label: 'GPT-5.3-Codex', value: 'gpt-5.3-codex' },
-  { label: 'GPT-5.2', value: 'gpt-5.2' },
-] as const;
-
 const EFFORT_OPTIONS = [
   { value: 'low', label: '低' },
   { value: 'medium', label: '中' },
@@ -448,34 +440,9 @@ const EFFORT_OPTIONS = [
   { value: 'xhigh', label: '超高' },
 ] as const;
 
-function normalizeModelKey(value: string): string {
-  return value.toLowerCase().replace(/[\s_-]+/g, '').replace(/^gpt/, '');
-}
-
 function displayModelShortLabel(label: string): string {
   const cleaned = label.replace(/^gpt[-\s]?/i, '').replace(/^GPT[-\s]?/, '');
   return cleaned || label;
-}
-
-function findFixedModel(
-  providerGroups: ProviderModelGroup[],
-  currentProviderIdValue: string,
-  fixedLabel: string,
-): { providerId: string; modelValue: string } | null {
-  const targetKey = normalizeModelKey(fixedLabel);
-  const groups = [
-    ...providerGroups.filter((group) => group.provider_id === currentProviderIdValue),
-    ...providerGroups.filter((group) => group.provider_id !== currentProviderIdValue),
-  ];
-
-  for (const group of groups) {
-    const match = group.models.find((model) => (
-      normalizeModelKey(model.label) === targetKey
-      || normalizeModelKey(model.value) === targetKey
-    ));
-    if (match) return { providerId: group.provider_id, modelValue: match.value };
-  }
-  return null;
 }
 
 function ComposerReasoningModelSelector({
@@ -484,7 +451,7 @@ function ComposerReasoningModelSelector({
   currentModelOption,
   currentModelValue,
   currentProviderIdValue,
-  providerGroups,
+  modelOptions,
   onModelChange,
   onProviderModelChange,
   disabled,
@@ -494,7 +461,7 @@ function ComposerReasoningModelSelector({
   currentModelOption?: ComposerModelOption;
   currentModelValue: string;
   currentProviderIdValue: string;
-  providerGroups: ProviderModelGroup[];
+  modelOptions: ComposerModelOption[];
   onModelChange?: (model: string) => void;
   onProviderModelChange?: (
     providerId: string,
@@ -506,10 +473,9 @@ function ComposerReasoningModelSelector({
   const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [selectedModelLabel, setSelectedModelLabel] = useState<string | null>(null);
   const effectiveEffort = selectedEffort === 'auto' ? 'high' : selectedEffort;
   const effortLabel = EFFORT_OPTIONS.find((item) => item.value === effectiveEffort)?.label ?? '高';
-  const modelLabel = selectedModelLabel || currentModelOption?.label || currentModelValue || FIXED_MODEL_OPTIONS[0].label;
+  const modelLabel = currentModelOption?.label || currentModelValue || modelOptions[0]?.label || '';
   const modelShortLabel = displayModelShortLabel(modelLabel);
 
   useEffect(() => {
@@ -530,11 +496,9 @@ function ComposerReasoningModelSelector({
     setModelMenuOpen(false);
   }, [onEffortChange]);
 
-  const handleModelSelect = useCallback((option: (typeof FIXED_MODEL_OPTIONS)[number]) => {
-    const resolved = findFixedModel(providerGroups, currentProviderIdValue, option.label);
-    const providerId = resolved?.providerId ?? currentProviderIdValue;
-    const modelValue = resolved?.modelValue ?? option.value;
-    setSelectedModelLabel(option.label);
+  const handleModelSelect = useCallback((option: ComposerModelOption) => {
+    const providerId = currentProviderIdValue;
+    const modelValue = option.value;
     onModelChange?.(modelValue);
     onProviderModelChange?.(providerId, modelValue);
     try {
@@ -545,17 +509,11 @@ function ComposerReasoningModelSelector({
     }
     setOpen(false);
     setModelMenuOpen(false);
-  }, [currentProviderIdValue, onModelChange, onProviderModelChange, providerGroups]);
+  }, [currentProviderIdValue, onModelChange, onProviderModelChange]);
 
-  const isModelActive = useCallback((label: string) => {
-    if (selectedModelLabel) {
-      return normalizeModelKey(selectedModelLabel) === normalizeModelKey(label);
-    }
-    return (
-      normalizeModelKey(modelLabel) === normalizeModelKey(label)
-      || normalizeModelKey(currentModelValue) === normalizeModelKey(label)
-    );
-  }, [currentModelValue, modelLabel, selectedModelLabel]);
+  const isModelActive = useCallback((option: ComposerModelOption) => (
+    option.value === currentModelOption?.value || option.value === currentModelValue
+  ), [currentModelOption?.value, currentModelValue]);
 
   return (
     <div className="relative" ref={menuRef}>
@@ -611,7 +569,7 @@ function ComposerReasoningModelSelector({
             >
               <div className="mb-2 text-xs font-semibold text-muted-foreground/65">模型</div>
               <div className="space-y-1">
-                {FIXED_MODEL_OPTIONS.map((option) => (
+                {modelOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"
@@ -619,7 +577,7 @@ function ComposerReasoningModelSelector({
                     onClick={() => handleModelSelect(option)}
                   >
                     <span>{option.label}</span>
-                    {isModelActive(option.label) && (
+                    {isModelActive(option) && (
                       <Check size={18} className="ml-auto text-muted-foreground" />
                     )}
                   </button>
@@ -1688,7 +1646,7 @@ export function MessageInput({
                   currentModelOption={currentModelOption}
                   currentModelValue={currentModelValue}
                   currentProviderIdValue={currentProviderIdValue}
-                  providerGroups={providerGroups}
+                  modelOptions={modelOptions}
                   onModelChange={onModelChange}
                   onProviderModelChange={onProviderModelChange}
                 />
