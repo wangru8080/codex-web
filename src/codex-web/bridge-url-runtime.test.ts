@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveBridgeEndpoint, resolveCodexBridgeUrl, type BridgeUrlFetch } from "./bridge-url-runtime";
+import {
+  resolveBridgeEndpoint,
+  resolveCodexBridgeHomeDirectory,
+  resolveCodexBridgeUrl,
+  type BridgeUrlFetch,
+} from "./bridge-url-runtime";
 
 describe("bridge url runtime resolver", () => {
   it("优先使用构建期公开 bridge URL", async () => {
@@ -59,5 +64,28 @@ describe("bridge url runtime resolver", () => {
     });
 
     await expect(resolveCodexBridgeUrl("", fetcher)).rejects.toThrow("CODEX_WEB_BRIDGE_URL 未设置");
+  });
+
+  it("从 bridge runtime API 读取当前服务用户主目录", async () => {
+    const fetcher: BridgeUrlFetch = async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        error: "CODEX_WEB_BRIDGE_URL 未设置",
+        homeDirectory: "/home/rrssnas",
+      }),
+    });
+
+    await expect(resolveCodexBridgeHomeDirectory(fetcher)).resolves.toBe("/home/rrssnas");
+  });
+
+  it("bridge runtime API 未返回主目录时拒绝使用猜测路径", async () => {
+    const fetcher: BridgeUrlFetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ bridgeUrl: "/codex-bridge?token=test" }),
+    });
+
+    await expect(resolveCodexBridgeHomeDirectory(fetcher)).rejects.toThrow("主目录未设置");
   });
 });

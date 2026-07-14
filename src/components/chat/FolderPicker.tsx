@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useId, useRef } from 'react';
-import { Folder, FolderOpen, ArrowRight, CaretUp, SpinnerGap } from "@/components/ui/icon";
+import { Folder, FolderOpen, ArrowRight, ArrowUUpLeft, SpinnerGap } from "@/components/ui/icon";
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -18,7 +18,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAppServerActions } from '@/codex-web/AppServerProvider';
+import { resolveCodexBridgeHomeDirectory } from '@/codex-web/bridge-url-runtime';
 import {
   directoryChildren,
   directoryCompletionQuery,
@@ -117,9 +119,25 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
   }, [completionOpen, currentDir, initialPath, open, pathInput, readDirectory]);
 
   useEffect(() => {
-    if (open) {
-      browse(initialPath || undefined);
-    }
+    if (!open) return;
+
+    let disposed = false;
+    const openInitialDirectory = async () => {
+      let target = initialPath?.trim();
+      if (!target) {
+        try {
+          target = await resolveCodexBridgeHomeDirectory();
+        } catch {
+          target = '/';
+        }
+      }
+      if (!disposed) browse(target);
+    };
+    void openInitialDirectory();
+
+    return () => {
+      disposed = true;
+    };
   }, [open, initialPath, browse]);
 
   const handleNavigate = (dir: string) => {
@@ -180,78 +198,87 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
         </DialogHeader>
 
         {/* Path input */}
-        <form onSubmit={handlePathSubmit} className="relative">
-          <Input
-            value={pathInput}
-            onChange={(e) => {
-              setPathInput(e.target.value);
-              setCompletionOpen(true);
-              setCompletionResolved(false);
-              setHighlightedSuggestion(0);
-            }}
-            onFocus={() => setCompletionOpen(true)}
-            onBlur={() => setCompletionOpen(false)}
-            onKeyDown={handlePathKeyDown}
-            placeholder="/path/to/project"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={completionOpen && (completionLoading || completionResolved)}
-            aria-controls={completionListId}
-            aria-activedescendant={suggestions[highlightedSuggestion]
-              ? `${completionListId}-${highlightedSuggestion}`
-              : undefined}
-            className="font-mono text-sm"
-          />
-          {completionOpen && pathInput.trim() !== currentDir && (completionLoading || completionResolved) && (
-            <div
-              id={completionListId}
-              role="listbox"
-              className="absolute inset-x-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
-            >
-              {completionLoading ? (
-                <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                  <SpinnerGap size={16} className="animate-spin" />
-                  {t('folderPicker.loading')}
-                </div>
-              ) : suggestions.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  {t('folderPicker.noMatches')}
-                </div>
-              ) : suggestions.map((directory, index) => (
-                <button
-                  key={directory.path}
-                  id={`${completionListId}-${index}`}
-                  type="button"
-                  role="option"
-                  aria-selected={index === highlightedSuggestion}
-                  className={`flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm ${
-                    index === highlightedSuggestion ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60'
-                  }`}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setHighlightedSuggestion(index)}
-                  onClick={() => browse(directory.path)}
-                >
-                  <Folder size={16} className="shrink-0 text-primary" />
-                  <span className="truncate font-mono">{directory.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
+        <form onSubmit={handlePathSubmit} className="flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleGoUp}
+                disabled={!parentDir}
+                aria-label={t('folderPicker.goUp')}
+                className="shrink-0 text-muted-foreground"
+              >
+                <ArrowUUpLeft size={20} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{t('folderPicker.goUp')}</TooltipContent>
+          </Tooltip>
+          <div className="relative min-w-0 flex-1">
+            <Input
+              value={pathInput}
+              onChange={(e) => {
+                setPathInput(e.target.value);
+                setCompletionOpen(true);
+                setCompletionResolved(false);
+                setHighlightedSuggestion(0);
+              }}
+              onFocus={() => setCompletionOpen(true)}
+              onBlur={() => setCompletionOpen(false)}
+              onKeyDown={handlePathKeyDown}
+              placeholder="/path/to/project"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={completionOpen && (completionLoading || completionResolved)}
+              aria-controls={completionListId}
+              aria-activedescendant={suggestions[highlightedSuggestion]
+                ? `${completionListId}-${highlightedSuggestion}`
+                : undefined}
+              className="font-mono text-sm"
+            />
+            {completionOpen && pathInput.trim() !== currentDir && (completionLoading || completionResolved) && (
+              <div
+                id={completionListId}
+                role="listbox"
+                className="absolute inset-x-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+              >
+                {completionLoading ? (
+                  <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                    <SpinnerGap size={16} className="animate-spin" />
+                    {t('folderPicker.loading')}
+                  </div>
+                ) : suggestions.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    {t('folderPicker.noMatches')}
+                  </div>
+                ) : suggestions.map((directory, index) => (
+                  <button
+                    key={directory.path}
+                    id={`${completionListId}-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={index === highlightedSuggestion}
+                    className={`flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm ${
+                      index === highlightedSuggestion ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60'
+                    }`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setHighlightedSuggestion(index)}
+                    onClick={() => browse(directory.path)}
+                  >
+                    <Folder size={16} className="shrink-0 text-primary" />
+                    <span className="truncate font-mono">{directory.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </form>
 
         {/* Directory browser */}
         <div className="rounded-md border border-border">
           {/* Current path + go up + drive switcher */}
           <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-3 py-2">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={handleGoUp}
-              disabled={!parentDir}
-              className="shrink-0"
-            >
-              <CaretUp size={16} />
-            </Button>
             {drives.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

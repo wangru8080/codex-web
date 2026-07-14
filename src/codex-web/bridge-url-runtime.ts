@@ -5,6 +5,12 @@ export type BridgeUrlFetch = (
 
 export type BridgePageLocation = Pick<Location, "protocol" | "host">;
 
+type BridgeRuntimeResponse = {
+  bridgeUrl?: unknown;
+  homeDirectory?: unknown;
+  error?: unknown;
+};
+
 export async function resolveCodexBridgeUrl(
   publicBridgeUrl: string,
   fetcher: BridgeUrlFetch = fetch,
@@ -17,7 +23,7 @@ export async function resolveCodexBridgeUrl(
   const response = await fetcher("/api/codex/bridge-url", {
     cache: "no-store",
   });
-  const body = (await response.json()) as { bridgeUrl?: unknown; error?: unknown };
+  const body = (await response.json()) as BridgeRuntimeResponse;
 
   if (!response.ok) {
     throw new Error(typeof body.error === "string" ? body.error : `bridge url request failed: ${response.status}`);
@@ -28,6 +34,19 @@ export async function resolveCodexBridgeUrl(
   }
 
   return resolveBridgeEndpoint(body.bridgeUrl, location);
+}
+
+export async function resolveCodexBridgeHomeDirectory(
+  fetcher: BridgeUrlFetch = fetch,
+): Promise<string> {
+  const response = await fetcher("/api/codex/bridge-url", {
+    cache: "no-store",
+  });
+  const body = (await response.json()) as BridgeRuntimeResponse;
+  if (typeof body.homeDirectory !== "string" || body.homeDirectory.trim().length === 0) {
+    throw new Error("CODEX_WEB_HOME_DIRECTORY 主目录未设置");
+  }
+  return body.homeDirectory.trim();
 }
 
 export function resolveBridgeEndpoint(

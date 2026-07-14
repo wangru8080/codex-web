@@ -526,6 +526,7 @@ const en = {
   'folderPicker.loading': 'Loading...',
   'folderPicker.noSubdirs': 'No subdirectories',
   'folderPicker.noMatches': 'No matching folders',
+  'folderPicker.goUp': 'Go to parent folder',
   'folderPicker.cancel': 'Cancel',
   'folderPicker.select': 'Select This Folder',
 
