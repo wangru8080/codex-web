@@ -525,6 +525,7 @@ const en = {
   'folderPicker.title': 'Select a project folder',
   'folderPicker.loading': 'Loading...',
   'folderPicker.noSubdirs': 'No subdirectories',
+  'folderPicker.noMatches': 'No matching folders',
   'folderPicker.cancel': 'Cancel',
   'folderPicker.select': 'Select This Folder',
 

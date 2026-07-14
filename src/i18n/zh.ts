@@ -512,6 +512,7 @@ const zh: Record<TranslationKey, string> = {
   'folderPicker.title': '选择项目文件夹',
   'folderPicker.loading': '加载中...',
   'folderPicker.noSubdirs': '无子目录',
+  'folderPicker.noMatches': '无匹配目录',
   'folderPicker.cancel': '取消',
   'folderPicker.select': '选择此文件夹',
 

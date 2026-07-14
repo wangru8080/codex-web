@@ -5,6 +5,11 @@ export type BrowsableDirectory = {
   path: string;
 };
 
+export type DirectoryCompletionQuery = {
+  parentPath: string;
+  fragment: string;
+};
+
 export function directoryParent(path: string): string | null {
   const normalized = trimDirectorySeparator(path.trim());
   if (!normalized || normalized === "/" || /^[A-Za-z]:$/.test(normalized)) {
@@ -30,6 +35,42 @@ export function directoryChildren(
       path: joinDirectoryPath(currentPath, entry.fileName),
     }))
     .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+}
+
+export function directoryCompletionQuery(
+  inputPath: string,
+  fallbackDirectory: string,
+): DirectoryCompletionQuery {
+  const value = inputPath.trim();
+  const fallback = fallbackDirectory.trim() || "/";
+  if (!value) {
+    return { parentPath: fallback, fragment: "" };
+  }
+
+  const separatorIndex = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
+  if (separatorIndex < 0) {
+    return { parentPath: fallback, fragment: value };
+  }
+
+  const fragment = value.slice(separatorIndex + 1);
+  if (separatorIndex === 0) {
+    return { parentPath: value[0], fragment };
+  }
+  if (separatorIndex === 2 && /^[A-Za-z]:[\\/]/.test(value)) {
+    return { parentPath: value.slice(0, 3), fragment };
+  }
+  return { parentPath: value.slice(0, separatorIndex), fragment };
+}
+
+export function matchingDirectories(
+  inputPath: string,
+  fallbackDirectory: string,
+  entries: FsReadDirectoryEntry[],
+): BrowsableDirectory[] {
+  const query = directoryCompletionQuery(inputPath, fallbackDirectory);
+  const fragment = query.fragment.toLocaleLowerCase();
+  return directoryChildren(query.parentPath, entries)
+    .filter((directory) => directory.name.toLocaleLowerCase().startsWith(fragment));
 }
 
 export function joinDirectoryPath(parent: string, child: string): string {

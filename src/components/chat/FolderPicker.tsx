@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Folder, FolderOpen, ArrowRight, CaretUp } from "@/components/ui/icon";
+import { useState, useEffect, useCallback, useId, useRef } from 'react';
+import { Folder, FolderOpen, ArrowRight, CaretUp, SpinnerGap } from "@/components/ui/icon";
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -19,7 +19,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAppServerActions } from '@/codex-web/AppServerProvider';
-import { directoryChildren, directoryParent } from '@/codex-web/directory-browser-adapter';
+import {
+  directoryChildren,
+  directoryCompletionQuery,
+  directoryParent,
+  matchingDirectories,
+} from '@/codex-web/directory-browser-adapter';
 import { useTranslation } from '@/hooks/useTranslation';
 
 interface FolderEntry {
@@ -44,9 +49,21 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
   const [pathInput, setPathInput] = useState('');
   const [drives, setDrives] = useState<string[]>([]);
   const [error, setError] = useState('');
+  const [suggestions, setSuggestions] = useState<FolderEntry[]>([]);
+  const [completionOpen, setCompletionOpen] = useState(false);
+  const [completionLoading, setCompletionLoading] = useState(false);
+  const [completionResolved, setCompletionResolved] = useState(false);
+  const [highlightedSuggestion, setHighlightedSuggestion] = useState(0);
+  const completionRequestRef = useRef(0);
+  const completionListId = useId();
 
   const browse = useCallback(async (dir?: string) => {
     const target = dir?.trim() || '/';
+    completionRequestRef.current += 1;
+    setCompletionOpen(false);
+    setCompletionLoading(false);
+    setCompletionResolved(false);
+    setSuggestions([]);
     setLoading(true);
     setError('');
     try {
@@ -65,6 +82,41 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
   }, [readDirectory]);
 
   useEffect(() => {
+    const input = pathInput.trim();
+    if (!open || !completionOpen || !input || input === currentDir) {
+      setCompletionLoading(false);
+      setCompletionResolved(false);
+      setSuggestions([]);
+      return;
+    }
+
+    const requestId = completionRequestRef.current + 1;
+    completionRequestRef.current = requestId;
+    setCompletionLoading(true);
+    setCompletionResolved(false);
+
+    const timer = window.setTimeout(async () => {
+      const fallbackDirectory = currentDir || initialPath || '/';
+      const query = directoryCompletionQuery(input, fallbackDirectory);
+      try {
+        const response = await readDirectory(query.parentPath);
+        if (completionRequestRef.current !== requestId) return;
+        setSuggestions(matchingDirectories(input, fallbackDirectory, response.entries).slice(0, 8));
+      } catch {
+        if (completionRequestRef.current !== requestId) return;
+        setSuggestions([]);
+      } finally {
+        if (completionRequestRef.current === requestId) {
+          setCompletionLoading(false);
+          setCompletionResolved(true);
+        }
+      }
+    }, 200);
+
+    return () => window.clearTimeout(timer);
+  }, [completionOpen, currentDir, initialPath, open, pathInput, readDirectory]);
+
+  useEffect(() => {
     if (open) {
       browse(initialPath || undefined);
     }
@@ -80,8 +132,37 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
 
   const handlePathSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const suggestion = suggestions[highlightedSuggestion];
+    if (completionOpen && suggestion) {
+      browse(suggestion.path);
+      return;
+    }
     if (pathInput.trim()) {
       browse(pathInput.trim());
+    }
+  };
+
+  const handlePathKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!completionOpen || suggestions.length === 0) {
+      if (event.key === 'Escape') setCompletionOpen(false);
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setHighlightedSuggestion((current) => (current + 1) % suggestions.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setHighlightedSuggestion((current) => (current - 1 + suggestions.length) % suggestions.length);
+    } else if (event.key === 'Tab') {
+      event.preventDefault();
+      const path = suggestions[highlightedSuggestion].path;
+      const separator = path.includes('\\') && !path.includes('/') ? '\\' : '/';
+      setPathInput(path.endsWith(separator) ? path : `${path}${separator}`);
+      setHighlightedSuggestion(0);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setCompletionOpen(false);
     }
   };
 
@@ -99,16 +180,63 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
         </DialogHeader>
 
         {/* Path input */}
-        <form onSubmit={handlePathSubmit} className="flex gap-2">
+        <form onSubmit={handlePathSubmit} className="relative">
           <Input
             value={pathInput}
-            onChange={(e) => setPathInput(e.target.value)}
+            onChange={(e) => {
+              setPathInput(e.target.value);
+              setCompletionOpen(true);
+              setCompletionResolved(false);
+              setHighlightedSuggestion(0);
+            }}
+            onFocus={() => setCompletionOpen(true)}
+            onBlur={() => setCompletionOpen(false)}
+            onKeyDown={handlePathKeyDown}
             placeholder="/path/to/project"
-            className="flex-1 font-mono text-sm"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={completionOpen && (completionLoading || completionResolved)}
+            aria-controls={completionListId}
+            aria-activedescendant={suggestions[highlightedSuggestion]
+              ? `${completionListId}-${highlightedSuggestion}`
+              : undefined}
+            className="font-mono text-sm"
           />
-          <Button type="submit" variant="outline" size="sm">
-            Go
-          </Button>
+          {completionOpen && pathInput.trim() !== currentDir && (completionLoading || completionResolved) && (
+            <div
+              id={completionListId}
+              role="listbox"
+              className="absolute inset-x-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+            >
+              {completionLoading ? (
+                <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                  <SpinnerGap size={16} className="animate-spin" />
+                  {t('folderPicker.loading')}
+                </div>
+              ) : suggestions.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  {t('folderPicker.noMatches')}
+                </div>
+              ) : suggestions.map((directory, index) => (
+                <button
+                  key={directory.path}
+                  id={`${completionListId}-${index}`}
+                  type="button"
+                  role="option"
+                  aria-selected={index === highlightedSuggestion}
+                  className={`flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm ${
+                    index === highlightedSuggestion ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60'
+                  }`}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setHighlightedSuggestion(index)}
+                  onClick={() => browse(directory.path)}
+                >
+                  <Folder size={16} className="shrink-0 text-primary" />
+                  <span className="truncate font-mono">{directory.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </form>
 
         {/* Directory browser */}
