@@ -12,9 +12,12 @@ export type ClientMessageInterceptor = (message: JsonRpcMessage) => JsonRpcRespo
 export type WebSocketBridgeOptions = CodexProcessOptions & {
   host?: string;
   port?: number;
+  server?: Server;
+  path?: string;
   token?: string;
   allowedOrigins?: string[];
   allowRemoteConnections?: boolean;
+  allowSameOrigin?: boolean;
   clientMessageInterceptor?: ClientMessageInterceptor;
 };
 
@@ -27,24 +30,24 @@ export type WebSocketBridge = {
 
 export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): WebSocketBridge {
   const token = options.token ?? randomBytes(24).toString("base64url");
-  const server = createServer((_request, response) => {
+  const ownsServer = options.server === undefined;
+  const server = options.server ?? createServer((_request, response) => {
     response.writeHead(404);
     response.end("not found");
   });
+  const bridgePath = options.path ?? "/";
   const sockets = new Set<WebSocket>();
   const wsServer = new WebSocketServer({ noServer: true });
 
-  server.on("upgrade", (request, socket, head) => {
-    const security = validateBridgeRequest(
-      request,
-      options.allowedOrigins === undefined
-        ? { token, allowRemoteConnections: options.allowRemoteConnections }
-        : {
-            token,
-            allowedOrigins: options.allowedOrigins,
-            allowRemoteConnections: options.allowRemoteConnections,
-          },
-    );
+  const handleUpgrade = (request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (pathname !== bridgePath) return;
+    const security = validateBridgeRequest(request, {
+      token,
+      allowedOrigins: options.allowedOrigins,
+      allowRemoteConnections: options.allowRemoteConnections,
+      allowSameOrigin: options.allowSameOrigin,
+    });
 
     if (!security.ok) {
       socket.write(`HTTP/1.1 ${security.statusCode} ${security.message}\r\n\r\n`);
@@ -55,7 +58,8 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
     wsServer.handleUpgrade(request, socket, head, (webSocket) => {
       wsServer.emit("connection", webSocket, request);
     });
-  });
+  };
+  server.on("upgrade", handleUpgrade);
 
   wsServer.on("connection", (webSocket, request) => {
     sockets.add(webSocket);
@@ -65,7 +69,7 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
 
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 0;
-  server.listen(port, host);
+  if (ownsServer) server.listen(port, host);
 
   return {
     server,
@@ -73,29 +77,41 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
     url: () => {
       const address = server.address();
       if (typeof address !== "object" || address === null) {
-        return `ws://${host}:${port}`;
+        return `ws://${host}:${port}${bridgePath === "/" ? "" : bridgePath}`;
       }
-      return `ws://${address.address}:${address.port}`;
+      return `ws://${address.address}:${address.port}${bridgePath === "/" ? "" : bridgePath}`;
     },
-    close: () =>
-      new Promise((resolve, reject) => {
-        for (const socket of sockets) {
-          socket.close();
+    close: () => new Promise((resolve, reject) => {
+      const finish = () => {
+        wsServer.removeAllListeners();
+        if (!ownsServer || !server.listening) {
+          resolve();
+          return;
         }
-        wsServer.close((wsError) => {
-          if (wsError) {
-            reject(wsError);
+        server.close((serverError) => {
+          if (serverError) {
+            reject(serverError);
             return;
           }
-          server.close((serverError) => {
-            if (serverError) {
-              reject(serverError);
-              return;
-            }
-            resolve();
-          });
+          resolve();
         });
-      }),
+      };
+      server.off("upgrade", handleUpgrade);
+      if (sockets.size === 0) {
+        finish();
+        return;
+      }
+      for (const socket of sockets) {
+        socket.close();
+      }
+      wsServer.close((wsError) => {
+        if (wsError) {
+          reject(wsError);
+          return;
+        }
+        finish();
+      });
+    }),
   };
 }
 

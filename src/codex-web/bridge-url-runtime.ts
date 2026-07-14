@@ -3,12 +3,15 @@ export type BridgeUrlFetch = (
   init?: RequestInit,
 ) => Promise<Pick<Response, "ok" | "status" | "json">>;
 
+export type BridgePageLocation = Pick<Location, "protocol" | "host">;
+
 export async function resolveCodexBridgeUrl(
   publicBridgeUrl: string,
   fetcher: BridgeUrlFetch = fetch,
+  location?: BridgePageLocation,
 ): Promise<string> {
   if (publicBridgeUrl.trim()) {
-    return publicBridgeUrl;
+    return resolveBridgeEndpoint(publicBridgeUrl, location);
   }
 
   const response = await fetcher("/api/codex/bridge-url", {
@@ -24,5 +27,30 @@ export async function resolveCodexBridgeUrl(
     throw new Error("CODEX_WEB_BRIDGE_URL 未设置");
   }
 
-  return body.bridgeUrl;
+  return resolveBridgeEndpoint(body.bridgeUrl, location);
+}
+
+export function resolveBridgeEndpoint(
+  endpoint: string,
+  location?: BridgePageLocation,
+): string {
+  if (/^wss?:\/\//i.test(endpoint)) return endpoint;
+  if (!endpoint.startsWith("/")) {
+    throw new Error(`bridge URL 必须是 ws/wss URL 或同源绝对路径：${endpoint}`);
+  }
+  const pageLocation = location ?? readBrowserLocation();
+  const protocol = pageLocation.protocol === "https:"
+    ? "wss:"
+    : pageLocation.protocol === "http:"
+      ? "ws:"
+      : null;
+  if (!protocol) throw new Error(`页面协议不支持 WebSocket：${pageLocation.protocol}`);
+  return `${protocol}//${pageLocation.host}${endpoint}`;
+}
+
+function readBrowserLocation(): BridgePageLocation {
+  if (typeof window === "undefined") {
+    throw new Error("同源 bridge path 只能在浏览器中解析");
+  }
+  return window.location;
 }

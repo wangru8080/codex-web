@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveCodexBridgeUrl, type BridgeUrlFetch } from "./bridge-url-runtime";
+import { resolveBridgeEndpoint, resolveCodexBridgeUrl, type BridgeUrlFetch } from "./bridge-url-runtime";
 
 describe("bridge url runtime resolver", () => {
   it("优先使用构建期公开 bridge URL", async () => {
@@ -26,6 +26,29 @@ describe("bridge url runtime resolver", () => {
       "ws://192.168.3.12:4567?token=prod",
     );
     expect(calls).toEqual(["/api/codex/bridge-url:no-store"]);
+  });
+
+  it("把同源 bridge path 转成当前 HTTP 页面的 WebSocket URL", async () => {
+    const location = { protocol: "http:", host: "localhost:4567" };
+    expect(resolveBridgeEndpoint("/codex-bridge?token=x", location)).toBe(
+      "ws://localhost:4567/codex-bridge?token=x",
+    );
+
+    const fetcher: BridgeUrlFetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ bridgeUrl: "/codex-bridge?token=prod" }),
+    });
+    await expect(resolveCodexBridgeUrl("", fetcher, location)).resolves.toBe(
+      "ws://localhost:4567/codex-bridge?token=prod",
+    );
+  });
+
+  it("把同源 bridge path 转成当前 HTTPS 页面的安全 WebSocket URL", () => {
+    expect(resolveBridgeEndpoint("/codex-bridge?token=x", {
+      protocol: "https:",
+      host: "codex.example.com",
+    })).toBe("wss://codex.example.com/codex-bridge?token=x");
   });
 
   it("runtime API 不可用时抛出可见错误", async () => {

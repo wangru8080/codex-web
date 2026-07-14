@@ -90,6 +90,45 @@ describe("validateBridgeRequest", () => {
       }),
     ).toEqual({ ok: true });
   });
+
+  it("接受 Origin 与 Host 一致的同源远程连接", () => {
+    const request = requestStub({
+      remoteAddress: "192.168.3.20",
+      headers: {
+        authorization: "Bearer secret",
+        origin: "https://codex.example.com",
+        host: "codex.example.com",
+      },
+    });
+
+    expect(validateBridgeRequest(request, {
+      token: "secret",
+      allowRemoteConnections: true,
+      allowSameOrigin: true,
+    })).toEqual({ ok: true });
+  });
+
+  it("同源模式拒绝 Host 不同或协议非法的 Origin", () => {
+    for (const origin of ["https://evil.example", "ftp://codex.example.com", "http://localhost:3000"]) {
+      const request = requestStub({
+        remoteAddress: "192.168.3.20",
+        headers: {
+          authorization: "Bearer secret",
+          origin,
+          host: "codex.example.com",
+        },
+      });
+      expect(validateBridgeRequest(request, {
+        token: "secret",
+        allowRemoteConnections: true,
+        allowSameOrigin: true,
+      })).toEqual({
+        ok: false,
+        statusCode: 403,
+        message: "Origin 不在允许列表",
+      });
+    }
+  });
 });
 
 function requestStub(input: {
