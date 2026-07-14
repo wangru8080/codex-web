@@ -114,7 +114,7 @@ interface MessageInputProps {
   onModelChange?: (model: string) => void;
   providerId?: string;
   permissionProfile?: PermissionProfile;
-  onPermissionChange?: (profile: PermissionProfile) => void;
+  onPermissionChange?: (profile: PermissionProfile) => void | Promise<void>;
   /**
    * Phase 6 P0 (2026-05-15) — `opts.isAuto` differentiates the
    * MessageInput auto-correct fallback (model→firstCompatibleModel
@@ -281,14 +281,12 @@ function normalizePermissionProfile(profile?: PermissionProfile): PermissionChoi
 }
 
 function ComposerPermissionSelector({
-  sessionId,
   permissionProfile = 'request_approval',
   onPermissionChange,
   disabled,
 }: {
-  sessionId?: string;
   permissionProfile?: PermissionProfile;
-  onPermissionChange?: (profile: PermissionProfile) => void;
+  onPermissionChange?: (profile: PermissionProfile) => void | Promise<void>;
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
@@ -331,25 +329,13 @@ function ComposerPermissionSelector({
   const activeChoice = choices.find((choice) => choice.id === activeChoiceId) ?? choices[0];
 
   const applyChoice = useCallback(async (choice: PermissionChoice) => {
-    if (sessionId) {
-      try {
-        const res = await fetch(`/api/chat/sessions/${sessionId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ permission_profile: choice.profile }),
-        });
-        if (!res.ok) {
-          console.warn(`[ComposerPermissionSelector] PATCH failed: ${res.status}`);
-          return;
-        }
-      } catch (err) {
-        console.warn('[ComposerPermissionSelector] PATCH error:', err);
-        return;
-      }
+    try {
+      await onPermissionChange?.(choice.profile);
+      setLocalChoice(choice.id);
+    } catch (error) {
+      console.warn('[ComposerPermissionSelector] 权限更新失败:', error);
     }
-    setLocalChoice(choice.id);
-    onPermissionChange?.(choice.profile);
-  }, [onPermissionChange, sessionId]);
+  }, [onPermissionChange]);
 
   const handleSelect = useCallback((choice: PermissionChoice) => {
     if (disabled || !onPermissionChange) return;
@@ -1630,7 +1616,6 @@ export function MessageInput({
                 </PromptInputActionMenu>
 
                 <ComposerPermissionSelector
-                  sessionId={sessionId}
                   permissionProfile={permissionProfile}
                   onPermissionChange={onPermissionChange}
                   disabled={!onPermissionChange}

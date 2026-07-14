@@ -87,6 +87,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     respondToApproval,
     setThreadGoal,
     clearThreadGoal,
+    updateThreadPermissions,
   } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
@@ -368,11 +369,34 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         projectName={sessionProjectName}
         appServerTurn={appServerTurn}
         appServerApproval={appServerApproval}
+        appServerThreadId={resumedThreadId || id}
         appServerGoal={appServerGoal}
         appServerNotice={appServerNotice}
         onAppServerApprovalDecision={(decision) =>
           appServerApproval ? respondToApproval(decision, appServerApproval.requestId) : respondToApproval(decision)
         }
+        onAppServerPermissionChange={canResumeAppServerThread ? async (permissionProfile) => {
+          let threadId = resumedThreadId;
+          let threadCwd = resumedCwd || sessionWorkingDirectory;
+          if (!threadId) {
+            const resume = await resumeThread({
+              threadId: id,
+              cwd: threadCwd,
+              model: resumedModel || sessionModel || defaultAppServerModel,
+              permissionProfile: sessionPermissionProfile,
+            });
+            threadId = resume.thread.id;
+            threadCwd = resume.cwd || threadCwd;
+            setResumedThreadId(threadId);
+            setResumedCwd(threadCwd);
+            setResumedModel(resume.model || sessionModel || defaultAppServerModel);
+          }
+          await updateThreadPermissions({
+            threadId,
+            cwd: threadCwd,
+            permissionProfile,
+          });
+        } : undefined}
         onAppServerGoalSet={canResumeAppServerThread ? async (objective) => {
           await setThreadGoal({
             threadId: resumedThreadId || id,

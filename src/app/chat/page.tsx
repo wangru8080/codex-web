@@ -94,6 +94,7 @@ function NewChatPageInner() {
     setThreadGoal,
     clearThreadGoal,
     readDirectory,
+    updateThreadPermissions,
   } = useAppServerActions();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
@@ -207,6 +208,24 @@ function NewChatPageInner() {
     }
   }, []);
   const [createdSessionId, setCreatedSessionId] = useState<string | undefined>();
+  const handlePermissionProfileChange = useCallback(async (next: PermissionProfile) => {
+    try {
+      if (createdSessionId) {
+        await updateThreadPermissions({
+          threadId: createdSessionId,
+          cwd: workingDir,
+          permissionProfile: next,
+        });
+      }
+      setPermissionProfile(next);
+    } catch (error) {
+      setErrorBanner({
+        message: '权限更新失败',
+        description: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }, [createdSessionId, updateThreadPermissions, workingDir]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const finalizedAppServerTurnRef = useRef<string>('');
   const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
@@ -923,7 +942,7 @@ function NewChatPageInner() {
         onModelChange={setCurrentModel}
         providerId={currentProviderId}
         permissionProfile={permissionProfile}
-        onPermissionChange={setPermissionProfile}
+        onPermissionChange={handlePermissionProfileChange}
         runtime={sessionRuntimeParam}
         codexOnly
         onProviderModelChange={(pid, model, opts) => {

@@ -112,9 +112,11 @@ interface ChatViewProps {
   projectName?: string;
   appServerTurn?: AppServerTurnState | null;
   appServerApproval?: AppServerApprovalRequest | null;
+  appServerThreadId?: string | null;
   appServerGoal?: { source: string; data: ThreadGoal } | null;
   appServerNotice?: { message: string; description?: string } | null;
   onAppServerApprovalDecision?: (decision: AppServerApprovalDecision) => Promise<void>;
+  onAppServerPermissionChange?: (permissionProfile: PermissionProfile) => Promise<void>;
   onAppServerGoalSet?: (objective: string) => Promise<void>;
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
@@ -156,9 +158,11 @@ export function ChatView({
   projectName,
   appServerTurn,
   appServerApproval,
+  appServerThreadId,
   appServerGoal,
   appServerNotice,
   onAppServerApprovalDecision,
+  onAppServerPermissionChange,
   onAppServerGoalSet,
   onAppServerGoalStatusChange,
   onAppServerGoalEdit,
@@ -188,6 +192,20 @@ export function ChatView({
   // per-marker fetches.
   const [taskRuns, setTaskRuns] = useState<Record<string, TaskRunSummary>>({});
   const [permissionProfile, setPermissionProfile] = useState<PermissionProfile>(initialPermissionProfile || 'request_approval');
+  const handlePermissionProfileChange = useCallback(async (next: PermissionProfile) => {
+    try {
+      if (onAppServerPermissionChange && appServerThreadId && workingDirectory) {
+        await onAppServerPermissionChange(next);
+      }
+      setPermissionProfile(next);
+    } catch (error) {
+      setAppServerErrorBanner({
+        message: '权限更新失败',
+        description: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }, [appServerThreadId, onAppServerPermissionChange, workingDirectory]);
   const [pendingContextTokens, setPendingContextTokens] = useState(0);
   // Phase 6 Phase 3 — per-source split (attachment / mention / directory).
   // Flows through RunCockpit → useContextUsage → breakdown so the popover's
@@ -1770,7 +1788,7 @@ export function ChatView({
               onModelChange={settingsLocked ? undefined : setCurrentModel}
               providerId={currentProviderId}
               permissionProfile={permissionProfile}
-              onPermissionChange={settingsLocked ? undefined : setPermissionProfile}
+              onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}
               runtime={sessionRuntimeParam}
               onProviderModelChange={settingsLocked ? undefined : handleProviderModelChange}
               workingDirectory={workingDirectory}
@@ -2088,7 +2106,7 @@ export function ChatView({
         onModelChange={settingsLocked ? undefined : setCurrentModel}
         providerId={currentProviderId}
         permissionProfile={permissionProfile}
-        onPermissionChange={settingsLocked ? undefined : setPermissionProfile}
+        onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}
         runtime={sessionRuntimeParam}
         codexOnly={isCodexOnlySession}
         onProviderModelChange={settingsLocked ? undefined : handleProviderModelChange}

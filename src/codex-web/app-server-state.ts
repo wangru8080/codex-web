@@ -3,6 +3,7 @@ import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccoun
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
 import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
 import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadReadResponse";
+import type { ThreadSettings } from "@/codex/protocol/generated/v2/ThreadSettings";
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
 import type { ThreadGoal } from "@/codex/protocol/generated/v2/ThreadGoal";
 import type { JsonRpcNotification, JsonRpcRequest } from "@/codex/protocol/json-rpc";
@@ -44,6 +45,7 @@ export type CodexWebAppServerState = {
   threads: Sourced<ThreadListResponse> | null;
   selectedThread: Sourced<ThreadReadResponse> | null;
   resumedThread: Sourced<ThreadResumeResponse> | null;
+  threadSettingsByThreadId: Record<string, Sourced<ThreadSettings>>;
   activeTurn: Sourced<AppServerTurnState> | null;
   activeTurnsByThreadId: Record<string, Sourced<AppServerTurnState>>;
   turnSnapshots: Record<string, Sourced<AppServerTurnState>>;
@@ -62,6 +64,7 @@ export const initialAppServerState: CodexWebAppServerState = {
   threads: null,
   selectedThread: null,
   resumedThread: null,
+  threadSettingsByThreadId: {},
   activeTurn: null,
   activeTurnsByThreadId: {},
   turnSnapshots: {},

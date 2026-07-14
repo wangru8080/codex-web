@@ -12,6 +12,8 @@ import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadLis
 import type { ThreadReadParams } from "@/codex/protocol/generated/v2/ThreadReadParams";
 import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadReadResponse";
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
+import type { ConfigRequirementsReadResponse } from "@/codex/protocol/generated/v2/ConfigRequirementsReadResponse";
+import type { ThreadSettingsUpdateResponse } from "@/codex/protocol/generated/v2/ThreadSettingsUpdateResponse";
 import type { ThreadStartParams } from "@/codex/protocol/generated/v2/ThreadStartParams";
 import type { ThreadStartResponse } from "@/codex/protocol/generated/v2/ThreadStartResponse";
 import type { ThreadGoalClearResponse } from "@/codex/protocol/generated/v2/ThreadGoalClearResponse";
@@ -49,7 +51,7 @@ import {
 import { AppServerBrowserClient } from "./app-server-browser-client";
 import { withPlanCollaborationMode } from "./app-server-collaboration-mode";
 import { appServerInitializeCapabilities } from "./app-server-capabilities";
-import { threadRuntimeOptions, turnRuntimeOptions } from "./app-server-runtime-options";
+import { threadPermissionUpdateOptions, threadRuntimeOptions, turnRuntimeOptions } from "./app-server-runtime-options";
 import { resolveCodexBridgeUrl } from "./bridge-url-runtime";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
 import type {
@@ -74,6 +76,7 @@ import type {
   ThreadTurnsListParams,
   ThreadTurnsListResponse,
 } from "./thread-turns-page-adapter";
+import { reduceThreadSettingsNotification } from "./thread-settings-adapter";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -125,6 +128,7 @@ export type AppServerActions = {
   clearThreadGoal: (threadId: string) => Promise<ThreadGoalClearResponse>;
   respondToApproval: (decision: AppServerApprovalDecision, requestId?: JsonRpcId) => Promise<void>;
   resetTurn: () => void;
+  updateThreadPermissions: (params: { threadId: string; cwd: string; permissionProfile: PermissionProfile }) => Promise<void>;
 };
 
 export function AppServerProvider({ children }: { children: React.ReactNode }) {
@@ -133,6 +137,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const [bridgeUrl, setBridgeUrl] = useState(publicBridgeUrl);
   const [bridgeUrlResolved, setBridgeUrlResolved] = useState(() => !!publicBridgeUrl);
   const clientRef = useRef<AppServerBrowserClient | null>(null);
+  const threadSettingsWaitersRef = useRef(new Map<string, Set<() => void>>());
   const approvalResponseStateRef = useRef<ApprovalResponseGuardState>({});
 
   useEffect(() => {
@@ -216,7 +221,22 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     });
 
     client.onNotification((notification) => {
+      if (notification.method === "thread/settings/updated") {
+        const params = notification.params as { threadId?: string } | undefined;
+        const threadId = params?.threadId;
+        if (threadId) {
+          const waiters = threadSettingsWaitersRef.current.get(threadId);
+          if (waiters) {
+            waiters.forEach((resolve) => resolve());
+            threadSettingsWaitersRef.current.delete(threadId);
+          }
+        }
+      }
       setState((current) => {
+        const threadSettingsByThreadId = reduceThreadSettingsNotification(
+          current.threadSettingsByThreadId,
+          notification,
+        );
         const goalStatePatch = reduceGoalNotification(current, notification);
         const notificationTurnIds = readNotificationTurnIds(notification);
         const notificationSnapshot =
@@ -243,6 +263,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         const next = {
           ...current,
           ...goalStatePatch,
+          threadSettingsByThreadId,
           activeTurn: sourcedActiveTurn(activeTurn),
           activeTurnsByThreadId: rememberActiveTurnByThread(current.activeTurnsByThreadId, activeTurn),
           turnSnapshots: rememberTurnSnapshot(current.turnSnapshots, snapshotTurn),
@@ -318,6 +339,34 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       pendingApprovals: [],
       pendingApproval: null,
     }));
+  }, []);
+
+  const updateThreadPermissions = useCallback(async ({ threadId, cwd, permissionProfile }: { threadId: string; cwd: string; permissionProfile: PermissionProfile }) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    const [config, requirements] = await Promise.all([
+      readEffectiveConfig(client, cwd),
+      client.request("configRequirements/read") as Promise<ConfigRequirementsReadResponse>,
+    ]);
+    const configDefaultProfile = (config.config as Record<string, unknown>)["default_permissions"];
+    const permissions = (typeof configDefaultProfile === "string" ? configDefaultProfile : null)
+      ?? requirements.requirements?.defaultPermissions
+      ?? null;
+    const options = threadPermissionUpdateOptions(permissionProfile, cwd, permissions, config);
+    const confirmation = new Promise<void>((resolve) => {
+      const waiters = threadSettingsWaitersRef.current.get(threadId) ?? new Set<() => void>();
+      waiters.add(resolve);
+      threadSettingsWaitersRef.current.set(threadId, waiters);
+      window.setTimeout(() => {
+        const current = threadSettingsWaitersRef.current.get(threadId);
+        if (!current?.has(resolve)) return;
+        current.delete(resolve);
+        if (current.size === 0) threadSettingsWaitersRef.current.delete(threadId);
+        resolve();
+      }, 5000);
+    });
+    await client.request("thread/settings/update", { threadId, ...options }) as ThreadSettingsUpdateResponse;
+    await confirmation;
   }, []);
 
   const respondToApproval = useCallback(async (decision: AppServerApprovalDecision, requestId?: JsonRpcId) => {
@@ -540,12 +589,13 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }),
     }));
 
+    const effectiveConfig = await readEffectiveConfig(client, cwd);
     const turnParams: TurnStartParamsWithCollaborationMode = withPlanCollaborationMode({
       threadId,
       input: [{ type: "text", text: trimmed, text_elements: [] }],
       cwd,
       model: model || null,
-      ...turnRuntimeOptions(permissionProfile, cwd),
+      ...turnRuntimeOptions(permissionProfile, cwd, effectiveConfig),
     }, mode, model);
     let turnResponse: TurnStartResponse;
     try {
@@ -671,8 +721,9 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       clearThreadGoal,
       respondToApproval,
       resetTurn,
+      updateThreadPermissions,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions],
   );
 
   return (
