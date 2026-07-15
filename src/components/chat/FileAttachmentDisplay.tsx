@@ -24,12 +24,11 @@ interface FileAttachmentDisplayProps {
  * - Directories (`inode/directory`) carry no content — return '' so
  *   ai-elements falls back to the Folder icon (set via fallbackIcon).
  * - If base64 `data` is available (optimistic / in-memory): use data URI
- * - If `filePath` is available (reloaded from DB): use the uploads API
+ * - A path-only attachment has no browser-readable URL and falls back to a file item
  */
 function fileUrl(f: FileAttachment): string {
   if (f.type === DIR_MIME) return '';
   if (f.data) return `data:${f.type};base64,${f.data}`;
-  if (f.filePath) return `/api/uploads?path=${encodeURIComponent(f.filePath)}`;
   return '';
 }
 
@@ -54,7 +53,7 @@ function toFileUIPart(file: FileAttachment): FileUIPart & { id: string } {
  * (click to open lightbox); non-images use the `list` variant for a
  * compact file row with icon + name. ai-elements handles missing-URL
  * fallbacks (file becomes an icon instead of a broken image), which is
- * how images with no `data`/`filePath` (rare race) degrade gracefully.
+ * how path-only images degrade gracefully when the browser cannot read the app-server filesystem.
  */
 export function FileAttachmentDisplay({ files }: FileAttachmentDisplayProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false);

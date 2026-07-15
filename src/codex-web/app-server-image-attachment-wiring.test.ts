@@ -10,9 +10,10 @@ describe("app-server image attachment wiring", () => {
   it("AppServerProvider 使用共享构造器生成 turn/start.input", () => {
     const provider = source("./AppServerProvider.tsx");
 
-    expect(provider).toContain("buildAppServerTurnInput(trimmed, files)");
+    expect(provider).toContain("persistImageAttachments");
+    expect(provider).toContain("buildAppServerTurnInput(trimmed, persistedFiles)");
     expect(provider.match(/files\?: readonly FileAttachment\[\]/g)?.length).toBe(2);
-    expect(provider).toContain("sendTurnInThread({ threadId, content: trimmed, files,");
+    expect(provider).toContain("sendTurnInThread({ threadId, content: trimmed, files: persistedFiles,");
   });
 
   it("新会话向新建和续接线程路径都传入 files", () => {
@@ -42,5 +43,12 @@ describe("app-server image attachment wiring", () => {
     expect(chatView).toContain("attachmentsAccept={appServerSend ? 'image/*' : undefined}");
     expect(messageInputParts).toContain("if (imageOnly && !contentType.startsWith('image/'))");
     expect(messageInputParts).toContain("new CustomEvent('insert-file-mention', { detail: { path: filePath } })");
+  });
+
+  it("附件转换失败时不得静默发送纯文本", () => {
+    const messageInput = source("../components/chat/MessageInput.tsx");
+
+    expect(messageInput).toContain("throw new Error(`无法读取附件 ${file.filename || 'file'}: ${message}`)");
+    expect(messageInput).not.toContain("// Skip files that fail conversion");
   });
 });

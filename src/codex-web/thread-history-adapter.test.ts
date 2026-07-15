@@ -74,6 +74,57 @@ describe("thread-history-adapter", () => {
     expect(result.unsupportedItemCount).toBe(0);
   });
 
+  it("从历史 image 和 localImage 恢复图片附件", () => {
+    const thread = createThread();
+    thread.turns[0]!.items[0] = {
+      type: "userMessage",
+      id: "user-images",
+      clientId: null,
+      content: [
+        { type: "image", url: "data:image/png;base64,AAAA" },
+        { type: "localImage", path: "/codex-home/attachments/id/photo.jpg" },
+        { type: "text", text: "查看图片", text_elements: [] },
+      ],
+    };
+
+    const result = threadToMessages(thread);
+    const match = result.messages[0]!.content.match(/^<!--files:(.*?)-->([\s\S]*)$/);
+
+    expect(match?.[2]).toBe("查看图片");
+    expect(JSON.parse(match?.[1] ?? "[]")).toEqual([
+      {
+        id: "user-images-image-0",
+        name: "image-1.png",
+        type: "image/png",
+        size: 3,
+        data: "AAAA",
+      },
+      {
+        id: "user-images-image-1",
+        name: "photo.jpg",
+        type: "image/jpeg",
+        size: 0,
+        data: "",
+        filePath: "/codex-home/attachments/id/photo.jpg",
+      },
+    ]);
+  });
+
+  it("保留只有图片而没有文本的历史用户消息", () => {
+    const thread = createThread();
+    thread.turns[0]!.items = [{
+      type: "userMessage",
+      id: "user-image-only",
+      clientId: null,
+      content: [{ type: "image", url: "data:image/webp;base64,AAAA" }],
+    }];
+
+    const result = threadToMessages(thread);
+
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]!.content).toContain('"type":"image/webp"');
+  });
+
   it("把历史 fileChange 和 mcpToolCall 映射为 CodexWeb 工具块", () => {
     const result = threadToMessages(createThreadWithPatchAndMcp());
     const assistantContent = JSON.parse(result.messages[0].content);

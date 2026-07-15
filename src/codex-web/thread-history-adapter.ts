@@ -94,13 +94,83 @@ function userItemToMessage(
   turn: Turn,
   item: Extract<ThreadItem, { type: "userMessage" }>,
 ): Message | null {
+  const files = userInputAttachments(item);
   const content = item.content
     .map((input) => (input.type === "text" ? input.text : ""))
     .filter(Boolean)
     .join("\n\n")
     .trim();
-  if (!content) return null;
-  return createMessage(thread, turn, item.id, "user", content);
+  if (!content && files.length === 0) return null;
+  const contentWithFiles = files.length > 0
+    ? `<!--files:${JSON.stringify(files)}-->${content}`
+    : content;
+  return createMessage(thread, turn, item.id, "user", contentWithFiles);
+}
+
+function userInputAttachments(
+  item: Extract<ThreadItem, { type: "userMessage" }>,
+): Array<{ id: string; name: string; type: string; size: number; data: string; filePath?: string }> {
+  const files: Array<{ id: string; name: string; type: string; size: number; data: string; filePath?: string }> = [];
+
+  for (const input of item.content) {
+    if (input.type === "image") {
+      const parsed = parseImageDataUrl(input.url);
+      files.push({
+        id: `${item.id}-image-${files.length}`,
+        name: `image-${files.length + 1}.${extensionForMimeType(parsed.type)}`,
+        type: parsed.type,
+        size: base64DecodedSize(parsed.data),
+        data: parsed.data,
+      });
+    } else if (input.type === "localImage") {
+      const name = input.path.split(/[\\/]/).pop() || `image-${files.length + 1}`;
+      files.push({
+        id: `${item.id}-image-${files.length}`,
+        name,
+        type: mimeTypeForName(name),
+        size: 0,
+        data: "",
+        filePath: input.path,
+      });
+    }
+  }
+
+  return files;
+}
+
+function parseImageDataUrl(url: string): { type: string; data: string } {
+  const match = url.match(/^data:([^;,]+);base64,([\s\S]*)$/i);
+  if (!match) return { type: "image/*", data: "" };
+  return { type: match[1] || "image/*", data: match[2] || "" };
+}
+
+function base64DecodedSize(data: string): number {
+  if (!data) return 0;
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor(data.length * 3 / 4) - padding);
+}
+
+function mimeTypeForName(name: string): string {
+  const extension = name.split(".").pop()?.toLowerCase();
+  switch (extension) {
+    case "jpg":
+    case "jpeg": return "image/jpeg";
+    case "gif": return "image/gif";
+    case "webp": return "image/webp";
+    case "svg": return "image/svg+xml";
+    case "png": return "image/png";
+    default: return "image/*";
+  }
+}
+
+function extensionForMimeType(mimeType: string): string {
+  switch (mimeType.toLowerCase()) {
+    case "image/jpeg": return "jpg";
+    case "image/gif": return "gif";
+    case "image/webp": return "webp";
+    case "image/svg+xml": return "svg";
+    default: return "png";
+  }
 }
 
 function createMessage(

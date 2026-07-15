@@ -81,6 +81,7 @@ import { reduceThreadSettingsNotification } from "./thread-settings-adapter";
 import { buildThreadModelSettingsUpdate } from "./thread-model-settings";
 import { withReasoningEffort } from "./turn-start-request";
 import { buildAppServerTurnInput } from "./turn-input";
+import { persistImageAttachments } from "./attachment-persistence";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -629,6 +630,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("消息内容不能为空");
     }
 
+    const persistedFiles = await persistTurnAttachments(client, state.initialize?.data, files);
     setState((current) => ({
       ...current,
       ...setActiveTurnState(current, {
@@ -641,7 +643,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const turnParams: TurnStartParamsWithCollaborationMode = withReasoningEffort(
       withPlanCollaborationMode({
         threadId,
-        input: buildAppServerTurnInput(trimmed, files),
+        input: buildAppServerTurnInput(trimmed, persistedFiles),
         cwd,
         model: model || null,
         ...turnRuntimeOptions(permissionProfile, cwd, effectiveConfig),
@@ -682,7 +684,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     void refreshThreads().catch(() => undefined);
     return acceptedTurn;
-  }, [refreshThreads]);
+  }, [refreshThreads, state.initialize]);
 
   const sendOneTurn = useCallback(async ({ content, files, cwd, model, effort, mode, permissionProfile = "request_approval" }: SendOneTurnParams) => {
     const client = clientRef.current;
@@ -694,6 +696,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("消息内容不能为空");
     }
 
+    const persistedFiles = await persistTurnAttachments(client, state.initialize?.data, files);
     setState((current) => ({
       ...current,
       activeTurn: { source: "app-server.notification", data: createStartingTurnState() },
@@ -733,8 +736,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }),
     }));
 
-    return sendTurnInThread({ threadId, content: trimmed, files, cwd, model, effort, mode, permissionProfile });
-  }, [sendTurnInThread]);
+    return sendTurnInThread({ threadId, content: trimmed, files: persistedFiles, cwd, model, effort, mode, permissionProfile });
+  }, [sendTurnInThread, state.initialize]);
 
   const interruptTurn = useCallback(async (params?: InterruptTurnParams) => {
     const client = clientRef.current;
@@ -973,4 +976,24 @@ async function readEffectiveConfig(
     includeLayers: false,
     cwd: cwd?.trim() || null,
   })) as ConfigReadResponse;
+}
+
+async function persistTurnAttachments(
+  client: AppServerBrowserClient,
+  initialize: InitializeResponse | undefined,
+  files: readonly FileAttachment[] | undefined,
+): Promise<readonly FileAttachment[] | undefined> {
+  const needsPersistence = files?.some(
+    (file) => file.type.startsWith("image/") && !!file.data && !file.filePath,
+  );
+  if (!needsPersistence) return files;
+  if (!initialize) {
+    throw new Error("app-server 尚未返回 CODEX_HOME，无法保存附件");
+  }
+  return persistImageAttachments({
+    files: files ?? [],
+    codexHome: initialize.codexHome,
+    platformFamily: initialize.platformFamily,
+    request: (method, params) => client.request(method, params),
+  });
 }

@@ -1039,8 +1039,9 @@ export function MessageInput({
             file.mediaType || 'application/octet-stream',
           );
           attachments.push(attachment);
-        } catch {
-          // Skip files that fail conversion
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`无法读取附件 ${file.filename || 'file'}: ${message}`);
         }
       }
       return attachments;

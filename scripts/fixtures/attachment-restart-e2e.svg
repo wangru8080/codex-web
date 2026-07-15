@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
+  <rect width="320" height="180" fill="#f4f4f5"/>
+  <rect x="24" y="24" width="272" height="132" rx="8" fill="#ffffff" stroke="#18181b" stroke-width="2"/>
+  <text x="160" y="96" text-anchor="middle" font-family="sans-serif" font-size="20" fill="#18181b">attachment restart e2e</text>
+</svg>
