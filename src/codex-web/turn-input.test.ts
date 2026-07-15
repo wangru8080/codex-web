@@ -30,23 +30,64 @@ describe("buildAppServerTurnInput", () => {
 
   it("即使存在本地路径也优先使用 data URL 以兼容 SSH app-server", () => {
     expect(buildAppServerTurnInput("检查图片", [
-      attachment({ filePath: "/tmp/image.png" }),
+      attachment({ filePath: "/codex-home/attachments/id/image.png" }),
     ])).toEqual([
       { type: "image", url: "data:image/png;base64,AAAA" },
-      { type: "text", text: "检查图片", text_elements: [] },
+      {
+        type: "text",
+        text: "\n# Files mentioned by the user:\n\n## image.png: /codex-home/attachments/id/image.png\n\n## My request for Codex:\n检查图片\n",
+        text_elements: [],
+      },
     ]);
   });
 
   it("缺少图片数据时退回 localImage", () => {
     expect(buildAppServerTurnInput("检查图片", [
-      attachment({ data: "", filePath: "/tmp/image.png" }),
+      attachment({ data: "", filePath: "/codex-home/attachments/id/image.png" }),
     ])).toEqual([
-      { type: "localImage", path: "/tmp/image.png" },
-      { type: "text", text: "检查图片", text_elements: [] },
+      { type: "localImage", path: "/codex-home/attachments/id/image.png" },
+      {
+        type: "text",
+        text: "\n# Files mentioned by the user:\n\n## image.png: /codex-home/attachments/id/image.png\n\n## My request for Codex:\n检查图片\n",
+        text_elements: [],
+      },
     ]);
   });
 
-  it("过滤普通文件和无有效载荷的图片", () => {
+  it("按官方 App 文本信封传入普通文件绝对路径", () => {
+    expect(buildAppServerTurnInput("总结文件", [attachment({
+      name: "notes.md",
+      type: "text/markdown",
+      data: "IyBOb3Rlcw==",
+      filePath: "/codex-home/attachments/id/notes.md",
+    })])).toEqual([{
+      type: "text",
+      text: "\n# Files mentioned by the user:\n\n## notes.md: /codex-home/attachments/id/notes.md\n\n## My request for Codex:\n总结文件\n",
+      text_elements: [],
+    }]);
+  });
+
+  it("项目 originPath 文件不进入上传附件信封", () => {
+    expect(buildAppServerTurnInput("检查 @README.md", [
+      attachment({
+        name: "README.md",
+        type: "text/markdown",
+        filePath: "/codex-home/attachments/id/README.md",
+        originPath: "README.md",
+      }),
+      attachment({
+        id: "directory",
+        name: "docs",
+        type: "inode/directory",
+        data: "",
+        filePath: "/repo/docs",
+      }),
+    ])).toEqual([
+      { type: "text", text: "检查 @README.md", text_elements: [] },
+    ]);
+  });
+
+  it("过滤未持久化普通文件和无有效载荷的图片", () => {
     expect(buildAppServerTurnInput("只发送文本", [
       attachment({ name: "notes.txt", type: "text/plain" }),
       attachment({ id: "file-2", data: "", filePath: undefined }),

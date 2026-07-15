@@ -19,9 +19,25 @@ export function buildAppServerTurnInput(
     }
   }
 
-  if (content) {
-    input.push({ type: "text", text: content, text_elements: [] });
+  const prompt = buildFilesMentionedPrompt(content, files);
+  if (prompt) {
+    input.push({ type: "text", text: prompt, text_elements: [] });
   }
 
   return input;
+}
+
+export function buildFilesMentionedPrompt(
+  content: string,
+  files: readonly FileAttachment[],
+): string {
+  const mentionedFiles = files.filter(
+    (file) => file.filePath && !file.originPath && file.type !== "inode/directory",
+  );
+  if (mentionedFiles.length === 0) return content;
+
+  const entries = mentionedFiles
+    .map((file) => `## ${file.name}: ${file.filePath}`)
+    .join("\n\n");
+  return `\n# Files mentioned by the user:\n\n${entries}\n\n## My request for Codex:\n${content}\n`;
 }

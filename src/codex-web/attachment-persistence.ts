@@ -1,9 +1,9 @@
-import { isImageFile, type FileAttachment } from "@/types";
+import type { FileAttachment } from "@/types";
 import { v4 as createUuid } from "uuid";
 
 type AppServerRequest = (method: string, params?: unknown) => Promise<unknown>;
 
-type PersistImageAttachmentsParams = {
+type PersistAttachmentsParams = {
   files: readonly FileAttachment[];
   codexHome: string;
   platformFamily: string;
@@ -11,24 +11,24 @@ type PersistImageAttachmentsParams = {
   createId?: () => string;
 };
 
-export async function persistImageAttachments({
+export async function persistAttachments({
   files,
   codexHome,
   platformFamily,
   request,
   createId = createUuid,
-}: PersistImageAttachmentsParams): Promise<FileAttachment[]> {
+}: PersistAttachmentsParams): Promise<FileAttachment[]> {
   const separator = platformFamily === "windows" ? "\\" : "/";
   const persisted: FileAttachment[] = [];
 
   for (const file of files) {
-    if (!isImageFile(file.type) || !file.data || file.filePath) {
+    if (!file.data || file.filePath || file.originPath) {
       persisted.push(file);
       continue;
     }
 
     const directory = joinPath(codexHome, separator, "attachments", createId());
-    const fileName = safeFileName(file.name, file.type);
+    const fileName = safeFileName(file.name);
     const filePath = joinPath(directory, separator, fileName);
 
     try {
@@ -50,21 +50,11 @@ function joinPath(root: string, separator: string, ...parts: string[]): string {
   return [trimmedRoot, ...parts].join(separator);
 }
 
-function safeFileName(name: string, mimeType: string): string {
+function safeFileName(name: string): string {
   const basename = name.split(/[\\/]/).pop()?.trim() ?? "";
   const sanitized = basename.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_");
   if (sanitized && sanitized !== "." && sanitized !== "..") {
     return sanitized;
   }
-  return `image.${extensionForMimeType(mimeType)}`;
-}
-
-function extensionForMimeType(mimeType: string): string {
-  switch (mimeType.toLowerCase()) {
-    case "image/jpeg": return "jpg";
-    case "image/gif": return "gif";
-    case "image/webp": return "webp";
-    case "image/svg+xml": return "svg";
-    default: return "png";
-  }
+  return "attachment";
 }

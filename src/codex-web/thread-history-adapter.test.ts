@@ -125,6 +125,105 @@ describe("thread-history-adapter", () => {
     expect(result.messages[0]!.content).toContain('"type":"image/webp"');
   });
 
+  it("解析官方文件信封并恢复普通文件附件", () => {
+    const thread = createThread();
+    thread.turns[0]!.items[0] = {
+      type: "userMessage",
+      id: "user-file",
+      clientId: null,
+      content: [{
+        type: "text",
+        text: "\n# Files mentioned by the user:\n\n## notes.md: /codex-home/attachments/id/notes.md\n\n## My request for Codex:\n总结文件\n",
+        text_elements: [],
+      }],
+    };
+
+    const result = threadToMessages(thread);
+    const match = result.messages[0]!.content.match(/^<!--files:(.*?)-->([\s\S]*)$/);
+
+    expect(match?.[2]).toBe("总结文件");
+    expect(JSON.parse(match?.[1] ?? "[]")).toEqual([{
+      id: "user-file-file-0",
+      name: "notes.md",
+      type: "text/markdown",
+      size: 0,
+      data: "",
+      filePath: "/codex-home/attachments/id/notes.md",
+    }]);
+  });
+
+  it("把图片 block 合并到信封中的图片附件而不重复显示", () => {
+    const thread = createThread();
+    thread.turns[0]!.items[0] = {
+      type: "userMessage",
+      id: "user-file-image",
+      clientId: null,
+      content: [
+        { type: "image", url: "data:image/png;base64,AAAA" },
+        {
+          type: "text",
+          text: "\n# Files mentioned by the user:\n\n## photo.png: C:\\Codex\\attachments\\id\\photo.png\n\n## My request for Codex:\n查看图片\n",
+          text_elements: [],
+        },
+      ],
+    };
+
+    const result = threadToMessages(thread);
+    const match = result.messages[0]!.content.match(/^<!--files:(.*?)-->([\s\S]*)$/);
+    const files = JSON.parse(match?.[1] ?? "[]");
+
+    expect(match?.[2]).toBe("查看图片");
+    expect(files).toHaveLength(1);
+    expect(files[0]).toEqual({
+      id: "user-file-image-file-0",
+      name: "photo.png",
+      type: "image/png",
+      size: 3,
+      data: "AAAA",
+      filePath: "C:\\Codex\\attachments\\id\\photo.png",
+    });
+  });
+
+  it("恢复包含 Unix 和 Windows 绝对路径的多文件信封", () => {
+    const thread = createThread();
+    thread.turns[0]!.items[0] = {
+      type: "userMessage",
+      id: "user-files",
+      clientId: null,
+      content: [{
+        type: "text",
+        text: "\n# Files mentioned by the user:\n\n## notes.md: /codex-home/attachments/a/notes.md\n\n## report.pdf: C:\\Codex\\attachments\\b\\report.pdf\n\n## My request for Codex:\n比较文件\n",
+        text_elements: [],
+      }],
+    };
+
+    const result = threadToMessages(thread);
+    const match = result.messages[0]!.content.match(/^<!--files:(.*?)-->([\s\S]*)$/);
+    const files = JSON.parse(match?.[1] ?? "[]");
+
+    expect(match?.[2]).toBe("比较文件");
+    expect(files).toHaveLength(2);
+    expect(files).toEqual([
+      expect.objectContaining({ name: "notes.md", type: "text/markdown" }),
+      expect.objectContaining({ name: "report.pdf", type: "application/pdf" }),
+    ]);
+  });
+
+  it("不把相对路径的同名 Markdown 标题误解析为附件信封", () => {
+    const thread = createThread();
+    const text = "# Files mentioned by the user:\n\n## notes.md: docs/notes.md\n\n## My request for Codex:\n只是示例";
+    thread.turns[0]!.items[0] = {
+      type: "userMessage",
+      id: "user-not-envelope",
+      clientId: null,
+      content: [{ type: "text", text, text_elements: [] }],
+    };
+
+    const result = threadToMessages(thread);
+
+    expect(result.messages[0]!.content).toBe(text);
+  });
+
   it("把历史 fileChange 和 mcpToolCall 映射为 CodexWeb 工具块", () => {
     const result = threadToMessages(createThreadWithPatchAndMcp());
     const assistantContent = JSON.parse(result.messages[0].content);

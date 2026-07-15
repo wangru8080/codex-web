@@ -1820,7 +1820,6 @@ export function ChatView({
               permissionProfile={permissionProfile}
               onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}
               runtime={sessionRuntimeParam}
-              attachmentsAccept={appServerSend ? 'image/*' : undefined}
               onProviderModelChange={settingsLocked ? undefined : handleProviderModelChange}
               workingDirectory={workingDirectory}
               onAssistantTrigger={checkAssistantTrigger}
@@ -2139,7 +2138,6 @@ export function ChatView({
         permissionProfile={permissionProfile}
         onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}
         runtime={sessionRuntimeParam}
-        attachmentsAccept={appServerSend ? 'image/*' : undefined}
         codexOnly={isCodexOnlySession}
         onProviderModelChange={settingsLocked ? undefined : handleProviderModelChange}
         workingDirectory={workingDirectory}

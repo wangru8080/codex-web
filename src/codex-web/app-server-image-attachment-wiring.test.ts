@@ -10,8 +10,10 @@ describe("app-server image attachment wiring", () => {
   it("AppServerProvider 使用共享构造器生成 turn/start.input", () => {
     const provider = source("./AppServerProvider.tsx");
 
-    expect(provider).toContain("persistImageAttachments");
+    expect(provider).toContain("persistAttachments");
     expect(provider).toContain("buildAppServerTurnInput(trimmed, persistedFiles)");
+    expect(provider).not.toContain('file.type.startsWith("image/") && !!file.data');
+    expect(provider.match(/if \(!trimmed && !files\?\.length\)/g)?.length).toBe(2);
     expect(provider.match(/files\?: readonly FileAttachment\[\]/g)?.length).toBe(2);
     expect(provider).toContain("sendTurnInThread({ threadId, content: trimmed, files: persistedFiles,");
   });
@@ -33,14 +35,16 @@ describe("app-server image attachment wiring", () => {
     expect(historyPage).toMatch(/sendTurnInThread\(\{[\s\S]*?threadId,[\s\S]*?content,[\s\S]*?files,/);
   });
 
-  it("Codex 输入框只允许选择图片", () => {
+  it("Codex 输入框允许普通上传文件但项目树普通文件保持 @路径", () => {
     const messageInput = source("../components/chat/MessageInput.tsx");
     const messageInputParts = source("../components/chat/MessageInputParts.tsx");
     const chatView = source("../components/chat/ChatView.tsx");
 
-    expect(messageInput).toContain("const resolvedAttachmentsAccept = attachmentsAccept ?? (codexOnly ? 'image/*' : '')");
+    expect(messageInput).toContain("const resolvedAttachmentsAccept = attachmentsAccept ?? ''");
     expect(messageInput).toContain("accept={resolvedAttachmentsAccept}");
-    expect(chatView).toContain("attachmentsAccept={appServerSend ? 'image/*' : undefined}");
+    expect(chatView).not.toContain("attachmentsAccept={appServerSend ? 'image/*' : undefined}");
+    expect(messageInput).toContain("<FileTreeAttachmentBridge imageOnly={codexOnly} />");
+    expect(messageInput).toContain("<FileAndFolderMenuItem />");
     expect(messageInputParts).toContain("if (imageOnly && !contentType.startsWith('image/'))");
     expect(messageInputParts).toContain("new CustomEvent('insert-file-mention', { detail: { path: filePath } })");
   });

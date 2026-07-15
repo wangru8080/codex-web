@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { FileAttachment } from "@/types";
 
-import { persistImageAttachments } from "./attachment-persistence";
+import { persistAttachments } from "./attachment-persistence";
 
 function attachment(overrides: Partial<FileAttachment> = {}): FileAttachment {
   return {
@@ -15,11 +15,11 @@ function attachment(overrides: Partial<FileAttachment> = {}): FileAttachment {
   };
 }
 
-describe("persistImageAttachments", () => {
+describe("persistAttachments", () => {
   it("通过 app-server fs 接口写入 CODEX_HOME/attachments UUID 目录", async () => {
     const request = vi.fn(async (_method: string, _params?: unknown) => ({}));
 
-    const result = await persistImageAttachments({
+    const result = await persistAttachments({
       files: [attachment()],
       codexHome: "/codex-home",
       platformFamily: "unix",
@@ -49,7 +49,7 @@ describe("persistImageAttachments", () => {
   it("净化路径型文件名并使用 Windows 路径分隔符", async () => {
     const request = vi.fn(async (_method: string, _params?: unknown) => ({}));
 
-    const result = await persistImageAttachments({
+    const result = await persistAttachments({
       files: [attachment({ name: "../shots\\capture?.png" })],
       codexHome: "C:\\Users\\tester\\.codex\\",
       platformFamily: "windows",
@@ -70,15 +70,50 @@ describe("persistImageAttachments", () => {
     );
   });
 
-  it("忽略非图片和没有数据的图片", async () => {
+  it("把普通 Markdown 文件写入独立 UUID 目录", async () => {
+    const request = vi.fn(async (_method: string, _params?: unknown) => ({}));
+
+    const result = await persistAttachments({
+      files: [attachment({
+        id: "document-1",
+        name: "notes.md",
+        type: "text/markdown",
+        size: 7,
+        data: "IyBOb3Rlcw==",
+      })],
+      codexHome: "/codex-home",
+      platformFamily: "unix",
+      request,
+      createId: () => "file-uuid",
+    });
+
+    expect(request.mock.calls).toEqual([
+      ["fs/createDirectory", {
+        path: "/codex-home/attachments/file-uuid",
+        recursive: true,
+      }],
+      ["fs/writeFile", {
+        path: "/codex-home/attachments/file-uuid/notes.md",
+        dataBase64: "IyBOb3Rlcw==",
+      }],
+    ]);
+    expect(result[0]?.filePath).toBe("/codex-home/attachments/file-uuid/notes.md");
+  });
+
+  it("忽略没有数据、已持久化和带 originPath 的项目文件", async () => {
     const request = vi.fn(async (_method: string, _params?: unknown) => ({}));
     const files = [
-      attachment({ id: "text", type: "text/plain", name: "note.txt" }),
       attachment({ id: "empty", data: "", filePath: "/existing/image.png" }),
       attachment({ id: "persisted", filePath: "/codex-home/attachments/id/image.png" }),
+      attachment({
+        id: "project-file",
+        name: "README.md",
+        type: "text/markdown",
+        originPath: "README.md",
+      }),
     ];
 
-    const result = await persistImageAttachments({
+    const result = await persistAttachments({
       files,
       codexHome: "/codex-home",
       platformFamily: "unix",
@@ -96,7 +131,7 @@ describe("persistImageAttachments", () => {
       .mockResolvedValueOnce({})
       .mockRejectedValueOnce(new Error("disk full"));
 
-    await expect(persistImageAttachments({
+    await expect(persistAttachments({
       files: [attachment()],
       codexHome: "/codex-home",
       platformFamily: "unix",

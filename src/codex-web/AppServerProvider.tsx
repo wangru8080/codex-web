@@ -81,7 +81,7 @@ import { reduceThreadSettingsNotification } from "./thread-settings-adapter";
 import { buildThreadModelSettingsUpdate } from "./thread-model-settings";
 import { withReasoningEffort } from "./turn-start-request";
 import { buildAppServerTurnInput } from "./turn-input";
-import { persistImageAttachments } from "./attachment-persistence";
+import { persistAttachments } from "./attachment-persistence";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -626,7 +626,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Web bridge 尚未连接");
     }
     const trimmed = content.trim();
-    if (!trimmed) {
+    if (!trimmed && !files?.length) {
       throw new Error("消息内容不能为空");
     }
 
@@ -692,7 +692,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Web bridge 尚未连接");
     }
     const trimmed = content.trim();
-    if (!trimmed) {
+    if (!trimmed && !files?.length) {
       throw new Error("消息内容不能为空");
     }
 
@@ -984,13 +984,13 @@ async function persistTurnAttachments(
   files: readonly FileAttachment[] | undefined,
 ): Promise<readonly FileAttachment[] | undefined> {
   const needsPersistence = files?.some(
-    (file) => file.type.startsWith("image/") && !!file.data && !file.filePath,
+    (file) => !!file.data && !file.filePath && !file.originPath,
   );
   if (!needsPersistence) return files;
   if (!initialize) {
     throw new Error("app-server 尚未返回 CODEX_HOME，无法保存附件");
   }
-  return persistImageAttachments({
+  return persistAttachments({
     files: files ?? [],
     codexHome: initialize.codexHome,
     platformFamily: initialize.platformFamily,

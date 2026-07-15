@@ -3,6 +3,10 @@ import { readFile } from "node:fs/promises";
 async function main(): Promise<void> {
   const cdpBaseUrl = process.env.CODEX_WEB_CDP_URL ?? "http://192.168.3.12:45737";
   const appBaseUrl = requiredEnv("CODEX_WEB_E2E_URL").replace(/\/$/, "");
+  const expectedAttachment = process.env.CODEX_WEB_E2E_EXPECT ?? "image";
+  if (expectedAttachment !== "image" && expectedAttachment !== "file") {
+    throw new Error("CODEX_WEB_E2E_EXPECT 只能是 image 或 file");
+  }
   const phase = process.argv[2];
 
   if (phase !== "send" && phase !== "verify") {
@@ -26,6 +30,9 @@ async function main(): Promise<void> {
     const fixture = requiredEnv("CODEX_WEB_E2E_FIXTURE");
     const workingDirectory = process.env.CODEX_WEB_E2E_CWD ?? process.cwd();
     const marker = `attachment-restart-${Date.now()}`;
+    const analysisPrompt = process.env.CODEX_WEB_E2E_PROMPT?.trim();
+    const userPrompt = analysisPrompt ? `${marker}\n\n${analysisPrompt}` : marker;
+    const expectedAnswer = process.env.CODEX_WEB_E2E_EXPECTED_ANSWER?.trim();
 
     await waitFor(cdp, "document.querySelector('textarea') !== null");
     await evaluate(cdp, `
@@ -45,11 +52,11 @@ async function main(): Promise<void> {
         const textarea = document.querySelector('textarea');
         if (!(textarea instanceof HTMLTextAreaElement)) throw new Error('未找到消息输入框');
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-        setter?.call(textarea, ${JSON.stringify(marker)});
+        setter?.call(textarea, ${JSON.stringify(userPrompt)});
         textarea.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
       })()
     `);
-    await waitFor(cdp, `document.querySelector('textarea')?.value === ${JSON.stringify(marker)}`);
+    await waitFor(cdp, `document.querySelector('textarea')?.value === ${JSON.stringify(userPrompt)}`);
     await waitFor(
       cdp,
       "document.querySelector('textarea')?.closest('form')?.querySelector('button[type=submit]')?.disabled === false",
@@ -65,7 +72,14 @@ async function main(): Promise<void> {
       })()
     `);
     await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(marker)})`, 30_000);
-    await waitFor(cdp, "Array.from(document.querySelectorAll('a[href^=\"/chat/\"]')).length > 0", 30_000);
+    if (expectedAnswer) {
+      await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(expectedAnswer)})`, 120_000);
+    }
+    await waitFor(
+      cdp,
+      `Array.from(document.querySelectorAll('a[href^="/chat/"]')).some((link) => link.textContent?.includes(${JSON.stringify(marker)}))`,
+      30_000,
+    );
     const threadUrl = await evaluate<string>(cdp, `
       (() => {
         const links = Array.from(document.querySelectorAll('a[href^="/chat/"]'));
@@ -74,16 +88,34 @@ async function main(): Promise<void> {
         return new URL(href, location.origin).href;
       })()
     `);
-    console.log(JSON.stringify({ marker, threadUrl, fixture }));
+    console.log(JSON.stringify({
+      marker,
+      threadUrl,
+      fixture,
+      fixtureName,
+      expectedAttachment,
+      expectedAnswer: expectedAnswer || null,
+    }));
     } else {
     const marker = requiredEnv("CODEX_WEB_E2E_MARKER");
+    const fixtureName = requiredEnv("CODEX_WEB_E2E_FIXTURE_NAME");
+    const expectedAnswer = process.env.CODEX_WEB_E2E_EXPECTED_ANSWER?.trim();
     await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(marker)})`, 30_000);
-    await waitFor(cdp, "document.querySelectorAll('img[src^=\"data:image/\"]').length > 0", 30_000);
-    const imageCount = await evaluate<number>(
-      cdp,
-      "document.querySelectorAll('img[src^=\"data:image/\"]').length",
-    );
-    console.log(JSON.stringify({ marker, threadUrl: initialUrl, imageCount }));
+    await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(fixtureName)})`, 30_000);
+    if (expectedAnswer) {
+      await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(expectedAnswer)})`, 30_000);
+    }
+    const imageCount = expectedAttachment === "image"
+      ? await waitForImage(cdp)
+      : 0;
+    console.log(JSON.stringify({
+      marker,
+      threadUrl: initialUrl,
+      fixtureName,
+      expectedAttachment,
+      expectedAnswer: expectedAnswer || null,
+      imageCount,
+    }));
     }
   } catch (error) {
     const bodyText = await evaluate<string>(cdp, "document.body.innerText").catch(() => "");
@@ -107,7 +139,7 @@ async function setFileInput(cdp: CdpClient, filePath: string): Promise<void> {
   const dataBase64 = isBase64Fixture ? fileContents.toString("utf8").trim() : fileContents.toString("base64");
   const sourceName = filePath.split(/[\\/]/).pop() ?? "attachment.png";
   const fileName = isBase64Fixture ? sourceName.slice(0, -".base64".length) : sourceName;
-  const mediaType = fileName.toLowerCase().endsWith(".svg") ? "image/svg+xml" : "image/png";
+  const mediaType = mediaTypeForFileName(fileName);
   await evaluate(cdp, `
     (() => {
       const input = document.querySelector('input[type=file]');
@@ -120,6 +152,21 @@ async function setFileInput(cdp: CdpClient, filePath: string): Promise<void> {
       input.dispatchEvent(new Event('change', { bubbles: true }));
     })()
   `);
+}
+
+async function waitForImage(cdp: CdpClient): Promise<number> {
+  await waitFor(cdp, "document.querySelectorAll('img[src^=\"data:image/\"]').length > 0", 30_000);
+  return evaluate<number>(cdp, "document.querySelectorAll('img[src^=\"data:image/\"]').length");
+}
+
+function mediaTypeForFileName(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "text/markdown";
+  if (lower.endsWith(".txt")) return "text/plain";
+  if (lower.endsWith(".json")) return "application/json";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  return "image/png";
 }
 
 async function waitFor(cdp: CdpClient, expression: string, timeoutMs = 15_000): Promise<void> {

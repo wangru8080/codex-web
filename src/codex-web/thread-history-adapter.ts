@@ -1,7 +1,7 @@
 import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 import type { Turn } from "@/codex/protocol/generated/v2/Turn";
-import type { ChatSession, Message } from "@/types";
+import type { ChatSession, FileAttachment, Message } from "@/types";
 
 import { turnItemsToMessageContent } from "./app-server-message-blocks";
 
@@ -94,12 +94,14 @@ function userItemToMessage(
   turn: Turn,
   item: Extract<ThreadItem, { type: "userMessage" }>,
 ): Message | null {
-  const files = userInputAttachments(item);
-  const content = item.content
+  const rawContent = item.content
     .map((input) => (input.type === "text" ? input.text : ""))
     .filter(Boolean)
     .join("\n\n")
     .trim();
+  const parsedPrompt = parseFilesMentionedPrompt(rawContent, item.id);
+  const files = userInputAttachments(item, parsedPrompt.files);
+  const content = parsedPrompt.content;
   if (!content && files.length === 0) return null;
   const contentWithFiles = files.length > 0
     ? `<!--files:${JSON.stringify(files)}-->${content}`
@@ -109,33 +111,81 @@ function userItemToMessage(
 
 function userInputAttachments(
   item: Extract<ThreadItem, { type: "userMessage" }>,
-): Array<{ id: string; name: string; type: string; size: number; data: string; filePath?: string }> {
-  const files: Array<{ id: string; name: string; type: string; size: number; data: string; filePath?: string }> = [];
+  promptFiles: FileAttachment[],
+): FileAttachment[] {
+  const files = promptFiles.map((file) => ({ ...file }));
+  let imageSequence = 0;
 
   for (const input of item.content) {
     if (input.type === "image") {
       const parsed = parseImageDataUrl(input.url);
-      files.push({
-        id: `${item.id}-image-${files.length}`,
-        name: `image-${files.length + 1}.${extensionForMimeType(parsed.type)}`,
-        type: parsed.type,
-        size: base64DecodedSize(parsed.data),
-        data: parsed.data,
-      });
+      const existing = files.find((file) => file.type.startsWith("image/") && !file.data);
+      if (existing) {
+        existing.type = parsed.type;
+        existing.size = base64DecodedSize(parsed.data);
+        existing.data = parsed.data;
+      } else {
+        files.push({
+          id: `${item.id}-image-${imageSequence}`,
+          name: `image-${imageSequence + 1}.${extensionForMimeType(parsed.type)}`,
+          type: parsed.type,
+          size: base64DecodedSize(parsed.data),
+          data: parsed.data,
+        });
+      }
+      imageSequence += 1;
     } else if (input.type === "localImage") {
       const name = input.path.split(/[\\/]/).pop() || `image-${files.length + 1}`;
-      files.push({
-        id: `${item.id}-image-${files.length}`,
-        name,
-        type: mimeTypeForName(name),
-        size: 0,
-        data: "",
-        filePath: input.path,
-      });
+      if (!files.some((file) => file.filePath === input.path)) {
+        files.push({
+          id: `${item.id}-image-${imageSequence}`,
+          name,
+          type: mimeTypeForName(name),
+          size: 0,
+          data: "",
+          filePath: input.path,
+        });
+      }
+      imageSequence += 1;
     }
   }
 
   return files;
+}
+
+function parseFilesMentionedPrompt(
+  text: string,
+  itemId: string,
+): { content: string; files: FileAttachment[] } {
+  const header = "# Files mentioned by the user:\n\n";
+  const requestMarker = "\n\n## My request for Codex:\n";
+  if (!text.startsWith(header)) return { content: text, files: [] };
+
+  const markerIndex = text.indexOf(requestMarker, header.length);
+  if (markerIndex < 0) return { content: text, files: [] };
+  const entries = text.slice(header.length, markerIndex).split("\n\n");
+  const files: FileAttachment[] = [];
+
+  for (const [index, entry] of entries.entries()) {
+    const match = entry.match(/^## (.+): ((?:\/|[A-Za-z]:[\\/]).+)$/);
+    if (!match) return { content: text, files: [] };
+    const name = match[1] ?? "attachment";
+    const filePath = match[2] ?? "";
+    files.push({
+      id: `${itemId}-file-${index}`,
+      name,
+      type: mimeTypeForName(name),
+      size: 0,
+      data: "",
+      filePath,
+    });
+  }
+
+  if (files.length === 0) return { content: text, files: [] };
+  return {
+    content: text.slice(markerIndex + requestMarker.length).trim(),
+    files,
+  };
 }
 
 function parseImageDataUrl(url: string): { type: string; data: string } {
@@ -159,7 +209,14 @@ function mimeTypeForName(name: string): string {
     case "webp": return "image/webp";
     case "svg": return "image/svg+xml";
     case "png": return "image/png";
-    default: return "image/*";
+    case "md":
+    case "markdown": return "text/markdown";
+    case "txt": return "text/plain";
+    case "csv": return "text/csv";
+    case "json": return "application/json";
+    case "pdf": return "application/pdf";
+    case "zip": return "application/zip";
+    default: return "application/octet-stream";
   }
 }
 
