@@ -125,7 +125,7 @@ interface ChatViewProps {
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
   onAppServerGoalClear?: () => Promise<void>;
-  appServerSend?: (params: { content: string; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
+  appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
   appServerClearContextAndSend?: (content: string, effort?: ReasoningEffort) => Promise<void>;
   appServerInterrupt?: () => Promise<void>;
   appServerLoadEarlier?: () => Promise<MessagesResponse>;
@@ -1337,11 +1337,6 @@ export function ChatView({
           return false;
         }
 
-        if (files && files.length > 0) {
-          console.warn('[ChatView] app-server 历史恢复发送暂不支持附件');
-          return false;
-        }
-
         const trimmed = content.trim();
         if (!trimmed) return false;
 
@@ -1358,6 +1353,7 @@ export function ChatView({
         try {
           await appServerSend({
             content: trimmed,
+            files,
             cwd: workingDirectory,
             model: currentModel,
             effort: selectedEffort && selectedEffort !== 'auto' ? selectedEffort : undefined,
@@ -1370,7 +1366,9 @@ export function ChatView({
                 id: 'temp-' + Date.now(),
                 session_id: threadId || activeSessionId,
                 role: 'user',
-                content: displayOverride || content,
+                content: files && files.length > 0
+                  ? `<!--files:${JSON.stringify(files.map((file) => ({ id: file.id, name: file.name, type: file.type, size: file.size, data: file.data })))}-->${displayOverride || content}`
+                  : displayOverride || content,
                 created_at: new Date().toISOString(),
                 token_usage: null,
               };
@@ -1822,6 +1820,7 @@ export function ChatView({
               permissionProfile={permissionProfile}
               onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}
               runtime={sessionRuntimeParam}
+              attachmentsAccept={appServerSend ? 'image/*' : undefined}
               onProviderModelChange={settingsLocked ? undefined : handleProviderModelChange}
               workingDirectory={workingDirectory}
               onAssistantTrigger={checkAssistantTrigger}
@@ -2140,6 +2139,7 @@ export function ChatView({
         permissionProfile={permissionProfile}
         onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}
         runtime={sessionRuntimeParam}
+        attachmentsAccept={appServerSend ? 'image/*' : undefined}
         codexOnly={isCodexOnlySession}
         onProviderModelChange={settingsLocked ? undefined : handleProviderModelChange}
         workingDirectory={workingDirectory}

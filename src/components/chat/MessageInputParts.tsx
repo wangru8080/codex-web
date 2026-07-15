@@ -82,7 +82,7 @@ export function FileAwareSubmitButton({
  * from the file tree and adds the file as a proper attachment (capsule).
  * Uses /api/files/raw to fetch the real file binary, preserving type and content.
  */
-export function FileTreeAttachmentBridge() {
+export function FileTreeAttachmentBridge({ imageOnly = false }: { imageOnly?: boolean }) {
   const attachments = usePromptInputAttachments();
 
   const handleAttach = useCallback(async (filePath: string) => {
@@ -97,13 +97,17 @@ export function FileTreeAttachmentBridge() {
       const fileName = filePath.split('/').pop() || 'file';
       // Use the content-type from the server response (it resolves from extension)
       const contentType = res.headers.get('content-type') || 'application/octet-stream';
+      if (imageOnly && !contentType.startsWith('image/')) {
+        window.dispatchEvent(new CustomEvent('insert-file-mention', { detail: { path: filePath } }));
+        return;
+      }
       const file = new File([blob], fileName, { type: contentType });
       attachments.add([file]);
     } catch {
       // Fallback: insert as @mention if fetch fails
       window.dispatchEvent(new CustomEvent('insert-file-mention', { detail: { path: filePath } }));
     }
-  }, [attachments]);
+  }, [attachments, imageOnly]);
 
   useEffect(() => {
     const handler = (e: Event) => {

@@ -25,7 +25,7 @@ import type { TurnInterruptResponse } from "@/codex/protocol/generated/v2/TurnIn
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
 import type { TurnStartResponse } from "@/codex/protocol/generated/v2/TurnStartResponse";
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
-import type { PermissionProfile } from "@/types";
+import type { FileAttachment, PermissionProfile } from "@/types";
 import {
   buildApprovalResponse,
   mapServerRequestToApproval,
@@ -80,12 +80,14 @@ import type {
 import { reduceThreadSettingsNotification } from "./thread-settings-adapter";
 import { buildThreadModelSettingsUpdate } from "./thread-model-settings";
 import { withReasoningEffort } from "./turn-start-request";
+import { buildAppServerTurnInput } from "./turn-input";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
 
 export type SendOneTurnParams = {
   content: string;
+  files?: readonly FileAttachment[];
   cwd: string;
   model?: string;
   effort?: ReasoningEffort;
@@ -110,6 +112,7 @@ export type ResumeThreadParams = {
 export type SendTurnInThreadParams = {
   threadId: string;
   content: string;
+  files?: readonly FileAttachment[];
   cwd: string;
   model?: string;
   effort?: ReasoningEffort;
@@ -616,7 +619,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
-  const sendTurnInThread = useCallback(async ({ threadId, content, cwd, model, effort, mode, permissionProfile = "request_approval", onAccepted }: SendTurnInThreadParams) => {
+  const sendTurnInThread = useCallback(async ({ threadId, content, files, cwd, model, effort, mode, permissionProfile = "request_approval", onAccepted }: SendTurnInThreadParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -638,7 +641,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const turnParams: TurnStartParamsWithCollaborationMode = withReasoningEffort(
       withPlanCollaborationMode({
         threadId,
-        input: [{ type: "text", text: trimmed, text_elements: [] }],
+        input: buildAppServerTurnInput(trimmed, files),
         cwd,
         model: model || null,
         ...turnRuntimeOptions(permissionProfile, cwd, effectiveConfig),
@@ -681,7 +684,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return acceptedTurn;
   }, [refreshThreads]);
 
-  const sendOneTurn = useCallback(async ({ content, cwd, model, effort, mode, permissionProfile = "request_approval" }: SendOneTurnParams) => {
+  const sendOneTurn = useCallback(async ({ content, files, cwd, model, effort, mode, permissionProfile = "request_approval" }: SendOneTurnParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -730,7 +733,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }),
     }));
 
-    return sendTurnInThread({ threadId, content: trimmed, cwd, model, effort, mode, permissionProfile });
+    return sendTurnInThread({ threadId, content: trimmed, files, cwd, model, effort, mode, permissionProfile });
   }, [sendTurnInThread]);
 
   const interruptTurn = useCallback(async (params?: InterruptTurnParams) => {

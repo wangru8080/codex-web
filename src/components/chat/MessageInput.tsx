@@ -175,6 +175,8 @@ interface MessageInputProps {
   runtime: ChatRuntimeParam;
   /** Codex-only Web 收缩：新建聊天只读取 Codex 账户模型。 */
   codexOnly?: boolean;
+  /** app-server 当前只支持图片附件；其他 runtime 可保留既有文件类型。 */
+  attachmentsAccept?: string;
 }
 
 function ComposerPlusMenuItem({
@@ -211,7 +213,7 @@ function ComposerPlusMenuItem({
   );
 }
 
-function FileAndFolderMenuItem() {
+function FileAndFolderMenuItem({ imageOnly = false }: { imageOnly?: boolean }) {
   const attachments = usePromptInputAttachments();
 
   const handleSelect = useCallback(
@@ -225,7 +227,7 @@ function FileAndFolderMenuItem() {
   return (
     <ComposerPlusMenuItem
       icon={<Paperclip size={20} />}
-      label="文件和文件夹"
+      label={imageOnly ? "图片" : "文件和文件夹"}
       onSelect={handleSelect}
     />
   );
@@ -646,8 +648,10 @@ export function MessageInput({
   modeChangeDisabled,
   blockingReasonIds,
   codexOnly,
+  attachmentsAccept,
 }: MessageInputProps) {
   const { t } = useTranslation();
+  const resolvedAttachmentsAccept = attachmentsAccept ?? (codexOnly ? 'image/*' : '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Run Checkpoint bypass — Round 2 (2026-04-30). When the banner's
   // confirm action fires (via the `run-checkpoint-confirm-send` window
@@ -1542,12 +1546,12 @@ export function MessageInput({
               menu folds attach / insert-slash / pick-CLI into one entry. */}
           <PromptInput
             onSubmit={handleSubmit}
-            accept=""
+            accept={resolvedAttachmentsAccept}
             multiple
             onDirectoriesDropped={handleDirectoriesDropped}
             className="[&_[data-slot=input-group]]:shadow-[var(--shadow-diffuse)]"
           >
-            <FileTreeAttachmentBridge />
+            <FileTreeAttachmentBridge imageOnly={resolvedAttachmentsAccept === 'image/*'} />
             {/* Chip rows: each carries its own `pt-2.5 px-3 order-first`
                 so they float above the textarea via flex `order` and
                 produce zero DOM when their data is empty — wrapping them
@@ -1601,7 +1605,7 @@ export function MessageInput({
                     tooltip={t('messageInput.actionMenuTooltip' as TranslationKey)}
                   />
                   <PromptInputActionMenuContent className="w-[372px] max-w-[calc(100vw-2rem)] rounded-xl p-2">
-                    <FileAndFolderMenuItem />
+                    <FileAndFolderMenuItem imageOnly={resolvedAttachmentsAccept === 'image/*'} />
                     <ComposerPlusMenuItem
                       icon={<Target size={20} />}
                       label="目标"

@@ -665,6 +665,7 @@ function NewChatPageInner() {
           ? await sendTurnInThread({
               threadId: existingThreadId,
               content,
+              files,
               cwd: workingDir.trim(),
               model: currentModel,
               effort: selectedEffort,
@@ -673,6 +674,7 @@ function NewChatPageInner() {
             })
           : await sendOneTurn({
               content,
+              files,
               cwd: workingDir.trim(),
               model: currentModel,
               effort: selectedEffort,

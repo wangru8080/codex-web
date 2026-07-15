@@ -458,7 +458,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             turnId: appServerTurn.turnId,
           });
         } : undefined}
-        appServerSend={canResumeAppServerThread ? async ({ content, cwd, model, effort, mode, permissionProfile, onAccepted }) => {
+        appServerSend={canResumeAppServerThread ? async ({ content, files, cwd, model, effort, mode, permissionProfile, onAccepted }) => {
           const target = resolveHistoryTurnTarget({
             routeThreadId: id,
             resumedThreadId,
@@ -493,6 +493,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           return sendTurnInThread({
             threadId,
             content,
+            files,
             cwd: turnCwd,
             model: turnModel,
             effort,
