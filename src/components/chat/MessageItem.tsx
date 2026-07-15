@@ -31,6 +31,8 @@ import { classifyPath } from '@/lib/preview-source';
 import { isWriteTool, isCreateTool, extractWritePath, resolveToolPath } from '@/lib/file-write-tools';
 import { DevOutputSegment } from './DevOutputChips';
 import type { PlannerOutput } from '@/types';
+import { showToast } from '@/hooks/useToast';
+import { writeTextToClipboard } from '@/lib/clipboard';
 
 interface ImageGenRequest {
   prompt: string;
@@ -660,11 +662,11 @@ function CopyButton({ text }: { text: string }) {
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await writeTextToClipboard(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback
+      showToast({ type: 'warning', message: `复制失败，可以手动复制：${text}` });
     }
   }, [text]);
 
@@ -674,7 +676,8 @@ function CopyButton({ text }: { text: string }) {
       size="sm"
       onClick={handleCopy}
       className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs text-muted-foreground/60 hover:text-muted-foreground h-auto"
-      title="Copy"
+      title="复制"
+      aria-label="复制"
     >
       {copied ? (
         <Check size={12} className="text-status-success-foreground" />

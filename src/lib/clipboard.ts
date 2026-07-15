@@ -37,12 +37,26 @@ export interface CopyWithToastOptions {
   failureMessageKey?: TranslationKey;
 }
 
+export async function writeTextToClipboard(text: string): Promise<void> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // 非安全 HTTP 上下文或失焦时继续尝试 DOM 回退。
+  }
+
+  if (copyWithDocumentFallback(text)) return;
+  throw new Error('无法写入剪贴板');
+}
+
 export async function copyWithToast(opts: CopyWithToastOptions): Promise<void> {
   const { text, t } = opts;
   const successKey: TranslationKey = opts.successMessageKey ?? ('common.copySuccess' as TranslationKey);
   const failureKey: TranslationKey = opts.failureMessageKey ?? ('common.copyFailed' as TranslationKey);
   try {
-    await navigator.clipboard.writeText(text);
+    await writeTextToClipboard(text);
     showToast({ type: 'success', message: t(successKey) });
   } catch {
     // The reject types we see in practice (`NotAllowedError`,
@@ -50,5 +64,37 @@ export async function copyWithToast(opts: CopyWithToastOptions): Promise<void> {
     // by hand. Don't differentiate in the message — surface the raw
     // text so the user can grab it from the toast directly.
     showToast({ type: 'warning', message: `${t(failureKey)} ${text}` });
+  }
+}
+
+function copyWithDocumentFallback(text: string): boolean {
+  if (
+    typeof document === 'undefined'
+    || !document.body
+    || typeof document.createElement !== 'function'
+    || typeof document.execCommand !== 'function'
+  ) {
+    return false;
+  }
+
+  const activeElement = document.activeElement as HTMLElement | null;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+
+  try {
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    document.body.removeChild(textarea);
+    activeElement?.focus?.();
   }
 }
