@@ -18,8 +18,8 @@ export function buildThreadResumeParams({
 }: BuildThreadResumeParamsInput): ThreadResumeParams {
   return {
     threadId,
-    model: model || null,
-    cwd: cwd || null,
+    ...(model ? { model } : {}),
+    ...(cwd ? { cwd } : {}),
     ...runtimeOptions,
   };
 }

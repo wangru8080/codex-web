@@ -32,6 +32,8 @@ import {
   threadTurnsPageToMessages,
 } from '@/codex-web/thread-turns-page-adapter';
 import type { Thread } from '@/codex/protocol/generated/v2/Thread';
+import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
+import { modelSettingsFromResume } from '@/codex-web/thread-model-settings';
 
 function safeDecodeSessionId(id: string): string {
   try {
@@ -55,6 +57,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionModel, setSessionModel] = useState<string>('');
+  const [sessionEffort, setSessionEffort] = useState<ReasoningEffort | null>(null);
   const [sessionProviderId, setSessionProviderId] = useState<string>('');
   // Phase 2 Step 3b: session's runtime pin (chat-runtime label form).
   // '' = follow global; 'claude_code' / 'codepilot_runtime' = pinned.
@@ -88,6 +91,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setThreadGoal,
     clearThreadGoal,
     updateThreadPermissions,
+    updateThreadModelSettings,
   } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
@@ -108,6 +112,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setHasMore(false);
     setWorkingDirectory('');
     setSessionModel('');
+    setSessionEffort(null);
     setSessionProviderId('');
     setSessionRuntimePin('');
     setSessionReadOnly(false);
@@ -140,6 +145,14 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         setAppServerThread(response.thread);
         const session = threadToChatSession(response.thread);
         applySession(session);
+        const resume = await resumeThread({ threadId: id });
+        if (cancelled) return;
+        const resumedSettings = modelSettingsFromResume(resume);
+        setResumedThreadId(resume.thread.id);
+        setResumedCwd(resume.cwd);
+        setResumedModel(resumedSettings.model);
+        setSessionModel(resumedSettings.model);
+        setSessionEffort(resumedSettings.effort);
         try {
           const turnsPage = await listThreadTurns({
             threadId: id,
@@ -226,7 +239,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     loadSessionAndMessages();
 
     return () => { cancelled = true; };
-  }, [appServerState.connection.data, id, readThread, listThreadTurns, setWorkingDirectory, setSessionId, setPanelSessionTitle, t]);
+  }, [appServerState.connection.data, id, readThread, listThreadTurns, resumeThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t]);
 
   // Auto-open file tree when jumping from a file search result
   useEffect(() => {
@@ -296,6 +309,14 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     // sidebar state change. (deps are complete — no suppression needed.)
   }, [id, targetFilePath, setFileTreeOpen, ws]);
 
+  useEffect(() => {
+    const threadId = resumedThreadId || id;
+    const settings = appServerState.threadSettingsByThreadId[threadId]?.data;
+    if (!settings) return;
+    setSessionModel(settings.model);
+    setSessionEffort(settings.effort);
+  }, [appServerState.threadSettingsByThreadId, id, resumedThreadId]);
+
   if (loading || !sessionInfoLoaded) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -357,6 +378,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         initialMessages={messages}
         initialHasMore={hasMore}
         modelName={sessionModel}
+        initialEffort={sessionEffort}
         providerId={sessionProviderId}
         runtimePin={sessionRuntimePin}
         initialPermissionProfile={sessionPermissionProfile}
@@ -395,6 +417,18 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             threadId,
             cwd: threadCwd,
             permissionProfile,
+          });
+        } : undefined}
+        onAppServerModelChange={canResumeAppServerThread ? async (model) => {
+          await updateThreadModelSettings({
+            threadId: resumedThreadId || id,
+            model,
+          });
+        } : undefined}
+        onAppServerEffortChange={canResumeAppServerThread ? async (effort) => {
+          await updateThreadModelSettings({
+            threadId: resumedThreadId || id,
+            effort,
           });
         } : undefined}
         onAppServerGoalSet={canResumeAppServerThread ? async (objective) => {

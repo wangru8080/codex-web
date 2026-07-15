@@ -32,6 +32,8 @@ import { getExistingNewChatThreadId } from '@/codex-web/new-chat-turn-routing';
 import { editedGoalStatus, goalSummaryLines } from '@/codex-web/goal-display-adapter';
 import { selectPlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
+import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
+import { resolveNewChatModelDefaults } from '@/codex-web/new-chat-model-defaults';
 import {
   deriveCodexWebToolState,
   type CodexWebToolResultInfo,
@@ -95,6 +97,7 @@ function NewChatPageInner() {
     clearThreadGoal,
     readDirectory,
     updateThreadPermissions,
+    updateThreadModelSettings,
   } = useAppServerActions();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
@@ -256,6 +259,24 @@ function NewChatPageInner() {
     : null;
   const visiblePendingPermission = appServerApproval?.permission ?? pendingPermission;
 
+  const applyNewChatModelDefaults = useCallback(() => {
+    if (appServerState.connection.data !== 'connected') {
+      setModelReady(false);
+      return;
+    }
+
+    const defaults = resolveNewChatModelDefaults(
+      appServerState.models?.data,
+      appServerState.config?.data,
+    );
+    setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
+    setCurrentModel(defaults?.model ?? '');
+    setSelectedEffort(defaults?.effort);
+    setNoCompatibleProvider(!defaults);
+    setInvalidDefault(null);
+    setModelReady(true);
+  }, [appServerState.config, appServerState.connection.data, appServerState.models]);
+
   const resetLocalNewChatState = useCallback(() => {
     setCreatedSessionId(undefined);
     setMessages([]);
@@ -277,8 +298,9 @@ function NewChatPageInner() {
     finalizedAppServerTurnRef.current = '';
     setLivePlanPromptTurnKey('');
     firstSendInFlightRef.current = false;
+    applyNewChatModelDefaults();
     try { sessionStorage.removeItem(composerDraftKey()); } catch { /* unavailable */ }
-  }, [setPendingApprovalSessionId]);
+  }, [applyNewChatModelDefaults, setPendingApprovalSessionId]);
 
   useEffect(() => {
     if (!newChatKey || lastNewChatKeyRef.current === newChatKey) return;
@@ -360,37 +382,41 @@ function NewChatPageInner() {
   }, [appServerApproval, setPendingApprovalSessionId]);
 
   useEffect(() => {
-    const models = appServerState.models?.data.data.filter((model) => !model.hidden) ?? [];
-    if (appServerState.connection.data !== 'connected') {
-      setModelReady(false);
-      return;
-    }
+    applyNewChatModelDefaults();
+  }, [applyNewChatModelDefaults]);
 
-    if (models.length === 0) {
-      setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
-      setCurrentModel('');
-      setNoCompatibleProvider(true);
-      setInvalidDefault(null);
-      setModelReady(true);
-      return;
-    }
+  useEffect(() => {
+    if (!createdSessionId) return;
+    const settings = appServerState.threadSettingsByThreadId[createdSessionId]?.data;
+    if (!settings) return;
+    setCurrentModel(settings.model);
+    setSelectedEffort(settings.effort ?? undefined);
+  }, [appServerState.threadSettingsByThreadId, createdSessionId]);
 
-    const savedProvider = localStorage.getItem('codepilot:last-provider-id');
-    const savedModel = savedProvider === DEFAULT_CODEX_PROVIDER_ID
-      ? localStorage.getItem('codepilot:last-model')
-      : '';
-    const selected =
-      models.find((model) => savedModel && (model.id === savedModel || model.model === savedModel))?.id ||
-      models.find((model) => model.isDefault)?.id ||
-      models[0]?.id ||
-      DEFAULT_CODEX_MODEL;
+  const handleThreadModelChange = useCallback((model: string) => {
+    setCurrentModel(model);
+    if (!createdSessionId) return;
+    void updateThreadModelSettings({ threadId: createdSessionId, model }).catch((error) => {
+      setErrorBanner({
+        message: '模型更新失败',
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [createdSessionId, updateThreadModelSettings]);
 
-    setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
-    setCurrentModel(selected);
-    setNoCompatibleProvider(false);
-    setInvalidDefault(null);
-    setModelReady(true);
-  }, [appServerState.connection.data, appServerState.models]);
+  const handleThreadEffortChange = useCallback((effort: string | undefined) => {
+    setSelectedEffort(effort);
+    if (!createdSessionId || !effort || effort === 'auto') return;
+    void updateThreadModelSettings({
+      threadId: createdSessionId,
+      effort: effort as ReasoningEffort,
+    }).catch((error) => {
+      setErrorBanner({
+        message: '推理等级更新失败',
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [createdSessionId, updateThreadModelSettings]);
 
   // 初始化工作目录，并通过 app-server 验证目录仍然存在。
   useEffect(() => {
@@ -949,16 +975,17 @@ function NewChatPageInner() {
         codexOnly
         onProviderModelChange={(pid, model, opts) => {
           setCurrentProviderId(pid);
-          setCurrentModel(model);
-          if (opts?.isAuto) return;
-          localStorage.setItem('codepilot:last-provider-id', pid);
-          localStorage.setItem('codepilot:last-model', model);
+          if (opts?.isAuto) {
+            setCurrentModel(model);
+            return;
+          }
+          handleThreadModelChange(model);
           setInvalidDefault(null);
           setNoCompatibleProvider(false);
         }}
         workingDirectory={workingDir}
         effort={selectedEffort}
-        onEffortChange={setSelectedEffort}
+        onEffortChange={handleThreadEffortChange}
         initialValue={effectivePrefill}
         onPendingContextTokensChange={setPendingContextTokens}
         onPendingContextSubTotalsChange={setPendingContextSubTotals}

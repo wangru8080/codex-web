@@ -1,4 +1,5 @@
 import type { InitializeResponse } from "@/codex/protocol/generated/InitializeResponse";
+import type { ConfigReadResponse } from "@/codex/protocol/generated/v2/ConfigReadResponse";
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
 import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
@@ -16,6 +17,7 @@ export type SourceBreadcrumb =
   | "app-server.initialized"
   | "app-server.model/list"
   | "app-server.account/read"
+  | "app-server.config/read"
   | "app-server.thread/list"
   | "app-server.thread/read"
   | "app-server.thread/resume"
@@ -42,6 +44,7 @@ export type CodexWebAppServerState = {
   initialize: Sourced<InitializeResponse> | null;
   models: Sourced<ModelListResponse> | null;
   account: Sourced<GetAccountResponse> | null;
+  config: Sourced<ConfigReadResponse> | null;
   threads: Sourced<ThreadListResponse> | null;
   selectedThread: Sourced<ThreadReadResponse> | null;
   resumedThread: Sourced<ThreadResumeResponse> | null;
@@ -61,6 +64,7 @@ export const initialAppServerState: CodexWebAppServerState = {
   initialize: null,
   models: null,
   account: null,
+  config: null,
   threads: null,
   selectedThread: null,
   resumedThread: null,

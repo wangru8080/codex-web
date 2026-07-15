@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { buildThreadResumeParams } from "./resume-adapter";
 
 describe("buildThreadResumeParams", () => {
+  it("只按 threadId 恢复时不发送任何配置覆盖", () => {
+    expect(buildThreadResumeParams({ threadId: "thread-existing" })).toEqual({
+      threadId: "thread-existing",
+    });
+  });
+
   it("按官方方式只用 threadId 恢复历史，不拼接或传入 history", () => {
     const params = buildThreadResumeParams({
       threadId: "thread-1",

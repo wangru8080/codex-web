@@ -94,6 +94,7 @@ interface ChatViewProps {
   initialMessages?: Message[];
   initialHasMore?: boolean;
   modelName?: string;
+  initialEffort?: ReasoningEffort | null;
   providerId?: string;
   /**
    * Phase 2 Step 3b: session's stored `runtime_pin` (chat-runtime label
@@ -118,6 +119,8 @@ interface ChatViewProps {
   appServerNotice?: { message: string; description?: string } | null;
   onAppServerApprovalDecision?: (decision: AppServerApprovalDecision) => Promise<void>;
   onAppServerPermissionChange?: (permissionProfile: PermissionProfile) => Promise<void>;
+  onAppServerModelChange?: (model: string) => Promise<void>;
+  onAppServerEffortChange?: (effort: ReasoningEffort) => Promise<void>;
   onAppServerGoalSet?: (objective: string) => Promise<void>;
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
@@ -146,6 +149,7 @@ export function ChatView({
   initialMessages = [],
   initialHasMore = false,
   modelName,
+  initialEffort,
   providerId,
   runtimePin: initialRuntimePin,
   initialPermissionProfile,
@@ -164,6 +168,8 @@ export function ChatView({
   appServerNotice,
   onAppServerApprovalDecision,
   onAppServerPermissionChange,
+  onAppServerModelChange,
+  onAppServerEffortChange,
   onAppServerGoalSet,
   onAppServerGoalStatusChange,
   onAppServerGoalEdit,
@@ -288,7 +294,7 @@ export function ChatView({
       ? providerId
       : (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-provider-id') : null) || ''
   );
-  const [selectedEffort, setSelectedEffort] = useState<string | undefined>(undefined);
+  const [selectedEffort, setSelectedEffort] = useState<string | undefined>(initialEffort ?? undefined);
   const [thinkingMode, setThinkingMode] = useState<string>('adaptive');
   const [context1m, setContext1m] = useState(false);
   const [hasSummary, setHasSummary] = useState(initialHasSummary || false);
@@ -298,6 +304,7 @@ export function ChatView({
   // `!== undefined` rather than truthiness so an env session prop can
   // overwrite a localStorage-seeded non-empty currentProviderId.
   useEffect(() => { if (modelName) setCurrentModel(modelName); }, [modelName]);
+  useEffect(() => { setSelectedEffort(initialEffort ?? undefined); }, [initialEffort]);
   useEffect(() => { if (providerId !== undefined) setCurrentProviderId(providerId); }, [providerId]);
 
   // Phase 2 Step 4c — `runtime_pin` becomes local state so the composer
@@ -691,12 +698,32 @@ export function ChatView({
     // the user's last intended pin, which is exactly the kind of
     // hidden state mutation the picker is supposed to avoid.
     if (opts?.isAuto) return;
+    if (onAppServerModelChange && appServerThreadId) {
+      void onAppServerModelChange(model).catch((error) => {
+        setAppServerErrorBanner({
+          message: '模型更新失败',
+          description: error instanceof Error ? error.message : String(error),
+        });
+      });
+      return;
+    }
     fetch(`/api/chat/sessions/${activeSessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, provider_id: newProviderId }),
     }).catch(() => {});
-  }, [settingsLocked, activeSessionId]);
+  }, [activeSessionId, appServerThreadId, onAppServerModelChange, settingsLocked]);
+
+  const handleEffortChange = useCallback((effort: string | undefined) => {
+    setSelectedEffort(effort);
+    if (!effort || effort === 'auto' || !onAppServerEffortChange || !appServerThreadId) return;
+    void onAppServerEffortChange(effort as ReasoningEffort).catch((error) => {
+      setAppServerErrorBanner({
+        message: '推理等级更新失败',
+        description: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, [appServerThreadId, onAppServerEffortChange]);
 
   // Phase 2 Step 4c — RuntimeSelector callback. Optimistic local update
   // (so the picker filter and other consumers see the new pin
@@ -1799,7 +1826,7 @@ export function ChatView({
               workingDirectory={workingDirectory}
               onAssistantTrigger={checkAssistantTrigger}
               effort={selectedEffort}
-              onEffortChange={setSelectedEffort}
+              onEffortChange={handleEffortChange}
               sdkInitMeta={initMetaRef.current}
               isAssistantProject={isAssistantProject}
               hasMessages={false}
@@ -2118,7 +2145,7 @@ export function ChatView({
         workingDirectory={workingDirectory}
         onAssistantTrigger={checkAssistantTrigger}
         effort={selectedEffort}
-        onEffortChange={setSelectedEffort}
+        onEffortChange={handleEffortChange}
         sdkInitMeta={initMetaRef.current}
         isAssistantProject={isAssistantProject}
         hasMessages={messages.length > 0}

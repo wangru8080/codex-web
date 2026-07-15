@@ -440,6 +440,7 @@ function ComposerReasoningModelSelector({
   modelOptions,
   onModelChange,
   onProviderModelChange,
+  persistLastModel,
   disabled,
 }: {
   selectedEffort: string;
@@ -454,6 +455,7 @@ function ComposerReasoningModelSelector({
     model: string,
     opts?: { isAuto?: boolean },
   ) => void;
+  persistLastModel: boolean;
   disabled?: boolean;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -487,15 +489,17 @@ function ComposerReasoningModelSelector({
     const modelValue = option.value;
     onModelChange?.(modelValue);
     onProviderModelChange?.(providerId, modelValue);
-    try {
-      localStorage.setItem('codepilot:last-model', modelValue);
-      localStorage.setItem('codepilot:last-provider-id', providerId);
-    } catch {
-      // 忽略浏览器存储失败；选择本身仍然通过 React 状态生效。
+    if (persistLastModel) {
+      try {
+        localStorage.setItem('codepilot:last-model', modelValue);
+        localStorage.setItem('codepilot:last-provider-id', providerId);
+      } catch {
+        // 忽略浏览器存储失败；选择本身仍然通过 React 状态生效。
+      }
     }
     setOpen(false);
     setModelMenuOpen(false);
-  }, [currentProviderIdValue, onModelChange, onProviderModelChange]);
+  }, [currentProviderIdValue, onModelChange, onProviderModelChange, persistLastModel]);
 
   const isModelActive = useCallback((option: ComposerModelOption) => (
     option.value === currentModelOption?.value || option.value === currentModelValue
@@ -1634,6 +1638,7 @@ export function MessageInput({
                   modelOptions={modelOptions}
                   onModelChange={onModelChange}
                   onProviderModelChange={onProviderModelChange}
+                  persistLastModel={!codexOnly}
                 />
                 <FileAwareSubmitButton
                   status={chatStatus}

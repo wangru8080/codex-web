@@ -78,6 +78,7 @@ import type {
   ThreadTurnsListResponse,
 } from "./thread-turns-page-adapter";
 import { reduceThreadSettingsNotification } from "./thread-settings-adapter";
+import { buildThreadModelSettingsUpdate } from "./thread-model-settings";
 import { withReasoningEffort } from "./turn-start-request";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
@@ -133,6 +134,7 @@ export type AppServerActions = {
   respondToApproval: (decision: AppServerApprovalDecision, requestId?: JsonRpcId) => Promise<void>;
   resetTurn: () => void;
   updateThreadPermissions: (params: { threadId: string; cwd: string; permissionProfile: PermissionProfile }) => Promise<void>;
+  updateThreadModelSettings: (params: { threadId: string; model?: string; effort?: ReasoningEffort }) => Promise<void>;
 };
 
 export function AppServerProvider({ children }: { children: React.ReactNode }) {
@@ -292,10 +294,11 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           capabilities: appServerInitializeCapabilities(),
         })) as InitializeResponse;
         client.notify("initialized");
-        const [models, account, threads] = await Promise.all([
+        const [models, account, threads, config] = await Promise.all([
           client.request("model/list", { includeHidden: false }) as Promise<ModelListResponse>,
           client.request("account/read", { refreshToken: false }) as Promise<GetAccountResponse>,
           client.request("thread/list", threadListParams()) as Promise<ThreadListResponse>,
+          readEffectiveConfig(client),
         ]);
 
         if (disposed) {
@@ -308,6 +311,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           initialize: { source: "app-server.initialize", data: initialize },
           models: { source: "app-server.model/list", data: models },
           account: { source: "app-server.account/read", data: account },
+          config: { source: "app-server.config/read", data: config },
           threads: { source: "app-server.thread/list", data: threads },
         }));
       } catch (error) {
@@ -372,6 +376,41 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     await client.request("thread/settings/update", { threadId, ...options }) as ThreadSettingsUpdateResponse;
     await confirmation;
   }, []);
+
+  const updateThreadModelSettings = useCallback(async ({
+    threadId,
+    model,
+    effort,
+  }: {
+    threadId: string;
+    model?: string;
+    effort?: ReasoningEffort;
+  }) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    if (!model && !effort) return;
+
+    const confirmation = new Promise<void>((resolve) => {
+      const waiters = threadSettingsWaitersRef.current.get(threadId) ?? new Set<() => void>();
+      waiters.add(resolve);
+      threadSettingsWaitersRef.current.set(threadId, waiters);
+      window.setTimeout(() => {
+        const current = threadSettingsWaitersRef.current.get(threadId);
+        if (!current?.has(resolve)) return;
+        current.delete(resolve);
+        if (current.size === 0) threadSettingsWaitersRef.current.delete(threadId);
+        resolve();
+      }, 5000);
+    });
+    const params = buildThreadModelSettingsUpdate({
+      threadId,
+      model,
+      effort,
+      currentSettings: state.threadSettingsByThreadId[threadId]?.data,
+    });
+    await client.request("thread/settings/update", params) as ThreadSettingsUpdateResponse;
+    await confirmation;
+  }, [state.threadSettingsByThreadId]);
 
   const respondToApproval = useCallback(async (decision: AppServerApprovalDecision, requestId?: JsonRpcId) => {
     const client = clientRef.current;
@@ -551,20 +590,22 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
-  const resumeThread = useCallback(async ({ threadId, cwd, model, permissionProfile = "request_approval" }: ResumeThreadParams) => {
+  const resumeThread = useCallback(async ({ threadId, cwd, model, permissionProfile }: ResumeThreadParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
     }
 
-    const effectiveConfig = await readEffectiveConfig(client, cwd);
+    const runtimeOptions = permissionProfile
+      ? threadRuntimeOptions(permissionProfile, await readEffectiveConfig(client, cwd))
+      : undefined;
     const response = (await client.request(
       "thread/resume",
       buildThreadResumeParams({
         threadId,
         cwd,
         model,
-        runtimeOptions: threadRuntimeOptions(permissionProfile, effectiveConfig),
+        runtimeOptions,
       }),
     )) as ThreadResumeResponse;
     setState((current) => ({
@@ -729,8 +770,9 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       respondToApproval,
       resetTurn,
       updateThreadPermissions,
+      updateThreadModelSettings,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings],
   );
 
   return (
