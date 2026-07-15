@@ -31,6 +31,10 @@ import { useCallback, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { showToast } from "@/hooks/useToast";
+import { usePanel } from "@/hooks/usePanel";
+import { classifyChatLinkHref } from "@/lib/markdown/chat-link";
+import { classifyPath } from "@/lib/preview-source";
+import { resolveToolPath } from "@/lib/file-write-tools";
 
 // Shared card-action-button class — same geometry as Widget toolbar.
 // `justify-center` is intentional: icon-only variants (h-7 w-7 px-0)
@@ -249,14 +253,71 @@ function ChatBlockquote(props: ComponentProps<"blockquote">) {
 function ChatHr(props: ComponentProps<"hr">) {
   return <hr className="my-6 border-border/50" {...props} />;
 }
-function ChatLink(props: ComponentProps<"a">) {
+function ChatLink({
+  href = "",
+  children,
+  node: _node,
+  ...props
+}: ComponentProps<"a"> & { node?: unknown }) {
+  const { workingDirectory, setPreviewSource } = usePanel();
+  const target = classifyChatLinkHref(href);
+  const linkClass = "inline-flex items-center gap-1 rounded px-1 py-0.5 align-baseline font-medium text-primary no-underline transition-colors hover:bg-primary/10 hover:text-primary";
+
+  if (target.kind === "blocked") {
+    return <span title="Blocked URL">{children}</span>;
+  }
+  if (target.kind === "local-file") {
+    const handleLocalFile = (event: React.MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const absolutePath = resolveToolPath(target.filePath, workingDirectory);
+      const classification = classifyPath(absolutePath, workingDirectory);
+      setPreviewSource({
+        kind: "file",
+        filePath: absolutePath,
+        trust: classification.trust,
+        ...(classification.baseDir ? { baseDir: classification.baseDir } : {}),
+        readonly: classification.readonly,
+        ...(target.anchor ? { anchor: target.anchor } : {}),
+      });
+    };
+    return (
+      <a
+        {...props}
+        href={target.href}
+        className={linkClass}
+        data-codepilot-fileref-path={target.filePath}
+        {...(target.anchor ? { "data-codepilot-fileref-anchor": target.anchor } : {})}
+        onClick={handleLocalFile}
+        title={target.filePath + (target.anchor ?? "")}
+      >
+        <CodexWebIcon name="file_code" size="sm" className="shrink-0" aria-hidden />
+        <span>{children}</span>
+      </a>
+    );
+  }
+  if (target.kind === "remote") {
+    return (
+      <a
+        {...props}
+        href={target.href}
+        className={linkClass}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <CodexWebIcon name="web_simple" size="sm" className="shrink-0" aria-hidden />
+        <span>{children}</span>
+      </a>
+    );
+  }
   return (
     <a
-      className="text-primary underline underline-offset-4 decoration-primary/30 hover:decoration-primary"
-      target={props.href?.startsWith("http") ? "_blank" : undefined}
-      rel={props.href?.startsWith("http") ? "noopener noreferrer" : undefined}
       {...props}
-    />
+      href={target.href}
+      className="font-medium text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-primary"
+    >
+      {children}
+    </a>
   );
 }
 function ChatStrong(props: ComponentProps<"strong">) {

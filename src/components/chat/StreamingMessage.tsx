@@ -5,7 +5,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import {
   Message as AIMessage,
   MessageContent,
-  MessageResponse,
+  StreamingMessageResponse as MessageResponse,
 } from '@/components/ai-elements/message';
 import { ProcessCollapseGroup, ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
 import { MediaPreview } from './MediaPreview';

@@ -26,7 +26,7 @@
  * markdown content itself changes).
  */
 
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import type React from "react";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { usePanel } from "@/hooks/usePanel";
@@ -128,55 +128,9 @@ export function DevOutputSegment({ text }: { text: string }) {
     enrichDevOutputInDom(root);
   });
 
-  // Phase 4 P1.2 — custom link renderer for THIS DevOutputSegment only.
-  // Streamdown's default link safety converts unknown / unrecognised
-  // hrefs into inert <button> elements; that prevents our
-  // post-render <a[href]> walker from finding local-file Markdown
-  // links like `[label](README.md#L12)`. Rather than disable chat
-  // link safety globally (which would unwrap arbitrary http links),
-  // we provide a `components.a` override that handles three cases:
-  //   1. Local file path → render <a> with data-* attributes so the
-  //      container's click handler intercepts and routes through
-  //      setPreviewSource (resolved against workingDirectory).
-  //   2. Safe remote scheme (http/https/mailto/tel) → render an
-  //      anchor with target=_blank + rel="noopener noreferrer".
-  //   3. Anything else → render a plain span so the URL never
-  //      navigates the browser.
-  const linkRenderer = useMemo(
-    () =>
-      function CodepilotLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-        const { href, children, ...rest } = props;
-        const safeHref = typeof href === "string" ? href : "";
-        const { filePath: rawFilePath, anchor } = splitPathAndAnchor(safeHref);
-        const isRemote = looksLikeRemoteHref(safeHref);
-        if (!isRemote && isPotentialLocalFile(rawFilePath)) {
-          return (
-            <a
-              href={safeHref}
-              data-codepilot-fileref-path={rawFilePath}
-              {...(anchor ? { "data-codepilot-fileref-anchor": anchor } : {})}
-              {...rest}
-            >
-              {children}
-            </a>
-          );
-        }
-        if (/^(?:https?|mailto|tel):/i.test(safeHref)) {
-          return (
-            <a href={safeHref} target="_blank" rel="noopener noreferrer" {...rest}>
-              {children}
-            </a>
-          );
-        }
-        // Anything else (javascript:, data:, unknown schemes) → inert span.
-        return <span title="Blocked URL">{children}</span>;
-      },
-    [],
-  );
-
   return (
     <div ref={containerRef} onClick={onClick}>
-      <MessageResponse components={{ a: linkRenderer }}>{text}</MessageResponse>
+      <MessageResponse>{text}</MessageResponse>
     </div>
   );
 }

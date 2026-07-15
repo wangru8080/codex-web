@@ -339,7 +339,7 @@ const _codePlugin = createSharedCodePlugin();
 const streamdownPlugins = { cjk, code: _codePlugin, math, mermaid };
 
 export const MessageResponse = memo(
-  ({ className, components, ...props }: MessageResponseProps) => (
+  ({ className, components, mode = "static", parseIncompleteMarkdown = false, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
@@ -352,6 +352,8 @@ export const MessageResponse = memo(
       // design language. Callers can still override individual
       // elements via the `components` prop (last-write-wins).
       components={{ ...CHAT_MARKDOWN_COMPONENTS, ...components }}
+      mode={mode}
+      parseIncompleteMarkdown={parseIncompleteMarkdown}
       {...props}
     />
   ),
@@ -359,6 +361,17 @@ export const MessageResponse = memo(
 );
 
 MessageResponse.displayName = "MessageResponse";
+
+export const StreamingMessageResponse = (props: MessageResponseProps) => (
+  <MessageResponse
+    {...props}
+    mode="streaming"
+    parseIncompleteMarkdown
+    remend={{ ...props.remend, italic: false }}
+  />
+);
+
+StreamingMessageResponse.displayName = "StreamingMessageResponse";
 
 export type MessageToolbarProps = ComponentProps<"div">;
 
