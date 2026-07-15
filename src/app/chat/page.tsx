@@ -641,6 +641,7 @@ function NewChatPageInner() {
               content,
               cwd: workingDir.trim(),
               model: currentModel,
+              effort: selectedEffort,
               mode: modeOverride ?? mode,
               permissionProfile,
             })
@@ -648,6 +649,7 @@ function NewChatPageInner() {
               content,
               cwd: workingDir.trim(),
               model: currentModel,
+              effort: selectedEffort,
               mode: modeOverride ?? mode,
               permissionProfile,
             });
@@ -721,7 +723,7 @@ function NewChatPageInner() {
         }
       }
     },
-    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, mode, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread]
+    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, selectedEffort, mode, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread]
   );
 
   const appServerGoal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId] ?? null : null;

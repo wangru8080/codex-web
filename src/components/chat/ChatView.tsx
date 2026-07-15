@@ -71,6 +71,7 @@ import { deriveCodexWebToolState } from '@/codex-web/tool-adapter';
 import type { AppServerTurnState } from '@/codex-web/turn-reducer';
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
+import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
 import { editedGoalStatus, goalSummaryLines } from '@/codex-web/goal-display-adapter';
 import { selectPlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
 import { GoalProgressRow } from './GoalProgressRow';
@@ -121,8 +122,8 @@ interface ChatViewProps {
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
   onAppServerGoalClear?: () => Promise<void>;
-  appServerSend?: (params: { content: string; cwd: string; model?: string; mode?: string; permissionProfile?: PermissionProfile; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
-  appServerClearContextAndSend?: (content: string) => Promise<void>;
+  appServerSend?: (params: { content: string; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
+  appServerClearContextAndSend?: (content: string, effort?: ReasoningEffort) => Promise<void>;
   appServerInterrupt?: () => Promise<void>;
   appServerLoadEarlier?: () => Promise<MessagesResponse>;
 }
@@ -1332,6 +1333,7 @@ export function ChatView({
             content: trimmed,
             cwd: workingDirectory,
             model: currentModel,
+            effort: selectedEffort && selectedEffort !== 'auto' ? selectedEffort : undefined,
             mode: modeOverride ?? mode,
             permissionProfile,
             onAccepted: (threadId) => {
@@ -1462,7 +1464,7 @@ export function ChatView({
       cappedSetMessages((prev) => [...prev, userMessage]);
       doStartStream(content, files, systemPromptAppend, displayOverride, mentions, selectedSkills, effectiveSessionId);
     },
-    [readOnly, appServerSend, appServerApproval, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, mode, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]
+    [readOnly, appServerSend, appServerApproval, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, selectedEffort, mode, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]
   );
 
   sendMessageRef.current = sendMessage;
@@ -1687,8 +1689,11 @@ export function ChatView({
   const handleClearContextAndImplementPlan = useCallback((message: string) => {
     if (appServerFinalTurnKey) setDismissedPlanPromptKey(appServerFinalTurnKey);
     handleModeChange('code');
-    void appServerClearContextAndSend?.(message);
-  }, [appServerClearContextAndSend, appServerFinalTurnKey, handleModeChange]);
+    void appServerClearContextAndSend?.(
+      message,
+      selectedEffort && selectedEffort !== 'auto' ? selectedEffort : undefined,
+    );
+  }, [appServerClearContextAndSend, appServerFinalTurnKey, handleModeChange, selectedEffort]);
 
   // Listen for image generation completion
   useEffect(() => {
