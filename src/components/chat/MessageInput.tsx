@@ -36,7 +36,7 @@ import {
 import type { ChatStatus } from 'ai';
 import type { FileAttachment, MentionRef, PermissionProfile } from '@/types';
 import { SlashCommandPopover } from './SlashCommandPopover';
-import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
+import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, FileExcerptCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
 import { useMentionTokenEstimate } from '@/hooks/useMentionTokenEstimate';
 import { dataUrlToFileAttachment } from '@/lib/file-utils';
 import { usePopoverState } from '@/hooks/usePopoverState';
@@ -69,6 +69,12 @@ import {
 import { QuickActions } from './QuickActions';
 import { CaretDown, CaretRight, Check, Gear, X } from '@/components/ui/icon';
 import { HandPalm, ListChecks, Paperclip, ShieldCheck, ShieldWarning, Target } from '@phosphor-icons/react';
+import { ADD_TO_CHAT_EVENT, isAddToChatDetail } from '@/lib/add-to-chat-event';
+import {
+  buildFileExcerptPrompt,
+  encodeFileExcerptDisplay,
+  type FileExcerptReference,
+} from '@/lib/file-excerpt-reference';
 
 const MAX_MENTION_FILE_BYTES = 256 * 1024; // 256KB per @file mention
 const MAX_MENTION_FILE_COUNT = 6;
@@ -682,6 +688,7 @@ export function MessageInput({
   // attachments) instead of writing `@path/` text into the textarea.
   const [directoryRefs, setDirectoryRefs] = useState<string[]>([]);
   const [fileReferencePaths, setFileReferencePaths] = useState<string[]>([]);
+  const [fileExcerptReferences, setFileExcerptReferences] = useState<FileExcerptReference[]>([]);
   const [badgeOrder, setBadgeOrder] = useState<Record<string, number>>({});
   const [mentionOrder, setMentionOrder] = useState<Record<string, number>>({});
   const orderSeqRef = useRef(0);
@@ -711,34 +718,34 @@ export function MessageInput({
     }
   }
 
-  // Phase 4 — `codepilot:add-to-chat` listener. Selection from
-  // PreviewPanel dispatches a window event with the selected text +
-  // source metadata; we wrap the quote in a markdown blockquote and
-  // append a provenance line so the AI sees both content and source.
-  // The composer treats it as a normal prefill — the user can still
-  // edit before sending, and badge / mention parsing kicks in
-  // naturally because the appended content is plain text.
+  // Markdown preview selections stay out of the textarea. The card carries
+  // compact source metadata while the full selected text remains in state for
+  // the model-only prompt assembled at submit time.
   useEffect(() => {
     function handle(event: Event) {
       const detail = (event as CustomEvent).detail;
-      if (!detail || typeof detail !== 'object') return;
-      const d = detail as { text?: unknown; sourcePath?: unknown; sourceAnchor?: unknown; sourceLabel?: unknown };
-      if (typeof d.text !== 'string' || typeof d.sourcePath !== 'string') return;
-      const provenance =
-        '> [来源] ' +
-        d.sourcePath +
-        (typeof d.sourceAnchor === 'string' ? d.sourceAnchor : '') +
-        (typeof d.sourceLabel === 'string' ? ' — ' + d.sourceLabel : '');
-      const quote = d.text
-        .split(/\r?\n/)
-        .map((l) => '> ' + l)
-        .join('\n');
-      const composed = `${provenance}\n${quote}\n\n`;
-      setInputValue((prev) => (prev ? `${prev}\n\n${composed}` : composed));
+      if (!isAddToChatDetail(detail)) return;
+      const reference: FileExcerptReference = {
+        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        path: detail.sourcePath,
+        name: detail.sourcePath.split(/[\\/]/).pop() || detail.sourcePath,
+        text: detail.text,
+        startLine: detail.startLine,
+        endLine: detail.endLine,
+      };
+      setFileExcerptReferences((current) => current.some((item) =>
+        item.path === reference.path
+          && item.text === reference.text
+          && item.startLine === reference.startLine
+          && item.endLine === reference.endLine
+      ) ? current : [...current, reference]);
+      requestAnimationFrame(() => textareaRef.current?.focus());
     }
-    window.addEventListener('codepilot:add-to-chat', handle);
-    return () => window.removeEventListener('codepilot:add-to-chat', handle);
-  }, [setInputValue]);
+    window.addEventListener(ADD_TO_CHAT_EVENT, handle);
+    return () => window.removeEventListener(ADD_TO_CHAT_EVENT, handle);
+  }, []);
 
   const mentions = useMemo(() => {
     // Render chips only for explicitly inserted/known mentions.
@@ -1160,6 +1167,8 @@ export function MessageInput({
         directoryRefs,
       });
       const { files, finalContent: finalPrompt } = payload;
+      const modelPrompt = buildFileExcerptPrompt(finalPrompt, fileExcerptReferences);
+      const displayPrompt = encodeFileExcerptDisplay(displayLabel, fileExcerptReferences);
       // Clear OPTIMISTICALLY before awaiting delivery (same rationale as the
       // normal path below): the first-message send doesn't resolve until the
       // stream ends and the composer no longer remounts (#615), so a post-await
@@ -1168,16 +1177,18 @@ export function MessageInput({
       const restoreInput = inputValue;
       const restoreDirs = [...directoryRefs];
       const restoreFileRefs = [...fileReferencePaths];
+      const restoreExcerpts = [...fileExcerptReferences];
       const restoreBadges = [...badges];
       clearBadgesWithOrder();
       setInputValue('');
       setDirectoryRefs([]);
       setFileReferencePaths([]);
+      setFileExcerptReferences([]);
       const delivered = await onSend(
-        finalPrompt,
+        modelPrompt,
         files.length > 0 ? files.slice() : undefined,
         undefined,
-        displayLabel,
+        displayPrompt,
         payload.mentions ? [...payload.mentions] : undefined,
         selectedSkills.length > 0 ? selectedSkills : undefined,
       );
@@ -1189,6 +1200,7 @@ export function MessageInput({
         setInputValue((cur) => (cur ? cur : restoreInput));
         setDirectoryRefs((cur) => (cur.length ? cur : restoreDirs));
         setFileReferencePaths((cur) => (cur.length ? cur : restoreFileRefs));
+        setFileExcerptReferences((cur) => (cur.length ? cur : restoreExcerpts));
         if (badgesRef.current.length === 0) restoreBadges.forEach((b) => addBadgeWithOrder(b));
         abortComposerSubmit('composer-send-not-delivered');
       }
@@ -1212,7 +1224,7 @@ export function MessageInput({
     const hasFiles = files.length > 0;
 
     // Empty submit: nothing to send and nothing to lose — clear silently.
-    if (!finalContent && !hasFiles) return;
+    if (!finalContent && !hasFiles && fileExcerptReferences.length === 0) return;
     // Disabled while content/attachments are present: preserve the composer
     // (a bare return here would let PromptInput clear the screenshot) (#615).
     if (disabled) abortComposerSubmit('composer-disabled');
@@ -1253,14 +1265,24 @@ export function MessageInput({
     const restoreInput = inputValue;
     const restoreDirs = [...directoryRefs];
     const restoreFileRefs = [...fileReferencePaths];
+    const restoreExcerpts = [...fileExcerptReferences];
+    const modelContent = buildFileExcerptPrompt(
+      finalContent || 'Please review the referenced file excerpt(s).',
+      fileExcerptReferences,
+    );
+    const displayContent = encodeFileExcerptDisplay(
+      payload.displayOverride ?? content,
+      fileExcerptReferences,
+    );
     setInputValue('');
     setDirectoryRefs([]);
     setFileReferencePaths([]);
+    setFileExcerptReferences([]);
     const delivered = await onSend(
-      finalContent || 'Please review the attached file(s).',
+      modelContent,
       hasFiles ? files.slice() : undefined,
       undefined,
-      payload.displayOverride,
+      displayContent,
       payload.mentions ? [...payload.mentions] : undefined,
     );
     if (delivered === false) {
@@ -1271,12 +1293,13 @@ export function MessageInput({
       setInputValue((cur) => (cur ? cur : restoreInput));
       setDirectoryRefs((cur) => (cur.length ? cur : restoreDirs));
       setFileReferencePaths((cur) => (cur.length ? cur : restoreFileRefs));
+      setFileExcerptReferences((cur) => (cur.length ? cur : restoreExcerpts));
       abortComposerSubmit('composer-send-not-delivered');
     }
     // Note: nothing to clear post-await — text and dirs were
     // cleared optimistically above, and we must NOT re-clear (the user may have
     // typed the next message while the turn streamed, and that must survive).
-  }, [inputValue, goalPromptActive, planPromptActive, mentionNodeTypes, directoryRefs, fileReferenceMentions, fileReferencePaths, onSend, onCommand, onModeChange, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
+  }, [inputValue, goalPromptActive, planPromptActive, mentionNodeTypes, directoryRefs, fileReferenceMentions, fileReferencePaths, fileExcerptReferences, onSend, onCommand, onModeChange, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1424,6 +1447,9 @@ export function MessageInput({
   }, []);
   const removeFileReference = useCallback((path: string) => {
     setFileReferencePaths((prev) => prev.filter((item) => item !== path));
+  }, []);
+  const removeFileExcerpt = useCallback((id: string) => {
+    setFileExcerptReferences((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
   // File-tree "+" on a folder dispatches `attach-directory-to-chat`
@@ -1608,6 +1634,10 @@ export function MessageInput({
               paths={fileReferencePaths}
               onRemove={removeFileReference}
             />
+            <FileExcerptCapsules
+              excerpts={fileExcerptReferences}
+              onRemove={removeFileExcerpt}
+            />
             <AttachmentPendingTracker onChange={setAttachmentPendingTokens} />
             <DirectoryRefsCapsules
               paths={directoryRefs}
@@ -1691,6 +1721,7 @@ export function MessageInput({
                   disabled={disabled}
                   inputValue={inputValue}
                   hasBadge={hasBadge}
+                  hasContext={fileExcerptReferences.length > 0}
                 />
               </div>
             </PromptInputFooter>

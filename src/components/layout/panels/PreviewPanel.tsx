@@ -49,6 +49,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildPresentationRefreshUrl } from "@/lib/markdown/presentation-refresh";
 import { dispatchAddToChat } from "@/lib/add-to-chat-event";
+import { locateExcerptLines } from "@/lib/file-excerpt-reference";
 import { injectInlineHtmlCsp } from "@/lib/inline-html-csp";
 import { useAppServerActions } from "@/codex-web/AppServerProvider";
 import {
@@ -1750,7 +1751,7 @@ function MarkdownRenderedView({
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   // Stage 1: frontmatter split.
-  const { data: frontmatter, body } = useMemo(() => parseFrontmatter(content), [content]);
+  const { data: frontmatter, body, lineOffset } = useMemo(() => parseFrontmatter(content), [content]);
 
   // Stages 2–4 in one memo so we don't re-rewrite on every render.
   const { processedBody, outline } = useMemo(() => {
@@ -1856,7 +1857,12 @@ function MarkdownRenderedView({
         {Object.keys(frontmatter).length > 0 && (
           <MarkdownFrontmatterPanel data={frontmatter} />
         )}
-        <AddToChatToolbar filePath={filePath} containerRef={bodyRef} />
+        <AddToChatToolbar
+          filePath={filePath}
+          containerRef={bodyRef}
+          sourceText={body}
+          lineOffset={lineOffset}
+        />
         <div
           ref={bodyRef}
           onClick={onClick}
@@ -1899,12 +1905,21 @@ function MarkdownRenderedView({
 function AddToChatToolbar({
   filePath,
   containerRef,
+  sourceText,
+  lineOffset,
 }: {
   filePath: string;
   containerRef: React.RefObject<HTMLElement | null>;
+  sourceText: string;
+  lineOffset: number;
 }) {
   const { t } = useTranslation();
-  const [selection, setSelection] = useState<{ text: string; heading?: string } | null>(null);
+  const [selection, setSelection] = useState<{
+    text: string;
+    heading?: string;
+    startLine?: number;
+    endLine?: number;
+  } | null>(null);
   useEffect(() => {
     const handler = () => {
       const sel = typeof window !== "undefined" ? window.getSelection() : null;
@@ -1926,11 +1941,17 @@ function AddToChatToolbar({
       // Find the nearest heading ancestor to enrich the chat context.
       const startNode = (range.startContainer as Node).parentElement;
       const heading = closestHeading(startNode);
-      setSelection({ text, heading });
+      const lines = locateExcerptLines(sourceText, text, lineOffset);
+      setSelection({
+        text,
+        heading,
+        startLine: lines?.startLine,
+        endLine: lines?.endLine,
+      });
     };
     document.addEventListener("selectionchange", handler);
     return () => document.removeEventListener("selectionchange", handler);
-  }, [containerRef]);
+  }, [containerRef, lineOffset, sourceText]);
 
   if (!selection) return null;
   return (
@@ -1946,7 +1967,13 @@ function AddToChatToolbar({
             text: selection.text,
             sourcePath: filePath,
             sourceLabel: selection.heading,
-            sourceAnchor: selection.heading ? `#${slugify(selection.heading)}` : undefined,
+            sourceAnchor: selection.startLine
+              ? `#L${selection.startLine}`
+              : selection.heading
+                ? `#${slugify(selection.heading)}`
+                : undefined,
+            startLine: selection.startLine,
+            endLine: selection.endLine,
           });
         }}
         className="h-6 px-2 text-[11px]"

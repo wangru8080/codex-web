@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Check, CaretDown, CaretUp, CaretRight } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { FileAttachmentDisplay } from './FileAttachmentDisplay';
+import { FileExcerptDisplay } from './FileExcerptDisplay';
+import { parseFileExcerptDisplay } from '@/lib/file-excerpt-reference';
 import { ImageGenConfirmation } from './ImageGenConfirmation';
 import { ImageGenCard } from './ImageGenCard';
 import { BatchPlanInlinePreview } from './batch-image-gen/BatchPlanInlinePreview';
@@ -731,12 +733,17 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
   }, [message.content]);
 
   // Memoize file attachment parsing
-  const { files, displayText } = useMemo(() => {
+  const { files, fileExcerpts, displayText } = useMemo(() => {
     if (isUser) {
       const { files, text: textWithoutFiles } = parseMessageFiles(text);
-      return { files, displayText: textWithoutFiles };
+      const parsedExcerpts = parseFileExcerptDisplay(textWithoutFiles);
+      return {
+        files,
+        fileExcerpts: parsedExcerpts.references,
+        displayText: parsedExcerpts.request,
+      };
     }
-    return { files: [] as FileAttachment[], displayText: text };
+    return { files: [] as FileAttachment[], fileExcerpts: [], displayText: text };
   }, [text, isUser]);
 
   useEffect(() => {
@@ -838,6 +845,10 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
         {/* File attachments for user messages */}
         {isUser && files.length > 0 && (
           <FileAttachmentDisplay files={files} />
+        )}
+
+        {isUser && fileExcerpts.length > 0 && (
+          <FileExcerptDisplay references={fileExcerpts} />
         )}
 
         {/* Text content */}

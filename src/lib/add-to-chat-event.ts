@@ -28,6 +28,10 @@ export interface AddToChatDetail {
   /** Optional human label — typically the closest heading text — that
    *  the chip can display alongside the path basename. */
   sourceLabel?: string;
+  /** 1-based source line range when the rendered selection can be
+   * located unambiguously in the Markdown source. */
+  startLine?: number;
+  endLine?: number;
 }
 
 export function dispatchAddToChat(detail: AddToChatDetail): void {
@@ -40,5 +44,7 @@ export function isAddToChatDetail(value: unknown): value is AddToChatDetail {
   const v = value as Partial<AddToChatDetail>;
   if (typeof v.text !== "string") return false;
   if (typeof v.sourcePath !== "string") return false;
+  if (v.startLine !== undefined && (!Number.isInteger(v.startLine) || v.startLine < 1)) return false;
+  if (v.endLine !== undefined && (!Number.isInteger(v.endLine) || v.endLine < 1)) return false;
   return true;
 }

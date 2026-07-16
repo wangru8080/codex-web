@@ -2,6 +2,10 @@ import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 import type { ChatSession, FileAttachment, Message } from "@/types";
+import {
+  encodeFileExcerptDisplay,
+  parseFileExcerptPrompt,
+} from "@/lib/file-excerpt-reference";
 
 import { turnItemsToMessageContent } from "./app-server-message-blocks";
 
@@ -101,7 +105,8 @@ function userItemToMessage(
     .trim();
   const parsedPrompt = parseFilesMentionedPrompt(rawContent, item.id);
   const files = userInputAttachments(item, parsedPrompt.files);
-  const content = parsedPrompt.content;
+  const parsedExcerpts = parseFileExcerptPrompt(parsedPrompt.content);
+  const content = encodeFileExcerptDisplay(parsedExcerpts.request, parsedExcerpts.references);
   if (!content && files.length === 0) return null;
   const contentWithFiles = files.length > 0
     ? `<!--files:${JSON.stringify(files)}-->${content}`

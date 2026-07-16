@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { FileAttachment } from "@/types";
 import { buildAppServerTurnInput } from "./turn-input";
+import { buildFileExcerptPrompt } from "@/lib/file-excerpt-reference";
 
 function attachment(overrides: Partial<FileAttachment> = {}): FileAttachment {
   return {
@@ -15,6 +16,19 @@ function attachment(overrides: Partial<FileAttachment> = {}): FileAttachment {
 }
 
 describe("buildAppServerTurnInput", () => {
+  it("把文件片段路径、行号和正文原样写入 app-server 文本输入", () => {
+    const prompt = buildFileExcerptPrompt("这是 UTC 时间吗？", [{
+      id: "excerpt-1",
+      path: "/repo/scripts/run_rsync.sh",
+      name: "run_rsync.sh",
+      text: "date -u\ndate",
+      startLine: 4,
+      endLine: 5,
+    }]);
+
+    expect(buildAppServerTurnInput(prompt)).toEqual([{ type: "text", text: prompt, text_elements: [] }]);
+  });
+
   it("无附件时只生成官方 text block", () => {
     expect(buildAppServerTurnInput("检查项目")).toEqual([
       { type: "text", text: "检查项目", text_elements: [] },

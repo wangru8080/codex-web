@@ -13,6 +13,7 @@ import type { TranslationKey } from '@/i18n';
 import type { ChatStatus } from 'ai';
 import { isSubmitEnabled } from '@/lib/message-input-logic';
 import type { MentionRef, CommandBadge as CommandBadgeType } from '@/types';
+import type { FileExcerptReference } from '@/lib/file-excerpt-reference';
 
 /**
  * Submit button that's aware of file attachments. Must be rendered inside PromptInput.
@@ -23,16 +24,18 @@ export function FileAwareSubmitButton({
   disabled,
   inputValue,
   hasBadge,
+  hasContext = false,
 }: {
   status: ChatStatus;
   onStop?: () => void;
   disabled?: boolean;
   inputValue: string;
   hasBadge: boolean;
+  hasContext?: boolean;
 }) {
   const attachments = usePromptInputAttachments();
   const { t } = useTranslation();
-  const hasFiles = attachments.files.length > 0;
+  const hasFiles = attachments.files.length > 0 || hasContext;
   const isStreaming = status === 'streaming' || status === 'submitted';
 
   // During streaming only plain text can queue. Slash commands and badges
@@ -254,6 +257,57 @@ export function FileReferenceCapsules({
               size="icon"
               onClick={() => onRemove(path)}
               aria-label={t('messageInput.removeChipAriaLabel' as TranslationKey, { name: fileName })}
+              className="absolute right-1 top-1 size-6 rounded-full p-0"
+            >
+              <X size={12} />
+            </Button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function FileExcerptCapsules({
+  excerpts,
+  onRemove,
+}: {
+  excerpts: ReadonlyArray<FileExcerptReference>;
+  onRemove: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  if (excerpts.length === 0) return null;
+
+  return (
+    <div className="flex w-full flex-wrap items-center gap-2 px-3 pt-2.5 pb-0 order-first">
+      {excerpts.map((excerpt) => {
+        const extension = excerpt.name.includes(".")
+          ? excerpt.name.split(".").pop()?.toUpperCase()
+          : "FILE";
+        const lineRange = excerpt.startLine && excerpt.endLine
+          ? `${excerpt.startLine}-${excerpt.endLine}`
+          : null;
+        return (
+          <div
+            key={excerpt.id}
+            data-file-excerpt-path={excerpt.path}
+            className="relative flex min-w-[220px] max-w-[360px] items-center gap-3 rounded-lg border border-border/60 bg-background px-3 py-2 shadow-sm"
+          >
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
+              <CodexWebIcon name="file_code" size="md" className="text-muted-foreground" aria-hidden />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium text-foreground">{excerpt.name}</div>
+              <div className="text-xs text-muted-foreground">
+                {extension}{lineRange ? ` · ${lineRange}` : ""}
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => onRemove(excerpt.id)}
+              aria-label={t('messageInput.removeChipAriaLabel' as TranslationKey, { name: excerpt.name })}
               className="absolute right-1 top-1 size-6 rounded-full p-0"
             >
               <X size={12} />

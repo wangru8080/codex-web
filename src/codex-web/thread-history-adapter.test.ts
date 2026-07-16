@@ -4,6 +4,11 @@ import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 
 import { threadToChatSession, threadToMessages } from "./thread-history-adapter";
 import { TOOL_OUTPUT_DISPLAY_BYTE_LIMIT } from "./tool-output-display";
+import {
+  buildFileExcerptPrompt,
+  parseFileExcerptDisplay,
+  type FileExcerptReference,
+} from "@/lib/file-excerpt-reference";
 
 describe("thread-history-adapter", () => {
   it("把 app-server Thread 映射为 CodexWeb 会话项", () => {
@@ -222,6 +227,41 @@ describe("thread-history-adapter", () => {
     const result = threadToMessages(thread);
 
     expect(result.messages[0]!.content).toBe(text);
+  });
+
+  it("从 app-server 历史提示词恢复文件片段卡片和用户问题", () => {
+    const thread = createThread();
+    const reference: FileExcerptReference = {
+      id: "excerpt-1",
+      path: "/repo/web/scripts/run_rsync.sh",
+      name: "run_rsync.sh",
+      text: "date -u\ndate",
+      startLine: 4,
+      endLine: 5,
+    };
+    thread.turns[0]!.items[0] = {
+      type: "userMessage",
+      id: "user-excerpt",
+      clientId: null,
+      content: [{
+        type: "text",
+        text: buildFileExcerptPrompt("这是 UTC 时间吗？", [reference]),
+        text_elements: [],
+      }],
+    };
+
+    const result = threadToMessages(thread);
+
+    expect(parseFileExcerptDisplay(result.messages[0]!.content)).toEqual({
+      references: [{
+        id: "excerpt-1",
+        path: "/repo/web/scripts/run_rsync.sh",
+        name: "run_rsync.sh",
+        startLine: 4,
+        endLine: 5,
+      }],
+      request: "这是 UTC 时间吗？",
+    });
   });
 
   it("把历史 fileChange 和 mcpToolCall 映射为 CodexWeb 工具块", () => {
