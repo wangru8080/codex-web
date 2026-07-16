@@ -53,12 +53,14 @@ export function locateExcerptLines(
     if (matches.length > 1) return null;
     cursor = index + 1;
   }
-  return matches[0] ?? null;
+  if (matches[0]) return matches[0];
+  return locateByUniqueBoundaryAnchors(searchable, normalizedSelection, lineOffset);
 }
 
 function markdownSourceSearchText(source: string): { text: string; lineByIndex: number[] } {
   let text = "";
   const lineByIndex: number[] = [];
+  let openFence: { marker: string; length: number } | null = null;
   const append = (value: string, line: number) => {
     for (const character of value) {
       if (/\s/.test(character)) {
@@ -74,7 +76,20 @@ function markdownSourceSearchText(source: string): { text: string; lineByIndex: 
   };
 
   source.split("\n").forEach((line, index) => {
-    if (/^\s*```/.test(line)) return;
+    const fence = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      const marker = fence[1]?.[0] ?? "";
+      const length = fence[1]?.length ?? 0;
+      if (!openFence) {
+        openFence = { marker, length };
+        const language = fence[2]?.trim().split(/\s+/, 1)[0] ?? "";
+        append(language, index + 1);
+        append(" ", index + 1);
+      } else if (marker === openFence.marker && length >= openFence.length) {
+        openFence = null;
+      }
+      return;
+    }
     const withoutQuote = line.replace(/^\s*(?:>\s*)+/, "");
     const withoutBlockMarker = withoutQuote.replace(
       /^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)/,
@@ -92,6 +107,36 @@ function markdownSourceSearchText(source: string): { text: string; lineByIndex: 
   });
 
   return { text: text.trimEnd(), lineByIndex };
+}
+
+function locateByUniqueBoundaryAnchors(
+  searchable: { text: string; lineByIndex: number[] },
+  selectedText: string,
+  lineOffset: number,
+): { startLine: number; endLine: number } | null {
+  const selectedLines = selectedText
+    .split("\n")
+    .map(collapseWhitespace)
+    .filter(Boolean);
+  if (selectedLines.length < 2) return null;
+
+  const firstAnchor = selectedLines[0] ?? "";
+  const lastAnchor = selectedLines[selectedLines.length - 1] ?? "";
+  if ([...firstAnchor].length < 4 || [...lastAnchor].length < 4) return null;
+  const firstIndex = uniqueIndexOf(searchable.text, firstAnchor);
+  const lastIndex = uniqueIndexOf(searchable.text, lastAnchor);
+  if (firstIndex < 0 || lastIndex < firstIndex + firstAnchor.length) return null;
+
+  return {
+    startLine: lineOffset + searchable.lineByIndex[firstIndex],
+    endLine: lineOffset + searchable.lineByIndex[lastIndex + lastAnchor.length - 1],
+  };
+}
+
+function uniqueIndexOf(source: string, value: string): number {
+  const first = source.indexOf(value);
+  if (first < 0 || source.indexOf(value, first + 1) >= 0) return -1;
+  return first;
 }
 
 function collapseWhitespace(value: string): string {

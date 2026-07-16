@@ -67,6 +67,75 @@ describe("文件片段行号定位", () => {
       "使用 model/list 读取 模型列表 和 官方文档。",
     )).toEqual({ startLine: 3, endLine: 3 });
   });
+
+  it("把代码块语言标签包含在 Markdown 预览选区映射中", () => {
+    const source = [
+      "前言",
+      "",
+      "## 核心边界",
+      "第一项",
+      "",
+      "## 架构",
+      "",
+      "```text",
+      "浏览器 Web UI",
+      "```",
+      "",
+      "Web bridge 负责转发请求。",
+    ].join("\n");
+    const selectedText = [
+      "核心边界",
+      "第一项",
+      "架构",
+      "text",
+      "浏览器 Web UI",
+      "Web bridge 负责转发请求。",
+    ].join("\n");
+
+    const lines = locateExcerptLines(source, selectedText);
+
+    expect(lines).toEqual({ startLine: 3, endLine: 12 });
+    expect(buildFileExcerptPrompt("核心边界有哪些", [{
+      ...reference,
+      path: "/workspace/AGENTS.md",
+      name: "AGENTS.md",
+      text: selectedText,
+      ...lines,
+    }])).toContain("## Selection 1: /workspace/AGENTS.md (lines 3-12)");
+  });
+
+  it("完整匹配失败时用唯一首尾锚点恢复跨行范围", () => {
+    const source = "唯一开头\n源文件中间正文\n唯一结尾";
+    const selectedText = "唯一开头\n预览器附加文本\n唯一结尾";
+
+    expect(locateExcerptLines(source, selectedText)).toEqual({
+      startLine: 1,
+      endLine: 3,
+    });
+  });
+
+  it("首尾锚点存在歧义时不伪造行号", () => {
+    const source = [
+      "重复开头",
+      "第一段正文",
+      "重复结尾",
+      "重复开头",
+      "第二段正文",
+      "重复结尾",
+    ].join("\n");
+
+    expect(locateExcerptLines(
+      source,
+      "重复开头\n预览器附加文本\n重复结尾",
+    )).toBeNull();
+  });
+
+  it("首尾边界过短时不跳过边界推断较小范围", () => {
+    expect(locateExcerptLines(
+      "短题\n唯一正文开头\n源文件中间正文\n唯一正文结尾",
+      "短题\n唯一正文开头\n预览器附加文本\n唯一正文结尾",
+    )).toBeNull();
+  });
 });
 
 describe("文件片段双通道协议", () => {
