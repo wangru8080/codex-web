@@ -53,6 +53,20 @@ describe("文件片段行号定位", () => {
       "本地 codex app-server 连接。\nSSH 远程 codex app-server 连接。",
     )).toEqual({ startLine: 3, endLine: 4 });
   });
+
+  it("把内联代码、强调和链接的可见文本映射回 Markdown 源行", () => {
+    const source = [
+      "# 配置",
+      "",
+      "- 使用 `model/list` 读取 **模型列表** 和 [官方文档](https://example.com/docs)。",
+      "- 下一项。",
+    ].join("\n");
+
+    expect(locateExcerptLines(
+      source,
+      "使用 model/list 读取 模型列表 和 官方文档。",
+    )).toEqual({ startLine: 3, endLine: 3 });
+  });
 });
 
 describe("文件片段双通道协议", () => {

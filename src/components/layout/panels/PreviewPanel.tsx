@@ -48,8 +48,12 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildPresentationRefreshUrl } from "@/lib/markdown/presentation-refresh";
-import { dispatchAddToChat } from "@/lib/add-to-chat-event";
-import { locateExcerptLines } from "@/lib/file-excerpt-reference";
+import {
+  FileSelectionToolbar,
+  sourceLineRangeFromDom,
+  useDomFileSelection,
+  type FileTextSelection,
+} from "@/components/editor/FileSelectionToolbar";
 import { injectInlineHtmlCsp } from "@/lib/inline-html-csp";
 import { useAppServerActions } from "@/codex-web/AppServerProvider";
 import {
@@ -560,6 +564,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   const [savedContent, setSavedContent] = useState<string>("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [editJustSaved, setEditJustSaved] = useState(false);
+  const [editorSelection, setEditorSelection] = useState<FileTextSelection | null>(null);
   // Phase 5.6 — the "loaded path" anchor for every stale-content check in
   // this panel. Populated when loadPreview successfully seats a new
   // preview.content; cleared synchronously on filePath changes before
@@ -595,6 +600,10 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   // to the loading branch, so the UI shows a spinner instead of a
   // cross-file frankenstate.
   const freshPreview = loadedMatchesActive ? preview : null;
+
+  useEffect(() => {
+    setEditorSelection(null);
+  }, [filePath, previewViewMode]);
 
   // Whether the current preview source is an HTML document we can ship
   // to the Phase 3 long-shot IPC. Lit up when:
@@ -1277,12 +1286,17 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
               // external Markdown falls through to SourceView instead
               // of dropping the user into a write-capable editor that
               // wouldn't actually save anywhere.
-              <MarkdownEditor
-                value={editContent}
-                onChange={setEditContent}
-                onSave={handleSaveEdit}
-                filename={filePath}
-              />
+              <div className="flex h-full min-h-0 flex-col">
+                <FileSelectionToolbar filePath={filePath} selection={editorSelection} />
+                <MarkdownEditor
+                  value={editContent}
+                  onChange={setEditContent}
+                  onSave={handleSaveEdit}
+                  onSelectionChange={setEditorSelection}
+                  filename={filePath}
+                  className="min-h-0 flex-1 overflow-hidden"
+                />
+              </div>
             ) : previewViewMode === "rendered" && canRender ? (
               <RenderedView
                 content={freshPreview.content}
@@ -1401,33 +1415,48 @@ function useDocCodeTheme(isDark: boolean) {
   return resolveHljsStyle(codeTheme, isDark);
 }
 
+function sourceLineProps(lineNumber: number): React.HTMLProps<HTMLElement> {
+  return { "data-source-line": String(lineNumber) } as React.HTMLProps<HTMLElement>;
+}
+
 /** Source code view using react-syntax-highlighter */
 function SourceView({ preview, isDark }: { preview: FilePreviewType; isDark: boolean }) {
   const hljsStyle = useDocCodeTheme(isDark);
+  const sourceRef = useRef<HTMLDivElement | null>(null);
+  const selection = useDomFileSelection({
+    containerRef: sourceRef,
+    sourceText: preview.content,
+    resolveLines: sourceLineRangeFromDom,
+  });
   return (
-    <div className="text-xs">
-      <SyntaxHighlighter
-        language={preview.language}
-        style={hljsStyle}
-        showLineNumbers
-        customStyle={{
-          margin: 0,
-          padding: "8px",
-          borderRadius: 0,
-          fontSize: "11px",
-          lineHeight: "1.5",
-          background: "transparent",
-        }}
-        lineNumberStyle={{
-          minWidth: "2.5em",
-          paddingRight: "8px",
-          color: "var(--muted-foreground)",
-          opacity: 0.5,
-          userSelect: "none",
-        }}
-      >
-        {preview.content}
-      </SyntaxHighlighter>
+    <div className="flex min-h-full flex-col text-xs">
+      <FileSelectionToolbar filePath={preview.path} selection={selection} />
+      <div ref={sourceRef}>
+        <SyntaxHighlighter
+          language={preview.language}
+          style={hljsStyle}
+          showLineNumbers
+          wrapLines
+          lineProps={sourceLineProps}
+          customStyle={{
+            margin: 0,
+            padding: "8px",
+            borderRadius: 0,
+            fontSize: "11px",
+            lineHeight: "1.5",
+            background: "transparent",
+          }}
+          lineNumberStyle={{
+            minWidth: "2.5em",
+            paddingRight: "8px",
+            color: "var(--muted-foreground)",
+            opacity: 0.5,
+            userSelect: "none",
+          }}
+        >
+          {preview.content}
+        </SyntaxHighlighter>
+      </div>
     </div>
   );
 }
@@ -1752,6 +1781,18 @@ function MarkdownRenderedView({
 
   // Stage 1: frontmatter split.
   const { data: frontmatter, body, lineOffset } = useMemo(() => parseFrontmatter(content), [content]);
+  const resolveSelectionLabel = useCallback((range: Range) => {
+    const startNode = range.startContainer instanceof Element
+      ? range.startContainer
+      : range.startContainer.parentElement;
+    return closestHeading(startNode);
+  }, []);
+  const selection = useDomFileSelection({
+    containerRef: bodyRef,
+    sourceText: body,
+    lineOffset,
+    resolveLabel: resolveSelectionLabel,
+  });
 
   // Stages 2–4 in one memo so we don't re-rewrite on every render.
   const { processedBody, outline } = useMemo(() => {
@@ -1857,12 +1898,7 @@ function MarkdownRenderedView({
         {Object.keys(frontmatter).length > 0 && (
           <MarkdownFrontmatterPanel data={frontmatter} />
         )}
-        <AddToChatToolbar
-          filePath={filePath}
-          containerRef={bodyRef}
-          sourceText={body}
-          lineOffset={lineOffset}
-        />
+        <FileSelectionToolbar filePath={filePath} selection={selection} />
         <div
           ref={bodyRef}
           onClick={onClick}
@@ -1895,94 +1931,6 @@ function MarkdownRenderedView({
 // main panel header next to the view-mode Tabs, and the Updated
 // badge moved alongside it (Codex UX feedback: three stacked toolbar
 // rows looked busy in the narrow right rail).
-
-/**
- * Phase 4.A — Add-to-chat affordance. Shown only when the user has a
- * non-empty text selection inside the markdown body. Click dispatches
- * the codepilot:add-to-chat event; MessageInput picks it up and
- * prefills the composer with a quoted blockquote + source path.
- */
-function AddToChatToolbar({
-  filePath,
-  containerRef,
-  sourceText,
-  lineOffset,
-}: {
-  filePath: string;
-  containerRef: React.RefObject<HTMLElement | null>;
-  sourceText: string;
-  lineOffset: number;
-}) {
-  const { t } = useTranslation();
-  const [selection, setSelection] = useState<{
-    text: string;
-    heading?: string;
-    startLine?: number;
-    endLine?: number;
-  } | null>(null);
-  useEffect(() => {
-    const handler = () => {
-      const sel = typeof window !== "undefined" ? window.getSelection() : null;
-      if (!sel || sel.rangeCount === 0) {
-        setSelection(null);
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      const inside = containerRef.current?.contains(range.commonAncestorContainer);
-      if (!inside) {
-        setSelection(null);
-        return;
-      }
-      const text = sel.toString().trim();
-      if (!text) {
-        setSelection(null);
-        return;
-      }
-      // Find the nearest heading ancestor to enrich the chat context.
-      const startNode = (range.startContainer as Node).parentElement;
-      const heading = closestHeading(startNode);
-      const lines = locateExcerptLines(sourceText, text, lineOffset);
-      setSelection({
-        text,
-        heading,
-        startLine: lines?.startLine,
-        endLine: lines?.endLine,
-      });
-    };
-    document.addEventListener("selectionchange", handler);
-    return () => document.removeEventListener("selectionchange", handler);
-  }, [containerRef, lineOffset, sourceText]);
-
-  if (!selection) return null;
-  return (
-    <div className="sticky top-0 z-10 flex items-center justify-end gap-2 border-b border-border/40 bg-background/95 px-3 py-1.5 backdrop-blur">
-      <span className="truncate text-[10px] text-muted-foreground">
-        {selection.text.length} {t("filePreview.addToChat.charsLabel")}
-      </span>
-      <Button
-        size="xs"
-        variant="outline"
-        onClick={() => {
-          dispatchAddToChat({
-            text: selection.text,
-            sourcePath: filePath,
-            sourceLabel: selection.heading,
-            sourceAnchor: selection.startLine
-              ? `#L${selection.startLine}`
-              : selection.heading
-                ? `#${slugify(selection.heading)}`
-                : undefined,
-            startLine: selection.startLine,
-            endLine: selection.endLine,
-          });
-        }}
-        className="h-6 px-2 text-[11px]"
-      >
-        {t("filePreview.addToChat.action")}
-      </Button>
-    </div>
-  );
-}
 
 function closestHeading(node: Element | null | undefined): string | undefined {
   let cursor: Element | null | undefined = node;

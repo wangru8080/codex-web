@@ -9,6 +9,8 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { indentWithTab } from "@codemirror/commands";
 import { useTheme } from "next-themes";
 
+import type { FileTextSelection } from "@/components/editor/FileSelectionToolbar";
+
 /*
  * MarkdownEditor — Phase 4 replacement for the raw <textarea> in
  * SkillEditor (and the future standalone .md editor surface).
@@ -32,6 +34,7 @@ export interface MarkdownEditorProps {
   value: string;
   onChange: (v: string) => void;
   onSave?: () => void;
+  onSelectionChange?: (selection: FileTextSelection | null) => void;
   /** Optional filename shown via data-attribute (used for testing hooks). */
   filename?: string;
   /** Aria label for a11y; also shown as placeholder hint. */
@@ -43,6 +46,7 @@ export function MarkdownEditor({
   value,
   onChange,
   onSave,
+  onSelectionChange,
   filename,
   placeholder,
   className,
@@ -54,6 +58,7 @@ export function MarkdownEditor({
   const themeCompartment = useRef(new Compartment()).current;
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onSelectionChangeRef = useRef(onSelectionChange);
   const { resolvedTheme } = useTheme();
 
   // Refs track the latest callbacks so CodeMirror's long-lived listener
@@ -65,6 +70,9 @@ export function MarkdownEditor({
   useEffect(() => {
     onSaveRef.current = onSave;
   }, [onSave]);
+  useEffect(() => {
+    onSelectionChangeRef.current = onSelectionChange;
+  }, [onSelectionChange]);
 
   // Initialize EditorView once per mount. State changes flow through
   // dispatches in the other effects below.
@@ -105,12 +113,31 @@ export function MarkdownEditor({
         EditorView.lineWrapping,
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onChangeRef.current(u.state.doc.toString());
+          if (u.selectionSet || u.docChanged) {
+            const state = u.state;
+            const { from, to } = state.selection.main;
+            if (from === to) {
+              onSelectionChangeRef.current?.(null);
+              return;
+            }
+            const text = state.sliceDoc(from, to).trim();
+            onSelectionChangeRef.current?.(
+              text
+                ? {
+                    text,
+                    startLine: state.doc.lineAt(from).number,
+                    endLine: state.doc.lineAt(Math.max(from, to - 1)).number,
+                  }
+                : null,
+            );
+          }
         }),
       ],
     });
 
     viewRef.current = new EditorView({ state, parent: hostRef.current });
     return () => {
+      onSelectionChangeRef.current?.(null);
       viewRef.current?.destroy();
       viewRef.current = null;
     };

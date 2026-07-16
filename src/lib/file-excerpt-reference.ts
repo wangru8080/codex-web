@@ -74,10 +74,17 @@ function markdownSourceSearchText(source: string): { text: string; lineByIndex: 
   source.split("\n").forEach((line, index) => {
     if (/^\s*```/.test(line)) return;
     const withoutQuote = line.replace(/^\s*(?:>\s*)+/, "");
-    const renderedLine = withoutQuote.replace(
+    const withoutBlockMarker = withoutQuote.replace(
       /^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)/,
       "",
     );
+    const renderedLine = withoutBlockMarker
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/`([^`]*)`/g, "$1")
+      .replace(/<[^>]+>/g, "")
+      .replace(/[~*]/g, "")
+      .replace(/\\([\\`*_[\]{}()#+.!-])/g, "$1");
     append(renderedLine, index + 1);
     append(" ", index + 1);
   });
