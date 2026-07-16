@@ -14,8 +14,9 @@ import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
 import type { ReactNode } from "react";
 import { useAppServerActions } from "@/codex-web/AppServerProvider";
-import { directoryEntriesToNodes } from "@/codex-web/app-server-files";
+import { directoryEntriesToNodes, fileBytesFromResponse } from "@/codex-web/app-server-files";
 import { copyWithToast } from "@/lib/clipboard";
+import { showToast } from "@/hooks/useToast";
 
 interface FileTreeProps {
   workingDirectory: string;
@@ -174,7 +175,7 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
   const abortRef = useRef<AbortController | null>(null);
   const loadingDirectoriesRef = useRef(new Set<string>());
   const { t } = useTranslation();
-  const { readDirectory } = useAppServerActions();
+  const { readDirectory, readFile } = useAppServerActions();
   const seekKeyRef = useRef<string | null>(null);
 
   // Clear stale tree data when switching projects to avoid cross-session seek races.
@@ -241,12 +242,9 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
 
   // Controlled expansion state for search-driven highlighting
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
-  const [revealPath, setRevealPath] = useState<string | null>(null);
-  const effectiveHighlightPath = revealPath ?? highlightPath;
 
   useEffect(() => {
     setExpandedPaths(new Set());
-    setRevealPath(null);
     loadingDirectoriesRef.current.clear();
   }, [workingDirectory]);
 
@@ -277,13 +275,24 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
     void copyWithToast({ text: path, t });
   }, [t]);
 
-  const handleOpenContainingDirectory = useCallback((path: string) => {
-    const parent = parentPath(path);
-    if (!parent) return;
-    setRevealPath(parent);
-    setExpandedPaths((current) => new Set([...current, ...getParentPaths(parent), parent]));
-    onSelectFolder?.(parent);
-  }, [onSelectFolder]);
+  const handleDownload = useCallback(async (path: string) => {
+    try {
+      const response = await readFile(path);
+      const bytes = fileBytesFromResponse(response);
+      const blob = new Blob([bytes], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileNameFromPath(path);
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showToast({ type: "success", message: t("fileTree.downloadStarted" as TranslationKey) });
+    } catch {
+      showToast({ type: "error", message: t("fileTree.downloadFailed" as TranslationKey) });
+    }
+  }, [readFile, t]);
 
   const handleInsertReference = useCallback((path: string) => {
     window.dispatchEvent(new CustomEvent('insert-file-reference', {
@@ -293,23 +302,23 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
 
   // Sync expanded paths when highlightPath changes
   useEffect(() => {
-    if (effectiveHighlightPath) {
+    if (highlightPath) {
       const next = new Set<string>();
-      for (const parent of getParentPaths(effectiveHighlightPath)) {
+      for (const parent of getParentPaths(highlightPath)) {
         next.add(parent);
       }
-      next.add(effectiveHighlightPath);
+      next.add(highlightPath);
       setExpandedPaths(next);
     } else {
       setExpandedPaths(new Set());
     }
-  }, [effectiveHighlightPath, highlightSeek]);
+  }, [highlightPath, highlightSeek]);
 
   // Scroll to and flash highlighted file from search results.
   // Guarded by seekKeyRef so tree auto-refreshes don't re-trigger the scroll.
   useEffect(() => {
-    if (!workingDirectory || !effectiveHighlightPath || tree.length === 0) return;
-    const seekTargetKey = `${workingDirectory}::${effectiveHighlightPath}::${highlightSeek || ''}`;
+    if (!workingDirectory || !highlightPath || tree.length === 0) return;
+    const seekTargetKey = `${workingDirectory}::${highlightPath}::${highlightSeek || ''}`;
     if (seekKeyRef.current === seekTargetKey) return;
 
     let attempts = 0;
@@ -326,7 +335,7 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
       }
     }, 100);
     return () => clearInterval(interval);
-  }, [workingDirectory, effectiveHighlightPath, highlightSeek, tree]);
+  }, [workingDirectory, highlightPath, highlightSeek, tree]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -368,19 +377,23 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
             selectedFolderPath={selectedFolderPath}
             onSelectFolder={onSelectFolder}
             onCopyPath={handleCopyPath}
-            onOpenContainingDirectory={handleOpenContainingDirectory}
+            onDownload={handleDownload}
             onInsertReference={handleInsertReference}
             contextMenuLabels={{
               copyPath: t("fileTree.copyPath" as TranslationKey),
-              openContainingDirectory: t("fileTree.openContainingDirectory" as TranslationKey),
+              download: t("fileTree.download" as TranslationKey),
               insertReference: t("fileTree.insertReference" as TranslationKey),
             }}
             className="border-0 rounded-none"
           >
-            <RenderTreeNodes nodes={tree} searchQuery={searchQuery} highlightPath={effectiveHighlightPath} />
+            <RenderTreeNodes nodes={tree} searchQuery={searchQuery} highlightPath={highlightPath} />
           </AIFileTree>
         )}
       </div>
     </div>
   );
+}
+
+function fileNameFromPath(path: string): string {
+  return path.split(/[\\/]/).pop() || "download";
 }

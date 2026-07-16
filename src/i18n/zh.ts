@@ -365,7 +365,9 @@ const zh: Record<TranslationKey, string> = {
   'fileTree.noFiles': '未找到文件',
   'fileTree.selectFolder': '选择项目文件夹以查看文件',
   'fileTree.copyPath': '复制路径',
-  'fileTree.openContainingDirectory': '打开所在目录',
+  'fileTree.download': '下载',
+  'fileTree.downloadStarted': '已开始下载',
+  'fileTree.downloadFailed': '下载文件失败',
   'fileTree.insertReference': '插入引用',
 
   // ── File preview ────────────────────────────────────────────

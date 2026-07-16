@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   directoryEntriesToNodes,
   fileDataUrlFromResponse,
+  fileBytesFromResponse,
   filePreviewFromResponse,
 } from "./app-server-files";
 
@@ -40,6 +41,12 @@ describe("app-server 文件适配器", () => {
     expect(() => filePreviewFromResponse("/workspace/data.bin", {
       dataBase64: Buffer.from([0, 1, 2, 3]).toString("base64"),
     })).toThrow("binary_not_previewable");
+  });
+
+  it("为下载无损解码二进制文件", () => {
+    expect(Array.from(fileBytesFromResponse({
+      dataBase64: Buffer.from([0, 1, 2, 127, 128, 255]).toString("base64"),
+    }))).toEqual([0, 1, 2, 127, 128, 255]);
   });
 
   it("拒绝超过 10 MB 的文件", () => {

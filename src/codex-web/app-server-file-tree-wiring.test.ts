@@ -14,14 +14,16 @@ describe("app-server 文件树接线", () => {
     expect(tree).not.toContain("/api/files?");
   });
 
-  it("文件节点提供三项右键操作", () => {
+  it("文件节点提供复制、下载和插入引用三项右键操作", () => {
     expect(primitive).toContain("ContextMenuPrimitive.Root");
     expect(primitive).toContain("onCopyPath");
-    expect(primitive).toContain("onOpenContainingDirectory");
+    expect(primitive).toContain("onDownload");
     expect(primitive).toContain("onInsertReference");
+    expect(primitive).not.toContain("onOpenContainingDirectory");
     expect(zh).toContain("'fileTree.copyPath': '复制路径'");
-    expect(zh).toContain("'fileTree.openContainingDirectory': '打开所在目录'");
+    expect(zh).toContain("'fileTree.download': '下载'");
     expect(zh).toContain("'fileTree.insertReference': '插入引用'");
+    expect(zh).not.toContain("'fileTree.openContainingDirectory'");
   });
 
   it("插入引用复用输入框 mention 事件", () => {
@@ -29,10 +31,14 @@ describe("app-server 文件树接线", () => {
     expect(tree).not.toContain("new CustomEvent('insert-file-mention'");
   });
 
-  it("复制在 pointer 用户激活阶段执行，目录定位提供可见反馈", () => {
+  it("复制在 pointer 用户激活阶段执行，下载复用 app-server 文件读取", () => {
     expect(primitive).toContain("handleCopyPointerDown");
     expect(primitive).toContain("onPointerDown={handleCopyPointerDown}");
-    expect(tree).toContain("setRevealPath(parent)");
-    expect(tree).toContain("effectiveHighlightPath");
+    expect(tree).toContain("await readFile(path)");
+    expect(tree).toContain("fileBytesFromResponse(response)");
+    expect(tree).toContain("URL.createObjectURL(blob)");
+    expect(tree).toContain("link.download = fileNameFromPath(path)");
+    expect(tree).toContain("URL.revokeObjectURL(url)");
+    expect(tree).not.toContain("/api/files/raw");
   });
 });

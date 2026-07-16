@@ -378,7 +378,9 @@ const en = {
   'fileTree.noFiles': 'No files found',
   'fileTree.selectFolder': 'Select a project folder to view files',
   'fileTree.copyPath': 'Copy path',
-  'fileTree.openContainingDirectory': 'Open containing directory',
+  'fileTree.download': 'Download',
+  'fileTree.downloadStarted': 'Download started',
+  'fileTree.downloadFailed': 'Failed to download file',
   'fileTree.insertReference': 'Insert reference',
 
   // ── File preview ────────────────────────────────────────────

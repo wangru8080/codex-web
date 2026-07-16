@@ -42,11 +42,11 @@ interface FileTreeContextType {
   selectedFolderPath?: string;
   onSelectFolder?: (folderPath: string) => void;
   onCopyPath?: (path: string) => void;
-  onOpenContainingDirectory?: (path: string) => void;
+  onDownload?: (path: string) => void;
   onInsertReference?: (path: string) => void;
   contextMenuLabels?: {
     copyPath: string;
-    openContainingDirectory: string;
+    download: string;
     insertReference: string;
   };
 }
@@ -77,7 +77,7 @@ export type FileTreeProps = HTMLAttributes<HTMLDivElement> & {
   selectedFolderPath?: string;
   onSelectFolder?: (folderPath: string) => void;
   onCopyPath?: (path: string) => void;
-  onOpenContainingDirectory?: (path: string) => void;
+  onDownload?: (path: string) => void;
   onInsertReference?: (path: string) => void;
   contextMenuLabels?: FileTreeContextType["contextMenuLabels"];
   onExpandedChange?: (expanded: Set<string>) => void;
@@ -93,7 +93,7 @@ export const FileTree = ({
   selectedFolderPath,
   onSelectFolder,
   onCopyPath,
-  onOpenContainingDirectory,
+  onDownload,
   onInsertReference,
   contextMenuLabels,
   onExpandedChange,
@@ -119,8 +119,8 @@ export const FileTree = ({
   );
 
   const contextValue = useMemo(
-    () => ({ expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onOpenContainingDirectory, onInsertReference, contextMenuLabels }),
-    [expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onOpenContainingDirectory, onInsertReference, contextMenuLabels]
+    () => ({ expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onDownload, onInsertReference, contextMenuLabels }),
+    [expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onDownload, onInsertReference, contextMenuLabels]
   );
 
   return (
@@ -278,7 +278,7 @@ export const FileTreeFile = ({
 }: FileTreeFileProps) => {
   const {
     selectedPath, onSelect, onAdd, addLabel,
-    onCopyPath, onOpenContainingDirectory, onInsertReference, contextMenuLabels,
+    onCopyPath, onDownload, onInsertReference, contextMenuLabels,
   } = useContext(FileTreeContext);
   const isSelected = selectedPath === path;
 
@@ -367,9 +367,9 @@ export const FileTreeFile = ({
               <CodexWebIcon name="copy" size="sm" aria-hidden />
               {contextMenuLabels?.copyPath ?? "复制路径"}
             </ContextMenuPrimitive.Item>
-            <ContextMenuPrimitive.Item className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent" onSelect={() => onOpenContainingDirectory?.(path)}>
-              <CodexWebIcon name="folder_open" size="sm" aria-hidden />
-              {contextMenuLabels?.openContainingDirectory ?? "打开所在目录"}
+            <ContextMenuPrimitive.Item className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent" onSelect={() => onDownload?.(path)}>
+              <CodexWebIcon name="download" size="sm" aria-hidden />
+              {contextMenuLabels?.download ?? "下载"}
             </ContextMenuPrimitive.Item>
             <ContextMenuPrimitive.Item className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent" onSelect={() => onInsertReference?.(path)}>
               <span className="flex size-4 items-center justify-center font-medium" aria-hidden>@</span>

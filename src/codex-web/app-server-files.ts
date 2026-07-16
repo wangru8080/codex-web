@@ -38,7 +38,10 @@ export function filePreviewFromResponse(
   path: string,
   response: FsReadFileResponse,
 ): FilePreview {
-  const bytes = decodeBase64(response.dataBase64);
+  if (decodedBase64Size(response.dataBase64) > FILE_PREVIEW_BYTE_LIMIT) {
+    throw new AppServerFilePreviewError("file_too_large");
+  }
+  const bytes = fileBytesFromResponse(response);
   if (looksBinary(bytes.subarray(0, 4096))) {
     throw new AppServerFilePreviewError("binary_not_previewable");
   }
@@ -60,6 +63,15 @@ export function fileDataUrlFromResponse(path: string, response: FsReadFileRespon
   return `data:${mediaTypeForPath(path)};base64,${response.dataBase64}`;
 }
 
+export function fileBytesFromResponse(response: FsReadFileResponse): Uint8Array<ArrayBuffer> {
+  const normalized = response.dataBase64.replace(/\s/g, "");
+  const binary = atob(normalized);
+  const buffer = new ArrayBuffer(binary.length);
+  const bytes = new Uint8Array(buffer);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
 export function utf8ToBase64(content: string): string {
   const bytes = new TextEncoder().encode(content);
   let binary = "";
@@ -67,17 +79,10 @@ export function utf8ToBase64(content: string): string {
   return btoa(binary);
 }
 
-function decodeBase64(dataBase64: string): Uint8Array {
+function decodedBase64Size(dataBase64: string): number {
   const normalized = dataBase64.replace(/\s/g, "");
   const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
-  const decodedSize = Math.max(0, Math.floor(normalized.length * 3 / 4) - padding);
-  if (decodedSize > FILE_PREVIEW_BYTE_LIMIT) {
-    throw new AppServerFilePreviewError("file_too_large");
-  }
-  const binary = atob(normalized);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
+  return Math.max(0, Math.floor(normalized.length * 3 / 4) - padding);
 }
 
 function looksBinary(bytes: Uint8Array): boolean {
