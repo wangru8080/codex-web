@@ -13,6 +13,9 @@ import {
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
 import type { ReactNode } from "react";
+import { useAppServerActions } from "@/codex-web/AppServerProvider";
+import { directoryEntriesToNodes } from "@/codex-web/app-server-files";
+import { copyWithToast } from "@/lib/clipboard";
 
 interface FileTreeProps {
   workingDirectory: string;
@@ -127,12 +130,40 @@ function getParentPaths(filePath: string): string[] {
   const parents: string[] = [];
   let current = filePath;
   while (true) {
-    const parent = current.substring(0, current.lastIndexOf('/'));
+    const parent = parentPath(current);
     if (!parent || parent === current) break;
     parents.push(parent);
     current = parent;
   }
   return parents;
+}
+
+function parentPath(filePath: string): string | null {
+  const normalized = filePath.replace(/[\\/]+$/, "");
+  const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  if (index <= 0) return null;
+  return normalized.slice(0, index);
+}
+
+function findNode(nodes: readonly FileTreeNode[], path: string): FileTreeNode | undefined {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    const nested = node.children ? findNode(node.children, path) : undefined;
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function replaceDirectoryChildren(
+  nodes: readonly FileTreeNode[],
+  path: string,
+  children: FileTreeNode[],
+): FileTreeNode[] {
+  return nodes.map((node) => {
+    if (node.path === path) return { ...node, children };
+    if (!node.children) return node;
+    return { ...node, children: replaceDirectoryChildren(node.children, path, children) };
+  });
 }
 
 export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFolderPath, onSelectFolder, selectedFilePath, highlightPath, highlightSeek }: FileTreeProps) {
@@ -141,7 +172,9 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  const loadingDirectoriesRef = useRef(new Set<string>());
   const { t } = useTranslation();
+  const { readDirectory } = useAppServerActions();
   const seekKeyRef = useRef<string | null>(null);
 
   // Clear stale tree data when switching projects to avoid cross-session seek races.
@@ -172,20 +205,9 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/files?dir=${encodeURIComponent(workingDirectory)}&baseDir=${encodeURIComponent(workingDirectory)}&depth=4&_t=${Date.now()}`,
-        { signal: controller.signal }
-      );
+      const response = await readDirectory(workingDirectory);
       if (controller.signal.aborted) return;
-      if (res.ok) {
-        const data = await res.json();
-        if (controller.signal.aborted) return;
-        setTree(data.tree || []);
-      } else {
-        const errData = await res.json().catch(() => ({ error: res.statusText }));
-        setTree([]);
-        setError(errData.error || `Failed to load (${res.status})`);
-      }
+      setTree(directoryEntriesToNodes(workingDirectory, response.entries));
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
       setTree([]);
@@ -195,7 +217,7 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
         setLoading(false);
       }
     }
-  }, [workingDirectory]);
+  }, [readDirectory, workingDirectory]);
 
   useEffect(() => {
     fetchTree();
@@ -219,26 +241,75 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
 
   // Controlled expansion state for search-driven highlighting
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [revealPath, setRevealPath] = useState<string | null>(null);
+  const effectiveHighlightPath = revealPath ?? highlightPath;
+
+  useEffect(() => {
+    setExpandedPaths(new Set());
+    setRevealPath(null);
+    loadingDirectoriesRef.current.clear();
+  }, [workingDirectory]);
+
+  const loadDirectory = useCallback(async (path: string) => {
+    if (loadingDirectoriesRef.current.has(path)) return;
+    loadingDirectoriesRef.current.add(path);
+    try {
+      const response = await readDirectory(path);
+      const children = directoryEntriesToNodes(path, response.entries);
+      setTree((current) => replaceDirectoryChildren(current, path, children));
+    } catch (directoryError) {
+      setError(directoryError instanceof Error ? directoryError.message : t("filePreview.failedToLoad"));
+    } finally {
+      loadingDirectoriesRef.current.delete(path);
+    }
+  }, [readDirectory, t]);
+
+  const handleExpandedChange = useCallback((next: Set<string>) => {
+    setExpandedPaths(next);
+    for (const path of next) {
+      if (!expandedPaths.has(path) && findNode(tree, path)?.children === undefined) {
+        void loadDirectory(path);
+      }
+    }
+  }, [expandedPaths, loadDirectory, tree]);
+
+  const handleCopyPath = useCallback((path: string) => {
+    void copyWithToast({ text: path, t });
+  }, [t]);
+
+  const handleOpenContainingDirectory = useCallback((path: string) => {
+    const parent = parentPath(path);
+    if (!parent) return;
+    setRevealPath(parent);
+    setExpandedPaths((current) => new Set([...current, ...getParentPaths(parent), parent]));
+    onSelectFolder?.(parent);
+  }, [onSelectFolder]);
+
+  const handleInsertReference = useCallback((path: string) => {
+    window.dispatchEvent(new CustomEvent('insert-file-reference', {
+      detail: { path, nodeType: 'file' },
+    }));
+  }, []);
 
   // Sync expanded paths when highlightPath changes
   useEffect(() => {
-    if (highlightPath) {
+    if (effectiveHighlightPath) {
       const next = new Set<string>();
-      for (const parent of getParentPaths(highlightPath)) {
+      for (const parent of getParentPaths(effectiveHighlightPath)) {
         next.add(parent);
       }
-      next.add(highlightPath);
+      next.add(effectiveHighlightPath);
       setExpandedPaths(next);
     } else {
       setExpandedPaths(new Set());
     }
-  }, [highlightPath, highlightSeek]);
+  }, [effectiveHighlightPath, highlightSeek]);
 
   // Scroll to and flash highlighted file from search results.
   // Guarded by seekKeyRef so tree auto-refreshes don't re-trigger the scroll.
   useEffect(() => {
-    if (!workingDirectory || !highlightPath || tree.length === 0) return;
-    const seekTargetKey = `${workingDirectory}::${highlightPath}::${highlightSeek || ''}`;
+    if (!workingDirectory || !effectiveHighlightPath || tree.length === 0) return;
+    const seekTargetKey = `${workingDirectory}::${effectiveHighlightPath}::${highlightSeek || ''}`;
     if (seekKeyRef.current === seekTargetKey) return;
 
     let attempts = 0;
@@ -255,7 +326,7 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
       }
     }, 100);
     return () => clearInterval(interval);
-  }, [workingDirectory, highlightPath, highlightSeek, tree]);
+  }, [workingDirectory, effectiveHighlightPath, highlightSeek, tree]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -288,7 +359,7 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
         ) : (
           <AIFileTree
             expanded={expandedPaths}
-            onExpandedChange={setExpandedPaths}
+            onExpandedChange={handleExpandedChange}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AI Elements FileTree onSelect type conflicts with HTMLAttributes.onSelect
             onSelect={onFileSelect as any}
             onAdd={onFileAdd}
@@ -296,9 +367,17 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
             selectedPath={selectedFilePath}
             selectedFolderPath={selectedFolderPath}
             onSelectFolder={onSelectFolder}
+            onCopyPath={handleCopyPath}
+            onOpenContainingDirectory={handleOpenContainingDirectory}
+            onInsertReference={handleInsertReference}
+            contextMenuLabels={{
+              copyPath: t("fileTree.copyPath" as TranslationKey),
+              openContainingDirectory: t("fileTree.openContainingDirectory" as TranslationKey),
+              insertReference: t("fileTree.insertReference" as TranslationKey),
+            }}
             className="border-0 rounded-none"
           >
-            <RenderTreeNodes nodes={tree} searchQuery={searchQuery} highlightPath={highlightPath} />
+            <RenderTreeNodes nodes={tree} searchQuery={searchQuery} highlightPath={effectiveHighlightPath} />
           </AIFileTree>
         )}
       </div>

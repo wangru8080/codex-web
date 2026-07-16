@@ -6,6 +6,8 @@ import type { InitializeResponse } from "@/codex/protocol/generated/InitializeRe
 import type { ReasoningEffort } from "@/codex/protocol/generated/ReasoningEffort";
 import type { ConfigReadResponse } from "@/codex/protocol/generated/v2/ConfigReadResponse";
 import type { FsReadDirectoryResponse } from "@/codex/protocol/generated/v2/FsReadDirectoryResponse";
+import type { FsReadFileResponse } from "@/codex/protocol/generated/v2/FsReadFileResponse";
+import type { FsWriteFileResponse } from "@/codex/protocol/generated/v2/FsWriteFileResponse";
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
 import type { ThreadListParams } from "@/codex/protocol/generated/v2/ThreadListParams";
@@ -132,6 +134,8 @@ export type AppServerActions = {
   readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
   listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
   readDirectory: (path: string) => Promise<FsReadDirectoryResponse>;
+  readFile: (path: string) => Promise<FsReadFileResponse>;
+  writeFile: (path: string, dataBase64: string) => Promise<FsWriteFileResponse>;
   getThreadGoal: (threadId: string) => Promise<ThreadGoalGetResponse>;
   setThreadGoal: (params: ThreadGoalSetParams) => Promise<ThreadGoalSetResponse>;
   clearThreadGoal: (threadId: string) => Promise<ThreadGoalClearResponse>;
@@ -522,6 +526,18 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return (await client.request("fs/readDirectory", { path: normalized })) as FsReadDirectoryResponse;
   }, []);
 
+  const readFile = useCallback(async (path: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("fs/readFile", { path })) as FsReadFileResponse;
+  }, []);
+
+  const writeFile = useCallback(async (path: string, dataBase64: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("fs/writeFile", { path, dataBase64 })) as FsWriteFileResponse;
+  }, []);
+
   const getThreadGoal = useCallback(async (threadId: string) => {
     const client = clientRef.current;
     if (!client) {
@@ -770,6 +786,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       readThread,
       listThreadTurns,
       readDirectory,
+      readFile,
+      writeFile,
       getThreadGoal,
       setThreadGoal,
       clearThreadGoal,
@@ -778,7 +796,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       updateThreadPermissions,
       updateThreadModelSettings,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, readFile, writeFile, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings],
   );
 
   return (

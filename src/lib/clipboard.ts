@@ -72,29 +72,35 @@ function copyWithDocumentFallback(text: string): boolean {
     typeof document === 'undefined'
     || !document.body
     || typeof document.createElement !== 'function'
+    || typeof document.createRange !== 'function'
     || typeof document.execCommand !== 'function'
   ) {
     return false;
   }
 
   const activeElement = document.activeElement as HTMLElement | null;
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
+  const selection = document.getSelection();
+  if (!selection) return false;
+  const copyNode = document.createElement('div');
+  copyNode.textContent = text;
+  copyNode.contentEditable = 'true';
+  copyNode.style.position = 'fixed';
+  copyNode.style.left = '-9999px';
+  copyNode.style.opacity = '0';
+  copyNode.style.userSelect = 'text';
+  document.body.appendChild(copyNode);
 
   try {
-    textarea.focus();
-    textarea.select();
-    textarea.setSelectionRange(0, text.length);
+    const range = document.createRange();
+    range.selectNodeContents(copyNode);
+    selection.removeAllRanges();
+    selection.addRange(range);
     return document.execCommand('copy');
   } catch {
     return false;
   } finally {
-    document.body.removeChild(textarea);
+    selection.removeAllRanges();
+    document.body.removeChild(copyNode);
     activeElement?.focus?.();
   }
 }

@@ -36,7 +36,7 @@ import {
 import type { ChatStatus } from 'ai';
 import type { FileAttachment, MentionRef, PermissionProfile } from '@/types';
 import { SlashCommandPopover } from './SlashCommandPopover';
-import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
+import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
 import { useMentionTokenEstimate } from '@/hooks/useMentionTokenEstimate';
 import { dataUrlToFileAttachment } from '@/lib/file-utils';
 import { usePopoverState } from '@/hooks/usePopoverState';
@@ -681,6 +681,7 @@ export function MessageInput({
   // green-capsule attachment row (visual parity with file/image
   // attachments) instead of writing `@path/` text into the textarea.
   const [directoryRefs, setDirectoryRefs] = useState<string[]>([]);
+  const [fileReferencePaths, setFileReferencePaths] = useState<string[]>([]);
   const [badgeOrder, setBadgeOrder] = useState<Record<string, number>>({});
   const [mentionOrder, setMentionOrder] = useState<Record<string, number>>({});
   const orderSeqRef = useRef(0);
@@ -743,6 +744,15 @@ export function MessageInput({
     // Render chips only for explicitly inserted/known mentions.
     return parseMentionRefs(inputValue, mentionNodeTypes).filter((m) => !!mentionNodeTypes[m.path]);
   }, [inputValue, mentionNodeTypes]);
+  const fileReferenceMentions = useMemo<MentionRef[]>(
+    () => fileReferencePaths.map((path) => ({
+      path,
+      display: path.split(/[\\/]/).pop() || path,
+      nodeType: 'file' as const,
+      sourceRange: { start: 0, end: 0 },
+    })),
+    [fileReferencePaths],
+  );
 
   const nextOrder = useCallback(() => {
     orderSeqRef.current += 1;
@@ -912,6 +922,17 @@ export function MessageInput({
     return () => window.removeEventListener('insert-file-mention', handler);
   }, [setInputValue, setMentionNodeTypes, ensureMentionOrder]);
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const path = (event as CustomEvent<{ path?: string }>).detail?.path?.trim();
+      if (!path) return;
+      setFileReferencePaths((current) => current.includes(path) ? current : [...current, path]);
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    };
+    window.addEventListener('insert-file-reference', handler);
+    return () => window.removeEventListener('insert-file-reference', handler);
+  }, []);
+
   const normalizeMentionPath = useCallback((rawPath: string): string => {
     const normalizedRaw = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
     if (!workingDirectory) return normalizedRaw;
@@ -1052,13 +1073,19 @@ export function MessageInput({
       // as structured mentions. Plain typed "@foo" should remain plain text.
       const parsedMentions = parseMentionRefs(inputValue, mentionNodeTypes)
         .filter((m) => !!mentionNodeTypes[m.path]);
-      const dedupedMentions = dedupeMentionsByPath(parsedMentions);
+      const dedupedMentions = dedupeMentionsByPath([...parsedMentions, ...fileReferenceMentions]);
+      const fileReferenceSet = new Set(fileReferencePaths);
 
       const mentionFiles: FileAttachment[] = [];
+      const fileNotes: string[] = [];
       const directoryNotes: string[] = [];
       const limitNotes: string[] = [];
       let usedDirectoryMentions = 0;
       for (const mention of dedupedMentions) {
+        if (fileReferenceSet.has(mention.path)) {
+          fileNotes.push(`- ${mention.path}`);
+          continue;
+        }
         if (mention.nodeType === 'directory') {
           if (usedDirectoryMentions >= MAX_DIRECTORY_MENTION_COUNT) {
             limitNotes.push(`@${mention.path}/: omitted (max ${MAX_DIRECTORY_MENTION_COUNT} directories per message).`);
@@ -1092,7 +1119,7 @@ export function MessageInput({
         usedDirectoryMentions += 1;
       }
 
-      return { mentions: dedupedMentions, files: mentionFiles, directoryNotes, limitNotes };
+      return { mentions: dedupedMentions, files: mentionFiles, fileNotes, directoryNotes, limitNotes };
     };
 
     // If one or more badges are active, dispatch by kind (multi-skill combines).
@@ -1140,10 +1167,12 @@ export function MessageInput({
       // whole turn (Codex P2 — the badge path had the same lingering bug).
       const restoreInput = inputValue;
       const restoreDirs = [...directoryRefs];
+      const restoreFileRefs = [...fileReferencePaths];
       const restoreBadges = [...badges];
       clearBadgesWithOrder();
       setInputValue('');
       setDirectoryRefs([]);
+      setFileReferencePaths([]);
       const delivered = await onSend(
         finalPrompt,
         files.length > 0 ? files.slice() : undefined,
@@ -1159,6 +1188,7 @@ export function MessageInput({
         // ref reads the CURRENT badges, not this stale send-closure).
         setInputValue((cur) => (cur ? cur : restoreInput));
         setDirectoryRefs((cur) => (cur.length ? cur : restoreDirs));
+        setFileReferencePaths((cur) => (cur.length ? cur : restoreFileRefs));
         if (badgesRef.current.length === 0) restoreBadges.forEach((b) => addBadgeWithOrder(b));
         abortComposerSubmit('composer-send-not-delivered');
       }
@@ -1222,8 +1252,10 @@ export function MessageInput({
     // makes both paths behave the same.
     const restoreInput = inputValue;
     const restoreDirs = [...directoryRefs];
+    const restoreFileRefs = [...fileReferencePaths];
     setInputValue('');
     setDirectoryRefs([]);
+    setFileReferencePaths([]);
     const delivered = await onSend(
       finalContent || 'Please review the attached file(s).',
       hasFiles ? files.slice() : undefined,
@@ -1238,12 +1270,13 @@ export function MessageInput({
       // CURRENT value, not this stale send-closure.
       setInputValue((cur) => (cur ? cur : restoreInput));
       setDirectoryRefs((cur) => (cur.length ? cur : restoreDirs));
+      setFileReferencePaths((cur) => (cur.length ? cur : restoreFileRefs));
       abortComposerSubmit('composer-send-not-delivered');
     }
     // Note: nothing to clear post-await — text and dirs were
     // cleared optimistically above, and we must NOT re-clear (the user may have
     // typed the next message while the turn streamed, and that must survive).
-  }, [inputValue, goalPromptActive, planPromptActive, mentionNodeTypes, directoryRefs, onSend, onCommand, onModeChange, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
+  }, [inputValue, goalPromptActive, planPromptActive, mentionNodeTypes, directoryRefs, fileReferenceMentions, fileReferencePaths, onSend, onCommand, onModeChange, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1388,6 +1421,9 @@ export function MessageInput({
 
   const removeDirectoryRef = useCallback((path: string) => {
     setDirectoryRefs((prev) => prev.filter((p) => p !== path));
+  }, []);
+  const removeFileReference = useCallback((path: string) => {
+    setFileReferencePaths((prev) => prev.filter((item) => item !== path));
   }, []);
 
   // File-tree "+" on a folder dispatches `attach-directory-to-chat`
@@ -1568,6 +1604,10 @@ export function MessageInput({
               mentionEstimates={mentionEstimates}
             />
             <FileAttachmentsCapsules />
+            <FileReferenceCapsules
+              paths={fileReferencePaths}
+              onRemove={removeFileReference}
+            />
             <AttachmentPendingTracker onChange={setAttachmentPendingTokens} />
             <DirectoryRefsCapsules
               paths={directoryRefs}

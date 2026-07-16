@@ -85,7 +85,7 @@ function NewChatPageInner() {
   // user event, so the accept-time consume always sees the live prefill.
   const prefillTextRef = useRef(prefillText);
   useEffect(() => { prefillTextRef.current = prefillText; }, [prefillText]);
-  const { setPendingApprovalSessionId } = usePanel();
+  const { setPendingApprovalSessionId, setWorkingDirectory } = usePanel();
   const appServerState = useAppServerState();
   const {
     startThread,
@@ -142,6 +142,10 @@ function NewChatPageInner() {
   const canSendWithCurrentProvider = useMemo(() => {
     return currentProviderId === DEFAULT_CODEX_PROVIDER_ID && !!currentModel;
   }, [currentProviderId, currentModel]);
+
+  useEffect(() => {
+    setWorkingDirectory(workingDir);
+  }, [setWorkingDirectory, workingDir]);
 
   const hasSendableProviderForCurrentRuntime = useMemo(() => {
     if (!modelReady) return true; // 仍在加载时不闪现空状态。

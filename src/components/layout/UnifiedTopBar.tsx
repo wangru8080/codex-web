@@ -55,9 +55,8 @@ export function UnifiedTopBar() {
   const { isWindows } = useClientPlatform();
   const pathname = usePathname();
 
-  // Only show Git/terminal/panel controls on chat detail routes (/chat/[id]),
-  // not on the empty /chat page where panels aren't mounted.
-  const isChatRoute = pathname.startsWith("/chat/") && pathname !== "/chat";
+  // 新对话和历史对话共用右侧文件树与工作区。
+  const isChatRoute = pathname === "/chat" || pathname.startsWith("/chat/");
 
   // Session actions menu (mirrors the chat list's row "..." menu so users
   // get the same set of actions on the active chat from inside the chat

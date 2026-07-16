@@ -364,6 +364,9 @@ const zh: Record<TranslationKey, string> = {
   'fileTree.refresh': '刷新',
   'fileTree.noFiles': '未找到文件',
   'fileTree.selectFolder': '选择项目文件夹以查看文件',
+  'fileTree.copyPath': '复制路径',
+  'fileTree.openContainingDirectory': '打开所在目录',
+  'fileTree.insertReference': '插入引用',
 
   // ── File preview ────────────────────────────────────────────
   'filePreview.backToTree': '返回文件树',

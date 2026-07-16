@@ -50,6 +50,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildPresentationRefreshUrl } from "@/lib/markdown/presentation-refresh";
 import { dispatchAddToChat } from "@/lib/add-to-chat-event";
 import { injectInlineHtmlCsp } from "@/lib/inline-html-csp";
+import { useAppServerActions } from "@/codex-web/AppServerProvider";
+import {
+  AppServerFilePreviewError,
+  fileDataUrlFromResponse,
+  filePreviewFromResponse,
+  utf8ToBase64,
+} from "@/codex-web/app-server-files";
 // MarkdownOutlineRail removed from the UI per Codex UX feedback —
 // outline rail ate too much sidebar width and its partial background
 // looked broken. The post-render heading + callout helpers stay
@@ -268,11 +275,13 @@ const INTERACTIVE_SCRIPTS_PREF_KEY = "codepilot.preview.interactiveScripts";
  */
 export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   const { resolvedTheme } = useTheme();
-  const { workingDirectory, sessionId, previewSource, previewFile, setPreviewFile, setPreviewSource, previewViewMode, setPreviewViewMode } = usePanel();
+  const { workingDirectory, previewSource, previewFile, setPreviewFile, setPreviewSource, previewViewMode, setPreviewViewMode } = usePanel();
+  const { readFile, writeFile } = useAppServerActions();
   const isDark = resolvedTheme === "dark";
   const [preview, setPreview] = useState<FilePreviewType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mediaUrl, setMediaUrl] = useState("");
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [width, setWidth] = useState(PREVIEW_DEFAULT_WIDTH);
@@ -425,7 +434,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   const prevFilePathRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!filePath || isMediaPreview(filePath)) {
+    if (!filePath) {
       setLoading(false);
       return;
     }
@@ -457,21 +466,14 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
 
     async function loadPreview() {
       try {
-        const res = await fetch(
-          `/api/files/preview?path=${encodeURIComponent(filePath)}${sourceBaseDir ? `&baseDir=${encodeURIComponent(sourceBaseDir)}` : ''}`
-        );
-        if (!res.ok) {
-          const data = await res.json();
-          const friendly =
-            data.code === 'file_too_large' ? t('filePreview.tooLarge') :
-            data.code === 'binary_not_previewable' ? t('filePreview.binaryNotPreviewable') :
-            data.code === 'not_found' ? t('filePreview.notFound') :
-            (data.error || t('filePreview.failedToLoad'));
-          throw new Error(friendly);
-        }
-        const data = await res.json();
+        const response = await readFile(filePath);
         if (cancelled) return;
-        const newPreview = data.preview as FilePreviewType;
+        if (isMediaPreview(filePath)) {
+          setMediaUrl(fileDataUrlFromResponse(filePath, response));
+          setLoadedPath(filePath);
+          return;
+        }
+        const newPreview = filePreviewFromResponse(filePath, response);
         // Phase 4 UX — content equality short-circuit on warm refresh.
         // If the route returned bytes identical to what we already
         // have rendered, swallow the update entirely. No setPreview
@@ -505,7 +507,14 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
         setLoadedPath(newPreview.path);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : t('filePreview.failedToLoad'));
+          const friendly = err instanceof AppServerFilePreviewError
+            ? err.code === "file_too_large"
+              ? t("filePreview.tooLarge")
+              : t("filePreview.binaryNotPreviewable")
+            : err instanceof Error
+              ? err.message
+              : t("filePreview.failedToLoad");
+          setError(friendly);
         }
       } finally {
         // Phase 4 P1 (Codex review): always clear loading once the
@@ -529,7 +538,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [filePath, sourceBaseDir, isAgentReferenced, reloadTick, triggerUpdatedFlash]);
+  }, [filePath, isAgentReferenced, readFile, reloadTick, t, triggerUpdatedFlash]);
 
   const handleCopyContent = async () => {
     const text = freshPreview?.content || filePath;
@@ -620,22 +629,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     const targetPath = previewSource.filePath;
     setSavingEdit(true);
     try {
-      const res = await fetch("/api/files/write", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          path: targetPath,
-          baseDir: sourceBaseDir,
-          content: editContent,
-          overwrite: true,
-          createParents: false,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        alert(`Save failed: ${data.error || res.statusText}`);
-        return;
-      }
+      await writeFile(targetPath, utf8ToBase64(editContent));
       // Only mark clean if the current previewSource is still the file
       // we were saving. A mid-save file switch would otherwise leave
       // savedContent pointing at content that belongs to the previous
@@ -662,7 +656,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     } finally {
       setSavingEdit(false);
     }
-  }, [editDirty, savingEdit, previewSource, editContent, loadedPath, sourceBaseDir, isReadonlySource]);
+  }, [editDirty, savingEdit, previewSource, editContent, loadedPath, isReadonlySource, writeFile]);
 
   // Debounced autosave. Fires 1 second after the user stops typing, as
   // long as the buffer is dirty, we're not already saving, and the
@@ -883,15 +877,6 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
 
   const canRender = isRenderable(filePath);
   const isMedia = isMediaPreview(filePath);
-
-  // Build direct file serve URL for media files.
-  // Prefer /api/files/serve (session-scoped) when sessionId is available;
-  // fall back to /api/files/raw (home-scoped) for pre-session state.
-  const fileServeUrl = filePath
-    ? sessionId
-      ? `/api/files/serve?path=${encodeURIComponent(filePath)}&sessionId=${encodeURIComponent(sessionId)}`
-      : `/api/files/raw?path=${encodeURIComponent(filePath)}`
-    : '';
 
   // Outer wrapper — fills the Workspace Sidebar's Tab body. Resize +
   // width are owned by the sidebar shell so we don't ResizeHandle here.
@@ -1262,8 +1247,16 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
           // typically don't carry frontmatter and the navigation rail
           // would be visual noise for a short fence.
           <InlineMarkdownView markdown={previewSource.markdown} />
+        ) : isMedia && loading ? (
+          <div className="flex items-center justify-center py-12">
+            <SpinnerGap size={20} className="animate-spin text-muted-foreground" />
+          </div>
+        ) : isMedia && error ? (
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
         ) : isMedia ? (
-          <MediaView filePath={filePath} fileServeUrl={fileServeUrl} />
+          <MediaView filePath={filePath} fileServeUrl={mediaUrl} />
         ) : loading ? (
           <div className="flex items-center justify-center py-12">
             <SpinnerGap size={20} className="animate-spin text-muted-foreground" />

@@ -426,8 +426,12 @@ export function buildDirectoryAttachments(directoryRefs: ReadonlyArray<string>):
 export function buildMentionAppend(
   directoryNotes: ReadonlyArray<string>,
   limitNotes: ReadonlyArray<string>,
+  fileNotes: ReadonlyArray<string> = [],
 ): string {
   const sections: string[] = [];
+  if (fileNotes.length > 0) {
+    sections.push(`[Referenced Files]\n${fileNotes.join('\n')}`);
+  }
   if (directoryNotes.length > 0) {
     sections.push(`[Referenced Directories]\n${directoryNotes.join('\n\n')}`);
   }
@@ -549,6 +553,7 @@ export interface ResolvedMentionPayload {
   mentions: ReadonlyArray<MentionRef>;
   files: ReadonlyArray<FileAttachment>;
   directoryNotes: ReadonlyArray<string>;
+  fileNotes?: ReadonlyArray<string>;
   limitNotes: ReadonlyArray<string>;
 }
 
@@ -599,6 +604,7 @@ export function composeSubmitPayload(input: SubmitPayloadInput): SubmitPayload {
   const mentionAppend = buildMentionAppend(
     input.mentionPayload.directoryNotes,
     input.mentionPayload.limitNotes,
+    input.mentionPayload.fileNotes,
   );
   const finalContent = composeFinalContent(input.content, mentionAppend);
   const hasMentions = input.mentionPayload.mentions.length > 0;

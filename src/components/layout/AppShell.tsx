@@ -376,7 +376,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [splitSessions, setSplitSessions] = useState<SplitSession[]>(() => loadSplitSessions());
   const [activeColumnId, setActiveColumnIdRaw] = useState<string>(() => loadActiveColumn());
   const isSplitActive = splitSessions.length >= 2;
-  const isChatDetailRoute = pathname.startsWith("/chat/") || isSplitActive;
+  const isChatWorkspaceRoute = isChatRoute || isSplitActive;
 
   // Persist split sessions to localStorage
   useEffect(() => {
@@ -551,12 +551,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // routes (settings, skills, plugins, etc.) don't mount the
     // sidebar at all; the source sits in context unused, which is
     // intentional — there is no preview panel outside chat-detail.
-    if (isChatDetailRoute && typeof window !== "undefined") {
+    if (isChatWorkspaceRoute && typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("workspace-tab-open-request", { detail: { source } }),
       );
     }
-  }, [isChatDetailRoute]);
+  }, [isChatWorkspaceRoute]);
 
   const setPreviewFile = useCallback(
     (path: string | null) => {
@@ -739,7 +739,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }}
                 />
               )}
-              <ChatContentRow isChatDetailRoute={isChatDetailRoute} isSplitActive={isSplitActive}>
+              <ChatContentRow isChatDetailRoute={isChatWorkspaceRoute} isSplitActive={isSplitActive}>
                 {children}
               </ChatContentRow>
             </div>

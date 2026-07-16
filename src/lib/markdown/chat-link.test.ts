@@ -12,6 +12,22 @@ describe("classifyChatLinkHref", () => {
     });
   });
 
+  it("解码浏览器编码的中文本地文件路径", () => {
+    const href = "/attachments/OpenClaw-%E8%AE%B0%E5%BF%86.md";
+    expect(classifyChatLinkHref(href)).toEqual({
+      kind: "local-file",
+      href,
+      filePath: "/attachments/OpenClaw-记忆.md",
+    });
+  });
+
+  it("容忍不完整的百分号编码", () => {
+    expect(classifyChatLinkHref("/attachments/bad%name.md")).toMatchObject({
+      kind: "local-file",
+      filePath: "/attachments/bad%name.md",
+    });
+  });
+
   it("识别可预览的相对文件", () => {
     expect(classifyChatLinkHref("docs/exec-plans/completed/plan.md")).toMatchObject({
       kind: "local-file",

@@ -20,13 +20,22 @@ export function classifyChatLinkHref(href: string): ChatLinkTarget {
   }
 
   const { filePath, anchor } = splitPathAndAnchor(normalized);
-  if (isPotentialLocalFile(filePath)) {
+  const decodedFilePath = decodeLocalPath(filePath);
+  if (isPotentialLocalFile(decodedFilePath)) {
     return {
       kind: "local-file",
       href: normalized,
-      filePath,
+      filePath: decodedFilePath,
       ...(anchor ? { anchor } : {}),
     };
   }
   return { kind: "relative", href: normalized };
+}
+
+function decodeLocalPath(filePath: string): string {
+  try {
+    return decodeURIComponent(filePath);
+  } catch {
+    return filePath;
+  }
 }

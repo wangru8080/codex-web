@@ -22,10 +22,11 @@ describe("writeTextToClipboard", () => {
 
     await writeTextToClipboard("聊天内容");
 
-    expect(fallback.textarea.value).toBe("聊天内容");
-    expect(fallback.textarea.select).toHaveBeenCalledOnce();
+    expect(fallback.copyNode.textContent).toBe("聊天内容");
+    expect(fallback.range.selectNodeContents).toHaveBeenCalledWith(fallback.copyNode);
+    expect(fallback.selection.addRange).toHaveBeenCalledWith(fallback.range);
     expect(fallback.execCommand).toHaveBeenCalledWith("copy");
-    expect(fallback.removeChild).toHaveBeenCalledWith(fallback.textarea);
+    expect(fallback.removeChild).toHaveBeenCalledWith(fallback.copyNode);
   });
 
   it("Clipboard API 拒绝时使用 DOM 回退", async () => {
@@ -48,23 +49,24 @@ describe("writeTextToClipboard", () => {
 });
 
 function installFallbackDocument(copyResult: boolean) {
-  const textarea = {
-    value: "",
+  const copyNode = {
+    textContent: "",
+    contentEditable: "",
     style: {} as CSSStyleDeclaration,
-    setAttribute: vi.fn(),
-    focus: vi.fn(),
-    select: vi.fn(),
-    setSelectionRange: vi.fn(),
   };
   const appendChild = vi.fn();
   const removeChild = vi.fn();
   const execCommand = vi.fn().mockReturnValue(copyResult);
   const activeElement = { focus: vi.fn() };
+  const range = { selectNodeContents: vi.fn() };
+  const selection = { removeAllRanges: vi.fn(), addRange: vi.fn() };
   vi.stubGlobal("document", {
     activeElement,
     body: { appendChild, removeChild },
-    createElement: vi.fn().mockReturnValue(textarea),
+    createElement: vi.fn().mockReturnValue(copyNode),
+    createRange: vi.fn().mockReturnValue(range),
+    getSelection: vi.fn().mockReturnValue(selection),
     execCommand,
   });
-  return { textarea, appendChild, removeChild, execCommand, activeElement };
+  return { copyNode, appendChild, removeChild, execCommand, activeElement, range, selection };
 }

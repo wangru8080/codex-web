@@ -377,6 +377,9 @@ const en = {
   'fileTree.refresh': 'Refresh',
   'fileTree.noFiles': 'No files found',
   'fileTree.selectFolder': 'Select a project folder to view files',
+  'fileTree.copyPath': 'Copy path',
+  'fileTree.openContainingDirectory': 'Open containing directory',
+  'fileTree.insertReference': 'Insert reference',
 
   // ── File preview ────────────────────────────────────────────
   'filePreview.backToTree': 'Back to file tree',

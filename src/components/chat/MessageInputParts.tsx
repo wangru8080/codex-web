@@ -220,6 +220,51 @@ export function FileAttachmentsCapsules() {
   );
 }
 
+export function FileReferenceCapsules({
+  paths,
+  onRemove,
+}: {
+  paths: ReadonlyArray<string>;
+  onRemove: (path: string) => void;
+}) {
+  const { t } = useTranslation();
+  if (paths.length === 0) return null;
+
+  return (
+    <div className="flex w-full flex-wrap items-center gap-2 px-3 pt-2.5 pb-0 order-first">
+      {paths.map((path) => {
+        const fileName = path.split(/[\\/]/).pop() || path;
+        const extension = fileName.includes(".") ? fileName.split(".").pop()?.toUpperCase() : "FILE";
+        return (
+          <div
+            key={path}
+            data-file-reference-path={path}
+            className="relative flex min-w-[220px] max-w-[360px] items-center gap-3 rounded-lg border border-border/60 bg-background px-3 py-2 shadow-sm"
+          >
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
+              <CodexWebIcon name="file_code" size="md" className="text-muted-foreground" aria-hidden />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium text-foreground">{fileName}</div>
+              <div className="text-xs text-muted-foreground">{extension}</div>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => onRemove(path)}
+              aria-label={t('messageInput.removeChipAriaLabel' as TranslationKey, { name: fileName })}
+              className="absolute right-1 top-1 size-6 rounded-full p-0"
+            >
+              <X size={12} />
+            </Button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * Directory references attached via the file tree's "+" button. Same
  * unified muted chip styling as the rest of the composer's chip row

@@ -10,11 +10,13 @@ import {
 import { cn } from "@/lib/utils";
 import { CaretRight } from "@phosphor-icons/react";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
+import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import {
   createContext,
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -39,6 +41,14 @@ interface FileTreeContextType {
    */
   selectedFolderPath?: string;
   onSelectFolder?: (folderPath: string) => void;
+  onCopyPath?: (path: string) => void;
+  onOpenContainingDirectory?: (path: string) => void;
+  onInsertReference?: (path: string) => void;
+  contextMenuLabels?: {
+    copyPath: string;
+    openContainingDirectory: string;
+    insertReference: string;
+  };
 }
 
 // Module-scope immutable empty Set. Inlining `new Set()` as a destructuring
@@ -66,6 +76,10 @@ export type FileTreeProps = HTMLAttributes<HTMLDivElement> & {
   addLabel?: string;
   selectedFolderPath?: string;
   onSelectFolder?: (folderPath: string) => void;
+  onCopyPath?: (path: string) => void;
+  onOpenContainingDirectory?: (path: string) => void;
+  onInsertReference?: (path: string) => void;
+  contextMenuLabels?: FileTreeContextType["contextMenuLabels"];
   onExpandedChange?: (expanded: Set<string>) => void;
 };
 
@@ -78,6 +92,10 @@ export const FileTree = ({
   addLabel,
   selectedFolderPath,
   onSelectFolder,
+  onCopyPath,
+  onOpenContainingDirectory,
+  onInsertReference,
+  contextMenuLabels,
   onExpandedChange,
   className,
   children,
@@ -101,8 +119,8 @@ export const FileTree = ({
   );
 
   const contextValue = useMemo(
-    () => ({ expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder }),
-    [expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder]
+    () => ({ expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onOpenContainingDirectory, onInsertReference, contextMenuLabels }),
+    [expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onOpenContainingDirectory, onInsertReference, contextMenuLabels]
   );
 
   return (
@@ -258,7 +276,10 @@ export const FileTreeFile = ({
   children,
   ...props
 }: FileTreeFileProps) => {
-  const { selectedPath, onSelect, onAdd, addLabel } = useContext(FileTreeContext);
+  const {
+    selectedPath, onSelect, onAdd, addLabel,
+    onCopyPath, onOpenContainingDirectory, onInsertReference, contextMenuLabels,
+  } = useContext(FileTreeContext);
   const isSelected = selectedPath === path;
 
   const handleClick = useCallback(() => {
@@ -283,10 +304,22 @@ export const FileTreeFile = ({
   );
 
   const fileContextValue = useMemo(() => ({ name, path }), [name, path]);
+  const copyStartedFromPointerRef = useRef(false);
+  const handleCopyPointerDown = useCallback((event: React.PointerEvent) => {
+    if (event.button !== 0) return;
+    copyStartedFromPointerRef.current = true;
+    onCopyPath?.(path);
+  }, [onCopyPath, path]);
+  const handleCopySelect = useCallback(() => {
+    if (copyStartedFromPointerRef.current) {
+      copyStartedFromPointerRef.current = false;
+      return;
+    }
+    onCopyPath?.(path);
+  }, [onCopyPath, path]);
 
-  return (
-    <FileTreeFileContext.Provider value={fileContextValue}>
-      <div
+  const row = (
+    <div
         className={cn(
           "group/file flex cursor-pointer items-center gap-1 rounded px-2 py-1 transition-colors hover:bg-muted/50",
           isSelected && "bg-muted",
@@ -317,7 +350,34 @@ export const FileTreeFile = ({
             )}
           </>
         )}
-      </div>
+    </div>
+  );
+
+  return (
+    <FileTreeFileContext.Provider value={fileContextValue}>
+      <ContextMenuPrimitive.Root>
+        <ContextMenuPrimitive.Trigger asChild>{row}</ContextMenuPrimitive.Trigger>
+        <ContextMenuPrimitive.Portal>
+          <ContextMenuPrimitive.Content className="z-50 min-w-[180px] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+            <ContextMenuPrimitive.Item
+              className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent"
+              onPointerDown={handleCopyPointerDown}
+              onSelect={handleCopySelect}
+            >
+              <CodexWebIcon name="copy" size="sm" aria-hidden />
+              {contextMenuLabels?.copyPath ?? "复制路径"}
+            </ContextMenuPrimitive.Item>
+            <ContextMenuPrimitive.Item className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent" onSelect={() => onOpenContainingDirectory?.(path)}>
+              <CodexWebIcon name="folder_open" size="sm" aria-hidden />
+              {contextMenuLabels?.openContainingDirectory ?? "打开所在目录"}
+            </ContextMenuPrimitive.Item>
+            <ContextMenuPrimitive.Item className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent" onSelect={() => onInsertReference?.(path)}>
+              <span className="flex size-4 items-center justify-center font-medium" aria-hidden>@</span>
+              {contextMenuLabels?.insertReference ?? "插入引用"}
+            </ContextMenuPrimitive.Item>
+          </ContextMenuPrimitive.Content>
+        </ContextMenuPrimitive.Portal>
+      </ContextMenuPrimitive.Root>
     </FileTreeFileContext.Provider>
   );
 };
