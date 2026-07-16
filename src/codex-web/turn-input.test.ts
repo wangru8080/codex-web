@@ -35,18 +35,16 @@ describe("buildAppServerTurnInput", () => {
     ]);
   });
 
-  it("把浏览器图片数据放在文本前并生成 image block", () => {
+  it("未持久化图片不伪造官方附件路径", () => {
     expect(buildAppServerTurnInput("检查图片", [attachment()])).toEqual([
-      { type: "image", url: "data:image/png;base64,AAAA" },
       { type: "text", text: "检查图片", text_elements: [] },
     ]);
   });
 
-  it("即使存在本地路径也优先使用 data URL 以兼容 SSH app-server", () => {
+  it("持久化图片只使用官方文件信封而不重复发送 image block", () => {
     expect(buildAppServerTurnInput("检查图片", [
       attachment({ filePath: "/codex-home/attachments/id/image.png" }),
     ])).toEqual([
-      { type: "image", url: "data:image/png;base64,AAAA" },
       {
         type: "text",
         text: "\n# Files mentioned by the user:\n\n## image.png: /codex-home/attachments/id/image.png\n\n## My request for Codex:\n检查图片\n",
@@ -55,11 +53,10 @@ describe("buildAppServerTurnInput", () => {
     ]);
   });
 
-  it("缺少图片数据时退回 localImage", () => {
+  it("缺少图片数据时仍只通过持久化路径引用图片", () => {
     expect(buildAppServerTurnInput("检查图片", [
       attachment({ data: "", filePath: "/codex-home/attachments/id/image.png" }),
     ])).toEqual([
-      { type: "localImage", path: "/codex-home/attachments/id/image.png" },
       {
         type: "text",
         text: "\n# Files mentioned by the user:\n\n## image.png: /codex-home/attachments/id/image.png\n\n## My request for Codex:\n检查图片\n",
@@ -77,6 +74,30 @@ describe("buildAppServerTurnInput", () => {
     })])).toEqual([{
       type: "text",
       text: "\n# Files mentioned by the user:\n\n## notes.md: /codex-home/attachments/id/notes.md\n\n## My request for Codex:\n总结文件\n",
+      text_elements: [],
+    }]);
+  });
+
+  it("逐字生成官方 session 使用的相对 CSV 附件信封", () => {
+    expect(buildAppServerTurnInput("这个文档包含了什么内容", [attachment({
+      name: "jay_chou_original_songs_20260605_simplified.csv",
+      type: "text/csv",
+      data: "Y29udGVudA==",
+      filePath: "data/jay_chou_original_songs_20260605_simplified.csv",
+    })])).toEqual([{
+      type: "text",
+      text: "\n# Files mentioned by the user:\n\n## jay_chou_original_songs_20260605_simplified.csv: data/jay_chou_original_songs_20260605_simplified.csv\n\n## My request for Codex:\n这个文档包含了什么内容\n",
+      text_elements: [],
+    }]);
+  });
+
+  it("逐字生成官方 session 使用的相对 PNG 附件信封", () => {
+    expect(buildAppServerTurnInput("理解图片", [attachment({
+      name: "baidu_luoyang_moly_first_result_20260624.png",
+      filePath: "data/baidu_luoyang_moly_first_result_20260624.png",
+    })])).toEqual([{
+      type: "text",
+      text: "\n# Files mentioned by the user:\n\n## baidu_luoyang_moly_first_result_20260624.png: data/baidu_luoyang_moly_first_result_20260624.png\n\n## My request for Codex:\n理解图片\n",
       text_elements: [],
     }]);
   });

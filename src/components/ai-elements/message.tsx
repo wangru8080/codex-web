@@ -44,6 +44,7 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
       className
     )}
     {...props}
+    data-message-role={from}
   />
 );
 

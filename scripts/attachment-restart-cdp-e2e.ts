@@ -71,10 +71,12 @@ async function main(): Promise<void> {
         submit.click();
       })()
     `);
-    await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(marker)})`, 30_000);
-    if (expectedAnswer) {
-      await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(expectedAnswer)})`, 120_000);
-    }
+    const assistantAnswer = await waitForCurrentTurnAssistantAnswer(
+      cdp,
+      marker,
+      expectedAnswer,
+      120_000,
+    );
     await waitFor(
       cdp,
       `Array.from(document.querySelectorAll('a[href^="/chat/"]')).some((link) => link.textContent?.includes(${JSON.stringify(marker)}))`,
@@ -95,16 +97,19 @@ async function main(): Promise<void> {
       fixtureName,
       expectedAttachment,
       expectedAnswer: expectedAnswer || null,
+      assistantAnswer,
     }));
     } else {
     const marker = requiredEnv("CODEX_WEB_E2E_MARKER");
     const fixtureName = requiredEnv("CODEX_WEB_E2E_FIXTURE_NAME");
     const expectedAnswer = process.env.CODEX_WEB_E2E_EXPECTED_ANSWER?.trim();
-    await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(marker)})`, 30_000);
     await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(fixtureName)})`, 30_000);
-    if (expectedAnswer) {
-      await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(expectedAnswer)})`, 30_000);
-    }
+    const assistantAnswer = await waitForCurrentTurnAssistantAnswer(
+      cdp,
+      marker,
+      expectedAnswer,
+      30_000,
+    );
     const imageCount = expectedAttachment === "image"
       ? await waitForImage(cdp)
       : 0;
@@ -114,6 +119,7 @@ async function main(): Promise<void> {
       fixtureName,
       expectedAttachment,
       expectedAnswer: expectedAnswer || null,
+      assistantAnswer,
       imageCount,
     }));
     }
@@ -157,6 +163,56 @@ async function setFileInput(cdp: CdpClient, filePath: string): Promise<void> {
 async function waitForImage(cdp: CdpClient): Promise<number> {
   await waitFor(cdp, "document.querySelectorAll('img[src^=\"data:image/\"]').length > 0", 30_000);
   return evaluate<number>(cdp, "document.querySelectorAll('img[src^=\"data:image/\"]').length");
+}
+
+async function waitForCurrentTurnAssistantAnswer(
+  cdp: CdpClient,
+  marker: string,
+  expectedAnswer: string | undefined,
+  timeoutMs: number,
+): Promise<string> {
+  const expression = currentTurnAssistantAnswerExpression(marker, expectedAnswer);
+  await waitFor(cdp, `${expression} !== null`, timeoutMs);
+  const answer = await evaluate<string | null>(cdp, expression);
+  if (answer === null) throw new Error("当前回合的助手最终回答在等待后消失");
+  return answer;
+}
+
+function currentTurnAssistantAnswerExpression(
+  marker: string,
+  expectedAnswer: string | undefined,
+): string {
+  const markerLiteral = JSON.stringify(marker);
+  const expectedLiteral = JSON.stringify(expectedAnswer ?? "");
+  return `(() => {
+    const users = Array.from(document.querySelectorAll('[data-message-role="user"]'));
+    let userIndex = -1;
+    for (let index = users.length - 1; index >= 0; index -= 1) {
+      if (users[index]?.textContent?.includes(${markerLiteral})) {
+        userIndex = index;
+        break;
+      }
+    }
+    if (userIndex < 0) return null;
+    const user = users[userIndex];
+    const nextUser = users[userIndex + 1];
+    const answers = Array.from(document.querySelectorAll(
+      '[data-assistant-final-answer][data-answer-complete="true"]'
+    ));
+    const answer = answers.find((element) => {
+      const followsUser = Boolean(
+        user.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING
+      );
+      const precedesNextUser = !nextUser || Boolean(
+        element.compareDocumentPosition(nextUser) & Node.DOCUMENT_POSITION_FOLLOWING
+      );
+      const text = element.textContent?.trim() ?? '';
+      return followsUser && precedesNextUser && text.length > 0 && (
+        ${expectedAnswer ? `text.includes(${expectedLiteral})` : "true"}
+      );
+    });
+    return answer?.textContent?.trim() ?? null;
+  })()`;
 }
 
 function mediaTypeForFileName(fileName: string): string {

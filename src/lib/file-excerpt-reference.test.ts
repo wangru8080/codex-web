@@ -73,12 +73,69 @@ describe("文件片段双通道协议", () => {
   it("模型提示词包含路径、行号、完整选区和用户问题", () => {
     const prompt = buildFileExcerptPrompt("这是 UTC 时间吗？", [reference]);
 
-    expect(prompt).toContain("/workspace/scripts/run_rsync.sh");
-    expect(prompt).toContain('"startLine": 4');
-    expect(prompt).toContain('"endLine": 5');
-    expect(prompt).toContain("date -u\\ndate");
-    expect(prompt.endsWith("这是 UTC 时间吗？")).toBe(true);
+    expect(prompt).toBe(
+      "\n# Selected text:\n\n"
+      + "## Selection 1: /workspace/scripts/run_rsync.sh (lines 4-5)\n"
+      + "date -u\ndate\n\n"
+      + "## My request for Codex:\n"
+      + "这是 UTC 时间吗？\n",
+    );
     expect(parseFileExcerptPrompt(prompt)).toEqual({
+      references: [reference],
+      request: "这是 UTC 时间吗？",
+    });
+  });
+
+  it("单行与多片段使用官方编号和 line/lines 拼写", () => {
+    const second = {
+      ...reference,
+      id: "excerpt-2",
+      path: "/volume2/SSD/codex/Chat/AGENTS.md",
+      name: "AGENTS.md",
+      text: "若用户未指定路径，则所有通过网络下载的文件，以及执行过程中产生的临时文件、临时日志、中间产物、缓存文件、图片等，统一放入：",
+      startLine: 5,
+      endLine: 5,
+    };
+
+    expect(buildFileExcerptPrompt("这是什么意思", [second, reference])).toBe(
+      "\n# Selected text:\n\n"
+      + "## Selection 1: /volume2/SSD/codex/Chat/AGENTS.md (line 5)\n"
+      + "若用户未指定路径，则所有通过网络下载的文件，以及执行过程中产生的临时文件、临时日志、中间产物、缓存文件、图片等，统一放入：\n\n"
+      + "## Selection 2: /workspace/scripts/run_rsync.sh (lines 4-5)\n"
+      + "date -u\ndate\n\n"
+      + "## My request for Codex:\n"
+      + "这是什么意思\n",
+    );
+
+    expect(parseFileExcerptPrompt(buildFileExcerptPrompt("这是什么意思", [second, reference]))).toEqual({
+      references: [
+        { ...second, id: "excerpt-1" },
+        { ...reference, id: "excerpt-2" },
+      ],
+      request: "这是什么意思",
+    });
+  });
+
+  it("无法确定行号时保留官方 Selection 路径和正文但不伪造行号", () => {
+    const withoutLines = {
+      ...reference,
+      startLine: undefined,
+      endLine: undefined,
+    };
+
+    expect(buildFileExcerptPrompt("解释片段", [withoutLines])).toBe(
+      "\n# Selected text:\n\n"
+      + "## Selection 1: /workspace/scripts/run_rsync.sh\n"
+      + "date -u\ndate\n\n"
+      + "## My request for Codex:\n"
+      + "解释片段\n",
+    );
+  });
+
+  it("仍能解析已发送的旧私有片段提示词", () => {
+    const legacyPrompt = `[CODEX_WEB_FILE_EXCERPTS_V1]\n${JSON.stringify([reference], null, 2)}\n[/CODEX_WEB_FILE_EXCERPTS_V1]\n\n这是 UTC 时间吗？`;
+
+    expect(parseFileExcerptPrompt(legacyPrompt)).toEqual({
       references: [reference],
       request: "这是 UTC 时间吗？",
     });

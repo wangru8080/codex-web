@@ -16,6 +16,8 @@ export interface FileExcerptParseResult<T> {
 
 const PROMPT_START = "[CODEX_WEB_FILE_EXCERPTS_V1]";
 const PROMPT_END = "[/CODEX_WEB_FILE_EXCERPTS_V1]";
+const SELECTED_TEXT_HEADER = "# Selected text:";
+const REQUEST_HEADER = "## My request for Codex:";
 const DISPLAY_PREFIX = "<!--file-excerpts:";
 const DISPLAY_SUFFIX = "-->";
 
@@ -101,7 +103,10 @@ export function buildFileExcerptPrompt(
   references: readonly FileExcerptReference[],
 ): string {
   if (references.length === 0) return request;
-  return `${PROMPT_START}\n${JSON.stringify(references, null, 2)}\n${PROMPT_END}\n\n${request}`;
+  const selections = references.map((reference, index) => {
+    return `## Selection ${index + 1}: ${reference.path}${selectionLineSuffix(reference)}\n${reference.text}`;
+  }).join("\n\n");
+  return `\n${SELECTED_TEXT_HEADER}\n\n${selections}\n\n${REQUEST_HEADER}\n${request}\n`;
 }
 
 export function encodeFileExcerptDisplay(
@@ -134,6 +139,76 @@ export function parseFileExcerptDisplay(
 }
 
 export function parseFileExcerptPrompt(
+  content: string,
+): FileExcerptParseResult<FileExcerptReference> {
+  const official = parseOfficialFileExcerptPrompt(content);
+  if (official) return official;
+  return parseLegacyFileExcerptPrompt(content);
+}
+
+function selectionLineSuffix(reference: FileExcerptReference): string {
+  if (!reference.startLine) return "";
+  if (!reference.endLine || reference.endLine === reference.startLine) {
+    return ` (line ${reference.startLine})`;
+  }
+  return ` (lines ${reference.startLine}-${reference.endLine})`;
+}
+
+function parseOfficialFileExcerptPrompt(
+  content: string,
+): FileExcerptParseResult<FileExcerptReference> | null {
+  const withoutLeadingNewline = content.startsWith("\n") ? content.slice(1) : content;
+  const prefix = `${SELECTED_TEXT_HEADER}\n\n`;
+  if (!withoutLeadingNewline.startsWith(prefix)) return null;
+
+  const requestMarker = `\n\n${REQUEST_HEADER}\n`;
+  const requestIndex = withoutLeadingNewline.lastIndexOf(requestMarker);
+  if (requestIndex < prefix.length) return null;
+  const selectionText = withoutLeadingNewline.slice(prefix.length, requestIndex);
+  const entries = selectionText.split(/\n\n(?=## Selection \d+: )/);
+  const references: FileExcerptReference[] = [];
+
+  for (const [index, entry] of entries.entries()) {
+    const lineBreak = entry.indexOf("\n");
+    if (lineBreak < 0) return null;
+    const header = entry.slice(0, lineBreak);
+    const match = header.match(
+      /^## Selection (\d+): (.+?)(?: \((line|lines) (\d+)(?:-(\d+))?\))?$/,
+    );
+    if (!match || Number(match[1]) !== index + 1) return null;
+    const path = match[2] ?? "";
+    const lineKind = match[3];
+    const startLine = match[4] ? Number(match[4]) : undefined;
+    const endLine = match[5]
+      ? Number(match[5])
+      : lineKind === "line"
+        ? startLine
+        : undefined;
+    if (
+      !path
+      || (lineKind === "lines" && (!startLine || !endLine || endLine < startLine))
+      || (lineKind === "line" && !startLine)
+    ) {
+      return null;
+    }
+    references.push({
+      id: `excerpt-${index + 1}`,
+      path,
+      name: path.split(/[\\/]/).pop() || path,
+      text: entry.slice(lineBreak + 1),
+      startLine,
+      endLine,
+    });
+  }
+
+  if (references.length === 0) return null;
+  const request = withoutLeadingNewline
+    .slice(requestIndex + requestMarker.length)
+    .replace(/\n$/, "");
+  return { references, request };
+}
+
+function parseLegacyFileExcerptPrompt(
   content: string,
 ): FileExcerptParseResult<FileExcerptReference> {
   if (!content.startsWith(`${PROMPT_START}\n`)) return { references: [], request: content };

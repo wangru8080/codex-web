@@ -214,19 +214,53 @@ describe("thread-history-adapter", () => {
     ]);
   });
 
-  it("不把相对路径的同名 Markdown 标题误解析为附件信封", () => {
+  it("解析官方 session 中的相对路径附件信封", () => {
     const thread = createThread();
-    const text = "# Files mentioned by the user:\n\n## notes.md: docs/notes.md\n\n## My request for Codex:\n只是示例";
+    const text = "# Files mentioned by the user:\n\n## notes.md: docs/notes.md\n\n## My request for Codex:\n总结文档";
     thread.turns[0]!.items[0] = {
       type: "userMessage",
-      id: "user-not-envelope",
+      id: "user-relative-file",
       clientId: null,
       content: [{ type: "text", text, text_elements: [] }],
     };
 
     const result = threadToMessages(thread);
+    const match = result.messages[0]!.content.match(/^<!--files:(.*?)-->([\s\S]*)$/);
 
-    expect(result.messages[0]!.content).toBe(text);
+    expect(match?.[2]).toBe("总结文档");
+    expect(JSON.parse(match?.[1] ?? "[]")).toEqual([{
+      id: "user-relative-file-file-0",
+      name: "notes.md",
+      type: "text/markdown",
+      size: 0,
+      data: "",
+      filePath: "docs/notes.md",
+    }]);
+  });
+
+  it("从官方相对 PNG 信封恢复图片附件而不依赖 image block", () => {
+    const thread = createThread();
+    thread.turns[0]!.items[0] = {
+      type: "userMessage",
+      id: "user-relative-image",
+      clientId: null,
+      content: [{
+        type: "text",
+        text: "\n# Files mentioned by the user:\n\n## baidu_luoyang_moly_first_result_20260624.png: data/baidu_luoyang_moly_first_result_20260624.png\n\n## My request for Codex:\n理解图片\n",
+        text_elements: [],
+      }],
+    };
+
+    const result = threadToMessages(thread);
+    const match = result.messages[0]!.content.match(/^<!--files:(.*?)-->([\s\S]*)$/);
+    const files = JSON.parse(match?.[1] ?? "[]");
+
+    expect(match?.[2]).toBe("理解图片");
+    expect(files).toEqual([expect.objectContaining({
+      name: "baidu_luoyang_moly_first_result_20260624.png",
+      type: "image/png",
+      filePath: "data/baidu_luoyang_moly_first_result_20260624.png",
+    })]);
   });
 
   it("从 app-server 历史提示词恢复文件片段卡片和用户问题", () => {

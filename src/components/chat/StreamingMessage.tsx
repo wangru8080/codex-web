@@ -456,7 +456,11 @@ export function StreamingMessage({
         })}
 
         {/* Streaming text content rendered via Streamdown */}
-        {content && (() => {
+        {content && <div
+          className="contents"
+          data-assistant-final-answer
+          data-answer-complete={isStreaming ? "false" : "true"}
+        >{(() => {
           // ── Show-widget handling ──
           // During streaming: detect partial fences FIRST to avoid premature script execution.
           // After streaming: use parseAllShowWidgets for completed fences only.
@@ -663,7 +667,7 @@ export function StreamingMessage({
             .replace(/```show-widget[\s\S]*?(```|$)/g, '')
             .trim();
           return stripped ? <MessageResponse>{stripped}</MessageResponse> : null;
-        })()}
+        })()}</div>}
 
         {/* Loading indicator when no content yet and no thinking content — evolves over time */}
         {isStreaming && !content && toolUses.length === 0 && !thinkingContent && (

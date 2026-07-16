@@ -172,7 +172,7 @@ function parseFilesMentionedPrompt(
   const files: FileAttachment[] = [];
 
   for (const [index, entry] of entries.entries()) {
-    const match = entry.match(/^## (.+): ((?:\/|[A-Za-z]:[\\/]).+)$/);
+    const match = entry.match(/^## ([^:\n]+): (.+)$/);
     if (!match) return { content: text, files: [] };
     const name = match[1] ?? "attachment";
     const filePath = match[2] ?? "";

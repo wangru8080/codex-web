@@ -920,8 +920,16 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
               </ProcessCollapseGroup>
             )}
             {planParts.map((part, index) => renderAssistantPart(part, index))}
-            {finalParts.map((part, index) => renderAssistantPart(part, index))}
-            {finalParts.length === 0 && planParts.length === 0 && !shouldRenderAssistantSummary && renderParts.map((part, index) => renderAssistantPart(part, index))}
+            {finalParts.length > 0 && (
+              <div className="contents" data-assistant-final-answer data-answer-complete="true">
+                {finalParts.map((part, index) => renderAssistantPart(part, index))}
+              </div>
+            )}
+            {finalParts.length === 0 && planParts.length === 0 && !shouldRenderAssistantSummary && (
+              <div className="contents" data-assistant-final-answer data-answer-complete="true">
+                {renderParts.map((part, index) => renderAssistantPart(part, index))}
+              </div>
+            )}
           </>
         )}
       </MessageContent>
