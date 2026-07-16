@@ -5,12 +5,10 @@ import { useSearchParams } from 'next/navigation';
 import type { Message, PermissionRequestEvent, FileAttachment, MentionRef, PermissionProfile } from '@/types';
 import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput, composerDraftKey } from '@/components/chat/MessageInput';
-import { ChatComposerActionBar } from '@/components/chat/ChatComposerActionBar';
 import type { ChatRuntime } from '@/lib/chat-runtime-shared';
 import { PermissionPrompt } from '@/components/chat/PermissionPrompt';
 import { ChatEmptyState } from '@/components/chat/ChatEmptyState';
 import { NewChatWelcome } from '@/components/chat/NewChatWelcome';
-import { RunCockpit } from '@/components/chat/RunCockpit';
 import { RunCheckpoint } from '@/components/chat/RunCheckpoint';
 import { GoalProgressRow } from '@/components/chat/GoalProgressRow';
 import { PlanImplementationPromptBar } from '@/components/chat/PlanImplementationPromptBar';
@@ -19,7 +17,7 @@ import { buildCheckpoints } from '@/lib/run-checkpoint';
 import { readNewChatKey } from '@/lib/new-chat-url';
 // 聊天首屏内存约束（2026-05-09）：NewChatPage 不得静态引用
 // useOverviewData。RunCheckpoint 只承载“本次能否发送”的会话级原因；
-// 全局健康信息属于 /settings/codex 和懒加载的 RunCockpit 弹层。
+// 全局健康信息属于 /settings/codex，不进入聊天首屏依赖图。
 import { FolderPicker } from '@/components/chat/FolderPicker';
 import { useNativeFolderPicker } from '@/hooks/useNativeFolderPicker';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -134,11 +132,6 @@ function NewChatPageInner() {
   const [streamingToolOutput, setStreamingToolOutput] = useState('');
   const [permissionProfile, setPermissionProfile] = useState<PermissionProfile>('request_approval');
   const [pendingContextTokens, setPendingContextTokens] = useState(0);
-  // 上下文 token 按来源拆分（附件 / mention / 目录），供 RunCockpit 弹层展示。
-  const [pendingContextSubTotals, setPendingContextSubTotals] = useState<
-    import('@/lib/message-input-logic').PendingContextSubTotals | undefined
-  >(undefined);
-
   const canSendWithCurrentProvider = useMemo(() => {
     return currentProviderId === DEFAULT_CODEX_PROVIDER_ID && !!currentModel;
   }, [currentProviderId, currentModel]);
@@ -158,15 +151,13 @@ function NewChatPageInner() {
   // Run Checkpoint signals — session-scoped only, no global health.
   //
   // Phase 2 originally pulled the full `useOverviewData()` snapshot
-  // here so RunCheckpoint and RunCockpit could "agree on the same
-  // numbers". That coupling cost the chat first paint a fan-out of
+  // here. That coupling cost the chat first paint a fan-out of
   // /api fetches plus a static compile-graph reach into Settings
   // Overview / runtime/effective / provider catalog. The 2026-05-09
   // memory cut moves global health (provider count / models enabled /
   // workspace state / global default invalid / runtime fallback) out
-  // of this surface entirely — RunCockpit's lazy popover still shows
-  // them when the user opens it, /settings/health is the canonical
-  // dashboard. RunCheckpoint here keeps only the reasons that gate
+  // of this surface entirely；/settings/health is the canonical dashboard.
+  // RunCheckpoint here keeps only the reasons that gate
   // "can this send go through":
   //   - noCompatibleProvider:        local state, set when the picker
   //                                   can't find a provider/model pair
@@ -261,6 +252,9 @@ function NewChatPageInner() {
         approvalRequestMatchesThread(approval, [createdSessionId]),
       )
     : null;
+  const contextWindowUsage = createdSessionId
+    ? appServerState.threadTokenUsageByThreadId[createdSessionId]?.data ?? null
+    : null;
   const visiblePendingPermission = appServerApproval?.permission ?? pendingPermission;
 
   const applyNewChatModelDefaults = useCallback(() => {
@@ -295,7 +289,6 @@ function NewChatPageInner() {
     setPermissionResolved(null);
     setStreamingToolOutput('');
     setPendingContextTokens(0);
-    setPendingContextSubTotals(undefined);
     setConsumedPrefill(null);
     setPendingApprovalSessionId('');
     abortControllerRef.current = null;
@@ -994,24 +987,10 @@ function NewChatPageInner() {
         onEffortChange={handleThreadEffortChange}
         initialValue={effectivePrefill}
         onPendingContextTokensChange={setPendingContextTokens}
-        onPendingContextSubTotalsChange={setPendingContextSubTotals}
+        contextWindowUsage={contextWindowUsage}
         onModeChange={setMode}
         modeChangeDisabled={isStreaming}
         blockingReasonIds={blockingReasonIds}
-      />
-      <ChatComposerActionBar
-        left={null}
-        right={
-          <RunCockpit
-            providerId={currentProviderId}
-            messages={[]}
-            modelName={currentModel}
-            permissionProfile={permissionProfile}
-            pendingContextTokens={pendingContextTokens}
-            pendingContextSubTotals={pendingContextSubTotals}
-            sessionRuntimePin={runtimePin}
-          />
-        }
       />
     </>
   );

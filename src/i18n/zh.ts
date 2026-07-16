@@ -370,6 +370,13 @@ const zh: Record<TranslationKey, string> = {
   'fileTree.downloadFailed': '下载文件失败',
   'fileTree.insertReference': '插入引用',
 
+  // ── Context window ──────────────────────────────────────────
+  'contextWindow.ariaLabel': '查看上下文窗口使用情况',
+  'contextWindow.title': '上下文窗口：',
+  'contextWindow.percentUsed': '{percent}% 已用',
+  'contextWindow.summary': '已用 {used} 标记，共 {total}',
+  'contextWindow.unknown': '暂无上下文用量',
+
   // ── File preview ────────────────────────────────────────────
   'filePreview.backToTree': '返回文件树',
   'filePreview.lines': '{count} 行',
@@ -2094,6 +2101,8 @@ const zh: Record<TranslationKey, string> = {
 
   // onboarding
   'wizard.startChatting': '开始对话',
+  'chat.contextCompaction.running': '正在自动压缩上下文',
+  'chat.contextCompaction.completed': '已自动压缩上下文',
 };
 
 export default zh;

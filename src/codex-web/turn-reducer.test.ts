@@ -9,6 +9,30 @@ import {
 } from "./turn-reducer";
 
 describe("reduceAppServerTurnNotification", () => {
+  it("跟踪 contextCompaction item 的开始和完成状态", () => {
+    const started = reduceAppServerTurnNotification(initialAppServerTurnState, {
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "contextCompaction", id: "compact-1" },
+      },
+    });
+
+    expect(started.contextCompactionStatusById).toEqual({ "compact-1": "inProgress" });
+
+    const completed = reduceAppServerTurnNotification(started, {
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "contextCompaction", id: "compact-1" },
+      },
+    });
+
+    expect(completed.contextCompactionStatusById).toEqual({ "compact-1": "completed" });
+  });
+
   it("按 app-server 事件构建 one-turn 流式状态", () => {
     let state = createStartingTurnState();
 

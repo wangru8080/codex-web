@@ -80,6 +80,7 @@ import type {
   ThreadTurnsListResponse,
 } from "./thread-turns-page-adapter";
 import { reduceThreadSettingsNotification } from "./thread-settings-adapter";
+import { reduceThreadTokenUsageNotification } from "./thread-token-usage-adapter";
 import { buildThreadModelSettingsUpdate } from "./thread-model-settings";
 import { withReasoningEffort } from "./turn-start-request";
 import { buildAppServerTurnInput } from "./turn-input";
@@ -252,6 +253,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           notification,
         );
         const goalStatePatch = reduceGoalNotification(current, notification);
+        const threadTokenUsageByThreadId = reduceThreadTokenUsageNotification(
+          current.threadTokenUsageByThreadId,
+          notification,
+        );
         const notificationTurnIds = readNotificationTurnIds(notification);
         const notificationSnapshot =
           notificationTurnIds.threadId && notificationTurnIds.turnId
@@ -278,6 +283,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           ...current,
           ...goalStatePatch,
           threadSettingsByThreadId,
+          threadTokenUsageByThreadId,
           activeTurn: sourcedActiveTurn(activeTurn),
           activeTurnsByThreadId: rememberActiveTurnByThread(current.activeTurnsByThreadId, activeTurn),
           turnSnapshots: rememberTurnSnapshot(current.turnSnapshots, snapshotTurn),

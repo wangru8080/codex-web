@@ -35,7 +35,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import type { ChatStatus } from 'ai';
 import type { FileAttachment, MentionRef, PermissionProfile } from '@/types';
+import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadTokenUsage';
 import { SlashCommandPopover } from './SlashCommandPopover';
+import { ContextWindowIndicator } from './ContextWindowIndicator';
 import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, FileExcerptCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
 import { useMentionTokenEstimate } from '@/hooks/useMentionTokenEstimate';
 import { dataUrlToFileAttachment } from '@/lib/file-utils';
@@ -58,8 +60,6 @@ import {
   parseMentionRefs,
   dedupeMentionsByPath,
   computePendingContextTokens,
-  computePendingContextSubTotals,
-  type PendingContextSubTotals,
   composeSubmitPayload,
   GOAL_PROMPT_PLACEHOLDER,
   PLAN_PROMPT_PLACEHOLDER,
@@ -141,6 +141,7 @@ interface MessageInputProps {
   /** Effort selection lifted to parent for inclusion in the stream chain */
   effort?: string;
   onEffortChange?: (effort: string | undefined) => void;
+  contextWindowUsage?: ThreadTokenUsage | null;
   /** SDK init metadata — when available, used to validate command/skill availability */
   sdkInitMeta?: { tools?: unknown; slash_commands?: unknown; skills?: unknown } | null;
   /** Initial value to prefill in the input */
@@ -149,16 +150,8 @@ interface MessageInputProps {
   isAssistantProject?: boolean;
   /** Whether the session already has messages */
   hasMessages?: boolean;
-  /** Notify parent when the total estimated tokens of currently
-   *  attached @ mention chips changes. Used to surface "+10K 待加"
-   *  in the Run status panel before the message is sent. */
+  /** Notify parent when the total estimated tokens of current attachments changes. */
   onPendingContextTokensChange?: (tokens: number) => void;
-  /** Phase 6 Phase 3 — per-source split of the same number. When wired
-   *  on the parent, flows through to useContextUsage so the popover's
-   *  pending kinds (files_attachments) render real per-source breakdowns.
-   *  Independent from onPendingContextTokensChange — parents may listen
-   *  to either or both. */
-  onPendingContextSubTotalsChange?: (subTotals: PendingContextSubTotals) => void;
   onModeChange?: (mode: string) => void;
   modeChangeDisabled?: boolean;
   /**
@@ -644,12 +637,12 @@ export function MessageInput({
   runtime,
   effort: effortProp,
   onEffortChange,
+  contextWindowUsage,
   sdkInitMeta,
   initialValue,
   isAssistantProject,
   hasMessages,
   onPendingContextTokensChange,
-  onPendingContextSubTotalsChange,
   onModeChange,
   modeChangeDisabled,
   blockingReasonIds,
@@ -1406,11 +1399,8 @@ export function MessageInput({
   // PromptInput (where `usePromptInputAttachments` resolves) and
   // reported up via callback. See `<AttachmentPendingTracker>` below.
   const [attachmentPendingTokens, setAttachmentPendingTokens] = useState(0);
-  // Total context tokens that will be added by the current chip
-  // selection — shown as a "+pending" annotation in the Run status
-  // panel so the user can preview the cost before sending. Includes
-  // typed @ mentions, file-tree-attached directories, and PromptInput
-  // file attachments alike.
+  // Pre-send estimate for RunCheckpoint. The visible context ring only
+  // shows authoritative app-server usage after a turn is accepted.
   const pendingContextTokens = useMemo(
     () => computePendingContextTokens({
       attachmentPendingTokens,
@@ -1424,23 +1414,6 @@ export function MessageInput({
   useEffect(() => {
     onPendingContextTokensChange?.(pendingContextTokens);
   }, [pendingContextTokens, onPendingContextTokensChange]);
-
-  // Phase 6 Phase 3 — per-source split of the same pending pool. Mirrors
-  // computePendingContextTokens so the displayed total never disagrees
-  // with the per-source rows in the Context popover breakdown.
-  const pendingContextSubTotals = useMemo(
-    () => computePendingContextSubTotals({
-      attachmentPendingTokens,
-      uniqueMentions,
-      mentionEstimates,
-      directoryRefs,
-      directoryRefEstimates,
-    }),
-    [attachmentPendingTokens, uniqueMentions, mentionEstimates, directoryRefs, directoryRefEstimates],
-  );
-  useEffect(() => {
-    onPendingContextSubTotalsChange?.(pendingContextSubTotals);
-  }, [pendingContextSubTotals, onPendingContextSubTotalsChange]);
 
   const removeDirectoryRef = useCallback((path: string) => {
     setDirectoryRefs((prev) => prev.filter((p) => p !== path));
@@ -1704,6 +1677,7 @@ export function MessageInput({
               </PromptInputTools>
 
               <div className="ml-auto flex items-center gap-1">
+                <ContextWindowIndicator usage={contextWindowUsage} />
                 <ComposerReasoningModelSelector
                   selectedEffort={selectedEffort}
                   onEffortChange={setSelectedEffort}

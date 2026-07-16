@@ -7,6 +7,7 @@ import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadRea
 import type { ThreadSettings } from "@/codex/protocol/generated/v2/ThreadSettings";
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
 import type { ThreadGoal } from "@/codex/protocol/generated/v2/ThreadGoal";
+import type { ThreadTokenUsage } from "@/codex/protocol/generated/v2/ThreadTokenUsage";
 import type { JsonRpcNotification, JsonRpcRequest } from "@/codex/protocol/json-rpc";
 import type { AppServerApprovalRequest } from "./approval-adapter";
 import type { PlanImplementationPrompt } from "./plan-implementation-adapter";
@@ -24,6 +25,7 @@ export type SourceBreadcrumb =
   | "app-server.thread/goal/get"
   | "app-server.thread/goal/updated"
   | "app-server.thread/goal/cleared"
+  | "app-server.thread/tokenUsage/updated"
   | "app-server.item/plan/delta"
   | "app-server.item/completed"
   | "app-server.turn/plan/updated"
@@ -53,6 +55,7 @@ export type CodexWebAppServerState = {
   activeTurnsByThreadId: Record<string, Sourced<AppServerTurnState>>;
   turnSnapshots: Record<string, Sourced<AppServerTurnState>>;
   goalsByThreadId: Record<string, Sourced<ThreadGoal>>;
+  threadTokenUsageByThreadId: Record<string, Sourced<ThreadTokenUsage>>;
   planImplementationPromptByThreadId: Record<string, Sourced<PlanImplementationPrompt>>;
   pendingApprovals: AppServerApprovalRequest[];
   pendingApproval: Sourced<AppServerApprovalRequest> | null;
@@ -73,6 +76,7 @@ export const initialAppServerState: CodexWebAppServerState = {
   activeTurnsByThreadId: {},
   turnSnapshots: {},
   goalsByThreadId: {},
+  threadTokenUsageByThreadId: {},
   planImplementationPromptByThreadId: {},
   pendingApprovals: [],
   pendingApproval: null,

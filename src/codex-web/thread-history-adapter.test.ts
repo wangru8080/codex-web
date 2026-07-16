@@ -11,6 +11,29 @@ import {
 } from "@/lib/file-excerpt-reference";
 
 describe("thread-history-adapter", () => {
+  it("保留历史 turn 中已完成的上下文压缩提示", () => {
+    const thread = createThread();
+    const baseTurn = thread.turns[0];
+    if (!baseTurn) throw new Error("测试 fixture 缺少 turn");
+    thread.turns = [{
+      ...baseTurn,
+      id: "turn-compact",
+      items: [{ type: "contextCompaction", id: "compact-1" }],
+      durationMs: 1000,
+    }];
+
+    const result = threadToMessages(thread);
+    expect(result.unsupportedItemCount).toBe(0);
+    expect(JSON.parse(result.messages[0]?.content ?? "[]")).toEqual([
+      {
+        type: "codex_context_compaction",
+        status: "completed",
+        sourceBreadcrumb: "app-server.item/completed",
+      },
+      { type: "codex_summary", elapsed_ms: 1000, process_count: 1 },
+    ]);
+  });
+
   it("把 app-server Thread 映射为 CodexWeb 会话项", () => {
     const session = threadToChatSession(createThread());
 

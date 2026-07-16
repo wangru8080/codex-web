@@ -364,6 +364,10 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     currentThreadIds
       .map((threadId) => (threadId ? appServerState.goalsByThreadId[threadId] : null))
       .find((goal): goal is NonNullable<typeof goal> => !!goal) ?? null;
+  const appServerTokenUsage =
+    currentThreadIds
+      .map((threadId) => (threadId ? appServerState.threadTokenUsageByThreadId[threadId]?.data : null))
+      .find((usage): usage is NonNullable<typeof usage> => !!usage) ?? null;
   const defaultAppServerModel =
     appServerState.models?.data.data.find((model) => !model.hidden && model.isDefault)?.id ||
     appServerState.models?.data.data.find((model) => !model.hidden)?.id ||
@@ -392,6 +396,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         appServerTurn={appServerTurn}
         appServerApproval={appServerApproval}
         appServerThreadId={resumedThreadId || id}
+        appServerTokenUsage={appServerTokenUsage}
         appServerGoal={appServerGoal}
         appServerNotice={appServerNotice}
         onAppServerApprovalDecision={(decision) =>

@@ -383,6 +383,13 @@ const en = {
   'fileTree.downloadFailed': 'Failed to download file',
   'fileTree.insertReference': 'Insert reference',
 
+  // ── Context window ──────────────────────────────────────────
+  'contextWindow.ariaLabel': 'View context window usage',
+  'contextWindow.title': 'Context window:',
+  'contextWindow.percentUsed': '{percent}% used',
+  'contextWindow.summary': '{used} tokens used of {total}',
+  'contextWindow.unknown': 'No context usage yet',
+
   // ── File preview ────────────────────────────────────────────
   'filePreview.backToTree': 'Back to file tree',
   'filePreview.lines': '{count} lines',
@@ -2119,6 +2126,8 @@ const en = {
 
   // onboarding
   'wizard.startChatting': 'Start chatting',
+  'chat.contextCompaction.running': 'Automatically compacting context',
+  'chat.contextCompaction.completed': 'Context automatically compacted',
 } as const;
 
 export type TranslationKey = keyof typeof en;

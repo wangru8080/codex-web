@@ -5,6 +5,43 @@ import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 import { turnItemsToMessageContent } from "./app-server-message-blocks";
 
 describe("app-server-message-blocks", () => {
+  it("把实时上下文压缩转换为带生命周期来源的过程块", () => {
+    const content = turnItemsToMessageContent({
+      items: [{ type: "contextCompaction", id: "compact-1" }],
+      contextCompactionStatusById: { "compact-1": "inProgress" },
+    });
+
+    expect(JSON.parse(content)).toEqual([
+      {
+        type: "codex_context_compaction",
+        status: "inProgress",
+        sourceBreadcrumb: "app-server.item/started",
+      },
+      { type: "codex_summary", process_count: 1 },
+    ]);
+  });
+
+  it("历史上下文压缩默认按完成状态展示，普通回合不产生压缩块", () => {
+    const compacted = turnItemsToMessageContent({
+      items: [{ type: "contextCompaction", id: "compact-1" }],
+    });
+    expect(JSON.parse(compacted)[0]).toEqual({
+      type: "codex_context_compaction",
+      status: "completed",
+      sourceBreadcrumb: "app-server.item/completed",
+    });
+
+    expect(turnItemsToMessageContent({
+      items: [{
+        type: "agentMessage",
+        id: "assistant-1",
+        text: "普通回答。",
+        phase: "final_answer",
+        memoryCitation: null,
+      }],
+    })).toBe("普通回答。");
+  });
+
   it("把工具 turn 转为 CodexWeb 过程块并保留最终回答", () => {
     const content = turnItemsToMessageContent({
       items: [

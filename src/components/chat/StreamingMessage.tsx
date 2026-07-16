@@ -14,6 +14,7 @@ import { Shimmer } from '@/components/ai-elements/shimmer';
 import { ImageGenConfirmation } from './ImageGenConfirmation';
 import { BatchPlanInlinePreview } from './batch-image-gen/BatchPlanInlinePreview';
 import { ProposedPlanMessageBlock, UpdatedPlanMessageBlock } from './PlanMessageBlock';
+import { ContextCompactionRow } from './ContextCompactionRow';
 import { WidgetRenderer } from './WidgetRenderer';
 import { parseAllShowWidgets, computePartialWidgetKey, MalformedWidgetNotice } from './MessageItem';
 import { PENDING_KEY, buildReferenceImages } from '@/lib/image-ref-store';
@@ -330,7 +331,10 @@ export function StreamingMessage({
   );
   const orderedProcessBlocks = useMemo(
     () => processBlocks.filter((block) =>
-      block.type === 'thinking' || block.type === 'codex_process_text' || block.type === 'tool_use',
+      block.type === 'thinking' ||
+      block.type === 'codex_process_text' ||
+      block.type === 'codex_context_compaction' ||
+      block.type === 'tool_use',
     ),
     [processBlocks],
   );
@@ -396,6 +400,9 @@ export function StreamingMessage({
                     <MessageResponse>{block.text}</MessageResponse>
                   </div>
                 );
+              }
+              if (block.type === 'codex_context_compaction') {
+                return <ContextCompactionRow key={`context-compaction-${index}`} block={block} />;
               }
               const result = processToolResultsById.get(block.id);
               return (

@@ -26,6 +26,7 @@ export type AppServerTurnState = {
   toolOutputs: Record<string, string>;
   filePatchChanges: Record<string, FileUpdateChange[]>;
   mcpProgress: Record<string, string>;
+  contextCompactionStatusById: Record<string, "inProgress" | "completed">;
   errorMessage: string;
 };
 
@@ -44,6 +45,7 @@ export const initialAppServerTurnState: AppServerTurnState = {
   toolOutputs: {},
   filePatchChanges: {},
   mcpProgress: {},
+  contextCompactionStatusById: {},
   errorMessage: "",
 };
 
@@ -124,6 +126,16 @@ export function reduceAppServerTurnNotification(
       const data = readRecord(params);
       const item = data.item;
       if (!isThreadItem(item)) return state;
+      if (item.type === "contextCompaction") {
+        return {
+          ...state,
+          items: upsertItem(state.items, item),
+          contextCompactionStatusById: {
+            ...state.contextCompactionStatusById,
+            [item.id]: notification.method === "item/started" ? "inProgress" : "completed",
+          },
+        };
+      }
       if (item.type === "plan") {
         const streamedPlan = state.planText.trim();
         const planText = item.text.trim() || streamedPlan;

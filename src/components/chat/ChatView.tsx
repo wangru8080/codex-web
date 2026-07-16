@@ -11,7 +11,6 @@ import { MessageInput } from './MessageInput';
 import { ChatComposerActionBar } from './ChatComposerActionBar';
 import { RuntimeSelector } from './RuntimeSelector';
 import type { ChatRuntime } from '@/lib/chat-runtime-shared';
-import { RunCockpit } from './RunCockpit';
 import { RunCheckpoint } from './RunCheckpoint';
 import { TaskCheckpoint } from './TaskCheckpoint';
 import { buildCheckpoints } from '@/lib/run-checkpoint';
@@ -19,11 +18,9 @@ import { buildCheckpoints } from '@/lib/run-checkpoint';
 // statically reach `useOverviewData` (full Settings overview snapshot,
 // fans out to 6+ /api endpoints + transitively pulls runtime/effective
 // + provider-catalog). RunCheckpoint here keeps only session-scoped
-// reasons; global health (runtimeFallback / Claude CLI fallback)
-// belongs to /settings/health and the lazy RunCockpit popover. The
-// previous `computeEffectiveRuntime` + `useClaudeStatus` imports
-// existed solely to compute `runtimeFallback`; with that signal
-// dropped from this surface, both go away too.
+// reasons; global health belongs to /settings/health. The previous
+// `computeEffectiveRuntime` + `useClaudeStatus` imports existed solely
+// for the removed external run-status popover.
 import { useGlobalAgentRuntime } from '@/hooks/useGlobalAgentRuntime';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
@@ -72,6 +69,7 @@ import type { AppServerTurnState } from '@/codex-web/turn-reducer';
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
 import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
+import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadTokenUsage';
 import { editedGoalStatus, goalSummaryLines } from '@/codex-web/goal-display-adapter';
 import { selectPlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
 import { GoalProgressRow } from './GoalProgressRow';
@@ -115,6 +113,7 @@ interface ChatViewProps {
   appServerTurn?: AppServerTurnState | null;
   appServerApproval?: AppServerApprovalRequest | null;
   appServerThreadId?: string | null;
+  appServerTokenUsage?: ThreadTokenUsage | null;
   appServerGoal?: { source: string; data: ThreadGoal } | null;
   appServerNotice?: { message: string; description?: string } | null;
   onAppServerApprovalDecision?: (decision: AppServerApprovalDecision) => Promise<void>;
@@ -164,6 +163,7 @@ export function ChatView({
   appServerTurn,
   appServerApproval,
   appServerThreadId,
+  appServerTokenUsage,
   appServerGoal,
   appServerNotice,
   onAppServerApprovalDecision,
@@ -214,13 +214,6 @@ export function ChatView({
     }
   }, [appServerThreadId, onAppServerPermissionChange, workingDirectory]);
   const [pendingContextTokens, setPendingContextTokens] = useState(0);
-  // Phase 6 Phase 3 — per-source split (attachment / mention / directory).
-  // Flows through RunCockpit → useContextUsage → breakdown so the popover's
-  // files_attachments row renders real numbers, not 0.
-  const [pendingContextSubTotals, setPendingContextSubTotals] = useState<
-    import('@/lib/message-input-logic').PendingContextSubTotals | undefined
-  >(undefined);
-
   // Whether this session's working directory matches the configured assistant workspace
   const [isAssistantProject, setIsAssistantProject] = useState(false);
   const [assistantName, setAssistantName] = useState('');
@@ -345,28 +338,6 @@ export function ChatView({
     codexOnly: isCodexOnlySession,
   });
 
-  // #632 item 1 — does the active session provider report a TRUSTWORTHY context
-  // window? `false` only for a third-party Anthropic-compat proxy (e.g. GLM),
-  // whose persisted token_usage.context_window is the SDK's bogus ~200K default.
-  // Forwarded to RunCockpit → useContextUsage so existing third-party sessions
-  // stop rendering a fake capacity %. currentProviderId '' is the historic
-  // env-mode value → the 'env' group.
-  //
-  // FAIL-CLOSED until provider models load (Codex P3, 2026-06-20): while
-  // providerFetchState !== 'loaded' we pass `false`, so an existing third-party
-  // session never FLASHES its persisted bogus window as a % before we know the
-  // provider isn't first-party. Cost: a first-party session briefly shows
-  // used-only before the % appears — honest progressive disclosure, never a
-  // wrong number. Once loaded, a found group is always annotated; a not-found
-  // (stale/removed) provider defaults to trusted for back-compat.
-  const activeProviderGroup = providerGroups.find(
-    g => g.provider_id === (currentProviderId || 'env'),
-  );
-  const activeProviderReportsTrustedWindow =
-    providerFetchState === 'loaded'
-      ? (activeProviderGroup?.reportedContextWindowTrusted ?? true)
-      : false;
-
   // Phase 2 Step 3b — was: silently set state + PATCH the session row
   // when the runtime filter excluded the saved provider. That made an
   // open chat appear to "lose" its pinned provider after a global flip,
@@ -451,8 +422,8 @@ export function ChatView({
   // has nothing to do with whether *this saved session* can still send.
   // The 2026-05-09 memory cut removes the rest of the global checks
   // (`runtimeFallback` / Claude CLI fallback) too — those are global
-  // health, not session blocking, and live in /settings/health and the
-  // lazy RunCockpit popover. RunCheckpoint here is purely about "can
+  // health, not session blocking, and live in /settings/health.
+  // RunCheckpoint here is purely about "can
   // this send go through":
   //   - noCompatibleProvider: session-specific (set by the picker when
   //     no provider/model pair is reachable under the active runtime)
@@ -460,9 +431,8 @@ export function ChatView({
   //     banner just below RunCheckpoint, not piped through buildCheckpoints)
   //   - context-cost: per-send confirmation gate
   //
-  // usedContextTokens reads from the same `useContextUsage` hook
-  // RunCockpit uses so the cost trigger reads the SAME used count the
-  // user sees in the status row.
+  // This legacy estimate only feeds the pre-send cost checkpoint. The
+  // visible context ring uses app-server token usage independently.
   const usage = useContextUsage(messages, currentModel, {
     context1m,
     upstreamModelId: currentModelUpstream,
@@ -1829,7 +1799,7 @@ export function ChatView({
               isAssistantProject={isAssistantProject}
               hasMessages={false}
               onPendingContextTokensChange={setPendingContextTokens}
-              onPendingContextSubTotalsChange={setPendingContextSubTotals}
+              contextWindowUsage={appServerTokenUsage}
               onModeChange={settingsLocked ? undefined : handleModeChange}
               modeChangeDisabled={settingsLocked || isStreaming}
               blockingReasonIds={blockingReasonIds}
@@ -1844,22 +1814,6 @@ export function ChatView({
                     disabled={settingsLocked || isStreaming}
                   />
                 </>
-              }
-              right={
-                <RunCockpit
-                  providerId={currentProviderId}
-                  messages={messages}
-                  modelName={currentModel}
-                  context1m={context1m}
-                  hasSummary={hasSummary}
-                  upstreamModelId={currentModelUpstream}
-                  contextUsageSnapshot={streamSnapshot?.contextUsageSnapshot}
-                  permissionProfile={permissionProfile}
-                  pendingContextTokens={pendingContextTokens}
-                  pendingContextSubTotals={pendingContextSubTotals}
-                  sessionRuntimePin={runtimePin}
-                  reportedContextWindowTrusted={activeProviderReportsTrustedWindow}
-                />
               }
             />
           </div>
@@ -2148,7 +2102,7 @@ export function ChatView({
         isAssistantProject={isAssistantProject}
         hasMessages={messages.length > 0}
         onPendingContextTokensChange={setPendingContextTokens}
-        onPendingContextSubTotalsChange={setPendingContextSubTotals}
+        contextWindowUsage={appServerTokenUsage}
         onModeChange={settingsLocked ? undefined : handleModeChange}
         modeChangeDisabled={settingsLocked || isStreaming}
         blockingReasonIds={blockingReasonIds}
@@ -2163,22 +2117,6 @@ export function ChatView({
               disabled={settingsLocked || isStreaming}
             />
           </>
-        }
-        right={
-          <RunCockpit
-            providerId={currentProviderId}
-            messages={messages}
-            modelName={currentModel}
-            context1m={context1m}
-            hasSummary={hasSummary}
-            upstreamModelId={currentModelUpstream}
-            contextUsageSnapshot={streamSnapshot?.contextUsageSnapshot}
-            permissionProfile={permissionProfile}
-            pendingContextTokens={pendingContextTokens}
-            pendingContextSubTotals={pendingContextSubTotals}
-            sessionRuntimePin={runtimePin}
-            reportedContextWindowTrusted={activeProviderReportsTrustedWindow}
-          />
         }
       />
         </>

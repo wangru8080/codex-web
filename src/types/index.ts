@@ -276,6 +276,11 @@ export type MessageContentBlock =
   | { type: 'thinking'; thinking: string }
   | { type: 'codex_summary'; elapsed_ms?: number; process_count?: number }
   | { type: 'codex_process_text'; text: string }
+  | {
+      type: 'codex_context_compaction';
+      status: 'inProgress' | 'completed';
+      sourceBreadcrumb: 'app-server.item/started' | 'app-server.item/completed';
+    }
   | { type: 'codex_proposed_plan'; text: string; sourceBreadcrumb: string }
   | {
       type: 'codex_updated_plan';

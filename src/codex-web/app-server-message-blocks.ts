@@ -19,6 +19,7 @@ type TurnItemsToMessageContentArgs = {
   toolOutputs?: Record<string, string>;
   filePatchChanges?: Record<string, FileUpdateChange[]>;
   mcpProgress?: Record<string, string>;
+  contextCompactionStatusById?: Record<string, "inProgress" | "completed">;
 };
 
 export function appServerTurnToMessageContent(turn: AppServerTurnState): string {
@@ -31,6 +32,7 @@ export function appServerTurnToMessageContent(turn: AppServerTurnState): string 
     toolOutputs: turn.toolOutputs,
     filePatchChanges: turn.filePatchChanges,
     mcpProgress: turn.mcpProgress,
+    contextCompactionStatusById: turn.contextCompactionStatusById,
   });
 }
 
@@ -44,6 +46,7 @@ export function appServerTurnToMessageBlocks(turn: AppServerTurnState): MessageC
     toolOutputs: turn.toolOutputs,
     filePatchChanges: turn.filePatchChanges,
     mcpProgress: turn.mcpProgress,
+    contextCompactionStatusById: turn.contextCompactionStatusById,
   });
 }
 
@@ -53,6 +56,7 @@ export function turnItemsToMessageContent(args: TurnItemsToMessageContentArgs): 
     (block) =>
       block.type === "thinking" ||
       block.type === "codex_process_text" ||
+      block.type === "codex_context_compaction" ||
       block.type === "codex_proposed_plan" ||
       block.type === "codex_updated_plan" ||
       block.type === "tool_use" ||
@@ -99,6 +103,18 @@ export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): M
       if (block) {
         blocks.push(block);
       }
+      continue;
+    }
+
+    if (item.type === "contextCompaction") {
+      const status = args.contextCompactionStatusById?.[item.id] ?? "completed";
+      blocks.push({
+        type: "codex_context_compaction",
+        status,
+        sourceBreadcrumb:
+          status === "inProgress" ? "app-server.item/started" : "app-server.item/completed",
+      });
+      processCount += 1;
       continue;
     }
 

@@ -3,7 +3,7 @@
 import { Fragment, useState, useCallback, useRef, useEffect, useMemo, memo } from 'react';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
-import type { Message, TokenUsage, FileAttachment, MediaBlock } from '@/types';
+import type { Message, TokenUsage, FileAttachment, MediaBlock, MessageContentBlock } from '@/types';
 import {
   Message as AIMessage,
   MessageContent,
@@ -23,6 +23,7 @@ import { ImageGenCard } from './ImageGenCard';
 import { BatchPlanInlinePreview } from './batch-image-gen/BatchPlanInlinePreview';
 import { WidgetRenderer } from './WidgetRenderer';
 import { ProposedPlanMessageBlock, UpdatedPlanMessageBlock } from './PlanMessageBlock';
+import { ContextCompactionRow } from './ContextCompactionRow';
 import { buildReferenceImages } from '@/lib/image-ref-store';
 // SPECIES_IMAGE_URL / EGG_IMAGE_URL / RARITY_BG_GRADIENT were used by
 // the assistant-chat avatar (removed 2026-05-21); the imports are kept
@@ -445,6 +446,7 @@ interface PairedTool {
 type AssistantRenderPart =
   | { type: 'text'; text: string; variant: 'process' | 'final' }
   | { type: 'tools'; tools: ToolBlock[] }
+  | Extract<MessageContentBlock, { type: 'codex_context_compaction' }>
   | { type: 'proposed_plan'; text: string; sourceBreadcrumb: string }
   | {
       type: 'updated_plan';
@@ -511,6 +513,7 @@ function parseToolBlocks(content: string): {
         explanation?: string | null;
         steps?: Array<{ step?: string; status?: string }>;
         progress?: { completed?: number; total?: number } | null;
+        status?: 'inProgress' | 'completed';
       }>;
 
       for (const block of blocks) {
@@ -527,6 +530,19 @@ function parseToolBlocks(content: string): {
           if (typeof block.process_count === 'number' && Number.isFinite(block.process_count)) {
             processCount = block.process_count;
           }
+        } else if (
+          block.type === 'codex_context_compaction' &&
+          (block.status === 'inProgress' || block.status === 'completed')
+        ) {
+          flushPendingTools();
+          renderParts.push({
+            type: 'codex_context_compaction',
+            status: block.status,
+            sourceBreadcrumb:
+              block.sourceBreadcrumb === 'app-server.item/started'
+                ? 'app-server.item/started'
+                : 'app-server.item/completed',
+          });
         } else if (block.type === 'codex_proposed_plan' && block.text) {
           flushPendingTools();
           renderParts.push({
@@ -773,8 +789,16 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
   });
 
   const shouldRenderAssistantSummary =
-    !isUser && (!!thinking || renderParts.some((part) => part.type === 'tools' || (part.type === 'text' && part.variant === 'process')));
-  const processParts = renderParts.filter((part) => part.type === 'tools' || (part.type === 'text' && part.variant === 'process'));
+    !isUser && (!!thinking || renderParts.some((part) =>
+      part.type === 'tools' ||
+      part.type === 'codex_context_compaction' ||
+      (part.type === 'text' && part.variant === 'process')
+    ));
+  const processParts = renderParts.filter((part) =>
+    part.type === 'tools' ||
+    part.type === 'codex_context_compaction' ||
+    (part.type === 'text' && part.variant === 'process')
+  );
   const planParts = renderParts.filter((part) => part.type === 'proposed_plan' || part.type === 'updated_plan');
   const finalParts = renderParts.filter((part) => part.type === 'text' && part.variant === 'final');
   const renderAssistantPart = (part: AssistantRenderPart, index: number) => {
@@ -819,6 +843,9 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
           }}
         />
       );
+    }
+    if (part.type === 'codex_context_compaction') {
+      return <ContextCompactionRow key={`assistant-context-compaction-${index}`} block={part} />;
     }
     return (
       <AssistantContent
