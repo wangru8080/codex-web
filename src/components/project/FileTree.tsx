@@ -294,7 +294,7 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
     }
   }, [readFile, t]);
 
-  const handleInsertReference = useCallback((path: string) => {
+  const handleAddToChat = useCallback((path: string) => {
     window.dispatchEvent(new CustomEvent('insert-file-reference', {
       detail: { path, nodeType: 'file' },
     }));
@@ -378,11 +378,11 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
             onSelectFolder={onSelectFolder}
             onCopyPath={handleCopyPath}
             onDownload={handleDownload}
-            onInsertReference={handleInsertReference}
+            onAddToChat={handleAddToChat}
             contextMenuLabels={{
               copyPath: t("fileTree.copyPath" as TranslationKey),
               download: t("fileTree.download" as TranslationKey),
-              insertReference: t("fileTree.insertReference" as TranslationKey),
+              addToChat: t("fileTree.addToChat" as TranslationKey),
             }}
             className="border-0 rounded-none"
           >

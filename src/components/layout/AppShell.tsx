@@ -596,34 +596,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => mql.removeEventListener("change", handler);
   }, []);
 
-
-  // --- Skip-permissions indicator ---
-  const [skipPermissionsActive, setSkipPermissionsActive] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const doFetch = async () => {
-      try {
-        const res = await fetch("/api/settings/app");
-        if (res.ok && !cancelled) {
-          const data = await res.json();
-          setSkipPermissionsActive(data.settings?.dangerously_skip_permissions === "true");
-        }
-      } catch { /* ignore */ }
-    };
-    doFetch();
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") doFetch();
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("focus", doFetch);
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("focus", doFetch);
-    };
-  }, []);
-
   // --- Update checker (native Electron + browser fallback) ---
   const updateContextValue = useUpdateChecker();
 

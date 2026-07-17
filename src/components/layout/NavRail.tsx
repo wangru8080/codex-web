@@ -19,7 +19,6 @@ interface NavRailProps {
   onToggleChatList: () => void;
   hasUpdate?: boolean;
   readyToInstall?: boolean;
-  skipPermissionsActive?: boolean;
 }
 
 // Codex 专用 Web 版只保留核心入口：对话、插件、设置。Gallery /
@@ -29,7 +28,7 @@ const navItems: ReadonlyArray<{ href: string; label: string; icon: CodexWebIconN
   { href: "/plugins", label: "Plugins", icon: "plugin" },
 ] as const;
 
-export function NavRail({ onToggleChatList, hasUpdate, readyToInstall, skipPermissionsActive }: NavRailProps) {
+export function NavRail({ onToggleChatList, hasUpdate, readyToInstall }: NavRailProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useTranslation();
@@ -99,21 +98,8 @@ export function NavRail({ onToggleChatList, hasUpdate, readyToInstall, skipPermi
         })}
       </nav>
 
-      {/* Bottom: skip-permissions indicator + settings */}
+      {/* Bottom: settings */}
       <div className="mt-auto flex flex-col items-center gap-2">
-        {skipPermissionsActive && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex h-8 w-8 items-center justify-center">
-                <span className="relative flex h-3 w-3">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-status-warning opacity-75" />
-                  <span className="relative inline-flex h-3 w-3 rounded-full bg-status-warning" />
-                </span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="right">{t('nav.autoApproveOn')}</TooltipContent>
-          </Tooltip>
-        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="relative">

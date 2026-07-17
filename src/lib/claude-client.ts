@@ -795,9 +795,7 @@ export function streamClaudeSdk(options: ClaudeStreamOptions): ReadableStream<st
         }
 
 
-        // Check if dangerously_skip_permissions is enabled globally or per-session
-        const globalSkip = getSetting('dangerously_skip_permissions') === 'true';
-        const skipPermissions = globalSkip || !!sessionBypassPermissions;
+        const skipPermissions = !!sessionBypassPermissions;
 
         const queryOptions: Options = {
           cwd: resolvedWorkingDirectory.path,

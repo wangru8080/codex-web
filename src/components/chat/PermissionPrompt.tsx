@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   MessageResponse,
@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { ToolUIPart } from 'ai';
-import type { PermissionRequestEvent, PermissionProfile } from '@/types';
+import type { PermissionRequestEvent } from '@/types';
 
 interface ToolUseInfo {
   id: string;
@@ -40,7 +40,6 @@ interface PermissionPromptProps {
   permissionResolved: 'allow' | 'deny' | 'timeout' | null;
   onPermissionResponse: (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => void;
   toolUses?: ToolUseInfo[];
-  permissionProfile?: PermissionProfile;
 }
 
 /** Max lines to show in the tool input area before collapsing */
@@ -381,45 +380,13 @@ function ToolInputDisplay({ input }: { input: Record<string, unknown> }) {
   );
 }
 
-// Tools that require user interaction even in full_access mode.
-// AskUserQuestion's entire purpose is to get user input — auto-approving
-// would return empty answers, defeating the purpose. Module-scoped so the
-// Set identity is stable across renders (was an exhaustive-deps warning).
-const NEVER_AUTO_APPROVE = new Set(['AskUserQuestion']);
-
 export function PermissionPrompt({
   pendingPermission,
   permissionResolved,
   onPermissionResponse,
   toolUses = [],
-  permissionProfile,
 }: PermissionPromptProps) {
   const { t } = useTranslation();
-
-  // (NEVER_AUTO_APPROVE hoisted to module scope — stable Set identity.)
-
-  // Auto-approve when full_access is active — except for interactive tools
-  const autoApprovedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      permissionProfile === 'full_access' &&
-      pendingPermission &&
-      !permissionResolved &&
-      autoApprovedRef.current !== pendingPermission.permissionRequestId &&
-      !NEVER_AUTO_APPROVE.has(pendingPermission.toolName)
-    ) {
-      autoApprovedRef.current = pendingPermission.permissionRequestId;
-      onPermissionResponse('allow');
-    }
-  }, [permissionProfile, pendingPermission, permissionResolved, onPermissionResponse]);
-
-  // Don't render permission UI when full_access — EXCEPT for interactive tools
-  if (
-    permissionProfile === 'full_access' &&
-    (!pendingPermission || !NEVER_AUTO_APPROVE.has(pendingPermission.toolName))
-  ) {
-    return null;
-  }
 
   // Nothing to show
   if (!pendingPermission && !permissionResolved) return null;

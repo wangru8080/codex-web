@@ -3,8 +3,7 @@
 /**
  * Settings → General — application behavior only.
  *
- * Strictly: language, default panel, generative UI, permission default
- * (auto-approve). The Settings IA Phase 2
+ * Strictly: language, default panel and generative UI. The Settings IA Phase 2
  * cleanup moved everything else out:
  *
  *   - UpdateCard / version + update check  → Settings → About
@@ -21,27 +20,13 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { Switch } from "@/components/ui/switch";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { SUPPORTED_LOCALES, type Locale } from "@/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SettingsCard } from "@/components/patterns/SettingsCard";
 import { FieldRow } from "@/components/patterns/FieldRow";
-import { StatusBanner } from "@/components/patterns/StatusBanner";
 
 export function GeneralSection() {
-  const [skipPermissions, setSkipPermissions] = useState(false);
-  const [showSkipPermWarning, setShowSkipPermWarning] = useState(false);
-  const [skipPermSaving, setSkipPermSaving] = useState(false);
   const [generativeUI, setGenerativeUI] = useState(true);
   const [generativeUISaving, setGenerativeUISaving] = useState(false);
   const [defaultPanel, setDefaultPanel] = useState('file_tree');
@@ -53,7 +38,6 @@ export function GeneralSection() {
       if (res.ok) {
         const data = await res.json();
         const appSettings = data.settings || {};
-        setSkipPermissions(appSettings.dangerously_skip_permissions === "true");
         // generative_ui_enabled defaults to true when not set
         setGenerativeUI(appSettings.generative_ui_enabled !== "false");
         // default_panel defaults to 'file_tree' when not set
@@ -67,35 +51,6 @@ export function GeneralSection() {
   useEffect(() => {
     fetchAppSettings();
   }, [fetchAppSettings]);
-
-  const handleSkipPermToggle = (checked: boolean) => {
-    if (checked) {
-      setShowSkipPermWarning(true);
-    } else {
-      saveSkipPermissions(false);
-    }
-  };
-
-  const saveSkipPermissions = async (enabled: boolean) => {
-    setSkipPermSaving(true);
-    try {
-      const res = await fetch("/api/settings/app", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          settings: { dangerously_skip_permissions: enabled ? "true" : "" },
-        }),
-      });
-      if (res.ok) {
-        setSkipPermissions(enabled);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setSkipPermSaving(false);
-      setShowSkipPermWarning(false);
-    }
-  };
 
   const handleDefaultPanelChange = async (value: string) => {
     setDefaultPanel(value);
@@ -137,25 +92,7 @@ export function GeneralSection() {
         <h2 className="text-xl font-semibold tracking-tight">{t('settings.general')}</h2>
       </div>
       {/* General settings card */}
-      <SettingsCard className={skipPermissions ? "border-status-warning-border bg-status-warning-muted" : undefined}>
-        {/* Auto-approve toggle */}
-        <FieldRow
-          label={t('settings.autoApproveTitle')}
-          description={t('settings.autoApproveDesc')}
-        >
-          <Switch
-            checked={skipPermissions}
-            onCheckedChange={handleSkipPermToggle}
-            disabled={skipPermSaving}
-          />
-        </FieldRow>
-        {skipPermissions && (
-          <StatusBanner variant="warning">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-status-warning inline-block mr-1" />
-            {t('settings.autoApproveWarning')}
-          </StatusBanner>
-        )}
-
+      <SettingsCard>
         {/* Generative UI toggle */}
         <FieldRow
           label={t('settings.generativeUITitle')}
@@ -207,39 +144,6 @@ export function GeneralSection() {
         </FieldRow>
 
       </SettingsCard>
-
-      {/* Skip-permissions warning dialog */}
-      <AlertDialog open={showSkipPermWarning} onOpenChange={setShowSkipPermWarning}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('settings.autoApproveDialogTitle')}</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2">
-                <p>
-                  {t('settings.autoApproveDialogDesc')}
-                </p>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>{t('settings.autoApproveShellCommands')}</li>
-                  <li>{t('settings.autoApproveFileOps')}</li>
-                  <li>{t('settings.autoApproveNetwork')}</li>
-                </ul>
-                <p className="font-medium text-status-warning-foreground">
-                  {t('settings.autoApproveTrustWarning')}
-                </p>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('settings.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => saveSkipPermissions(true)}
-              className="bg-status-warning hover:bg-status-warning/80 text-white"
-            >
-              {t('settings.enableAutoApprove')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
     </div>
   );

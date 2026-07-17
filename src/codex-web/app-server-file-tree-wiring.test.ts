@@ -14,19 +14,24 @@ describe("app-server 文件树接线", () => {
     expect(tree).not.toContain("/api/files?");
   });
 
-  it("文件节点提供复制、下载和插入引用三项右键操作", () => {
+  it("文件节点提供复制、下载和添加到对话三项右键操作", () => {
     expect(primitive).toContain("ContextMenuPrimitive.Root");
     expect(primitive).toContain("onCopyPath");
     expect(primitive).toContain("onDownload");
-    expect(primitive).toContain("onInsertReference");
+    expect(primitive).toContain("onAddToChat");
+    expect(primitive).not.toContain("onInsertReference");
     expect(primitive).not.toContain("onOpenContainingDirectory");
     expect(zh).toContain("'fileTree.copyPath': '复制路径'");
     expect(zh).toContain("'fileTree.download': '下载'");
-    expect(zh).toContain("'fileTree.insertReference': '插入引用'");
+    expect(zh).toContain("'fileTree.addToChat': '添加到对话'");
+    expect(zh).not.toContain("'fileTree.insertReference'");
     expect(zh).not.toContain("'fileTree.openContainingDirectory'");
   });
 
-  it("插入引用复用输入框 mention 事件", () => {
+  it("添加到对话复用输入框文件引用事件", () => {
+    expect(tree).toContain("handleAddToChat");
+    expect(tree).toContain("onAddToChat={handleAddToChat}");
+    expect(tree).not.toContain("handleInsertReference");
     expect(tree).toContain("new CustomEvent('insert-file-reference'");
     expect(tree).not.toContain("new CustomEvent('insert-file-mention'");
   });

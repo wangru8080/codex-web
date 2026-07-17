@@ -43,11 +43,11 @@ interface FileTreeContextType {
   onSelectFolder?: (folderPath: string) => void;
   onCopyPath?: (path: string) => void;
   onDownload?: (path: string) => void;
-  onInsertReference?: (path: string) => void;
+  onAddToChat?: (path: string) => void;
   contextMenuLabels?: {
     copyPath: string;
     download: string;
-    insertReference: string;
+    addToChat: string;
   };
 }
 
@@ -78,7 +78,7 @@ export type FileTreeProps = HTMLAttributes<HTMLDivElement> & {
   onSelectFolder?: (folderPath: string) => void;
   onCopyPath?: (path: string) => void;
   onDownload?: (path: string) => void;
-  onInsertReference?: (path: string) => void;
+  onAddToChat?: (path: string) => void;
   contextMenuLabels?: FileTreeContextType["contextMenuLabels"];
   onExpandedChange?: (expanded: Set<string>) => void;
 };
@@ -94,7 +94,7 @@ export const FileTree = ({
   onSelectFolder,
   onCopyPath,
   onDownload,
-  onInsertReference,
+  onAddToChat,
   contextMenuLabels,
   onExpandedChange,
   className,
@@ -119,8 +119,8 @@ export const FileTree = ({
   );
 
   const contextValue = useMemo(
-    () => ({ expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onDownload, onInsertReference, contextMenuLabels }),
-    [expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onDownload, onInsertReference, contextMenuLabels]
+    () => ({ expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onDownload, onAddToChat, contextMenuLabels }),
+    [expandedPaths, onAdd, addLabel, onSelect, selectedPath, togglePath, selectedFolderPath, onSelectFolder, onCopyPath, onDownload, onAddToChat, contextMenuLabels]
   );
 
   return (
@@ -278,7 +278,7 @@ export const FileTreeFile = ({
 }: FileTreeFileProps) => {
   const {
     selectedPath, onSelect, onAdd, addLabel,
-    onCopyPath, onDownload, onInsertReference, contextMenuLabels,
+    onCopyPath, onDownload, onAddToChat, contextMenuLabels,
   } = useContext(FileTreeContext);
   const isSelected = selectedPath === path;
 
@@ -371,9 +371,9 @@ export const FileTreeFile = ({
               <CodexWebIcon name="download" size="sm" aria-hidden />
               {contextMenuLabels?.download ?? "下载"}
             </ContextMenuPrimitive.Item>
-            <ContextMenuPrimitive.Item className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent" onSelect={() => onInsertReference?.(path)}>
+            <ContextMenuPrimitive.Item className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent" onSelect={() => onAddToChat?.(path)}>
               <span className="flex size-4 items-center justify-center font-medium" aria-hidden>@</span>
-              {contextMenuLabels?.insertReference ?? "插入引用"}
+              {contextMenuLabels?.addToChat ?? "添加到对话"}
             </ContextMenuPrimitive.Item>
           </ContextMenuPrimitive.Content>
         </ContextMenuPrimitive.Portal>

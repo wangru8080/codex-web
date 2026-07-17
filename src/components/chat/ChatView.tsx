@@ -1876,7 +1876,6 @@ export function ChatView({
         permissionResolved={permissionResolved}
         onPermissionResponse={handlePermissionResponse}
         toolUses={toolUses}
-        permissionProfile={permissionProfile}
       />
       {/* Phase 1b — confirmation dialog for destructive chip actions */}
       <AlertDialog
