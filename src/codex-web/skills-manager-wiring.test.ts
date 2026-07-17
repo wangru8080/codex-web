@@ -17,4 +17,14 @@ describe("Skills manager app-server wiring", () => {
     expect(detail).toContain("<Switch");
     expect(detail).toContain("skills.tryNow");
   });
+
+  it("系统技能使用系统分类名称", () => {
+    const zh = readFileSync(resolve(process.cwd(), "src/i18n/zh.ts"), "utf8");
+    const en = readFileSync(resolve(process.cwd(), "src/i18n/en.ts"), "utf8");
+
+    expect(zh).toContain("'skills.source.sdk': '系统'");
+    expect(zh).not.toContain("'skills.source.sdk': 'SDK 内置'");
+    expect(en).toContain("'skills.source.sdk': 'System'");
+    expect(en).not.toContain("'skills.source.sdk': 'SDK built-in'");
+  });
 });

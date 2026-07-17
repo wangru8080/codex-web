@@ -1873,7 +1873,7 @@ const en = {
   'skills.source.project': 'Project',
   'skills.source.installed': 'From marketplace',
   'skills.source.plugin': 'From plugin',
-  'skills.source.sdk': 'SDK built-in',
+  'skills.source.sdk': 'System',
 
   // skills.readOnlyReason.* — Lock badge tooltip on read-only skill rows
   'skills.readOnlyReason.sdk': 'Read-only — provided by the SDK runtime',

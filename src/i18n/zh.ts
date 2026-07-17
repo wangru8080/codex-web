@@ -1849,7 +1849,7 @@ const zh: Record<TranslationKey, string> = {
   'skills.source.project': '项目',
   'skills.source.installed': '市场安装',
   'skills.source.plugin': '插件提供',
-  'skills.source.sdk': 'SDK 内置',
+  'skills.source.sdk': '系统',
 
   // skills.readOnlyReason.* — 只读原因
   'skills.readOnlyReason.sdk': '只读 — 由 SDK 运行时提供',
