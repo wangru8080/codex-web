@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 describe("app-server 文件树接线", () => {
   const tree = readFileSync(resolve(process.cwd(), "src/components/project/FileTree.tsx"), "utf8");
+  const panel = readFileSync(resolve(process.cwd(), "src/components/layout/panels/FileTreePanel.tsx"), "utf8");
   const primitive = readFileSync(resolve(process.cwd(), "src/components/ai-elements/file-tree.tsx"), "utf8");
   const zh = readFileSync(resolve(process.cwd(), "src/i18n/zh.ts"), "utf8");
 
@@ -12,6 +13,26 @@ describe("app-server 文件树接线", () => {
     expect(tree).toContain("useAppServerActions");
     expect(tree).toContain("readDirectory(");
     expect(tree).not.toContain("/api/files?");
+  });
+
+  it("新建文件和目录统一使用 app-server 并阻止同名覆盖", () => {
+    expect(panel).toContain("useAppServerActions");
+    expect(panel).toContain("readDirectory(targetDir)");
+    expect(panel).toContain("directoryContainsName(targetDir, parent.entries, trimmed)");
+    expect(panel).toContain("createDirectory(targetPath, false)");
+    expect(panel).toContain("await writeFile(");
+    expect(panel).toContain("utf8ToBase64(`# ${trimmed.replace(");
+    expect(panel).not.toContain("/api/files/write");
+    expect(panel).not.toContain("/api/files/mkdir");
+    expect(panel).not.toContain("fetch(endpoint");
+  });
+
+  it("手动刷新和 fs/changed 使用同一文件树重载入口", () => {
+    expect(tree).toContain("watchFileSystem(workingDirectory");
+    expect(tree).toContain("dispatchFileChanged({ paths: changedPaths, source: \"external\" })");
+    expect(tree).toContain("void fetchTree()");
+    expect(tree).toContain("window.addEventListener('refresh-file-tree', handler)");
+    expect(tree).toContain("void stopWatching()");
   });
 
   it("文件节点提供复制、下载和添加到对话三项右键操作", () => {

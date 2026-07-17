@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  directoryContainsName,
   directoryEntriesToNodes,
   fileDataUrlFromResponse,
   fileBytesFromResponse,
   filePreviewFromResponse,
+  utf8ToBase64,
 } from "./app-server-files";
 
 describe("app-server 文件适配器", () => {
@@ -18,6 +20,12 @@ describe("app-server 文件适配器", () => {
       { name: "README.md", path: "/workspace/README.md", type: "file", extension: "md" },
       { name: "z.ts", path: "/workspace/z.ts", type: "file", extension: "ts" },
     ]);
+  });
+
+  it("检查同名条目时遵循主机路径的大小写语义", () => {
+    const entries = [{ fileName: "Notes.md", isDirectory: false, isFile: true }];
+    expect(directoryContainsName("/workspace", entries, "notes.md")).toBe(false);
+    expect(directoryContainsName("C:\\workspace", entries, "notes.md")).toBe(true);
   });
 
   it("解码 UTF-8 Markdown 并生成预览元数据", () => {
@@ -57,5 +65,10 @@ describe("app-server 文件适配器", () => {
   it("为图片生成 data URL", () => {
     expect(fileDataUrlFromResponse("/workspace/logo.png", { dataBase64: "AAAA" }))
       .toBe("data:image/png;base64,AAAA");
+  });
+
+  it("把新建 Markdown 的 UTF-8 内容编码为 Base64", () => {
+    const content = "# 中文笔记\n\n";
+    expect(utf8ToBase64(content)).toBe(Buffer.from(content).toString("base64"));
   });
 });

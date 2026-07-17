@@ -10,6 +10,7 @@ import type { FsCreateDirectoryResponse } from "@/codex/protocol/generated/v2/Fs
 import type { FsReadFileResponse } from "@/codex/protocol/generated/v2/FsReadFileResponse";
 import type { FsWriteFileResponse } from "@/codex/protocol/generated/v2/FsWriteFileResponse";
 import type { FsRemoveResponse } from "@/codex/protocol/generated/v2/FsRemoveResponse";
+import type { FsWatchResponse } from "@/codex/protocol/generated/v2/FsWatchResponse";
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
 import type { SkillsListParams } from "@/codex/protocol/generated/v2/SkillsListParams";
@@ -104,6 +105,7 @@ import { buildThreadModelSettingsUpdate } from "./thread-model-settings";
 import { withReasoningEffort } from "./turn-start-request";
 import { buildAppServerTurnInput } from "./turn-input";
 import { persistAttachments } from "./attachment-persistence";
+import { readMatchingFsChangedPaths } from "./app-server-file-watch";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -156,10 +158,14 @@ export type AppServerActions = {
   readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
   listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
   readDirectory: (path: string) => Promise<FsReadDirectoryResponse>;
-  createDirectory: (path: string) => Promise<FsCreateDirectoryResponse>;
+  createDirectory: (path: string, recursive?: boolean) => Promise<FsCreateDirectoryResponse>;
   readFile: (path: string) => Promise<FsReadFileResponse>;
   writeFile: (path: string, dataBase64: string) => Promise<FsWriteFileResponse>;
   removeFileTree: (path: string) => Promise<FsRemoveResponse>;
+  watchFileSystem: (
+    path: string,
+    onChanged: (changedPaths: string[]) => void,
+  ) => Promise<() => Promise<void>>;
   listSkills: (params: SkillsListParams) => Promise<SkillsListResponse>;
   setSkillEnabled: (params: SkillsConfigWriteParams) => Promise<SkillsConfigWriteResponse>;
   refreshConfig: (cwd?: string) => Promise<ConfigReadResponse>;
@@ -186,6 +192,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const [bridgeUrl, setBridgeUrl] = useState(publicBridgeUrl);
   const [bridgeUrlResolved, setBridgeUrlResolved] = useState(() => !!publicBridgeUrl);
   const clientRef = useRef<AppServerBrowserClient | null>(null);
+  const fsWatchSequenceRef = useRef(0);
   const threadSettingsWaitersRef = useRef(new Map<string, Set<() => void>>());
   const approvalResponseStateRef = useRef<ApprovalResponseGuardState>({});
 
@@ -572,10 +579,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return (await client.request("fs/readDirectory", { path: normalized })) as FsReadDirectoryResponse;
   }, []);
 
-  const createDirectory = useCallback(async (path: string) => {
+  const createDirectory = useCallback(async (path: string, recursive = true) => {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
-    return (await client.request("fs/createDirectory", { path, recursive: true })) as FsCreateDirectoryResponse;
+    return (await client.request("fs/createDirectory", { path, recursive })) as FsCreateDirectoryResponse;
   }, []);
 
   const readFile = useCallback(async (path: string) => {
@@ -594,6 +601,40 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
     return (await client.request("fs/remove", { path, recursive: true, force: false })) as FsRemoveResponse;
+  }, []);
+
+  const watchFileSystem = useCallback(async (
+    path: string,
+    onChanged: (changedPaths: string[]) => void,
+  ) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    const normalized = path.trim();
+    if (!normalized) throw new Error("监听路径不能为空");
+
+    const watchId = `codex-web-fs-${++fsWatchSequenceRef.current}`;
+    let active = true;
+    const notificationUnsubscribe = client.onNotification((notification) => {
+      if (!active) return;
+      const changedPaths = readMatchingFsChangedPaths(notification, watchId);
+      if (changedPaths) onChanged(changedPaths);
+    });
+
+    try {
+      await client.request("fs/watch", { watchId, path: normalized }) as FsWatchResponse;
+    } catch (error) {
+      active = false;
+      notificationUnsubscribe();
+      throw error;
+    }
+
+    return async () => {
+      if (!active) return;
+      active = false;
+      notificationUnsubscribe();
+      if (clientRef.current !== client) return;
+      await client.request("fs/unwatch", { watchId });
+    };
   }, []);
 
   const listSkills = useCallback(async (params: SkillsListParams) => {
@@ -952,6 +993,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       readFile,
       writeFile,
       removeFileTree,
+      watchFileSystem,
       listSkills,
       setSkillEnabled,
       refreshConfig,
@@ -971,7 +1013,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       updateMemorySettings,
       readAccountRateLimits,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits],
   );
 
   return (

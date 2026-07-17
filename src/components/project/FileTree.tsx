@@ -17,6 +17,7 @@ import { useAppServerActions } from "@/codex-web/AppServerProvider";
 import { directoryEntriesToNodes, fileBytesFromResponse } from "@/codex-web/app-server-files";
 import { copyWithToast } from "@/lib/clipboard";
 import { showToast } from "@/hooks/useToast";
+import { dispatchFileChanged } from "@/lib/file-changed-event";
 
 interface FileTreeProps {
   workingDirectory: string;
@@ -175,7 +176,7 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
   const abortRef = useRef<AbortController | null>(null);
   const loadingDirectoriesRef = useRef(new Set<string>());
   const { t } = useTranslation();
-  const { readDirectory, readFile } = useAppServerActions();
+  const { readDirectory, readFile, watchFileSystem } = useAppServerActions();
   const seekKeyRef = useRef<string | null>(null);
 
   // Clear stale tree data when switching projects to avoid cross-session seek races.
@@ -239,6 +240,33 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
     window.addEventListener('refresh-file-tree', handler);
     return () => window.removeEventListener('refresh-file-tree', handler);
   }, [fetchTree]);
+
+  useEffect(() => {
+    if (!workingDirectory) return;
+
+    let disposed = false;
+    let stopWatching: (() => Promise<void>) | null = null;
+    void watchFileSystem(workingDirectory, (changedPaths) => {
+      if (disposed) return;
+      dispatchFileChanged({ paths: changedPaths, source: "external" });
+      void fetchTree();
+    }).then((stop) => {
+      if (disposed) {
+        void stop().catch(() => undefined);
+        return;
+      }
+      stopWatching = stop;
+    }).catch((watchError) => {
+      if (!disposed) {
+        setError(watchError instanceof Error ? watchError.message : t("filePreview.failedToLoad"));
+      }
+    });
+
+    return () => {
+      disposed = true;
+      if (stopWatching) void stopWatching().catch(() => undefined);
+    };
+  }, [fetchTree, t, watchFileSystem, workingDirectory]);
 
   // Controlled expansion state for search-driven highlighting
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());

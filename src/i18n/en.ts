@@ -445,6 +445,7 @@ const en = {
   'fileTree.newFileHint': 'Enter ⏎ to create · Esc to cancel',
   'fileTree.newFileErrorEmpty': 'Name cannot be empty',
   'fileTree.newFileErrorNoWorkspace': 'No workspace selected for this session',
+  'fileTree.newFileErrorExists': 'A file or folder with this name already exists',
   'fileTree.newFileErrorGeneric': 'Failed to create',
 
   // ── Doc preview ─────────────────────────────────────────────

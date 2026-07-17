@@ -11,6 +11,8 @@ import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
 import { FileTree } from "@/components/project/FileTree";
 import { useWorkspaceSidebarOptional } from "@/hooks/useWorkspaceSidebar";
+import { useAppServerActions } from "@/codex-web/AppServerProvider";
+import { directoryContainsName, utf8ToBase64 } from "@/codex-web/app-server-files";
 
 // Width state moved to PanelZone (Phase 7c-D); these constants now
 // live there alongside the CardFrame width prop wiring.
@@ -36,6 +38,7 @@ export function FileTreePanel({ variant = 'legacy' }: { variant?: 'legacy' | 'si
   // provider is mounted (i.e. inside the chat detail route). Outside
   // that context the button is hidden.
   const ws = useWorkspaceSidebarOptional();
+  const { createDirectory, readDirectory, writeFile } = useAppServerActions();
 
   // VS-Code-like "new item" flow.
   // newItemMode gates the input row: null = hidden, 'file' = creating a
@@ -117,12 +120,6 @@ export function FileTreePanel({ variant = 'legacy' }: { variant?: 'legacy' | 'si
     [workingDirectory, selectedFolderPath, newItemTargetDir],
   );
 
-  /**
-   * Submit the new-item form. Routes to /api/files/write for files or
-   * /api/files/mkdir for folders, using workingDirectory as baseDir so
-   * the server-side path safety check can enforce the workspace
-   * envelope regardless of which subfolder the user targeted.
-   */
   const handleCreateItem = useCallback(async () => {
     setNewItemError(null);
     const trimmed = newItemName.trim();
@@ -139,28 +136,19 @@ export function FileTreePanel({ variant = 'legacy' }: { variant?: 'legacy' | 'si
     try {
       const separator = targetDir.includes("\\") ? "\\" : "/";
       const targetPath = `${targetDir}${separator}${trimmed}`;
-      const endpoint = newItemMode === "folder" ? "/api/files/mkdir" : "/api/files/write";
-      const body =
-        newItemMode === "folder"
-          ? { path: targetPath, baseDir: workingDirectory, createParents: false }
-          : {
-              path: targetPath,
-              baseDir: workingDirectory,
-              content: `# ${trimmed.replace(/\.[^.]+$/, "")}\n\n`,
-              overwrite: false,
-              createParents: false,
-            };
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setNewItemError(data.error || t("fileTree.newFileErrorGeneric"));
+      const parent = await readDirectory(targetDir);
+      if (directoryContainsName(targetDir, parent.entries, trimmed)) {
+        setNewItemError(t("fileTree.newFileErrorExists" as TranslationKey));
         return;
       }
-      const data = await res.json();
+      if (newItemMode === "folder") {
+        await createDirectory(targetPath, false);
+      } else {
+        await writeFile(
+          targetPath,
+          utf8ToBase64(`# ${trimmed.replace(/\.[^.]+$/, "")}\n\n`),
+        );
+      }
       setNewItemMode(null);
       setNewItemName("");
       setTreeReloadKey((k) => k + 1);
@@ -170,14 +158,14 @@ export function FileTreePanel({ variant = 'legacy' }: { variant?: 'legacy' | 'si
       // explicit setPreviewOpen(true) here would double-render the
       // legacy PanelZone PreviewPanel alongside the sidebar Tab.
       if (newItemMode === "file") {
-        setPreviewFile(data.path);
+        setPreviewFile(targetPath);
       }
     } catch (err) {
       setNewItemError(err instanceof Error ? err.message : "Create failed");
     } finally {
       setCreating(false);
     }
-  }, [newItemMode, newItemName, newItemTargetDir, workingDirectory, t, setPreviewFile]);
+  }, [createDirectory, newItemMode, newItemName, newItemTargetDir, readDirectory, workingDirectory, t, setPreviewFile, writeFile]);
 
   const handleFileSelect = useCallback((path: string) => {
     const ext = path.split(".").pop()?.toLowerCase() || "";
@@ -277,8 +265,7 @@ export function FileTreePanel({ variant = 'legacy' }: { variant?: 'legacy' | 'si
             </Button>
           </div>
 
-          {/* Inline new-item input. Mode controls placeholder + what API
-              the submit handler hits. Esc cancels, Enter submits. */}
+          {/* Inline new-item input. Esc cancels, Enter submits. */}
           {newItemMode && (
             <div className="shrink-0 border-y border-border/40 bg-muted/30 px-3 py-2 space-y-1">
               <p className="truncate text-[10px] text-muted-foreground/60 font-mono">

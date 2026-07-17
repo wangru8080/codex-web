@@ -432,6 +432,7 @@ const zh: Record<TranslationKey, string> = {
   'fileTree.newFileHint': '回车创建 · Esc 取消',
   'fileTree.newFileErrorEmpty': '名称不能为空',
   'fileTree.newFileErrorNoWorkspace': '当前会话未选择 workspace',
+  'fileTree.newFileErrorExists': '已存在同名文件或文件夹',
   'fileTree.newFileErrorGeneric': '创建失败',
 
   // ── Doc preview ─────────────────────────────────────────────

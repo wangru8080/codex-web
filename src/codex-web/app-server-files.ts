@@ -34,6 +34,18 @@ export function directoryEntriesToNodes(
     });
 }
 
+export function directoryContainsName(
+  parentPath: string,
+  entries: readonly FsReadDirectoryEntry[],
+  fileName: string,
+): boolean {
+  const caseInsensitive = parentPath.includes("\\") && !parentPath.includes("/");
+  const expected = caseInsensitive ? fileName.toLowerCase() : fileName;
+  return entries.some((entry) => (
+    caseInsensitive ? entry.fileName.toLowerCase() : entry.fileName
+  ) === expected);
+}
+
 export function filePreviewFromResponse(
   path: string,
   response: FsReadFileResponse,
