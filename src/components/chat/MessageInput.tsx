@@ -84,6 +84,16 @@ const MAX_MENTION_FILE_COUNT = 6;
 const MAX_DIRECTORY_MENTION_COUNT = 3;
 const MAX_DIRECTORY_PREVIEW_ITEMS = 30;
 
+function normalizeWorkspaceReferencePath(rawPath: string, workingDirectory?: string): string {
+  const normalizedRaw = rawPath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!workingDirectory) return normalizedRaw;
+  const normalizedBase = workingDirectory.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+  if (normalizedRaw.startsWith(normalizedBase + '/')) {
+    return normalizedRaw.slice(normalizedBase.length + 1);
+  }
+  return normalizedRaw;
+}
+
 /**
  * Abort a composer submit WITHOUT delivering it, preserving the user's text and
  * attachments. PromptInput's submit pipeline clears text/files only when the
@@ -957,6 +967,11 @@ export function MessageInput({
       setMentionNodeTypes((prev) => ({ ...prev, [mention.path]: mention.nodeType }));
       ensureMentionOrder(mention.path);
     },
+    onFileReferenceSelected: (reference) => {
+      const path = normalizeWorkspaceReferencePath(reference.path, workingDirectory);
+      if (!path) return;
+      setFileReferencePaths((current) => current.includes(path) ? current : [...current, path]);
+    },
     isStreaming: !!isStreaming,
   });
 
@@ -995,23 +1010,18 @@ export function MessageInput({
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const path = (event as CustomEvent<{ path?: string }>).detail?.path?.trim();
+      const rawPath = (event as CustomEvent<{ path?: string }>).detail?.path?.trim();
+      const path = rawPath ? normalizeWorkspaceReferencePath(rawPath, workingDirectory) : '';
       if (!path) return;
       setFileReferencePaths((current) => current.includes(path) ? current : [...current, path]);
       setTimeout(() => textareaRef.current?.focus(), 0);
     };
     window.addEventListener('insert-file-reference', handler);
     return () => window.removeEventListener('insert-file-reference', handler);
-  }, []);
+  }, [workingDirectory]);
 
   const normalizeMentionPath = useCallback((rawPath: string): string => {
-    const normalizedRaw = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
-    if (!workingDirectory) return normalizedRaw;
-    const normalizedBase = workingDirectory.replace(/\\/g, '/').replace(/\/+$/, '');
-    if (normalizedRaw.startsWith(normalizedBase + '/')) {
-      return normalizedRaw.slice(normalizedBase.length + 1);
-    }
-    return normalizedRaw;
+    return normalizeWorkspaceReferencePath(rawPath, workingDirectory);
   }, [workingDirectory]);
 
   const fetchMentionFileAttachment = useCallback(async (mentionPath: string): Promise<{ attachment: FileAttachment | null; limitNote?: string }> => {
@@ -1135,13 +1145,11 @@ export function MessageInput({
       const fileReferenceSet = new Set(fileReferencePaths);
 
       const mentionFiles: FileAttachment[] = [];
-      const fileNotes: string[] = [];
       const directoryNotes: string[] = [];
       const limitNotes: string[] = [];
       let usedDirectoryMentions = 0;
       for (const mention of dedupedMentions) {
         if (fileReferenceSet.has(mention.path)) {
-          fileNotes.push(`- ${mention.path}`);
           continue;
         }
         if (mention.nodeType === 'directory') {
@@ -1177,7 +1185,7 @@ export function MessageInput({
         usedDirectoryMentions += 1;
       }
 
-      return { mentions: dedupedMentions, files: mentionFiles, fileNotes, directoryNotes, limitNotes };
+      return { mentions: dedupedMentions, files: mentionFiles, directoryNotes, limitNotes };
     };
 
     // If one or more badges are active, dispatch by kind (multi-skill combines).
@@ -1219,6 +1227,7 @@ export function MessageInput({
         uploadedFiles,
         mentionPayload,
         directoryRefs,
+        fileReferencePaths,
       });
       const { files, finalContent: finalPrompt } = payload;
       const modelPrompt = buildFileExcerptPrompt(finalPrompt, fileExcerptReferences);
@@ -1273,6 +1282,7 @@ export function MessageInput({
       uploadedFiles,
       mentionPayload,
       directoryRefs,
+      fileReferencePaths,
     });
     const { files, finalContent } = payload;
     const hasFiles = files.length > 0;

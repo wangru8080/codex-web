@@ -35,6 +35,7 @@ export function useSlashCommands(opts: {
   onCommand?: (command: string) => void;
   addBadge: (badge: { command: string; label: string; description: string; kind: SkillKind; installedSource?: "agents" | "claude"; skillPath?: string }) => void;
   onMentionInserted?: (mention: { path: string; nodeType: 'file' | 'directory'; display: string }) => void;
+  onFileReferenceSelected?: (reference: { path: string; display: string }) => void;
   /** When true, block immediate commands and badge selection from popover */
   isStreaming?: boolean;
 }): UseSlashCommandsReturn {
@@ -55,6 +56,7 @@ export function useSlashCommands(opts: {
     onCommand,
     addBadge,
     onMentionInserted,
+    onFileReferenceSelected,
     isStreaming,
 } = opts;
   const { listSkills, fuzzyFileSearch } = useAppServerActions();
@@ -157,8 +159,20 @@ export function useSlashCommands(opts: {
         closePopover();
         setTimeout(() => textareaRef.current?.focus(), 0);
         return;
+
+      case 'select_file_reference':
+        setInputValue(result.newInputValue ?? '');
+        if (result.reference) {
+          onFileReferenceSelected?.({
+            path: result.reference.path,
+            display: result.reference.display,
+          });
+        }
+        closePopover();
+        setTimeout(() => textareaRef.current?.focus(), 0);
+        return;
     }
-  }, [triggerPos, popoverMode, closePopover, onCommand, inputValue, popoverFilter, textareaRef, setInputValue, addBadge, onMentionInserted, isStreaming]);
+  }, [triggerPos, popoverMode, closePopover, onCommand, inputValue, popoverFilter, textareaRef, setInputValue, addBadge, onMentionInserted, onFileReferenceSelected, isStreaming]);
 
   // Handle input changes to detect @ and /
   const handleInputChange = useCallback(async (val: string) => {

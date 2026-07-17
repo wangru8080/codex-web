@@ -25,10 +25,15 @@ export const DIRECTORY_ATTACHMENT_MIME = 'inode/directory';
 // ─── Result types ────────────────────────────────────────────────
 
 export interface InsertResult {
-  action: 'immediate_command' | 'set_badge' | 'insert_file_mention';
+  action: 'immediate_command' | 'set_badge' | 'insert_file_mention' | 'select_file_reference';
   commandValue?: string;
   badge?: CommandBadge;
   newInputValue?: string;
+  reference?: {
+    path: string;
+    nodeType: 'file';
+    display: string;
+  };
 }
 
 export interface BadgeDispatchResult {
@@ -130,6 +135,15 @@ function splitAroundTrigger(
   return { before, after };
 }
 
+function joinAroundRemovedTrigger(before: string, after: string): string {
+  if (!before) return after.trimStart();
+  if (!after) return before.trimEnd();
+  if (/\s$/.test(before) && /^\s/.test(after)) {
+    return before + after.replace(/^\s+/, '');
+  }
+  return before + after;
+}
+
 /**
  * Determines what happens when an item is selected from the popover.
  * Used by insertItem in useSlashCommands.
@@ -163,8 +177,20 @@ export function resolveItemSelection(
     };
   }
 
-  // File mention: insert into text
   const { before, after } = splitAroundTrigger(inputValue, triggerPos, popoverFilter);
+  if (popoverMode === 'file' && item.nodeType !== 'directory') {
+    return {
+      action: 'select_file_reference',
+      newInputValue: joinAroundRemovedTrigger(before, after),
+      reference: {
+        path: item.value,
+        nodeType: 'file',
+        display: item.display || item.label || item.value,
+      },
+    };
+  }
+
+  // 目录引用继续保留可见的 @path token，并沿用现有摘要链路。
   const insertText = `@${item.value} `;
   return {
     action: 'insert_file_mention',
@@ -433,12 +459,8 @@ export function buildDirectoryAttachments(directoryRefs: ReadonlyArray<string>):
 export function buildMentionAppend(
   directoryNotes: ReadonlyArray<string>,
   limitNotes: ReadonlyArray<string>,
-  fileNotes: ReadonlyArray<string> = [],
 ): string {
   const sections: string[] = [];
-  if (fileNotes.length > 0) {
-    sections.push(`[Referenced Files]\n${fileNotes.join('\n')}`);
-  }
   if (directoryNotes.length > 0) {
     sections.push(`[Referenced Directories]\n${directoryNotes.join('\n\n')}`);
   }
@@ -454,6 +476,20 @@ export function buildMentionAppend(
  */
 export function composeFinalContent(content: string, mentionAppend: string): string {
   return `${content}${mentionAppend}`.trim();
+}
+
+export function buildFileReferencePrompt(
+  content: string,
+  paths: ReadonlyArray<string>,
+): string {
+  const uniquePaths = paths.filter((path, index) => path && paths.indexOf(path) === index);
+  const links = uniquePaths.map((path) => {
+    const normalizedPath = path.replace(/\\/g, '/');
+    const name = normalizedPath.split('/').filter(Boolean).pop() || normalizedPath;
+    return `[${name}](${normalizedPath})`;
+  });
+  const request = content.trim();
+  return [...links, ...(request ? [request] : [])].join(' ');
 }
 
 /**
@@ -560,7 +596,6 @@ export interface ResolvedMentionPayload {
   mentions: ReadonlyArray<MentionRef>;
   files: ReadonlyArray<FileAttachment>;
   directoryNotes: ReadonlyArray<string>;
-  fileNotes?: ReadonlyArray<string>;
   limitNotes: ReadonlyArray<string>;
 }
 
@@ -575,16 +610,16 @@ export interface SubmitPayloadInput {
   mentionPayload: ResolvedMentionPayload;
   /** Directory paths attached via the file-tree `+` button. */
   directoryRefs: ReadonlyArray<string>;
+  /** 通过 @ 或文件树右键菜单选择的工作区文件。 */
+  fileReferencePaths: ReadonlyArray<string>;
 }
 
 export interface SubmitPayload {
   /** Final ordered file list: uploads → @-mention files → + directories. */
   files: ReadonlyArray<FileAttachment>;
-  /** What goes to the model: `content` + mention/limit append, trimmed. */
+  /** 发送给模型的内容：Markdown 文件链接、用户正文和目录/限制说明。 */
   finalContent: string;
-  /** What goes in the user's message bubble — raw `content` when chips
-   *  exist, undefined otherwise (caller falls back to `finalContent`).
-   *  Crucial: this NEVER contains `[Referenced Directories]`. */
+  /** 用户消息气泡内容：包含 Markdown 文件链接，但不包含目录摘要。 */
   displayOverride: string | undefined;
   /** Mentions to send to the backend, or undefined when none. */
   mentions: ReadonlyArray<MentionRef> | undefined;
@@ -611,15 +646,15 @@ export function composeSubmitPayload(input: SubmitPayloadInput): SubmitPayload {
   const mentionAppend = buildMentionAppend(
     input.mentionPayload.directoryNotes,
     input.mentionPayload.limitNotes,
-    input.mentionPayload.fileNotes,
   );
-  const finalContent = composeFinalContent(input.content, mentionAppend);
+  const linkedContent = buildFileReferencePrompt(input.content, input.fileReferencePaths);
+  const finalContent = composeFinalContent(linkedContent, mentionAppend);
   const hasMentions = input.mentionPayload.mentions.length > 0;
   const hasDirRefs = input.directoryRefs.length > 0;
   return {
     files,
     finalContent,
-    displayOverride: computeDisplayOverride(input.content, hasMentions, hasDirRefs),
+    displayOverride: computeDisplayOverride(linkedContent, hasMentions, hasDirRefs),
     mentions: hasMentions ? input.mentionPayload.mentions : undefined,
   };
 }

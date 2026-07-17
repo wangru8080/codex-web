@@ -11,6 +11,7 @@ describe("文件树引用胶囊接线", () => {
     expect(input).toContain("'insert-file-reference'");
     expect(input).toContain("setFileReferencePaths");
     expect(input).toContain("<FileReferenceCapsules");
+    expect(input).toContain("onFileReferenceSelected");
   });
 
   it("文件引用以文件卡片展示并可移除", () => {
@@ -20,7 +21,9 @@ describe("文件树引用胶囊接线", () => {
 
   it("发送时合并结构化文件 mention，并在失败时恢复", () => {
     expect(input).toContain("fileReferenceMentions");
+    expect(input).toContain("fileReferencePaths,");
     expect(input).toContain("restoreFileRefs");
     expect(input).toContain("setFileReferencePaths([])");
+    expect(input).not.toContain("fileNotes.push");
   });
 });

@@ -7,6 +7,8 @@ import {
   planPromptFromInput,
   detectPopoverTrigger,
   resolveItemSelection,
+  buildFileReferencePrompt,
+  composeSubmitPayload,
 } from "./message-input-logic";
 
 describe("message-input-logic goal prompt", () => {
@@ -51,9 +53,60 @@ describe("message-input-logic composer 触发模式", () => {
     expect(result.newInputValue).toBe(" 请规划");
   });
 
-  it("文件选择保留 @ 引用语义", () => {
-    const result = resolveItemSelection({ label: "AGENTS.md", value: "AGENTS.md", nodeType: "file" }, "file", 0, "@AGE 请分析", "AGE");
-    expect(result).toMatchObject({ action: "insert_file_mention", newInputValue: "@AGENTS.md  请分析" });
+  it("文件选择转为独立引用并从输入文字移除 @ 查询", () => {
+    const result = resolveItemSelection({ label: "AGENTS.md", value: "AGENTS.md", nodeType: "file" }, "file", 0, "@AGE 描述这个文件的主要内容", "AGE");
+    expect(result).toMatchObject({
+      action: "select_file_reference",
+      newInputValue: "描述这个文件的主要内容",
+      reference: { path: "AGENTS.md", display: "AGENTS.md", nodeType: "file" },
+    });
+  });
+
+  it("目录选择继续保留 @ mention 文本", () => {
+    const result = resolveItemSelection({ label: "docs", value: "docs", nodeType: "directory" }, "file", 0, "@do 请分析", "do");
+    expect(result).toMatchObject({ action: "insert_file_mention", newInputValue: "@docs  请分析" });
+  });
+});
+
+describe("message-input-logic 官方文件引用提示词", () => {
+  it("生成与 Codex Desktop session 一致的 Markdown 文件链接", () => {
+    expect(buildFileReferencePrompt("描述这个文件的主要内容", ["AGENTS.md"]))
+      .toBe("[AGENTS.md](AGENTS.md) 描述这个文件的主要内容");
+  });
+
+  it("多个文件按选择顺序去重并使用 basename 作为标签", () => {
+    expect(buildFileReferencePrompt("", ["docs/guide.md", "AGENTS.md", "docs/guide.md"]))
+      .toBe("[guide.md](docs/guide.md) [AGENTS.md](AGENTS.md)");
+  });
+
+  it("普通手输 @ 文本不会被自动改写", () => {
+    expect(buildFileReferencePrompt("请检查 @AGENTS.md", []))
+      .toBe("请检查 @AGENTS.md");
+  });
+
+  it("完整提交 payload 只发送官方 Markdown 链接和用户正文", () => {
+    const payload = composeSubmitPayload({
+      content: "描述这个文件的主要内容",
+      uploadedFiles: [],
+      mentionPayload: {
+        mentions: [{
+          path: "AGENTS.md",
+          display: "AGENTS.md",
+          nodeType: "file",
+          sourceRange: { start: 0, end: 0 },
+        }],
+        files: [],
+        directoryNotes: [],
+        limitNotes: [],
+      },
+      directoryRefs: [],
+      fileReferencePaths: ["AGENTS.md"],
+    });
+
+    expect(payload.finalContent).toBe("[AGENTS.md](AGENTS.md) 描述这个文件的主要内容");
+    expect(payload.displayOverride).toBe(payload.finalContent);
+    expect(payload.files).toEqual([]);
+    expect(payload.finalContent).not.toContain("[Referenced Files]");
   });
 });
 

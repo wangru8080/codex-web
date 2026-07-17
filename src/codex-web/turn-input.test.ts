@@ -138,6 +138,16 @@ describe("buildAppServerTurnInput", () => {
     ]);
   });
 
+  it("@ 工作区文件按官方 Markdown 链接原样进入 text input", () => {
+    const prompt = "[AGENTS.md](AGENTS.md) 描述这个文件的主要内容";
+    const input = buildAppServerTurnInput(prompt);
+
+    expect(input).toEqual([{ type: "text", text: prompt, text_elements: [] }]);
+    expect(input[0]?.type === "text" ? input[0].text : "").not.toContain("@AGENTS.md");
+    expect(input[0]?.type === "text" ? input[0].text : "").not.toContain("[Referenced Files]");
+    expect(input[0]?.type === "text" ? input[0].text : "").not.toContain("# Files mentioned by the user");
+  });
+
   it("过滤未持久化普通文件和无有效载荷的图片", () => {
     expect(buildAppServerTurnInput("只发送文本", [
       attachment({ name: "notes.txt", type: "text/plain" }),
