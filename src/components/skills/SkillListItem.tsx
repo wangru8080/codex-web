@@ -25,7 +25,7 @@ export interface SkillItem {
   filePath: string;
   /**
    * Whether this skill row is editable in the manager UI. Driven entirely
-   * by `/api/skills` (Phase 2D.1) — the client must not re-derive.
+   * by app-server `skills/list` — the client must not re-derive.
    */
   editable?: boolean;
   /**
@@ -34,6 +34,14 @@ export interface SkillItem {
   readOnlyReason?: SkillReadOnlyReason;
   /** Whether this plugin skill is loaded for the current session. */
   loaded?: boolean;
+  enabled?: boolean;
+  scope?: "user" | "repo" | "system" | "admin";
+  displayName?: string;
+  shortDescription?: string;
+  iconSmall?: string;
+  iconLarge?: string;
+  brandColor?: string;
+  defaultPrompt?: string;
 }
 
 interface SkillListItemProps {

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Message, MessagesResponse, FileAttachment, SessionStreamSnapshot, MentionRef, TaskRunSummary, PermissionProfile } from '@/types';
+import type { Message, MessagesResponse, FileAttachment, SessionStreamSnapshot, MentionRef, TaskRunSummary, PermissionProfile, SkillInputReference } from '@/types';
 import { MessageList } from './MessageList';
 import { NewChatWelcome } from './NewChatWelcome';
 import { TerminalReasonChip } from './TerminalReasonChip';
@@ -84,7 +84,7 @@ interface QueuedMessage {
   /** Phase 2 Context Accounting — preserve badge-derived Skill labels
    *  across the queue so dequeued sends carry them through to producer.
    *  Codex review v4 P1 fix (2026-05-20). */
-  selectedSkills?: readonly string[];
+  selectedSkills?: readonly SkillInputReference[];
 }
 
 interface ChatViewProps {
@@ -124,7 +124,7 @@ interface ChatViewProps {
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
   onAppServerGoalClear?: () => Promise<void>;
-  appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
+  appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; skills?: readonly SkillInputReference[]; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
   appServerClearContextAndSend?: (content: string, effort?: ReasoningEffort) => Promise<void>;
   appServerInterrupt?: () => Promise<void>;
   appServerLoadEarlier?: () => Promise<MessagesResponse>;
@@ -629,7 +629,7 @@ export function ChatView({
 
   // Pending image generation notices
   const pendingImageNoticesRef = useRef<string[]>([]);
-  const sendMessageRef = useRef<(content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], modeOverride?: string) => Promise<boolean | void>>(undefined);
+  const sendMessageRef = useRef<(content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly SkillInputReference[], modeOverride?: string) => Promise<boolean | void>>(undefined);
   const initMetaRef = useRef<{ tools?: unknown; slash_commands?: unknown; skills?: unknown } | null>(null);
 
   const handleModeChange = useCallback((newMode: string) => {
@@ -1210,7 +1210,7 @@ export function ChatView({
 
   /** Start an API stream for the given content. Does NOT add a user message to the list. */
   const doStartStream = useCallback(
-    (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], sessionIdOverride?: string) => {
+    (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly SkillInputReference[], sessionIdOverride?: string) => {
       if (readOnly) return;
       // Guard 1: idle = picker feed hasn't loaded yet. We don't know
       // what the runtime gate would have done with the saved pair, so
@@ -1281,7 +1281,7 @@ export function ChatView({
         context1m,
         displayOverride,
         mentions,
-        selectedSkills,
+        selectedSkills: selectedSkills?.map((skill) => skill.name),
         onModeChanged: (sdkMode) => {
           const uiMode = sdkMode === 'plan' ? 'plan' : 'code';
           handleModeChange(uiMode);
@@ -1299,7 +1299,7 @@ export function ChatView({
   );
 
   const sendMessage = useCallback(
-    async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], modeOverride?: string) => {
+    async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly SkillInputReference[], modeOverride?: string) => {
       if (readOnly) return false;
       if (appServerSend) {
         if (appServerApproval) {
@@ -1329,6 +1329,7 @@ export function ChatView({
             effort: selectedEffort && selectedEffort !== 'auto' ? selectedEffort : undefined,
             mode: modeOverride ?? mode,
             permissionProfile,
+            skills: selectedSkills,
             onAccepted: (threadId) => {
               if (accepted) return;
               accepted = true;

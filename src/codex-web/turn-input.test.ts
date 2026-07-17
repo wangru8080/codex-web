@@ -16,6 +16,22 @@ function attachment(overrides: Partial<FileAttachment> = {}): FileAttachment {
 }
 
 describe("buildAppServerTurnInput", () => {
+  it("为试用技能发送官方 text marker 与结构化 skill input", () => {
+    expect(buildAppServerTurnInput("$imagegen 生成图片", [], [{
+      name: "imagegen",
+      path: "/codex-home/skills/imagegen/SKILL.md",
+    }])).toEqual([
+      { type: "text", text: "$imagegen 生成图片", text_elements: [] },
+      { type: "skill", name: "imagegen", path: "/codex-home/skills/imagegen/SKILL.md" },
+    ]);
+  });
+
+  it("缺少 path 的旧 Skill tag 只保留 marker，不伪造结构化 skill input", () => {
+    expect(buildAppServerTurnInput("$legacy 执行", [], [{ name: "legacy" }])).toEqual([
+      { type: "text", text: "$legacy 执行", text_elements: [] },
+    ]);
+  });
+
   it("把文件片段路径、行号和正文原样写入 app-server 文本输入", () => {
     const prompt = buildFileExcerptPrompt("这是 UTC 时间吗？", [{
       id: "excerpt-1",

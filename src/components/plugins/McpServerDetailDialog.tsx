@@ -20,6 +20,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +55,10 @@ export interface McpRuntimeStatusForDetail {
   status: "connected" | "failed" | "needs-auth" | "pending" | "disabled";
   serverInfo?: { name: string; version: string };
   tools?: { name: string; description?: string }[];
+  authStatus?: string;
+  resourceCount?: number;
+  resourceTemplateCount?: number;
+  error?: string;
 }
 
 interface McpServerDetailDialogProps {
@@ -64,6 +69,7 @@ interface McpServerDetailDialogProps {
   runtime?: McpRuntimeStatusForDetail | null;
   onSave: (name: string, server: MCPServer) => void;
   onDelete: (name: string) => void;
+  onToggleEnabled?: (name: string, enabled: boolean) => void;
 }
 
 function getTransportInfo(server: MCPServer | null): { label: string; iconKind: 'wifi' | 'web' | 'disk'; color: string } {
@@ -104,6 +110,7 @@ export function McpServerDetailDialog({
   runtime,
   onSave,
   onDelete,
+  onToggleEnabled,
 }: McpServerDetailDialogProps) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<"detail" | "edit">("detail");
@@ -175,8 +182,16 @@ export function McpServerDetailDialog({
             )}
             {toolCount > 0 && (
               <span className="text-[10px] text-muted-foreground">
-                {toolCount} {t("mcp.toolCount" as TranslationKey)}
+                {t("mcp.toolCount" as TranslationKey).replace("{count}", String(toolCount))}
               </span>
+            )}
+            {onToggleEnabled && (
+              <Switch
+                className="ml-auto"
+                checked={!isDisabled}
+                onCheckedChange={(enabled) => onToggleEnabled(name, enabled)}
+                aria-label={`${isDisabled ? t('mcp.enable' as TranslationKey) : t('mcp.disable' as TranslationKey)} ${name}`}
+              />
             )}
           </div>
           {/* DialogDescription is required for a11y; in detail view it
@@ -194,6 +209,18 @@ export function McpServerDetailDialog({
             {isDisabled && (
               <p className="text-xs rounded-md bg-muted/40 px-3 py-2 text-muted-foreground leading-relaxed">
                 {t("mcp.detail.disabled" as TranslationKey)}
+              </p>
+            )}
+
+            {runtime?.error && (
+              <p className="text-xs rounded-md bg-status-error-muted px-3 py-2 text-status-error-foreground leading-relaxed">
+                {runtime.error}
+              </p>
+            )}
+
+            {runtime && (
+              <p className="text-xs text-muted-foreground">
+                {t('mcp.authStatus' as TranslationKey)}: {runtime.authStatus || 'unsupported'} · {t('mcp.resources' as TranslationKey)}: {runtime.resourceCount ?? 0} · {t('mcp.resourceTemplates' as TranslationKey)}: {runtime.resourceTemplateCount ?? 0}
               </p>
             )}
 

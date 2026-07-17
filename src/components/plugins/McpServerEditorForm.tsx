@@ -29,13 +29,16 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { WifiHigh } from '@/components/ui/icon';
 import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import type { MCPServer } from '@/types';
+import {
+  mcpServersFromConfigValue,
+  mcpServersToConfigValue,
+} from '@/codex-web/mcp-config-adapter';
 
-type ServerType = 'stdio' | 'sse' | 'http';
+type ServerType = 'stdio' | 'http';
 
 export interface McpServerEditorFormHandle {
   /** Validate inputs and call onSave when valid. Returns true on success. */
@@ -59,7 +62,7 @@ export const McpServerEditorForm = forwardRef<McpServerEditorFormHandle, McpServ
   ) {
     const { t } = useTranslation();
     const [name, setName] = useState(initialName || '');
-    const [serverType, setServerType] = useState<ServerType>(initialServer?.type || 'stdio');
+    const [serverType, setServerType] = useState<ServerType>(initialServer?.type === 'http' ? 'http' : 'stdio');
     const [command, setCommand] = useState(initialServer?.command || '');
     const [args, setArgs] = useState(initialServer?.args?.join('\n') || '');
     const [url, setUrl] = useState(initialServer?.url || '');
@@ -80,7 +83,7 @@ export const McpServerEditorForm = forwardRef<McpServerEditorFormHandle, McpServ
     /* eslint-disable react-hooks/set-state-in-effect -- intentional: caller bumps resetKey to reset form */
     useEffect(() => {
       setName(initialName || '');
-      setServerType(initialServer?.type || 'stdio');
+      setServerType(initialServer?.type === 'http' ? 'http' : 'stdio');
       setCommand(initialServer?.command || '');
       setArgs(initialServer?.args?.join('\n') || '');
       setUrl(initialServer?.url || '');
@@ -117,7 +120,12 @@ export const McpServerEditorForm = forwardRef<McpServerEditorFormHandle, McpServ
             setError(t('mcp.editor.error.jsonNotObject' as TranslationKey));
             return false;
           }
-          onSave(name.trim(), parsed as MCPServer);
+          const normalized = mcpServersFromConfigValue({ server: parsed }).server;
+          if (!normalized) {
+            setError(t('mcp.editor.error.jsonNotObject' as TranslationKey));
+            return false;
+          }
+          onSave(name.trim(), normalized);
           return true;
         } catch {
           setError(t('mcp.editor.error.jsonInvalid' as TranslationKey));
@@ -240,9 +248,10 @@ export const McpServerEditorForm = forwardRef<McpServerEditorFormHandle, McpServ
               } catch { /* ignore */ }
               try {
                 const headersParsed = JSON.parse(headersText);
-                if (Object.keys(headersParsed).length > 0) currentConfig.headers = headersParsed;
+                if (Object.keys(headersParsed).length > 0) currentConfig.http_headers = headersParsed;
               } catch { /* ignore */ }
-              setJsonText(JSON.stringify(currentConfig, null, 2));
+              const normalized = mcpServersFromConfigValue({ server: currentConfig });
+              setJsonText(JSON.stringify(mcpServersToConfigValue(normalized).server ?? currentConfig, null, 2));
               setJsonMode(true);
               setError(null);
             }}
@@ -280,10 +289,6 @@ export const McpServerEditorForm = forwardRef<McpServerEditorFormHandle, McpServ
                   <TabsTrigger value="stdio" className="flex-1 gap-1.5">
                     <CodexWebIcon name="disk" size="sm" aria-hidden />
                     stdio
-                  </TabsTrigger>
-                  <TabsTrigger value="sse" className="flex-1 gap-1.5">
-                    <WifiHigh size={14} />
-                    SSE
                   </TabsTrigger>
                   <TabsTrigger value="http" className="flex-1 gap-1.5">
                     <CodexWebIcon name="web_simple" size="sm" aria-hidden />
@@ -331,11 +336,7 @@ export const McpServerEditorForm = forwardRef<McpServerEditorFormHandle, McpServ
                       setUrl(e.target.value);
                       setError(null);
                     }}
-                    placeholder={
-                      serverType === 'sse'
-                        ? 'http://localhost:3001/sse'
-                        : 'http://localhost:3001'
-                    }
+                    placeholder="http://localhost:3001/mcp"
                     className="font-mono text-sm"
                   />
                 </div>

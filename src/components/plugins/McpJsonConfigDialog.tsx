@@ -8,7 +8,7 @@
  * behind the ExtensionsPage More menu instead of competing with the
  * page-level filter pills.
  *
- * The dialog fetches MCP config directly from `/api/plugins/mcp` rather
+ * The dialog fetches MCP config directly from Codex app-server rather
  * than reading from a parent ref, so it works regardless of which
  * filter tab is currently mounted (Phase 2D.4 P2 fix, 2026-05-01).
  * Earlier versions read from `mcpRef.current?.getServers()`, which
@@ -29,6 +29,8 @@ import { SpinnerGap } from "@/components/ui/icon";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
 import type { MCPServer } from "@/types";
+import { useAppServerActions } from "@/codex-web/AppServerProvider";
+import { mcpServersFromConfig, mcpServersFromConfigValue, mcpServersToConfigValue } from "@/codex-web/mcp-config-adapter";
 
 type ServerWithSource = MCPServer & { _source?: string };
 
@@ -46,6 +48,7 @@ export function McpJsonConfigDialog({
   onSaved,
 }: McpJsonConfigDialogProps) {
   const { t } = useTranslation();
+  const { refreshConfig, writeMcpServers } = useAppServerActions();
   const [snapshot, setSnapshot] = useState<Record<string, ServerWithSource> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -57,18 +60,17 @@ export function McpJsonConfigDialog({
     let cancelled = false;
     setSnapshot(null);
     setError(null);
-    fetch("/api/plugins/mcp")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((data) => {
+    refreshConfig()
+      .then((config) => {
         if (cancelled) return;
-        setSnapshot(data?.mcpServers ?? {});
+        setSnapshot(mcpServersFromConfig(config));
       })
       .catch((err) => {
         if (cancelled) return;
         setError((err as Error).message);
       });
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, refreshConfig]);
 
   const handleSave = async (json: string) => {
     let parsed: Record<string, ServerWithSource>;
@@ -79,64 +81,20 @@ export function McpJsonConfigDialog({
       return;
     }
 
-    // Preserve _source on existing entries, treat new entries as
-    // settings.json (the default editable surface). Mirrors the legacy
-    // McpManager.handleJsonSave logic so behavior is unchanged.
-    const next: Record<string, ServerWithSource> = {};
-    for (const [name, server] of Object.entries(parsed)) {
-      const existing = snapshot?.[name];
-      if (existing?._source) {
-        next[name] = { ...server, _source: existing._source };
-      } else {
-        next[name] = { ...server, _source: "settings.json" };
-      }
-    }
-    // Carry forward claude.json-sourced servers untouched (the editor
-    // hides them; we filter them out of the JSON view but keep the
-    // underlying state intact).
-    if (snapshot) {
-      for (const [name, server] of Object.entries(snapshot)) {
-        if (server._source === "claude.json" && !next[name]) {
-          next[name] = server;
-        }
-      }
-    }
-
     setSaving(true);
     try {
-      const res = await fetch("/api/plugins/mcp", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mcpServers: next }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data?.error || `HTTP ${res.status}`);
-        return;
-      }
+      await writeMcpServers(mcpServersFromConfigValue(parsed));
       onSaved?.();
       onOpenChange(false);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
       setSaving(false);
     }
   };
 
-  const claudeJsonNoticeNeeded =
-    !!snapshot && Object.values(snapshot).some((s) => s._source === "claude.json");
-
   const editableJson = snapshot
-    ? JSON.stringify(
-        Object.fromEntries(
-          Object.entries(snapshot)
-            .filter(([, v]) => v._source !== "claude.json")
-            .map(([k, v]) => {
-              const { _source: _unused, ...rest } = v; // eslint-disable-line @typescript-eslint/no-unused-vars
-              return [k, rest];
-            }),
-        ),
-        null,
-        2,
-      )
+    ? JSON.stringify(mcpServersToConfigValue(snapshot), null, 2)
     : "";
 
   return (
@@ -152,11 +110,6 @@ export function McpJsonConfigDialog({
         </DialogHeader>
 
         <div className="flex-1 min-h-0 mt-3 flex flex-col gap-3 overflow-hidden">
-          {claudeJsonNoticeNeeded && (
-            <p className="text-xs text-muted-foreground shrink-0">
-              {t("mcp.claudeJsonNotice" as TranslationKey)}
-            </p>
-          )}
           {error && (
             <p className="text-xs text-status-error-foreground shrink-0">
               {error}

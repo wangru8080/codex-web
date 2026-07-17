@@ -1,12 +1,18 @@
 import type { UserInput } from "@/codex/protocol/generated/v2/UserInput";
-import type { FileAttachment } from "@/types";
+import type { FileAttachment, SkillInputReference } from "@/types";
 
 export function buildAppServerTurnInput(
   content: string,
   files: readonly FileAttachment[] = [],
+  skills: readonly SkillInputReference[] = [],
 ): UserInput[] {
   const prompt = buildFilesMentionedPrompt(content, files);
-  return prompt ? [{ type: "text", text: prompt, text_elements: [] }] : [];
+  const input: UserInput[] = prompt ? [{ type: "text", text: prompt, text_elements: [] }] : [];
+  for (const skill of skills) {
+    if (!skill.name.trim() || !skill.path?.trim()) continue;
+    input.push({ type: "skill", name: skill.name.trim(), path: skill.path.trim() });
+  }
+  return input;
 }
 
 export function buildFilesMentionedPrompt(

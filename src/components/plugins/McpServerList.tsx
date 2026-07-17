@@ -10,6 +10,7 @@ import type { TranslationKey } from '@/i18n';
 import type { MCPServer } from '@/types';
 import { cn } from '@/lib/utils';
 import { useState, useCallback } from 'react';
+import type { McpStartupByName } from '@/codex-web/mcp-startup-adapter';
 
 /**
  * Runtime status carried alongside each user-installed server. Mirrors
@@ -21,6 +22,10 @@ export interface McpRuntimeStatus {
   status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
   serverInfo?: { name: string; version: string };
   tools?: { name: string; description?: string }[];
+  authStatus?: string;
+  resourceCount?: number;
+  resourceTemplateCount?: number;
+  error?: string;
 }
 
 interface McpServerListProps {
@@ -28,7 +33,8 @@ interface McpServerListProps {
   onOpenDetail: (name: string, server: MCPServer) => void;
   onToggleEnabled?: (name: string, enabled: boolean) => void;
   runtimeStatus?: McpRuntimeStatus[];
-  activeSessionId?: string;
+  startupStatus?: McpStartupByName;
+  onReload?: () => Promise<void>;
 }
 
 function getServerTypeInfo(server: MCPServer): { label: string; iconKind: 'wifi' | 'web' | 'disk'; color: string } {
@@ -62,34 +68,16 @@ function getStatusPill(status: McpRuntimeStatus['status']) {
   }
 }
 
-export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeStatus, activeSessionId }: McpServerListProps) {
+export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeStatus, startupStatus, onReload }: McpServerListProps) {
   const { t } = useTranslation();
   const entries = Object.entries(servers);
   const [reconnecting, setReconnecting] = useState<Set<string>>(new Set());
-  const [toggling, setToggling] = useState<Set<string>>(new Set());
 
   const handleReconnect = useCallback(async (serverName: string) => {
-    if (!activeSessionId) return;
+    if (!onReload) return;
     setReconnecting(prev => new Set(prev).add(serverName));
     try {
-      const res = await fetch('/api/plugins/mcp/reconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSessionId, serverName }),
-      });
-      if (!res.ok) {
-        let message = `${res.status} ${res.statusText}`;
-        try {
-          const data = await res.json();
-          if (data?.error) message = data.error;
-        } catch {
-          // body not json — keep status fallback
-        }
-        showToast({
-          type: 'error',
-          message: `${t('mcp.reconnect' as TranslationKey)} · ${serverName}: ${message}`,
-        });
-      }
+      await onReload();
     } catch (err) {
       showToast({
         type: 'error',
@@ -102,27 +90,7 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
         return next;
       });
     }
-  }, [activeSessionId, t]);
-
-  const handleToggle = useCallback(async (serverName: string, enabled: boolean) => {
-    if (!activeSessionId) return;
-    setToggling(prev => new Set(prev).add(serverName));
-    try {
-      await fetch('/api/plugins/mcp/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: activeSessionId, serverName, enabled }),
-      });
-    } catch {
-      // Best effort
-    } finally {
-      setToggling(prev => {
-        const next = new Set(prev);
-        next.delete(serverName);
-        return next;
-      });
-    }
-  }, [activeSessionId]);
+  }, [onReload, t]);
 
   if (entries.length === 0) {
     return (
@@ -151,7 +119,6 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
         const runtime = statusByName.get(name);
         const statusPill = runtime ? getStatusPill(runtime.status) : null;
         const isReconnecting = reconnecting.has(name);
-        const isToggling = toggling.has(name);
         const isDisabled = server.enabled === false;
         const toolCount = runtime?.tools?.length ?? 0;
 
@@ -172,6 +139,7 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
               }
             }}
             aria-label={`${name} — ${typeInfo.label}`}
+            data-source-breadcrumb={startupStatus?.[name]?.source ?? 'app-server.mcpServerStatus/list'}
             // Same chrome as built-in cards (rounded-lg + soft border + p-5 + hover wash)
             // so the two MCP card families read as one continuous catalogue.
             className={cn(
@@ -221,7 +189,7 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
               )}
               {toolCount > 0 && (
                 <span className="text-[10px] text-muted-foreground">
-                  {toolCount} {t('mcp.toolCount' as TranslationKey)}
+                  {t('mcp.toolCount' as TranslationKey).replace('{count}', String(toolCount))}
                 </span>
               )}
             </div>
@@ -239,10 +207,15 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
                 {runtime.serverInfo.name} v{runtime.serverInfo.version}
               </p>
             )}
+            {runtime?.error && (
+              <p className="text-[10px] text-status-error-foreground mt-1.5 break-words">
+                {runtime.error}
+              </p>
+            )}
 
             {/* Reconnect / Enable — only when runtime status calls for it.
                 Edit / Delete moved into the detail dialog (card click). */}
-            {(runtime?.status === 'failed' || runtime?.status === 'disabled') && activeSessionId && (
+            {(runtime?.status === 'failed' || runtime?.status === 'disabled') && (
               <div className="flex items-center gap-1 mt-3 -mb-1 -mr-1 self-end">
                 {runtime?.status === 'failed' && (
                   <Button
@@ -270,12 +243,8 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
                     variant="ghost"
                     size="sm"
                     className="h-8 text-xs"
-                    disabled={isToggling}
-                    onClick={(e) => { e.stopPropagation(); handleToggle(name, true); }}
+                    onClick={(e) => { e.stopPropagation(); onToggleEnabled?.(name, true); }}
                   >
-                    {isToggling ? (
-                      <SpinnerGap size={14} className="animate-spin mr-1" />
-                    ) : null}
                     {t('mcp.enable' as TranslationKey)}
                   </Button>
                 )}

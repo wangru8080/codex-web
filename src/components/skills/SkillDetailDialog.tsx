@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -60,12 +61,16 @@ interface SkillDetailDialogProps {
   skill: SkillItem | null;
   onClose: () => void;
   onDelete: (skill: SkillItem) => void;
+  onToggle: (skill: SkillItem, enabled: boolean) => void;
+  onTry: (skill: SkillItem) => void;
 }
 
 export function SkillDetailDialog({
   skill,
   onClose,
   onDelete,
+  onToggle,
+  onTry,
 }: SkillDetailDialogProps) {
   const { t } = useTranslation();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -117,9 +122,9 @@ export function SkillDetailDialog({
           max-h-[40vh]) which silently clipped long bodies. */}
       <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden">
         <DialogHeader className="shrink-0">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap pr-16">
             <DialogTitle className="text-base font-medium font-mono break-all">
-              /{skill.name}
+              {skill.displayName || skill.name} <span className="font-sans font-normal text-muted-foreground">Skill</span>
             </DialogTitle>
             <span
               className={cn(
@@ -141,10 +146,16 @@ export function SkillDetailDialog({
                 {t(readOnlyReasonKey)}
               </span>
             )}
+            <Switch
+              className="ml-auto"
+              checked={skill.enabled !== false}
+              onCheckedChange={(enabled) => onToggle(skill, enabled)}
+              aria-label={`${skill.enabled === false ? t('skills.enable') : t('skills.disable')} ${skill.displayName || skill.name}`}
+            />
           </div>
           {skill.description && (
             <DialogDescription className="text-xs leading-relaxed pt-1">
-              {skill.description}
+              {skill.shortDescription || skill.description}
             </DialogDescription>
           )}
         </DialogHeader>
@@ -187,8 +198,8 @@ export function SkillDetailDialog({
           )}
         </div>
 
-        {editable && (
-          <div className="flex justify-end pt-3 shrink-0 border-t border-border/50 mt-2">
+        <div className="flex items-center justify-between gap-3 pt-3 shrink-0 border-t border-border/50 mt-2">
+          {editable ? (
             <Button
               variant={confirmDelete ? "destructive" : "ghost"}
               size="sm"
@@ -197,11 +208,15 @@ export function SkillDetailDialog({
             >
               <CodexWebIcon name="delete" size="sm" aria-hidden />
               {confirmDelete
-                ? t("skills.deleteConfirm")
-                : t("common.delete" as TranslationKey)}
+                ? t("skills.uninstallConfirm")
+                : t("skills.uninstall")}
             </Button>
-          </div>
-        )}
+          ) : <span />}
+          <Button size="sm" className="gap-1.5" onClick={() => onTry(skill)}>
+            <CodexWebIcon name="chat" size="sm" aria-hidden />
+            {t("skills.tryNow")}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -6,10 +6,20 @@ import type { InitializeResponse } from "@/codex/protocol/generated/InitializeRe
 import type { ReasoningEffort } from "@/codex/protocol/generated/ReasoningEffort";
 import type { ConfigReadResponse } from "@/codex/protocol/generated/v2/ConfigReadResponse";
 import type { FsReadDirectoryResponse } from "@/codex/protocol/generated/v2/FsReadDirectoryResponse";
+import type { FsCreateDirectoryResponse } from "@/codex/protocol/generated/v2/FsCreateDirectoryResponse";
 import type { FsReadFileResponse } from "@/codex/protocol/generated/v2/FsReadFileResponse";
 import type { FsWriteFileResponse } from "@/codex/protocol/generated/v2/FsWriteFileResponse";
+import type { FsRemoveResponse } from "@/codex/protocol/generated/v2/FsRemoveResponse";
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
+import type { SkillsListParams } from "@/codex/protocol/generated/v2/SkillsListParams";
+import type { SkillsListResponse } from "@/codex/protocol/generated/v2/SkillsListResponse";
+import type { SkillsConfigWriteParams } from "@/codex/protocol/generated/v2/SkillsConfigWriteParams";
+import type { SkillsConfigWriteResponse } from "@/codex/protocol/generated/v2/SkillsConfigWriteResponse";
+import type { ListMcpServerStatusParams } from "@/codex/protocol/generated/v2/ListMcpServerStatusParams";
+import type { ListMcpServerStatusResponse } from "@/codex/protocol/generated/v2/ListMcpServerStatusResponse";
+import type { McpServerStatus } from "@/codex/protocol/generated/v2/McpServerStatus";
+import type { ConfigWriteResponse } from "@/codex/protocol/generated/v2/ConfigWriteResponse";
 import type { ThreadListParams } from "@/codex/protocol/generated/v2/ThreadListParams";
 import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
 import type { ThreadReadParams } from "@/codex/protocol/generated/v2/ThreadReadParams";
@@ -27,7 +37,8 @@ import type { TurnInterruptResponse } from "@/codex/protocol/generated/v2/TurnIn
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
 import type { TurnStartResponse } from "@/codex/protocol/generated/v2/TurnStartResponse";
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
-import type { FileAttachment, PermissionProfile } from "@/types";
+import type { FileAttachment, PermissionProfile, SkillInputReference } from "@/types";
+import type { MCPServer } from "@/types";
 import {
   buildApprovalResponse,
   mapServerRequestToApproval,
@@ -81,6 +92,8 @@ import type {
 } from "./thread-turns-page-adapter";
 import { reduceThreadSettingsNotification } from "./thread-settings-adapter";
 import { reduceThreadTokenUsageNotification } from "./thread-token-usage-adapter";
+import { reduceMcpStartupNotification } from "./mcp-startup-adapter";
+import { mcpServersToConfigValue } from "./mcp-config-adapter";
 import { buildThreadModelSettingsUpdate } from "./thread-model-settings";
 import { withReasoningEffort } from "./turn-start-request";
 import { buildAppServerTurnInput } from "./turn-input";
@@ -97,6 +110,7 @@ export type SendOneTurnParams = {
   effort?: ReasoningEffort;
   mode?: string;
   permissionProfile?: PermissionProfile;
+  skills?: readonly SkillInputReference[];
 };
 
 export type StartThreadParams = {
@@ -123,6 +137,7 @@ export type SendTurnInThreadParams = {
   mode?: string;
   permissionProfile?: PermissionProfile;
   onAccepted?: (threadId: string) => void;
+  skills?: readonly SkillInputReference[];
 };
 
 export type AppServerActions = {
@@ -135,8 +150,16 @@ export type AppServerActions = {
   readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
   listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
   readDirectory: (path: string) => Promise<FsReadDirectoryResponse>;
+  createDirectory: (path: string) => Promise<FsCreateDirectoryResponse>;
   readFile: (path: string) => Promise<FsReadFileResponse>;
   writeFile: (path: string, dataBase64: string) => Promise<FsWriteFileResponse>;
+  removeFileTree: (path: string) => Promise<FsRemoveResponse>;
+  listSkills: (params: SkillsListParams) => Promise<SkillsListResponse>;
+  setSkillEnabled: (params: SkillsConfigWriteParams) => Promise<SkillsConfigWriteResponse>;
+  refreshConfig: (cwd?: string) => Promise<ConfigReadResponse>;
+  writeMcpServers: (servers: Record<string, MCPServer>) => Promise<ConfigReadResponse>;
+  reloadMcpServers: () => Promise<void>;
+  listMcpServerStatus: (params?: ListMcpServerStatusParams) => Promise<McpServerStatus[]>;
   getThreadGoal: (threadId: string) => Promise<ThreadGoalGetResponse>;
   setThreadGoal: (params: ThreadGoalSetParams) => Promise<ThreadGoalSetResponse>;
   clearThreadGoal: (threadId: string) => Promise<ThreadGoalClearResponse>;
@@ -257,6 +280,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           current.threadTokenUsageByThreadId,
           notification,
         );
+        const mcpStartupByName = reduceMcpStartupNotification(current.mcpStartupByName, notification);
         const notificationTurnIds = readNotificationTurnIds(notification);
         const notificationSnapshot =
           notificationTurnIds.threadId && notificationTurnIds.turnId
@@ -284,6 +308,11 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           ...goalStatePatch,
           threadSettingsByThreadId,
           threadTokenUsageByThreadId,
+          mcpStartupByName,
+          skillsRevision:
+            notification.method === "skills/changed"
+              ? current.skillsRevision + 1
+              : current.skillsRevision,
           activeTurn: sourcedActiveTurn(activeTurn),
           activeTurnsByThreadId: rememberActiveTurnByThread(current.activeTurnsByThreadId, activeTurn),
           turnSnapshots: rememberTurnSnapshot(current.turnSnapshots, snapshotTurn),
@@ -532,6 +561,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return (await client.request("fs/readDirectory", { path: normalized })) as FsReadDirectoryResponse;
   }, []);
 
+  const createDirectory = useCallback(async (path: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("fs/createDirectory", { path, recursive: true })) as FsCreateDirectoryResponse;
+  }, []);
+
   const readFile = useCallback(async (path: string) => {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
@@ -542,6 +577,75 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
     return (await client.request("fs/writeFile", { path, dataBase64 })) as FsWriteFileResponse;
+  }, []);
+
+  const removeFileTree = useCallback(async (path: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("fs/remove", { path, recursive: true, force: false })) as FsRemoveResponse;
+  }, []);
+
+  const listSkills = useCallback(async (params: SkillsListParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("skills/list", params)) as SkillsListResponse;
+  }, []);
+
+  const setSkillEnabled = useCallback(async (params: SkillsConfigWriteParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("skills/config/write", params)) as SkillsConfigWriteResponse;
+  }, []);
+
+  const refreshConfig = useCallback(async (cwd?: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    const config = await readEffectiveConfig(client, cwd);
+    setState((current) => ({
+      ...current,
+      config: { source: "app-server.config/read", data: config },
+    }));
+    return config;
+  }, []);
+
+  const reloadMcpServers = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    await client.request("config/mcpServer/reload");
+  }, []);
+
+  const writeMcpServers = useCallback(async (servers: Record<string, MCPServer>) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    await client.request("config/value/write", {
+      keyPath: "mcp_servers",
+      value: mcpServersToConfigValue(servers),
+      mergeStrategy: "replace",
+    }) as ConfigWriteResponse;
+    await client.request("config/mcpServer/reload");
+    const config = await readEffectiveConfig(client);
+    setState((current) => ({
+      ...current,
+      config: { source: "app-server.config/read", data: config },
+    }));
+    return config;
+  }, []);
+
+  const listMcpServerStatus = useCallback(async (params: ListMcpServerStatusParams = {}) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    const data: McpServerStatus[] = [];
+    let cursor = params.cursor ?? null;
+    do {
+      const response = await client.request("mcpServerStatus/list", {
+        ...params,
+        cursor,
+        limit: params.limit ?? 100,
+      }) as ListMcpServerStatusResponse;
+      data.push(...response.data);
+      cursor = response.nextCursor;
+    } while (cursor);
+    return data;
   }, []);
 
   const getThreadGoal = useCallback(async (threadId: string) => {
@@ -642,7 +746,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
-  const sendTurnInThread = useCallback(async ({ threadId, content, files, cwd, model, effort, mode, permissionProfile = "request_approval", onAccepted }: SendTurnInThreadParams) => {
+  const sendTurnInThread = useCallback(async ({ threadId, content, files, cwd, model, effort, mode, permissionProfile = "request_approval", onAccepted, skills }: SendTurnInThreadParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -665,7 +769,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const turnParams: TurnStartParamsWithCollaborationMode = withReasoningEffort(
       withPlanCollaborationMode({
         threadId,
-        input: buildAppServerTurnInput(trimmed, persistedFiles),
+        input: buildAppServerTurnInput(trimmed, persistedFiles, skills),
         cwd,
         model: model || null,
         ...turnRuntimeOptions(permissionProfile, cwd, effectiveConfig),
@@ -708,7 +812,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return acceptedTurn;
   }, [refreshThreads, state.initialize]);
 
-  const sendOneTurn = useCallback(async ({ content, files, cwd, model, effort, mode, permissionProfile = "request_approval" }: SendOneTurnParams) => {
+  const sendOneTurn = useCallback(async ({ content, files, cwd, model, effort, mode, permissionProfile = "request_approval", skills }: SendOneTurnParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -758,7 +862,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }),
     }));
 
-    return sendTurnInThread({ threadId, content: trimmed, files: persistedFiles, cwd, model, effort, mode, permissionProfile });
+    return sendTurnInThread({ threadId, content: trimmed, files: persistedFiles, cwd, model, effort, mode, permissionProfile, skills });
   }, [sendTurnInThread, state.initialize]);
 
   const interruptTurn = useCallback(async (params?: InterruptTurnParams) => {
@@ -792,8 +896,16 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       readThread,
       listThreadTurns,
       readDirectory,
+      createDirectory,
       readFile,
       writeFile,
+      removeFileTree,
+      listSkills,
+      setSkillEnabled,
+      refreshConfig,
+      writeMcpServers,
+      reloadMcpServers,
+      listMcpServerStatus,
       getThreadGoal,
       setThreadGoal,
       clearThreadGoal,
@@ -802,7 +914,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       updateThreadPermissions,
       updateThreadModelSettings,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, readFile, writeFile, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings],
   );
 
   return (

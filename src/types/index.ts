@@ -169,6 +169,7 @@ export interface PopoverItem {
   installedSource?: 'agents' | 'claude';
   source?: 'global' | 'project' | 'plugin' | 'installed' | 'sdk';
   kind?: SkillKind;
+  skillPath?: string;
   /**
    * Phase 7 (2026-05-21): replaced `icon: IconComponent` (Phosphor
    * function reference) with `iconName: CodexWebIconName` (semantic
@@ -189,6 +190,12 @@ export interface CommandBadge {
   description: string;
   kind: SkillKind;
   installedSource?: 'agents' | 'claude';
+  skillPath?: string;
+}
+
+export interface SkillInputReference {
+  name: string;
+  path?: string;
 }
 
 /** Active CLI tool badge shown above the textarea. */

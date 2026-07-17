@@ -13,6 +13,9 @@ import { ConfigEditor } from "@/components/plugins/ConfigEditor";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
 import type { MCPServer } from "@/types";
+import { useAppServerActions, useAppServerState } from "@/codex-web/AppServerProvider";
+import { mcpServersFromConfig, mcpServersFromConfigValue, mcpServersToConfigValue } from "@/codex-web/mcp-config-adapter";
+import type { McpServerStatus } from "@/codex/protocol/generated/v2/McpServerStatus";
 
 type MCPServerWithSource = MCPServer & { _source?: string };
 
@@ -55,6 +58,8 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   ref,
 ) {
   const { t } = useTranslation();
+  const { refreshConfig, writeMcpServers, listMcpServerStatus, reloadMcpServers } = useAppServerActions();
+  const appServerState = useAppServerState();
   const [servers, setServers] = useState<Record<string, MCPServerWithSource>>({});
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -64,7 +69,6 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   const [error, setError] = useState<string | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<McpRuntimeStatus[]>([]);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   // Detail dialog (card click) — shared by built-in cards (read-only)
   // and user-installed cards (read + edit + delete in same dialog).
@@ -85,52 +89,51 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   const fetchServers = useCallback(async () => {
     try {
       setError(null);
-      const res = await fetch("/api/plugins/mcp");
-      const data = await res.json();
-      if (data.mcpServers) {
-        setServers(data.mcpServers);
-      } else if (data.error) {
-        setError(data.error);
-      }
+      const config = await refreshConfig();
+      setServers(mcpServersFromConfig(config));
     } catch (err) {
-      console.error("Failed to fetch MCP servers:", err);
-      setError("Failed to connect to API");
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshConfig]);
 
   const fetchRuntimeStatus = useCallback(async () => {
     setRuntimeLoading(true);
     try {
-      // Try to get active session from stream manager
-      const sessionsRes = await fetch('/api/chat/sessions?status=active&limit=1');
-      const sessionsData = await sessionsRes.json();
-      const sessionId = sessionsData?.sessions?.[0]?.id;
-
-      if (!sessionId) {
-        setActiveSessionId(null);
-        setRuntimeStatus([]);
-        return;
-      }
-
-      setActiveSessionId(sessionId);
-      const res = await fetch(`/api/plugins/mcp/status?sessionId=${encodeURIComponent(sessionId)}`);
-      const data = await res.json();
-      if (data.servers) {
-        setRuntimeStatus(data.servers);
-      }
-    } catch {
-      // Runtime status unavailable
+      const inventory = await listMcpServerStatus({ detail: "full", limit: 100 });
+      setRuntimeStatus(inventory.map(mcpRuntimeStatusFromInventory));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
     } finally {
       setRuntimeLoading(false);
     }
-  }, []);
+  }, [listMcpServerStatus]);
 
   useEffect(() => {
-    fetchServers();
-    fetchRuntimeStatus();
-  }, [fetchServers, fetchRuntimeStatus]);
+    if (appServerState.connection.data !== "connected") return;
+    void fetchServers();
+    void fetchRuntimeStatus();
+  }, [appServerState.connection.data, fetchServers, fetchRuntimeStatus]);
+
+  const handleReload = useCallback(async () => {
+    await reloadMcpServers();
+    await Promise.all([fetchServers(), fetchRuntimeStatus()]);
+  }, [fetchRuntimeStatus, fetchServers, reloadMcpServers]);
+
+  const effectiveRuntimeStatus = useMemo(() => {
+    const inventory = new Map(runtimeStatus.map((status) => [status.name, status]));
+    return Object.entries(servers).map(([name, server]) => {
+      const current = inventory.get(name);
+      const startup = appServerState.mcpStartupByName[name]?.data;
+      if (server.enabled === false) return { name, status: "disabled" as const };
+      if (startup?.status === "failed" || startup?.status === "cancelled") {
+        return { ...current, name, status: "failed" as const, error: startup.error || startup.status };
+      }
+      if (startup?.status === "starting") return { ...current, name, status: "pending" as const };
+      return current ?? { name, status: "pending" as const };
+    });
+  }, [appServerState.mcpStartupByName, runtimeStatus, servers]);
 
   // Add-server flow: open the standalone editor Dialog. Edit flow no
   // longer routes through here — clicking a card opens the detail
@@ -147,94 +150,38 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   // `editingName` is undefined — we infer the rename path from the
   // current servers map instead.
   const persistSave = useCallback(async (originalName: string | undefined, name: string, server: MCPServer) => {
-    if (originalName && originalName !== name) {
-      // Rename: preserve _source from the original entry
-      const original = servers[originalName];
-      const updated: Record<string, MCPServerWithSource> = { ...servers };
-      delete updated[originalName];
-      updated[name] = original?._source ? { ...server, _source: original._source } : server;
-      try {
-        await fetch("/api/plugins/mcp", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mcpServers: updated }),
-        });
-        setServers(updated);
-      } catch (err) {
-        console.error("Failed to save MCP server:", err);
-      }
-      return;
-    }
-    if (originalName) {
-      // Edit in-place: preserve _source
-      const original = servers[originalName];
-      const serverWithSource: MCPServerWithSource = original?._source ? { ...server, _source: original._source } : server;
-      const updated = { ...servers, [name]: serverWithSource };
-      try {
-        await fetch("/api/plugins/mcp", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mcpServers: updated }),
-        });
-        setServers(updated);
-      } catch (err) {
-        console.error("Failed to save MCP server:", err);
-      }
-      return;
-    }
-    // Add new
+    const updated: Record<string, MCPServerWithSource> = { ...servers };
+    if (originalName && originalName !== name) delete updated[originalName];
+    updated[name] = server;
     try {
-      const res = await fetch("/api/plugins/mcp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, server }),
-      });
-      if (res.ok) {
-        setServers((prev) => ({ ...prev, [name]: server }));
-      } else {
-        const data = await res.json();
-        console.error("Failed to add MCP server:", data.error);
-      }
+      await writeMcpServers(updated);
+      setServers(updated);
+      await fetchRuntimeStatus();
     } catch (err) {
-      console.error("Failed to add MCP server:", err);
+      setError(err instanceof Error ? err.message : String(err));
     }
-  }, [servers]);
+  }, [servers, writeMcpServers, fetchRuntimeStatus]);
 
   const handlePersistentToggle = useCallback(async (name: string, enabled: boolean) => {
     const updated = { ...servers };
     updated[name] = { ...updated[name], enabled };
     setServers(updated);
     try {
-      const res = await fetch('/api/plugins/mcp', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mcpServers: updated }),
-      });
-      if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
-      }
+      await writeMcpServers(updated);
+      await fetchRuntimeStatus();
     } catch (err) {
       console.error('Failed to toggle MCP server:', err);
       // Revert on failure
       fetchServers();
     }
-  }, [servers, fetchServers]);
+  }, [servers, fetchServers, fetchRuntimeStatus, writeMcpServers]);
 
   async function handleDelete(name: string) {
     try {
-      const res = await fetch(`/api/plugins/mcp/${encodeURIComponent(name)}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setServers((prev) => {
-          const updated = { ...prev };
-          delete updated[name];
-          return updated;
-        });
-      } else {
-        const data = await res.json();
-        console.error("Failed to delete MCP server:", data.error);
-      }
+      const updated = { ...servers };
+      delete updated[name];
+      await writeMcpServers(updated);
+      setServers(updated);
     } catch (err) {
       console.error("Failed to delete MCP server:", err);
     }
@@ -250,26 +197,11 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   async function handleJsonSave(jsonStr: string) {
     setJsonSaving(true);
     try {
-      const parsed = JSON.parse(jsonStr) as Record<string, MCPServer>;
-      // JSON editor only manages settings.json servers.
-      // Merge back: keep claude.json servers untouched, replace settings.json servers.
-      const claudeJsonServers: Record<string, MCPServerWithSource> = {};
-      for (const [name, server] of Object.entries(servers)) {
-        if (server._source === 'claude.json') {
-          claudeJsonServers[name] = server;
-        }
-      }
-      const settingsServers: Record<string, MCPServerWithSource> = {};
-      for (const [name, server] of Object.entries(parsed)) {
-        settingsServers[name] = { ...server, _source: 'settings.json' };
-      }
-      const merged = { ...claudeJsonServers, ...settingsServers };
-      await fetch("/api/plugins/mcp", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mcpServers: merged }),
-      });
-      setServers(merged);
+      const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+      const next = mcpServersFromConfigValue(parsed);
+      await writeMcpServers(next);
+      setServers(next);
+      await fetchRuntimeStatus();
     } catch (err) {
       console.error("Failed to save MCP config:", err);
     } finally {
@@ -372,8 +304,9 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
                 servers={filteredServers}
                 onOpenDetail={handleOpenDetail}
                 onToggleEnabled={handlePersistentToggle}
-                runtimeStatus={runtimeStatus}
-                activeSessionId={activeSessionId || undefined}
+                runtimeStatus={effectiveRuntimeStatus}
+                startupStatus={appServerState.mcpStartupByName}
+                onReload={handleReload}
               />
             )}
           </>
@@ -398,17 +331,13 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
             </Button>
           </div>
 
-          {!activeSessionId ? (
-            <p className="text-xs text-muted-foreground py-4 text-center">
-              {t('mcp.noActiveSession' as TranslationKey)}
-            </p>
-          ) : runtimeStatus.length === 0 ? (
+          {effectiveRuntimeStatus.length === 0 ? (
             <p className="text-xs text-muted-foreground py-4 text-center">
               {t('mcp.noRuntimeStatus' as TranslationKey)}
             </p>
           ) : (
             <div className="space-y-1.5">
-              {runtimeStatus.map((s) => (
+              {effectiveRuntimeStatus.map((s) => (
                 <div key={s.name} className="flex items-center justify-between py-1.5 px-2 rounded-md bg-muted/30">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className={`h-2 w-2 rounded-full shrink-0 ${
@@ -433,7 +362,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
     // Re-render whenever any of the surfaces below change. We intentionally
     // skip `t` (locale-pinned) and the handler refs (stable enough).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [error, filteredServers, loading, runtimeStatus, activeSessionId, runtimeLoading, serverCount, filteredServerCount, search, query],
+    [error, filteredServers, loading, effectiveRuntimeStatus, runtimeLoading, serverCount, filteredServerCount, search, query, appServerState.mcpStartupByName, handleReload],
   );
 
   if (isEmbedded) {
@@ -453,9 +382,10 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
           onOpenChange={setDetailOpen}
           name={detailName}
           server={detailServer}
-          runtime={detailName ? runtimeStatus.find((s) => s.name === detailName) ?? null : null}
+          runtime={detailName ? effectiveRuntimeStatus.find((s) => s.name === detailName) ?? null : null}
           onSave={(name, server) => persistSave(name, name, server)}
           onDelete={handleDelete}
+          onToggleEnabled={handlePersistentToggle}
         />
       </>
     );
@@ -530,8 +460,9 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
               servers={servers}
               onOpenDetail={handleOpenDetail}
               onToggleEnabled={handlePersistentToggle}
-              runtimeStatus={runtimeStatus}
-              activeSessionId={activeSessionId || undefined}
+              runtimeStatus={effectiveRuntimeStatus}
+              startupStatus={appServerState.mcpStartupByName}
+              onReload={handleReload}
             />
           )}
         </TabsContent>
@@ -544,18 +475,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
             </p>
           )}
           <ConfigEditor
-            value={JSON.stringify(
-              Object.fromEntries(
-                Object.entries(servers)
-                  .filter(([, v]) => v._source !== 'claude.json')
-                  .map(([k, v]) => {
-                    const { _source: _unused, ...rest } = v; // eslint-disable-line @typescript-eslint/no-unused-vars
-                    return [k, rest];
-                  })
-              ),
-              null,
-              2,
-            )}
+            value={JSON.stringify(mcpServersToConfigValue(servers), null, 2)}
             onSave={handleJsonSave}
             saving={jsonSaving}
             label={t('mcp.serverConfig')}
@@ -582,17 +502,13 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
           </Button>
         </div>
 
-        {!activeSessionId ? (
-          <p className="text-xs text-muted-foreground py-4 text-center">
-            {t('mcp.noActiveSession' as TranslationKey)}
-          </p>
-        ) : runtimeStatus.length === 0 ? (
+        {effectiveRuntimeStatus.length === 0 ? (
           <p className="text-xs text-muted-foreground py-4 text-center">
             {t('mcp.noRuntimeStatus' as TranslationKey)}
           </p>
         ) : (
           <div className="space-y-1.5">
-            {runtimeStatus.map((s) => (
+            {effectiveRuntimeStatus.map((s) => (
               <div key={s.name} className="flex items-center justify-between py-1.5 px-2 rounded-md bg-muted/30">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className={`h-2 w-2 rounded-full shrink-0 ${
@@ -625,11 +541,33 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
         onOpenChange={setDetailOpen}
         name={detailName}
         server={detailServer}
-        runtime={detailName ? runtimeStatus.find((s) => s.name === detailName) ?? null : null}
+        runtime={detailName ? effectiveRuntimeStatus.find((s) => s.name === detailName) ?? null : null}
         onSave={(name, server) => persistSave(name, name, server)}
         onDelete={handleDelete}
+        onToggleEnabled={handlePersistentToggle}
       />
       </div>
     </div>
   );
 });
+
+function mcpRuntimeStatusFromInventory(server: McpServerStatus): McpRuntimeStatus {
+  return {
+    name: server.name,
+    status: server.serverInfo
+      ? "connected"
+      : server.authStatus === "notLoggedIn"
+        ? "needs-auth"
+        : "pending",
+    serverInfo: server.serverInfo
+      ? { name: server.serverInfo.name, version: server.serverInfo.version }
+      : undefined,
+    tools: Object.values(server.tools).filter((tool): tool is NonNullable<typeof tool> => !!tool).map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? undefined,
+    })),
+    authStatus: server.authStatus,
+    resourceCount: server.resources.length,
+    resourceTemplateCount: server.resourceTemplates.length,
+  };
+}

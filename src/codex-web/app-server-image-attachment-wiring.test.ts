@@ -11,7 +11,7 @@ describe("app-server image attachment wiring", () => {
     const provider = source("./AppServerProvider.tsx");
 
     expect(provider).toContain("persistAttachments");
-    expect(provider).toContain("buildAppServerTurnInput(trimmed, persistedFiles)");
+    expect(provider).toContain("buildAppServerTurnInput(trimmed, persistedFiles, skills)");
     expect(provider).not.toContain('file.type.startsWith("image/") && !!file.data');
     expect(provider.match(/if \(!trimmed && !files\?\.length\)/g)?.length).toBe(2);
     expect(provider.match(/files\?: readonly FileAttachment\[\]/g)?.length).toBe(2);

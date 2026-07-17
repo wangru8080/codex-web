@@ -148,6 +148,7 @@ export function resolveItemSelection(
         description: item.description || '',
         kind: item.kind || 'slash_command',
         installedSource: item.installedSource,
+        skillPath: item.skillPath,
       },
       newInputValue: before + after,
     };
@@ -181,13 +182,11 @@ export function dispatchBadge(
 
   // Multi-skill path: combine labels into one prompt, join display labels.
   if (badges.length > 1 && badges.every((b) => b.kind === 'agent_skill')) {
-    const skillNames = badges.map((b) => b.label).join(', ');
     const displayLabel = userContent
       ? `${badges.map((b) => `/${b.label}`).join(' ')}\n${userContent}`
       : badges.map((b) => `/${b.label}`).join(' ');
-    const agentPrompt = userContent
-      ? `Use the ${skillNames} skills. User context: ${userContent}`
-      : `Please use the ${skillNames} skills.`;
+    const markers = badges.map((b) => `$${b.command.replace(/^\/+/, '')}`).join(' ');
+    const agentPrompt = userContent ? `${markers} ${userContent}` : markers;
     return { prompt: agentPrompt, displayLabel };
   }
 
@@ -197,9 +196,8 @@ export function dispatchBadge(
 
   switch (badge.kind) {
     case 'agent_skill': {
-      const agentPrompt = userContent
-        ? `Use the ${badge.label} skill. User context: ${userContent}`
-        : `Please use the ${badge.label} skill.`;
+      const marker = `$${badge.command.replace(/^\/+/, '')}`;
+      const agentPrompt = userContent ? `${marker} ${userContent}` : marker;
       return { prompt: agentPrompt, displayLabel };
     }
     case 'slash_command':

@@ -3,6 +3,7 @@ import type { PopoverItem, PopoverMode, SkillKind } from '@/types';
 import { detectPopoverTrigger, resolveItemSelection } from '@/lib/message-input-logic';
 import { BUILT_IN_COMMANDS, COMMAND_PROMPTS } from '@/lib/constants/commands';
 import { COMMAND_ICON_NAMES } from '@/lib/constants/command-icons';
+import { useAppServerActions } from '@/codex-web/AppServerProvider';
 
 // Re-export for backward compatibility
 export { BUILT_IN_COMMANDS, COMMAND_PROMPTS };
@@ -32,7 +33,7 @@ export function useSlashCommands(opts: {
   setTriggerPos: (pos: number | null) => void;
   closePopover: () => void;
   onCommand?: (command: string) => void;
-  addBadge: (badge: { command: string; label: string; description: string; kind: SkillKind; installedSource?: "agents" | "claude" }) => void;
+  addBadge: (badge: { command: string; label: string; description: string; kind: SkillKind; installedSource?: "agents" | "claude"; skillPath?: string }) => void;
   onMentionInserted?: (mention: { path: string; nodeType: 'file' | 'directory'; display: string }) => void;
   /** When true, block immediate commands and badge selection from popover */
   isStreaming?: boolean;
@@ -57,7 +58,8 @@ export function useSlashCommands(opts: {
     addBadge,
     onMentionInserted,
     isStreaming,
-  } = opts;
+} = opts;
+  const { listSkills } = useAppServerActions();
 
   // Enrich built-in commands with icons (presentation layer enrichment)
   const enrichedBuiltIns = useMemo(
@@ -88,34 +90,26 @@ export function useSlashCommands(opts: {
     }
   }, [sessionId, workingDirectory]);
 
-  // Fetch skills for / command (built-in + API)
+  // Fetch skills for / command (built-in + app-server)
   const fetchSkills = useCallback(async () => {
     let apiSkills: PopoverItem[] = [];
     try {
-      const params = new URLSearchParams();
-      if (workingDirectory) params.set('cwd', workingDirectory);
-      if (sessionId) params.set('sessionId', sessionId);
-      const qs = params.toString();
-      const res = await fetch(`/api/skills${qs ? `?${qs}` : ''}`);
-      if (res.ok) {
-        const data = await res.json();
-        const skills = data.skills || [];
-        apiSkills = skills
-          .filter((s: { source?: string; loaded?: boolean }) => {
-            // Exclude plugin-source skills that are not loaded in the current session
-            if (s.source === 'plugin' && s.loaded === false) return false;
-            return true;
-          })
-          .map((s: { name: string; description: string; source?: "global" | "project" | "plugin" | "installed" | "sdk"; kind?: SkillKind; installedSource?: "agents" | "claude" }) => ({
-            label: s.name,
-            value: `/${s.name}`,
-            description: s.description || "",
-            builtIn: false,
-            installedSource: s.installedSource,
-            source: s.source,
-            kind: s.kind || 'slash_command',
-          }));
-      }
+      const response = await listSkills({
+        ...(workingDirectory ? { cwds: [workingDirectory] } : {}),
+        forceReload: false,
+      });
+      const unique = new Map(response.data.flatMap((entry) => entry.skills).map((skill) => [skill.path, skill]));
+      apiSkills = [...unique.values()]
+        .filter((skill) => skill.enabled)
+        .map((skill) => ({
+          label: skill.interface?.displayName || skill.name,
+          value: `/${skill.name}`,
+          description: skill.interface?.shortDescription || skill.shortDescription || skill.description,
+          builtIn: false,
+          source: skill.scope === 'user' ? 'global' : skill.scope === 'repo' ? 'project' : 'sdk',
+          kind: 'agent_skill',
+          skillPath: skill.path,
+        }));
     } catch {
       // API not available - just use built-in commands
     }
@@ -174,7 +168,7 @@ export function useSlashCommands(opts: {
     const uniqueSkills = apiSkills.filter(s => !builtInNames.has(s.label));
 
     return [...enrichedBuiltIns, ...uniqueSkills];
-  }, [sessionId, workingDirectory, sdkInitMeta, enrichedBuiltIns]);
+  }, [workingDirectory, sdkInitMeta, enrichedBuiltIns, listSkills]);
 
   // Insert selected item
   const insertItem = useCallback((item: PopoverItem) => {

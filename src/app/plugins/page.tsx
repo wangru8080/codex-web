@@ -52,6 +52,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { TranslationKey } from "@/i18n";
+import { useAppServerActions, useAppServerState } from "@/codex-web/AppServerProvider";
 
 const PLUGIN_FILTERS = ["skills", "mcp"] as const;
 type PluginFilter = (typeof PLUGIN_FILTERS)[number];
@@ -68,6 +69,8 @@ const FILTER_META: Record<PluginFilter, { labelKey: TranslationKey; icon: CodexW
 
 export default function ExtensionsPage() {
   const { t } = useTranslation();
+  const { createDirectory, writeFile } = useAppServerActions();
+  const appServerState = useAppServerState();
   const [filter, setFilter] = useTabFromHash<PluginFilter>({
     validTabs: PLUGIN_FILTERS,
     defaultTab: "skills",
@@ -138,16 +141,15 @@ export default function ExtensionsPage() {
     scope: "global" | "project",
     content: string,
   ) => {
-    const res = await fetch("/api/skills", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, content, scope, cwd: cwd || undefined }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Failed to create skill");
-    }
-    skillsRef.current?.refresh();
+    const root = scope === "project"
+      ? cwd && `${cwd.replace(/[\\/]$/, "")}/.agents/skills`
+      : appServerState.initialize?.data.codexHome && `${appServerState.initialize.data.codexHome}/skills`;
+    if (!root) throw new Error(t("skills.createMissingRoot"));
+    const directory = `${root}/${name}`;
+    await createDirectory(directory);
+    const skillMarkdown = `---\nname: ${name}\ndescription: ${name} skill\n---\n\n${content.trim()}\n`;
+    await writeFile(`${directory}/SKILL.md`, utf8ToBase64(skillMarkdown));
+    await skillsRef.current?.refresh();
   };
 
   // Body picker：单 tab 视图只渲染当前 manager。
@@ -226,6 +228,13 @@ export default function ExtensionsPage() {
       />
     </div>
   );
+}
+
+function utf8ToBase64(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }
 
 /**

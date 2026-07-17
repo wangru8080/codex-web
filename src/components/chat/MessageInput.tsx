@@ -34,7 +34,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import type { ChatStatus } from 'ai';
-import type { FileAttachment, MentionRef, PermissionProfile } from '@/types';
+import type { FileAttachment, MentionRef, PermissionProfile, SkillInputReference } from '@/types';
 import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadTokenUsage';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { ContextWindowIndicator } from './ContextWindowIndicator';
@@ -110,7 +110,7 @@ interface MessageInputProps {
   // loading / no compatible provider / runtime-incompatible). The composer then
   // preserves the user's text + attachments. true / void means accepted — either
   // sent or queued — so the composer clears. (#615 screenshot-eaten fix)
-  onSend: (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], modeOverride?: string) => boolean | void | Promise<boolean | void>;
+  onSend: (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly SkillInputReference[], modeOverride?: string) => boolean | void | Promise<boolean | void>;
   onCommand?: (command: string) => void;
   onStop?: () => void;
   disabled?: boolean;
@@ -146,6 +146,7 @@ interface MessageInputProps {
   sdkInitMeta?: { tools?: unknown; slash_commands?: unknown; skills?: unknown } | null;
   /** Initial value to prefill in the input */
   initialValue?: string;
+  initialSkill?: SkillInputReference & { label?: string; description?: string };
   /** Whether this session is an assistant workspace project */
   isAssistantProject?: boolean;
   /** Whether the session already has messages */
@@ -640,6 +641,7 @@ export function MessageInput({
   contextWindowUsage,
   sdkInitMeta,
   initialValue,
+  initialSkill,
   isAssistantProject,
   hasMessages,
   onPendingContextTokensChange,
@@ -810,7 +812,7 @@ export function MessageInput({
   }, [modelName, modelOptions, currentProviderIdValue, onModelChange, onProviderModelChange]);
 
   const { badges, addBadge, removeBadge, clearBadges, hasBadge } = useCommandBadge(textareaRef);
-  const addBadgeWithOrder = useCallback((badge: { command: string; label: string; description: string; kind: 'agent_skill' | 'slash_command' | 'sdk_command' | 'codepilot_command'; installedSource?: 'agents' | 'claude' }) => {
+  const addBadgeWithOrder = useCallback((badge: { command: string; label: string; description: string; kind: 'agent_skill' | 'slash_command' | 'sdk_command' | 'codepilot_command'; installedSource?: 'agents' | 'claude'; skillPath?: string }) => {
     ensureBadgeOrder(badge.command);
     addBadge(badge);
   }, [addBadge, ensureBadgeOrder]);
@@ -827,6 +829,17 @@ export function MessageInput({
     clearBadges();
     setBadgeOrder({});
   }, [clearBadges]);
+
+  useEffect(() => {
+    if (!initialSkill?.name) return;
+    addBadgeWithOrder({
+      command: initialSkill.name,
+      label: initialSkill.label || initialSkill.name,
+      description: initialSkill.description || '',
+      kind: 'agent_skill',
+      skillPath: initialSkill.path,
+    });
+  }, [initialSkill?.name, initialSkill?.path, initialSkill?.label, initialSkill?.description, addBadgeWithOrder]);
 
   const activateGoalPrompt = useCallback(() => {
     clearBadgesWithOrder();
@@ -1146,8 +1159,11 @@ export function MessageInput({
         v.trim().replace(/^\/+/, '');
       const selectedSkills = badges
         .filter((b) => b.kind === 'agent_skill')
-        .map((b) => canonicalizeSkillNameInline(b.command || b.label))
-        .filter((n) => n.length > 0);
+        .map((b) => ({
+          name: canonicalizeSkillNameInline(b.command || b.label),
+          path: b.skillPath,
+        }))
+        .filter((skill) => skill.name.length > 0);
       // Badge path: `prompt` (dispatchBadge output) takes the content slot
       // for the model side, but the bubble's `displayLabel` is owned by the
       // badge dispatcher (e.g. "/agent\nuser context"), not the chip-aware

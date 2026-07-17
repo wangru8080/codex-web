@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import type { Message, PermissionRequestEvent, FileAttachment, MentionRef, PermissionProfile } from '@/types';
+import type { Message, PermissionRequestEvent, FileAttachment, MentionRef, PermissionProfile, SkillInputReference } from '@/types';
 import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput, composerDraftKey } from '@/components/chat/MessageInput';
 import type { ChatRuntime } from '@/lib/chat-runtime-shared';
@@ -62,6 +62,21 @@ export default function NewChatPage() {
 function NewChatPageInner() {
   const searchParams = useSearchParams();
   const prefillText = searchParams.get('prefill') || '';
+  const initialSkill = useMemo(() => {
+    const name = searchParams.get('skill')?.trim();
+    if (!name) return undefined;
+    return {
+      name,
+      path: searchParams.get('skillPath') || undefined,
+      label: searchParams.get('skillLabel') || name,
+      description: searchParams.get('skillDescription') || '',
+    };
+  }, [searchParams]);
+  const initialSkillKey = initialSkill ? `${initialSkill.name}\n${initialSkill.path || ''}` : '';
+  const [consumedSkillKey, setConsumedSkillKey] = useState<string | null>(null);
+  const effectiveInitialSkill = initialSkillKey && initialSkillKey !== consumedSkillKey ? initialSkill : undefined;
+  const initialSkillKeyRef = useRef(initialSkillKey);
+  useEffect(() => { initialSkillKeyRef.current = initialSkillKey; }, [initialSkillKey]);
   const newChatKey = readNewChatKey(searchParams);
   // #4/#5 (Codex P2) — the prefill enters the composer via `initialValue`, which
   // MessageInput prioritises OVER the draft. So clearing only the sessionStorage
@@ -596,7 +611,7 @@ function NewChatPageInner() {
   }, [appServerState.goalsByThreadId, clearThreadGoal, createdSessionId]);
 
   const sendFirstMessage = useCallback(
-    async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly string[], modeOverride?: string, forceNewThread = false) => {
+    async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly SkillInputReference[], modeOverride?: string, forceNewThread = false) => {
       // Each early-out below is a NOT-delivered case: return false so the
       // composer preserves the user's text + attachments instead of letting
       // PromptInput clear a first-message screenshot that never got sent (#615).
@@ -668,6 +683,7 @@ function NewChatPageInner() {
               effort: selectedEffort,
               mode: modeOverride ?? mode,
               permissionProfile,
+              skills: selectedSkills,
             })
           : await sendOneTurn({
               content,
@@ -677,9 +693,11 @@ function NewChatPageInner() {
               effort: selectedEffort,
               mode: modeOverride ?? mode,
               permissionProfile,
+              skills: selectedSkills,
             });
 
         accepted = true;
+        if (initialSkillKeyRef.current) setConsumedSkillKey(initialSkillKeyRef.current);
         // #4/#5 — clear the persisted composer draft at accept. The imminent
         // isStreaming flip REMOUNTS the composer, which re-seeds inputValue from
         // this draft (the only composer state surviving the remount); without
@@ -986,6 +1004,7 @@ function NewChatPageInner() {
         effort={selectedEffort}
         onEffortChange={handleThreadEffortChange}
         initialValue={effectivePrefill}
+        initialSkill={effectiveInitialSkill}
         onPendingContextTokensChange={setPendingContextTokens}
         contextWindowUsage={contextWindowUsage}
         onModeChange={setMode}
