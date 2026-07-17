@@ -17,11 +17,11 @@ function attachment(overrides: Partial<FileAttachment> = {}): FileAttachment {
 
 describe("buildAppServerTurnInput", () => {
   it("为试用技能发送官方 text marker 与结构化 skill input", () => {
-    expect(buildAppServerTurnInput("$imagegen 生成图片", [], [{
+    expect(buildAppServerTurnInput("[$imagegen](/codex-home/skills/imagegen/SKILL.md) 生成图片", [], [{
       name: "imagegen",
       path: "/codex-home/skills/imagegen/SKILL.md",
     }])).toEqual([
-      { type: "text", text: "$imagegen 生成图片", text_elements: [] },
+      { type: "text", text: "[$imagegen](/codex-home/skills/imagegen/SKILL.md) 生成图片", text_elements: [] },
       { type: "skill", name: "imagegen", path: "/codex-home/skills/imagegen/SKILL.md" },
     ]);
   });

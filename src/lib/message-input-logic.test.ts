@@ -7,6 +7,7 @@ import {
   planPromptFromInput,
   detectPopoverTrigger,
   resolveItemSelection,
+  dispatchBadge,
   buildFileReferencePrompt,
   composeSubmitPayload,
 } from "./message-input-logic";
@@ -107,6 +108,57 @@ describe("message-input-logic 官方文件引用提示词", () => {
     expect(payload.displayOverride).toBe(payload.finalContent);
     expect(payload.files).toEqual([]);
     expect(payload.finalContent).not.toContain("[Referenced Files]");
+  });
+});
+
+describe("message-input-logic 官方技能引用提示词", () => {
+  it("单技能生成带 SKILL.md 绝对路径的 Markdown 链接", () => {
+    expect(dispatchBadge({
+      command: "/skill-demo",
+      label: "skill-demo",
+      description: "用于测试能否成功使用skill",
+      kind: "agent_skill",
+      skillPath: "/volume2/CodexApp/skills/skill-demo/SKILL.md",
+    }, "测试技能").prompt).toBe(
+      "[$skill-demo](/volume2/CodexApp/skills/skill-demo/SKILL.md) 测试技能",
+    );
+  });
+
+  it("无用户正文时只生成技能 Markdown 链接", () => {
+    expect(dispatchBadge({
+      command: "/skill-demo",
+      label: "skill-demo",
+      description: "",
+      kind: "agent_skill",
+      skillPath: "/skills/skill-demo/SKILL.md",
+    }, "").prompt).toBe("[$skill-demo](/skills/skill-demo/SKILL.md)");
+  });
+
+  it("多个技能按选择顺序生成 Markdown 链接", () => {
+    expect(dispatchBadge([{
+      command: "/writing-plans",
+      label: "writing-plans",
+      description: "",
+      kind: "agent_skill",
+      skillPath: "/skills/writing-plans/SKILL.md",
+    }, {
+      command: "/skill-demo",
+      label: "skill-demo",
+      description: "",
+      kind: "agent_skill",
+      skillPath: "/skills/skill-demo/SKILL.md",
+    }], "执行任务").prompt).toBe(
+      "[$writing-plans](/skills/writing-plans/SKILL.md) [$skill-demo](/skills/skill-demo/SKILL.md) 执行任务",
+    );
+  });
+
+  it("缺少路径的旧技能 badge 保留 marker 且不伪造链接", () => {
+    expect(dispatchBadge({
+      command: "/legacy",
+      label: "legacy",
+      description: "",
+      kind: "agent_skill",
+    }, "执行").prompt).toBe("$legacy 执行");
   });
 });
 

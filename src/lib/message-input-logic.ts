@@ -220,7 +220,7 @@ export function dispatchBadge(
     const displayLabel = userContent
       ? `${badges.map((b) => `/${b.label}`).join(' ')}\n${userContent}`
       : badges.map((b) => `/${b.label}`).join(' ');
-    const markers = badges.map((b) => `$${b.command.replace(/^\/+/, '')}`).join(' ');
+    const markers = badges.map(buildSkillReferenceMarker).join(' ');
     const agentPrompt = userContent ? `${markers} ${userContent}` : markers;
     return { prompt: agentPrompt, displayLabel };
   }
@@ -231,7 +231,7 @@ export function dispatchBadge(
 
   switch (badge.kind) {
     case 'agent_skill': {
-      const marker = `$${badge.command.replace(/^\/+/, '')}`;
+      const marker = buildSkillReferenceMarker(badge);
       const agentPrompt = userContent ? `${marker} ${userContent}` : marker;
       return { prompt: agentPrompt, displayLabel };
     }
@@ -250,6 +250,12 @@ export function dispatchBadge(
       return { prompt: finalPrompt, displayLabel };
     }
   }
+}
+
+function buildSkillReferenceMarker(badge: CommandBadge): string {
+  const marker = `$${badge.command.replace(/^\/+/, '')}`;
+  const skillPath = badge.skillPath?.trim();
+  return skillPath ? `[${marker}](${skillPath})` : marker;
 }
 
 /**
