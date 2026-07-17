@@ -33,6 +33,23 @@ describe("reduceAppServerTurnNotification", () => {
     expect(completed.contextCompactionStatusById).toEqual({ "compact-1": "completed" });
   });
 
+  it("新 turn 开始时清除上一回合内容", () => {
+    const previous = {
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      status: "completed" as const,
+      assistantText: "上一回合",
+      items: [{ type: "contextCompaction" as const, id: "old-compact" }],
+      contextCompactionStatusById: { "old-compact": "completed" as const },
+    };
+
+    const next = reduceAppServerTurnNotification(previous, {
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: { id: "turn-2", status: "inProgress" } },
+    });
+
+    expect(next).toEqual(createAcceptedTurnState("thread-1", "turn-2"));
+  });
+
   it("按 app-server 事件构建 one-turn 流式状态", () => {
     let state = createStartingTurnState();
 

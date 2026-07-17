@@ -36,6 +36,9 @@ import {
 import type { ChatStatus } from 'ai';
 import type { FileAttachment, MentionRef, PermissionProfile, SkillInputReference } from '@/types';
 import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadTokenUsage';
+import type { McpServerStatus } from '@/codex/protocol/generated/v2/McpServerStatus';
+import type { GetAccountRateLimitsResponse } from '@/codex/protocol/generated/v2/GetAccountRateLimitsResponse';
+import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { ContextWindowIndicator } from './ContextWindowIndicator';
 import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, FileExcerptCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
@@ -422,10 +425,10 @@ type ComposerModelOption = {
 };
 
 const EFFORT_OPTIONS = [
-  { value: 'low', label: '低' },
+  { value: 'low', label: '轻度' },
   { value: 'medium', label: '中' },
   { value: 'high', label: '高' },
-  { value: 'xhigh', label: '超高' },
+  { value: 'xhigh', label: '极高' },
 ] as const;
 
 function displayModelShortLabel(label: string): string {
@@ -589,35 +592,29 @@ function joinPath(base: string, rel: string): string {
   return `${b}/${r}`;
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
+function base64DecodedSize(data: string): number {
+  if (!data) return 0;
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor(data.length * 3 / 4) - padding);
 }
 
-async function fileResponseToAttachment(
-  response: Response,
-  filename: string,
-  idPrefix: string,
-  originPath?: string,
-): Promise<FileAttachment> {
-  const mimeType = response.headers.get('content-type') || 'application/octet-stream';
-  const buffer = await response.arrayBuffer();
-  return {
-    id: `${idPrefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name: filename,
-    type: mimeType,
-    size: buffer.byteLength,
-    data: arrayBufferToBase64(buffer),
-    // #628 — preserve the real in-tree path for @-mentions so the chat route can
-    // reference the user's actual file instead of a `.codepilot-uploads` copy.
-    ...(originPath ? { originPath } : {}),
-  };
+function mentionFileMimeType(filename: string): string {
+  const extension = filename.toLowerCase().split('.').pop() || '';
+  if (extension === 'json' || extension === 'jsonc') return 'application/json';
+  if (extension === 'yaml' || extension === 'yml') return 'application/yaml';
+  if (extension === 'xml') return 'application/xml';
+  if (extension === 'pdf') return 'application/pdf';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(extension)) {
+    return extension === 'jpg' ? 'image/jpeg' : `image/${extension}`;
+  }
+  const textExtensions = new Set([
+    'txt', 'md', 'markdown', 'rst', 'log', 'csv', 'tsv', 'toml', 'ini', 'cfg', 'conf',
+    'html', 'htm', 'css', 'scss', 'less', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx',
+    'vue', 'py', 'rb', 'go', 'rs', 'java', 'kt', 'swift', 'c', 'h', 'cpp', 'hpp',
+    'cs', 'php', 'pl', 'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'sql', 'graphql',
+    'proto', 'env', 'gitignore', 'dockerfile',
+  ]);
+  return textExtensions.has(extension) ? 'text/plain' : 'application/octet-stream';
 }
 
 export function MessageInput({
@@ -652,6 +649,8 @@ export function MessageInput({
   attachmentsAccept,
 }: MessageInputProps) {
   const { t } = useTranslation();
+  const appServer = useAppServerActions();
+  const appServerState = useAppServerState();
   const resolvedAttachmentsAccept = attachmentsAccept ?? '';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Run Checkpoint bypass — Round 2 (2026-04-30). When the banner's
@@ -668,6 +667,20 @@ export function MessageInput({
     try { return sessionStorage.getItem(draftKey) || ''; } catch { return ''; }
   });
   const [goalPromptActive, setGoalPromptActive] = useState(false);
+  const [commandPanel, setCommandPanel] = useState<null | 'mcp' | 'review' | 'reasoning' | 'model' | 'status' | 'memory'>(null);
+  const [commandError, setCommandError] = useState('');
+  const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]);
+  const [reviewBranch, setReviewBranch] = useState('main');
+  const [rateLimits, setRateLimits] = useState<GetAccountRateLimitsResponse | null>(null);
+  const memoriesConfig = appServerState.config?.data.config.memories as Record<string, unknown> | undefined;
+  const [useMemories, setUseMemories] = useState(() => memoriesConfig?.use_memories !== false);
+  const [generateMemories, setGenerateMemories] = useState(() => memoriesConfig?.generate_memories !== false);
+
+  useEffect(() => {
+    if (!memoriesConfig) return;
+    setUseMemories(memoriesConfig.use_memories !== false);
+    setGenerateMemories(memoriesConfig.generate_memories !== false);
+  }, [memoriesConfig]);
   const [planPromptActive, setPlanPromptActive] = useState(false);
   // Track the last `initialValue` we've reconciled so the warm-navigation
   // sync below fires only when the prop ACTUALLY transitions (not on every
@@ -778,6 +791,12 @@ export function MessageInput({
   // --- Extracted hooks ---
   const popover = usePopoverState(modelName);
   const { providerGroups, currentProviderIdValue, modelOptions, currentModelOption, fetchState } = useProviderModels(providerId, modelName, runtime, { codexOnly });
+  const [localEffort, setLocalEffort] = useState<string>('high');
+  const selectedEffort = effortProp ?? localEffort;
+  const setSelectedEffort = useCallback((value: string) => {
+    setLocalEffort(value);
+    onEffortChange?.(value);
+  }, [onEffortChange]);
   // P0.4 — only show "正在准备运行环境…" during the genuine first load, not
   // on a background refetch when a sendable model is already resolved.
   const isProviderLoading = isComposerProviderLoading(fetchState, !!currentModelOption);
@@ -867,6 +886,45 @@ export function MessageInput({
     setTimeout(() => textareaRef.current?.focus(), 0);
   }, []);
 
+  const handleComposerCommand = useCallback((command: string) => {
+    setCommandError('');
+    setCommandPanel(null);
+    if (command === '/goal') {
+      activateGoalPrompt();
+      return;
+    }
+    if (command === '/plan') {
+      activatePlanPrompt();
+      return;
+    }
+    if (command === '/compact') {
+      if (!sessionId) {
+        setCommandError('请先开始对话，再压缩上下文');
+        return;
+      }
+      void appServer.compactThread(sessionId).catch((error) => {
+        setCommandError(error instanceof Error ? error.message : String(error));
+      });
+      return;
+    }
+    if (command === '/mcp') {
+      setCommandPanel('mcp');
+      void appServer.listMcpServerStatus().then(setMcpStatuses).catch((error) => {
+        setCommandError(error instanceof Error ? error.message : String(error));
+      });
+      return;
+    }
+    if (command === '/review') setCommandPanel('review');
+    else if (command === '/reasoning') setCommandPanel('reasoning');
+    else if (command === '/model') setCommandPanel('model');
+    else if (command === '/status') {
+      setCommandPanel('status');
+      void appServer.readAccountRateLimits().then(setRateLimits).catch(() => setRateLimits(null));
+    }
+    else if (command === '/memories') setCommandPanel('memory');
+    else onCommand?.(command);
+  }, [activateGoalPrompt, activatePlanPrompt, appServer, onCommand, sessionId]);
+
   // Live refs to badge state so the gated-send restore in handleSubmit
   // reads the CURRENT value and never clobbers a badge the user picked during an
   // async failure window (Codex P3). Text + dirs use functional updaters for the
@@ -893,7 +951,7 @@ export function MessageInput({
     setSelectedIndex: popover.setSelectedIndex,
     setTriggerPos: popover.setTriggerPos,
     closePopover: popover.closePopover,
-    onCommand,
+    onCommand: handleComposerCommand,
     addBadge: addBadgeWithOrder,
     onMentionInserted: (mention) => {
       setMentionNodeTypes((prev) => ({ ...prev, [mention.path]: mention.nodeType }));
@@ -959,59 +1017,46 @@ export function MessageInput({
   const fetchMentionFileAttachment = useCallback(async (mentionPath: string): Promise<{ attachment: FileAttachment | null; limitNote?: string }> => {
     const safePath = normalizeMentionPath(mentionPath);
     const filename = safePath.split('/').filter(Boolean).pop() || 'file';
+    if (!workingDirectory) return { attachment: null };
     try {
-      if (sessionId) {
-        const res = await fetch(`/api/files/serve?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(safePath)}`);
-        if (!res.ok) return { attachment: null };
-        const headerSize = Number.parseInt(res.headers.get('content-length') || '', 10);
-        if (Number.isFinite(headerSize) && headerSize > MAX_MENTION_FILE_BYTES) {
-          return { attachment: null, limitNote: `@${safePath}: omitted (file too large > 256KB).` };
-        }
-        const attachment = await fileResponseToAttachment(res, filename, 'mention', safePath);
-        if (attachment.size > MAX_MENTION_FILE_BYTES) {
-          return { attachment: null, limitNote: `@${safePath}: omitted (file too large > 256KB).` };
-        }
-        return { attachment };
-      }
-
-      if (!workingDirectory) return { attachment: null };
       const absolutePath = joinPath(workingDirectory, safePath);
-      const res = await fetch(`/api/files/raw?path=${encodeURIComponent(absolutePath)}`);
-      if (!res.ok) return { attachment: null };
-      const headerSize = Number.parseInt(res.headers.get('content-length') || '', 10);
-      if (Number.isFinite(headerSize) && headerSize > MAX_MENTION_FILE_BYTES) {
+      const response = await appServer.readFile(absolutePath);
+      const size = base64DecodedSize(response.dataBase64);
+      if (size > MAX_MENTION_FILE_BYTES) {
         return { attachment: null, limitNote: `@${safePath}: omitted (file too large > 256KB).` };
       }
-      const attachment = await fileResponseToAttachment(res, filename, 'mention', safePath);
-      if (attachment.size > MAX_MENTION_FILE_BYTES) {
-        return { attachment: null, limitNote: `@${safePath}: omitted (file too large > 256KB).` };
-      }
-      return { attachment };
+      return {
+        attachment: {
+          id: `mention-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name: filename,
+          type: mentionFileMimeType(filename),
+          size,
+          data: response.dataBase64,
+          originPath: safePath,
+        },
+      };
     } catch {
       return { attachment: null };
     }
-  }, [sessionId, workingDirectory, normalizeMentionPath]);
+  }, [workingDirectory, normalizeMentionPath, appServer]);
 
   const fetchDirectorySummary = useCallback(async (mentionPath: string): Promise<string | null> => {
     if (!workingDirectory) return null;
     const safePath = normalizeMentionPath(mentionPath);
     const dir = joinPath(workingDirectory, safePath);
     try {
-      const res = await fetch(`/api/files?dir=${encodeURIComponent(dir)}&baseDir=${encodeURIComponent(workingDirectory)}&depth=2`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const tree = Array.isArray(data.tree) ? data.tree : [];
-      const preview = tree.slice(0, MAX_DIRECTORY_PREVIEW_ITEMS).map((node: { name: string; type: 'file' | 'directory' }) => (
-        node.type === 'directory' ? `- ${node.name}/` : `- ${node.name}`
+      const response = await appServer.readDirectory(dir);
+      const preview = response.entries.slice(0, MAX_DIRECTORY_PREVIEW_ITEMS).map((entry) => (
+        entry.isDirectory ? `- ${entry.fileName}/` : `- ${entry.fileName}`
       ));
-      const extra = tree.length > MAX_DIRECTORY_PREVIEW_ITEMS
-        ? `\n- ... (${tree.length - MAX_DIRECTORY_PREVIEW_ITEMS} more)`
+      const extra = response.entries.length > MAX_DIRECTORY_PREVIEW_ITEMS
+        ? `\n- ... (${response.entries.length - MAX_DIRECTORY_PREVIEW_ITEMS} more)`
         : '';
       return `Directory reference @${safePath}/\n${preview.join('\n')}${extra}`;
     } catch {
       return null;
     }
-  }, [workingDirectory, normalizeMentionPath]);
+  }, [workingDirectory, normalizeMentionPath, appServer]);
 
   const handleSubmit = useCallback(async (msg: { text: string; files: Array<{ type: string; url: string; filename?: string; mediaType?: string }> }, e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -1246,11 +1291,9 @@ export function MessageInput({
         // destructive commands (e.g. /clear) would race with the active stream.
         if (isStreaming) return;
         if (slashResult.action === 'immediate_command') {
-          if (onCommand) {
-            setInputValue('');
-            onCommand(slashResult.commandValue!);
-            return;
-          }
+          setInputValue('');
+          handleComposerCommand(slashResult.commandValue!);
+          return;
         } else {
           addBadgeWithOrder(slashResult.badge!);
           setInputValue('');
@@ -1308,7 +1351,7 @@ export function MessageInput({
     // Note: nothing to clear post-await — text and dirs were
     // cleared optimistically above, and we must NOT re-clear (the user may have
     // typed the next message while the turn streamed, and that must survive).
-  }, [inputValue, goalPromptActive, planPromptActive, mentionNodeTypes, directoryRefs, fileReferenceMentions, fileReferencePaths, fileExcerptReferences, onSend, onCommand, onModeChange, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
+  }, [inputValue, goalPromptActive, planPromptActive, mentionNodeTypes, directoryRefs, fileReferenceMentions, fileReferencePaths, fileExcerptReferences, onSend, onCommand, handleComposerCommand, onModeChange, disabled, isStreaming, popover, badges, addBadgeWithOrder, clearBadgesWithOrder, setInputValue, fetchDirectorySummary, fetchMentionFileAttachment, blockingReasonIds]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1544,14 +1587,6 @@ export function MessageInput({
     }
   }, [normalizeMentionPath]);
 
-  // 新版输入框默认展示“高”，并由同一个按钮承载推理强度与模型选择。
-  const [localEffort, setLocalEffort] = useState<string>('high');
-  const selectedEffort = effortProp ?? localEffort;
-  const setSelectedEffort = useCallback((v: string) => {
-    setLocalEffort(v);
-    onEffortChange?.(v);
-  }, [onEffortChange]);
-
   const currentModelValue = modelName || 'sonnet';
   const chatStatus: ChatStatus = isStreaming ? 'streaming' : 'ready';
 
@@ -1563,6 +1598,99 @@ export function MessageInput({
     <div className="bg-[var(--platform-surface-bar)] backdrop-blur-lg px-4 pt-2 pb-1">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
+          {(commandPanel || commandError) && (
+            <div className="absolute bottom-full left-0 z-50 mb-2 max-h-80 w-full overflow-y-auto rounded-2xl border bg-popover p-3 shadow-[var(--shadow-diffuse)]" data-testid="composer-command-panel">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-semibold">
+                  {commandPanel === 'mcp' ? 'MCP' : commandPanel === 'review' ? '代码审查' : commandPanel === 'reasoning' ? '推理' : commandPanel === 'model' ? '模型' : commandPanel === 'status' ? '状态' : commandPanel === 'memory' ? '任务记忆' : '命令'}
+                </span>
+                <button type="button" className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent" onClick={() => { setCommandPanel(null); setCommandError(''); }}>关闭</button>
+              </div>
+              {commandError && <div className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{commandError}</div>}
+
+              {commandPanel === 'mcp' && (
+                <div className="space-y-1" data-source-breadcrumb="app-server.mcpServerStatus/list">
+                  {mcpStatuses.length === 0
+                    ? <div className="py-2 text-sm text-muted-foreground">没有 app-server 返回的 MCP 服务</div>
+                    : mcpStatuses.map((server) => (
+                      <div key={server.name} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-accent">
+                        <span className="min-w-0 flex-1 truncate font-mono text-sm">{server.name}</span>
+                        <span className="text-xs text-muted-foreground">{Object.keys(server.tools).length} 个工具</span>
+                        <span className="text-xs text-muted-foreground">{server.authStatus === 'notLoggedIn' ? '未登录' : '已启用'}</span>
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {commandPanel === 'review' && (
+                <div className="space-y-1">
+                  <button type="button" disabled={!sessionId} className="flex w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50" onClick={() => {
+                    if (!sessionId) return;
+                    setCommandPanel(null);
+                    void appServer.startReview({ threadId: sessionId, target: { type: 'uncommittedChanges' } }).catch((error) => setCommandError(error instanceof Error ? error.message : String(error)));
+                  }}>审查未提交的更改</button>
+                  <div className="flex gap-2 px-3 py-1">
+                    <input aria-label="基准分支" value={reviewBranch} onChange={(event) => setReviewBranch(event.target.value)} className="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="基准分支" />
+                    <button type="button" disabled={!sessionId || !reviewBranch.trim()} className="rounded-lg border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50" onClick={() => {
+                    if (!sessionId) return;
+                    setCommandPanel(null);
+                    void appServer.startReview({ threadId: sessionId, target: { type: 'baseBranch', branch: reviewBranch.trim() } }).catch((error) => setCommandError(error instanceof Error ? error.message : String(error)));
+                    }}>比较</button>
+                  </div>
+                  {!sessionId && <div className="px-3 py-1 text-xs text-muted-foreground">请先开始对话</div>}
+                </div>
+              )}
+
+              {commandPanel === 'reasoning' && (
+                <div className="space-y-1">
+                  {EFFORT_OPTIONS.map((option) => (
+                    <button key={option.value} type="button" className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setSelectedEffort(option.value); setCommandPanel(null); }}>
+                      {option.label}{selectedEffort === option.value && <Check size={18} className="ml-auto" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {commandPanel === 'model' && (
+                <div className="space-y-1" data-source-breadcrumb="app-server.model/list">
+                  {modelOptions.map((option) => (
+                    <button key={option.value} type="button" className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => {
+                      onModelChange?.(option.value);
+                      onProviderModelChange?.(currentProviderIdValue, option.value);
+                      setCommandPanel(null);
+                    }}>
+                      {option.label}{(option.value === currentModelOption?.value || option.value === modelName) && <Check size={18} className="ml-auto" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {commandPanel === 'status' && (
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                  <dt className="text-muted-foreground">任务</dt><dd className="break-all font-mono">{sessionId || '尚未创建'}</dd>
+                  <dt className="text-muted-foreground">上下文</dt><dd data-source-breadcrumb="app-server.thread/tokenUsage/updated">{contextWindowUsage?.modelContextWindow ? `${contextWindowUsage.total.totalTokens.toLocaleString()} / ${contextWindowUsage.modelContextWindow.toLocaleString()} 标记` : '不可用'}</dd>
+                  <dt className="text-muted-foreground">速率限制</dt><dd data-source-breadcrumb="app-server.account/rateLimits/read">{rateLimits?.rateLimits.primary ? `${Math.round(rateLimits.rateLimits.primary.usedPercent)}% 已用` : '不可用'}</dd>
+                </dl>
+              )}
+
+              {commandPanel === 'memory' && (
+                <div className="space-y-3">
+                  <button type="button" role="switch" aria-checked={useMemories} className="flex w-full items-center rounded-xl border px-3 py-3 text-left" onClick={() => setUseMemories((value) => !value)}>
+                    <span><strong className="block text-sm">使用记忆</strong><span className="text-xs text-muted-foreground">应用于后续新任务</span></span>
+                    <span className={cn('ml-auto h-6 w-10 rounded-full p-1', useMemories ? 'bg-primary' : 'bg-muted')}><span className={cn('block size-4 rounded-full bg-background transition-transform', useMemories && 'translate-x-4')} /></span>
+                  </button>
+                  <button type="button" role="switch" aria-checked={generateMemories} className="flex w-full items-center rounded-xl border px-3 py-3 text-left" onClick={() => setGenerateMemories((value) => !value)}>
+                    <span><strong className="block text-sm">生成记忆</strong><span className="text-xs text-muted-foreground">允许当前任务创建新记忆</span></span>
+                    <span className={cn('ml-auto h-6 w-10 rounded-full p-1', generateMemories ? 'bg-primary' : 'bg-muted')}><span className={cn('block size-4 rounded-full bg-background transition-transform', generateMemories && 'translate-x-4')} /></span>
+                  </button>
+                  <button type="button" className="w-full rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground" onClick={() => {
+                    void appServer.updateMemorySettings({ threadId: sessionId, useMemories, generateMemories }).then(() => setCommandPanel(null)).catch((error) => setCommandError(error instanceof Error ? error.message : String(error)));
+                  }}>完成</button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Slash Command / File Popover */}
           <SlashCommandPopover
             popoverMode={popover.popoverMode}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { PopoverItem, PopoverMode, SkillKind } from '@/types';
 import { detectPopoverTrigger, resolveItemSelection } from '@/lib/message-input-logic';
 import { BUILT_IN_COMMANDS, COMMAND_PROMPTS } from '@/lib/constants/commands';
@@ -39,9 +39,7 @@ export function useSlashCommands(opts: {
   isStreaming?: boolean;
 }): UseSlashCommandsReturn {
   const {
-    sessionId,
     workingDirectory,
-    sdkInitMeta,
     textareaRef,
     inputValue,
     setInputValue,
@@ -59,7 +57,8 @@ export function useSlashCommands(opts: {
     onMentionInserted,
     isStreaming,
 } = opts;
-  const { listSkills } = useAppServerActions();
+  const { listSkills, fuzzyFileSearch } = useAppServerActions();
+  const searchSequenceRef = useRef(0);
 
   // Enrich built-in commands with icons (presentation layer enrichment)
   const enrichedBuiltIns = useMemo(
@@ -69,28 +68,27 @@ export function useSlashCommands(opts: {
 
   // Fetch files for @ mention
   const fetchFiles = useCallback(async (filter: string) => {
+    const query = filter.trim();
+    if (!query || !workingDirectory) return [];
     try {
-      const params = new URLSearchParams();
-      if (sessionId) params.set('sessionId', sessionId);
-      if (!sessionId && workingDirectory) params.set('workingDirectory', workingDirectory);
-      if (filter) params.set('q', filter);
-      params.set('limit', '50');
-      const res = await fetch(`/api/files/suggest?${params.toString()}`);
-      if (!res.ok) return [];
-      const data = await res.json();
-      const items = (data.items || []) as Array<{ path: string; display?: string; type?: 'file' | 'directory'; nodeType?: 'file' | 'directory' }>;
-      return items.map((item) => ({
-        label: item.display || item.path,
+      const response = await fuzzyFileSearch({
+        query,
+        roots: [workingDirectory],
+        cancellationToken: null,
+      });
+      return response.files.slice(0, 50).map((item) => ({
+        label: item.file_name,
         value: item.path,
-        display: item.display || item.path,
-        nodeType: item.type || item.nodeType || 'file',
+        display: item.path,
+        description: item.path === item.file_name ? undefined : item.path.slice(0, -(item.file_name.length + 1)),
+        nodeType: item.match_type,
       }));
     } catch {
       return [];
     }
-  }, [sessionId, workingDirectory]);
+  }, [workingDirectory, fuzzyFileSearch]);
 
-  // Fetch skills for / command (built-in + app-server)
+  // Fetch enabled skills for the $ picker from app-server.
   const fetchSkills = useCallback(async () => {
     let apiSkills: PopoverItem[] = [];
     try {
@@ -114,61 +112,8 @@ export function useSlashCommands(opts: {
       // API not available - just use built-in commands
     }
 
-    // When SDK init metadata is available, use it as the truth source
-    if (sdkInitMeta) {
-      const rawCmds = sdkInitMeta.slash_commands;
-      const rawSkills = sdkInitMeta.skills;
-      const sdkCommandNames = new Set(
-        Array.isArray(rawCmds) ? rawCmds.map(c => typeof c === 'string' ? c : (c as { name?: string })?.name).filter(Boolean) as string[] : []
-      );
-      const sdkSkillNames = new Set(
-        Array.isArray(rawSkills) ? rawSkills.map(s => typeof s === 'string' ? s : (s as { name?: string })?.name).filter(Boolean) as string[] : []
-      );
-
-      // Only filter if SDK actually reported capabilities (non-empty arrays)
-      if (sdkCommandNames.size > 0 || sdkSkillNames.size > 0) {
-        apiSkills = apiSkills.filter(item => {
-          if (item.kind === 'agent_skill') return sdkSkillNames.has(item.label);
-          return sdkCommandNames.has(item.label);
-        });
-      }
-
-      const existingNames = new Set(apiSkills.map(s => s.label));
-
-      // Add SDK-reported commands not found in filesystem scan
-      for (const cmdName of sdkCommandNames) {
-        if (!existingNames.has(cmdName)) {
-          apiSkills.push({
-            label: cmdName,
-            value: `/${cmdName}`,
-            description: `SDK command: /${cmdName}`,
-            builtIn: false,
-            source: 'sdk',
-            kind: 'sdk_command',
-          });
-        }
-      }
-
-      // Add SDK-reported skills not found in filesystem scan
-      for (const skillName of sdkSkillNames) {
-        if (!existingNames.has(skillName)) {
-          apiSkills.push({
-            label: skillName,
-            value: `/${skillName}`,
-            description: `Skill: /${skillName}`,
-            builtIn: false,
-            kind: 'agent_skill',
-          });
-        }
-      }
-    }
-
-    // Deduplicate: remove API skills that share a name with built-in commands
-    const builtInNames = new Set(enrichedBuiltIns.map(c => c.label));
-    const uniqueSkills = apiSkills.filter(s => !builtInNames.has(s.label));
-
-    return [...enrichedBuiltIns, ...uniqueSkills];
-  }, [workingDirectory, sdkInitMeta, enrichedBuiltIns, listSkills]);
+    return apiSkills;
+  }, [workingDirectory, listSkills]);
 
   // Insert selected item
   const insertItem = useCallback((item: PopoverItem) => {
@@ -232,20 +177,26 @@ export function useSlashCommands(opts: {
       setSelectedIndex(0);
 
       if (trigger.mode === 'file') {
+        const sequence = ++searchSequenceRef.current;
         const items = await fetchFiles(trigger.filter);
-        setPopoverItems(items);
-      } else {
+        if (sequence === searchSequenceRef.current) setPopoverItems(items);
+      } else if (trigger.mode === 'skill') {
+        const sequence = ++searchSequenceRef.current;
         const items = await fetchSkills();
-        setPopoverItems(items);
+        if (sequence === searchSequenceRef.current) setPopoverItems(items);
+      } else {
+        searchSequenceRef.current += 1;
+        setPopoverItems(enrichedBuiltIns);
       }
       return;
     }
 
     // Only auto-close text-triggered popovers (file/skill); CLI is button-triggered
     if (popoverMode && popoverMode !== 'cli') {
+      searchSequenceRef.current += 1;
       closePopover();
     }
-  }, [fetchFiles, fetchSkills, popoverMode, closePopover, textareaRef, setInputValue, setPopoverMode, setPopoverFilter, setTriggerPos, setSelectedIndex, setPopoverItems]);
+  }, [fetchFiles, fetchSkills, enrichedBuiltIns, popoverMode, closePopover, textareaRef, setInputValue, setPopoverMode, setPopoverFilter, setTriggerPos, setSelectedIndex, setPopoverItems]);
 
   // Insert `/` into textarea to trigger slash command popover. When the
   // preceding char isn't whitespace, auto-prepend a space so the trigger regex

@@ -113,12 +113,10 @@ export function reduceAppServerTurnNotification(
       const turnId = turn.id;
       const threadId = data.threadId;
       if (typeof turnId !== "string") return state;
-      return {
-        ...state,
-        status: "running",
-        threadId: typeof threadId === "string" ? threadId : state.threadId,
+      return createAcceptedTurnState(
+        typeof threadId === "string" ? threadId : state.threadId,
         turnId,
-      };
+      );
     }
 
     case "item/started":

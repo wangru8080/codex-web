@@ -388,6 +388,7 @@ export function CommandBadge({
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
+  const visibleLabel = badge.kind === 'agent_skill' ? badge.label : badge.command;
   const icon = badge.kind === 'agent_skill'
     ? <CodexWebIcon name="skill" size={12} aria-hidden />
     : badge.kind === 'codepilot_command'
@@ -397,13 +398,13 @@ export function CommandBadge({
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-muted pl-2.5 pr-1 py-1 text-xs font-medium text-foreground">
       <span className="text-muted-foreground">{icon}</span>
-      <span className="font-mono">{badge.command}</span>
+      <span className="font-mono">{visibleLabel}</span>
       <Button
         type="button"
         variant="ghost"
         size="icon"
         onClick={onRemove}
-        aria-label={t('messageInput.removeChipAriaLabel' as TranslationKey, { name: badge.command })}
+        aria-label={t('messageInput.removeChipAriaLabel' as TranslationKey, { name: visibleLabel })}
         className="ml-0.5 h-auto w-auto rounded-full p-0.5 hover:bg-accent"
       >
         <X size={12} />

@@ -1,4 +1,7 @@
 import { createServer, type Server } from "node:http";
+import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
 
 import next from "next";
 
@@ -8,6 +11,25 @@ import { createWebSocketBridge } from "../server/websocket-bridge";
 if (!process.env.CODEX_HOME) {
   console.error("start 必须显式设置 CODEX_HOME；可在当前 shell 或 .bashrc 中 export CODEX_HOME。");
   process.exit(1);
+}
+
+const buildIdPath = resolve(process.cwd(), ".next", "BUILD_ID");
+if (!existsSync(buildIdPath)) {
+  console.log("未找到可用的 Next.js 生产构建，正在执行 npm run build...");
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  const build = spawnSync(npmCommand, ["run", "build"], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: "inherit",
+  });
+  if (build.error) {
+    console.error("无法启动生产构建：", build.error.message);
+    process.exit(1);
+  }
+  if (build.status !== 0 || !existsSync(buildIdPath)) {
+    console.error("Next.js 生产构建失败，Codex Web 未启动。请先修复上方构建错误。");
+    process.exit(build.status || 1);
+  }
 }
 
 const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "192.168.3.12";

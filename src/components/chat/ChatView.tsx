@@ -582,6 +582,12 @@ export function ChatView({
   const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
   const [dismissedPlanPromptKey, setDismissedPlanPromptKey] = useState('');
 
+  useEffect(() => {
+    if (!appServerSend || appServerTurn?.status !== 'running') return;
+    if (appServerTurn.threadId && appServerTurn.threadId !== activeSessionId) return;
+    setAppServerLocalStreaming(true);
+  }, [activeSessionId, appServerSend, appServerTurn?.status, appServerTurn?.threadId]);
+
   // ── Skill nudge banner ──
   // Listens for 'skill-nudge' window events dispatched by stream-session-manager
   // when the agent loop completes a complex multi-step workflow.

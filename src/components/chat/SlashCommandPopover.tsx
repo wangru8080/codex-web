@@ -83,24 +83,31 @@ export function SlashCommandPopover({
           {item.installedSource === 'claude' ? 'Personal' : 'Agents'}
         </span>
       )}
+      {!item.builtIn && !item.installedSource && item.source && (
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          {item.source === 'global' ? '个人' : item.source === 'project' ? '项目' : item.source === 'plugin' ? '插件' : '系统'}
+        </span>
+      )}
     </CommandListItem>
   );
 
   if (!popoverMode || popoverMode === 'cli') return null;
-  if (allDisplayedItems.length === 0 && !aiSearchLoading) return null;
+  if (allDisplayedItems.length === 0 && !aiSearchLoading && popoverMode !== 'file') return null;
 
   return (
-    <div ref={popoverRef}>
+    <div ref={popoverRef} className="relative z-50 h-0">
       <CommandList className="w-full">
         <CommandListItems className="max-h-72">
           {popoverMode === 'file' ? (
-            <CommandListGroup label={t('globalSearch.files' as TranslationKey)}>
-              {filteredItems.map((item, i) => renderItem(item, i))}
+            <CommandListGroup label="文件">
+              {filteredItems.length > 0
+                ? filteredItems.map((item, i) => renderItem(item, i))
+                : <div className="px-3 py-3 text-sm text-muted-foreground">输入字符以搜索当前项目文件</div>}
             </CommandListGroup>
           ) : (
             <>
               {builtInItems.length > 0 && (
-                <CommandListGroup label="Commands">
+                <CommandListGroup label="命令">
                   {builtInItems.map((item) => {
                     const idx = globalIdx++;
                     return renderItem(item, idx);
@@ -116,7 +123,7 @@ export function SlashCommandPopover({
                 </CommandListGroup>
               )}
               {agentSkillItems.length > 0 && (
-                <CommandListGroup label="Agent Skills">
+                <CommandListGroup label="技能">
                   {agentSkillItems.map((item) => {
                     const idx = globalIdx++;
                     return renderItem(item, idx);

@@ -16,15 +16,13 @@ export const COMMAND_PROMPTS: Record<string, string> = {
 
 /** Built-in slash commands shown in the popover (without icons — see command-icons.ts). */
 export const BUILT_IN_COMMANDS: PopoverItem[] = [
-  { label: 'help', value: '/help', description: 'Show available commands and tips', descriptionKey: 'messageInput.helpDesc', builtIn: true, immediate: true },
-  { label: 'clear', value: '/clear', description: 'Clear conversation history', descriptionKey: 'messageInput.clearDesc', builtIn: true, immediate: true },
-  { label: 'cost', value: '/cost', description: 'Show token usage statistics', descriptionKey: 'messageInput.costDesc', builtIn: true, immediate: true },
-  { label: 'plan', value: '/plan', description: 'Switch to Plan mode', builtIn: true, immediate: true },
-  { label: 'goal', value: '/goal', description: 'Show or manage the current goal', builtIn: true, immediate: true },
-  { label: 'compact', value: '/compact', description: 'Compress conversation context', descriptionKey: 'messageInput.compactDesc', builtIn: true, kind: 'sdk_command' },
-  { label: 'doctor', value: '/doctor', description: 'Diagnose project health', descriptionKey: 'messageInput.doctorDesc', builtIn: true, kind: 'codepilot_command' },
-  { label: 'init', value: '/init', description: 'Initialize CLAUDE.md for project', descriptionKey: 'messageInput.initDesc', builtIn: true, kind: 'sdk_command' },
-  { label: 'review', value: '/review', description: 'Review code quality', descriptionKey: 'messageInput.reviewDesc', builtIn: true, kind: 'sdk_command' },
-  { label: 'terminal-setup', value: '/terminal-setup', description: 'Configure terminal settings', descriptionKey: 'messageInput.terminalSetupDesc', builtIn: true, kind: 'codepilot_command' },
-  { label: 'memory', value: '/memory', description: 'Edit project memory file', descriptionKey: 'messageInput.memoryDesc', builtIn: true, kind: 'codepilot_command' },
+  { label: 'MCP', value: '/mcp', description: '显示 MCP 服务器状态', builtIn: true, immediate: true },
+  { label: '代码审查', value: '/review', description: '审查未暂存的更改，或与某个分支进行比较', builtIn: true, immediate: true },
+  { label: '压缩', value: '/compact', description: '精简此任务的上下文', builtIn: true, immediate: true },
+  { label: '推理', value: '/reasoning', description: '设置模型推理等级', builtIn: true, immediate: true },
+  { label: '模型', value: '/model', description: '选择当前任务使用的模型', builtIn: true, immediate: true },
+  { label: '状态', value: '/status', description: '显示任务 ID、上下文用量和速率限制', builtIn: true, immediate: true },
+  { label: '目标', value: '/goal', description: '设置要持续追求的目标', builtIn: true, immediate: true },
+  { label: '计划模式', value: '/plan', description: '开启计划模式', builtIn: true, immediate: true },
+  { label: '记忆', value: '/memories', description: '配置任务记忆', builtIn: true, immediate: true },
 ];

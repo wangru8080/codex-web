@@ -27,7 +27,7 @@ describe('ContextCompactionRow', () => {
       </I18nContext.Provider>,
     );
 
-    expect(html).toContain('正在自动压缩上下文');
+    expect(html).toContain('上下文开始压缩');
     expect(html).toContain('data-context-compaction-status="inProgress"');
     expect(html).toContain('data-source-breadcrumb="app-server.item/started"');
   });
@@ -45,7 +45,7 @@ describe('ContextCompactionRow', () => {
       </I18nContext.Provider>,
     );
 
-    expect(html).toContain('已自动压缩上下文');
+    expect(html).toContain('上下文已压缩');
     expect(html).toContain('data-context-compaction-status="completed"');
     expect(html).toContain('data-source-breadcrumb="app-server.item/completed"');
   });

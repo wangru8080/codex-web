@@ -181,7 +181,7 @@ export interface PopoverItem {
 }
 
 /** Which popover is currently active in the command input. */
-export type PopoverMode = 'file' | 'skill' | 'cli' | null;
+export type PopoverMode = 'file' | 'skill' | 'command' | 'cli' | null;
 
 /** Active slash-command badge shown above the textarea. */
 export interface CommandBadge {

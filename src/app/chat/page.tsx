@@ -329,6 +329,7 @@ function NewChatPageInner() {
     setToolResults(toolState.toolResults);
     setStreamingToolOutput(toolState.streamingToolOutput);
     if (appServerTurn.status === 'running') {
+      setIsStreaming(true);
       setStatusText('Codex 正在处理...');
     } else if (appServerTurn.status === 'failed') {
       setStatusText('Codex 处理失败');
@@ -978,6 +979,7 @@ function NewChatPageInner() {
       />
       <MessageInput
         key="composer-message-input"
+        sessionId={createdSessionId}
         onSend={sendFirstMessage}
         onCommand={handleCommand}
         onStop={stopStreaming}

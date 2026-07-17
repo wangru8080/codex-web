@@ -2110,8 +2110,8 @@ const zh: Record<TranslationKey, string> = {
 
   // onboarding
   'wizard.startChatting': '开始对话',
-  'chat.contextCompaction.running': '正在自动压缩上下文',
-  'chat.contextCompaction.completed': '已自动压缩上下文',
+  'chat.contextCompaction.running': '上下文开始压缩',
+  'chat.contextCompaction.completed': '上下文已压缩',
 };
 
 export default zh;

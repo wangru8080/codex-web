@@ -17,13 +17,13 @@ import type { CodexWebIconName } from '@/components/ui/semantic-icon';
 
 /** Map from command value (e.g. "/help") to its CodexWebIcon semantic alias. */
 export const COMMAND_ICON_NAMES: Record<string, CodexWebIconName> = {
-  '/help': 'help',
-  '/clear': 'delete',
-  '/cost': 'cost',
+  '/mcp': 'plugin',
   '/compact': 'archive',
-  '/doctor': 'diagnose',
-  '/init': 'note',
   '/review': 'search',
-  '/terminal-setup': 'terminal',
-  '/memory': 'memory',
+  '/reasoning': 'assistant',
+  '/model': 'model',
+  '/status': 'usage',
+  '/goal': 'task',
+  '/plan': 'task',
+  '/memories': 'memory',
 };

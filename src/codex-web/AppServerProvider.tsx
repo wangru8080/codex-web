@@ -36,6 +36,12 @@ import type { ThreadGoalSetResponse } from "@/codex/protocol/generated/v2/Thread
 import type { TurnInterruptResponse } from "@/codex/protocol/generated/v2/TurnInterruptResponse";
 import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartParams";
 import type { TurnStartResponse } from "@/codex/protocol/generated/v2/TurnStartResponse";
+import type { ThreadCompactStartResponse } from "@/codex/protocol/generated/v2/ThreadCompactStartResponse";
+import type { ReviewStartParams } from "@/codex/protocol/generated/v2/ReviewStartParams";
+import type { ReviewStartResponse } from "@/codex/protocol/generated/v2/ReviewStartResponse";
+import type { FuzzyFileSearchParams } from "@/codex/protocol/generated/FuzzyFileSearchParams";
+import type { FuzzyFileSearchResponse } from "@/codex/protocol/generated/FuzzyFileSearchResponse";
+import type { GetAccountRateLimitsResponse } from "@/codex/protocol/generated/v2/GetAccountRateLimitsResponse";
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
 import type { FileAttachment, PermissionProfile, SkillInputReference } from "@/types";
 import type { MCPServer } from "@/types";
@@ -167,6 +173,11 @@ export type AppServerActions = {
   resetTurn: () => void;
   updateThreadPermissions: (params: { threadId: string; cwd: string; permissionProfile: PermissionProfile }) => Promise<void>;
   updateThreadModelSettings: (params: { threadId: string; model?: string; effort?: ReasoningEffort }) => Promise<void>;
+  compactThread: (threadId: string) => Promise<ThreadCompactStartResponse>;
+  startReview: (params: ReviewStartParams) => Promise<ReviewStartResponse>;
+  fuzzyFileSearch: (params: FuzzyFileSearchParams) => Promise<FuzzyFileSearchResponse>;
+  updateMemorySettings: (params: { threadId?: string; useMemories: boolean; generateMemories: boolean }) => Promise<void>;
+  readAccountRateLimits: () => Promise<GetAccountRateLimitsResponse>;
 };
 
 export function AppServerProvider({ children }: { children: React.ReactNode }) {
@@ -648,6 +659,47 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return data;
   }, []);
 
+  const compactThread = useCallback(async (threadId: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return await client.request("thread/compact/start", { threadId }) as ThreadCompactStartResponse;
+  }, []);
+
+  const startReview = useCallback(async (params: ReviewStartParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return await client.request("review/start", params) as ReviewStartResponse;
+  }, []);
+
+  const fuzzyFileSearch = useCallback(async (params: FuzzyFileSearchParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return await client.request("fuzzyFileSearch", params) as FuzzyFileSearchResponse;
+  }, []);
+
+  const updateMemorySettings = useCallback(async ({ threadId, useMemories, generateMemories }: { threadId?: string; useMemories: boolean; generateMemories: boolean }) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    await client.request("config/batchWrite", {
+      edits: [
+        { keyPath: "memories.use_memories", value: useMemories, mergeStrategy: "replace" },
+        { keyPath: "memories.generate_memories", value: generateMemories, mergeStrategy: "replace" },
+      ],
+      reloadUserConfig: true,
+    });
+    if (threadId) {
+      await client.request("thread/memoryMode/set", { threadId, enabled: generateMemories });
+    }
+    const config = await readEffectiveConfig(client);
+    setState((current) => ({ ...current, config: { source: "app-server.config/read", data: config } }));
+  }, []);
+
+  const readAccountRateLimits = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return await client.request("account/rateLimits/read") as GetAccountRateLimitsResponse;
+  }, []);
+
   const getThreadGoal = useCallback(async (threadId: string) => {
     const client = clientRef.current;
     if (!client) {
@@ -913,8 +965,13 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       resetTurn,
       updateThreadPermissions,
       updateThreadModelSettings,
+      compactThread,
+      startReview,
+      fuzzyFileSearch,
+      updateMemorySettings,
+      readAccountRateLimits,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits],
   );
 
   return (

@@ -75,6 +75,15 @@ export function detectPopoverTrigger(
     };
   }
 
+  const skillMatch = beforeCursor.match(/(^|\s)\$([^\s$]*)$/);
+  if (skillMatch) {
+    return {
+      mode: 'skill',
+      filter: skillMatch[2],
+      triggerPos: cursorPos - skillMatch[2].length - 1,
+    };
+  }
+
   // Check for / trigger. Only fires when `/` is at the start of input or
   // immediately after whitespace — regex alone can't tell "hello/skill" from
   // "src/app" or "foo/bar", so we accept the trade-off: typing `/` mid-word
@@ -84,7 +93,7 @@ export function detectPopoverTrigger(
   const slashMatch = beforeCursor.match(/(^|\s)\/([^\s]*)$/);
   if (slashMatch) {
     return {
-      mode: 'skill',
+      mode: 'command',
       filter: slashMatch[2],
       triggerPos: cursorPos - slashMatch[2].length - 1,
     };
