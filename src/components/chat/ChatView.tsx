@@ -64,6 +64,10 @@ import {
 } from '@/lib/stream-session-manager';
 import type { AppServerApprovalDecision, AppServerApprovalRequest } from '@/codex-web/approval-adapter';
 import { appServerTurnToMessageBlocks, appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
+import {
+  appServerTurnPresentationKey,
+  shouldPresentAppServerTurnAsStreaming,
+} from '@/codex-web/live-turn-presentation';
 import { deriveCodexWebToolState } from '@/codex-web/tool-adapter';
 import type { AppServerTurnState } from '@/codex-web/turn-reducer';
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
@@ -534,6 +538,8 @@ export function ChatView({
   const legacyIsStreaming = streamSnapshot?.phase === 'active';
   const [appServerLocalStreaming, setAppServerLocalStreaming] = useState(false);
   const [appServerErrorBanner, setAppServerErrorBanner] = useState<{ message: string; description?: string } | null>(null);
+  const finalizedAppServerTurnRef = useRef<string>('');
+  const finalizedAppServerTurnPresentationKeyRef = useRef<string>('');
   const appServerToolState = useMemo(
     () => deriveCodexWebToolState(appServerTurn ?? null),
     [appServerTurn],
@@ -550,9 +556,12 @@ export function ChatView({
         : appServerTurn?.status === 'interrupted'
           ? 'Codex 已中断'
           : undefined;
-  const isStreaming = appServerSend
-    ? appServerLocalStreaming || appServerTurn?.status === 'running'
-    : legacyIsStreaming;
+  const presentAppServerTurnAsStreaming = shouldPresentAppServerTurnAsStreaming({
+    turn: appServerTurn ?? null,
+    localStreaming: appServerLocalStreaming,
+    finalizedTurnKey: finalizedAppServerTurnPresentationKeyRef.current,
+  });
+  const isStreaming = appServerSend ? presentAppServerTurnAsStreaming : legacyIsStreaming;
   const streamingContent = appServerSend ? appServerTurn?.assistantText ?? '' : streamSnapshot?.streamingContent ?? '';
   const toolUses = appServerSend ? appServerToolState.toolUses : streamSnapshot?.toolUses ?? [];
   const toolResults = appServerSend ? appServerToolState.toolResults : streamSnapshot?.toolResults ?? [];
@@ -568,23 +577,20 @@ export function ChatView({
   const showAppServerTurnPanel =
     !!appServerSend &&
     !!appServerTurn &&
-    (appServerTurn.status === 'running' ||
-      (appServerLocalStreaming && appServerTurnIsTerminal &&
-        (!!appServerTurn.assistantText.trim() ||
-          !!appServerTurn.reasoningText.trim() ||
-          appServerTurn.items.length > 0)));
+    presentAppServerTurnAsStreaming;
   const appServerPanelStartedAt =
     appServerTurnIsTerminal && typeof appServerTurn?.durationMs === 'number'
       ? Date.now() - appServerTurn.durationMs
       : streamSnapshot?.startedAt;
   const rewindPoints = getRewindPoints(activeSessionId);
-  const finalizedAppServerTurnRef = useRef<string>('');
   const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
   const [dismissedPlanPromptKey, setDismissedPlanPromptKey] = useState('');
 
   useEffect(() => {
     if (!appServerSend || appServerTurn?.status !== 'running') return;
     if (appServerTurn.threadId && appServerTurn.threadId !== activeSessionId) return;
+    const turnKey = appServerTurnPresentationKey(appServerTurn);
+    if (turnKey && turnKey === finalizedAppServerTurnPresentationKeyRef.current) return;
     setAppServerLocalStreaming(true);
   }, [activeSessionId, appServerSend, appServerTurn?.status, appServerTurn?.threadId]);
 
@@ -784,6 +790,7 @@ export function ChatView({
     const finalKey = `${appServerTurn.threadId}:${appServerTurn.turnId}:${appServerTurn.status}`;
     if (finalizedAppServerTurnRef.current === finalKey) return;
     finalizedAppServerTurnRef.current = finalKey;
+    finalizedAppServerTurnPresentationKeyRef.current = appServerTurnPresentationKey(appServerTurn);
     setLivePlanPromptTurnKey(finalKey);
 
     if (appServerTurn.status === 'failed') {
