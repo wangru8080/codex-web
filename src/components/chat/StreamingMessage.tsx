@@ -7,7 +7,7 @@ import {
   MessageContent,
   StreamingMessageResponse as MessageResponse,
 } from '@/components/ai-elements/message';
-import { ProcessCollapseGroup, ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
+import { ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
 import { MediaPreview } from './MediaPreview';
 import { Button } from '@/components/ui/button';
 import { Shimmer } from '@/components/ai-elements/shimmer';
@@ -17,6 +17,10 @@ import { ProposedPlanMessageBlock, UpdatedPlanMessageBlock } from './PlanMessage
 import { ContextCompactionRow } from './ContextCompactionRow';
 import { WidgetRenderer } from './WidgetRenderer';
 import { parseAllShowWidgets, computePartialWidgetKey, MalformedWidgetNotice } from './MessageItem';
+import {
+  groupConsecutiveToolBlocks,
+  type StreamingProcessBlock,
+} from './streaming-process-groups';
 import { PENDING_KEY, buildReferenceImages } from '@/lib/image-ref-store';
 import type { PlannerOutput, MediaBlock, MessageContentBlock } from '@/types';
 
@@ -314,7 +318,6 @@ export function StreamingMessage({
     () => toolUses.filter((tool) => !toolResultsById.has(tool.id)),
     [toolUses, toolResultsById]
   );
-  const finalStarted = content.trim().length > 0;
   const toolItems = useMemo(
     () => toolUses.map((tool) => {
       const result = toolResultsById.get(tool.id);
@@ -330,13 +333,17 @@ export function StreamingMessage({
     [toolUses, toolResultsById]
   );
   const orderedProcessBlocks = useMemo(
-    () => processBlocks.filter((block) =>
+    () => processBlocks.filter((block): block is StreamingProcessBlock =>
       block.type === 'thinking' ||
       block.type === 'codex_process_text' ||
       block.type === 'codex_context_compaction' ||
       block.type === 'tool_use',
     ),
     [processBlocks],
+  );
+  const processSegments = useMemo(
+    () => groupConsecutiveToolBlocks(orderedProcessBlocks),
+    [orderedProcessBlocks],
   );
   const processToolResultsById = useMemo(
     () => new Map(
@@ -370,27 +377,42 @@ export function StreamingMessage({
   return (
     <AIMessage from="assistant">
       <MessageContent>
-        {/* Codex-style process cells stay expanded until final answer starts. */}
+        {/* 连续工具共用一个折叠组；过程正文始终按原顺序直接展示。 */}
         {hasProcessActivity && (
-          <ProcessCollapseGroup
-            defaultExpanded={!finalStarted}
-            active={!finalStarted && isStreaming}
-            summary={(
-              <span className="inline-flex items-center gap-1">
-                <span>{finalStarted ? '已处理' : '正在处理'}</span>
-                <ElapsedTimer key={startedAt} startedAt={startedAt} />
-              </span>
-            )}
-          >
-            {hasOrderedProcess ? orderedProcessBlocks.map((block, index) => {
+          <div className="w-full space-y-1 py-2">
+            {hasOrderedProcess ? processSegments.map((segment, index) => {
+              if (segment.type === 'tools') {
+                const tools = segment.blocks.map((block) => {
+                  const result = processToolResultsById.get(block.id);
+                  return {
+                    id: block.id,
+                    name: block.name,
+                    input: block.input,
+                    result: result?.content,
+                    isError: result?.is_error,
+                    media: result?.media,
+                  };
+                });
+                const hasRunningTool = tools.some((tool) => tool.result === undefined);
+                return (
+                  <ToolActionsGroup
+                    key={`process-tools-${segment.blocks[0]?.id ?? index}-${hasRunningTool ? 'running' : 'complete'}`}
+                    tools={tools}
+                    isStreaming={hasRunningTool}
+                    streamingToolOutput={hasRunningTool ? streamingToolOutput : undefined}
+                    defaultExpanded={hasRunningTool}
+                  />
+                );
+              }
+              const block = segment.block;
               if (block.type === 'thinking') {
                 return (
                   <ToolActionsGroup
                     key={`process-thinking-${index}`}
                     tools={[]}
-                    isStreaming={!finalStarted && isStreaming}
+                    isStreaming={isStreaming}
                     thinkingContent={block.thinking}
-                    defaultExpanded={!finalStarted}
+                    defaultExpanded={isStreaming}
                   />
                 );
               }
@@ -404,46 +426,30 @@ export function StreamingMessage({
               if (block.type === 'codex_context_compaction') {
                 return <ContextCompactionRow key={`context-compaction-${index}`} block={block} />;
               }
-              const result = processToolResultsById.get(block.id);
-              return (
-                <ToolActionsGroup
-                  key={block.id}
-                  tools={[{
-                    id: block.id,
-                    name: block.name,
-                    input: block.input,
-                    result: result?.content,
-                    isError: result?.is_error,
-                    media: result?.media,
-                  }]}
-                  isStreaming={!result}
-                  streamingToolOutput={!result ? streamingToolOutput : undefined}
-                  defaultExpanded={!result}
-                />
-              );
+              return null;
             }) : <>
             {thinkingContent && (
               <ToolActionsGroup
                 tools={[]}
-                isStreaming={!finalStarted && isStreaming}
+                isStreaming={isStreaming}
                 thinkingContent={thinkingContent}
-                defaultExpanded={!finalStarted}
+                defaultExpanded={isStreaming}
               />
             )}
-            {toolItems.map((tool) => {
-              const running = tool.result === undefined;
+            {toolItems.length > 0 && (() => {
+              const hasRunningTool = toolItems.some((tool) => tool.result === undefined);
               return (
                 <ToolActionsGroup
-                  key={tool.id}
-                  tools={[tool]}
-                  isStreaming={running}
-                  streamingToolOutput={running ? streamingToolOutput : undefined}
-                  defaultExpanded={running}
+                  key={`legacy-tools-${hasRunningTool ? 'running' : 'complete'}`}
+                  tools={toolItems}
+                  isStreaming={hasRunningTool}
+                  streamingToolOutput={hasRunningTool ? streamingToolOutput : undefined}
+                  defaultExpanded={hasRunningTool}
                 />
               );
-            })}
+            })()}
             </>}
-          </ProcessCollapseGroup>
+          </div>
         )}
 
         {/* Media from tool results — rendered outside tool group so images stay visible */}

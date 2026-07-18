@@ -9,7 +9,7 @@ import {
   MessageContent,
   MessageResponse,
 } from '@/components/ai-elements/message';
-import { ProcessCollapseGroup, ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
+import { ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
 import { MediaPreview } from './MediaPreview';
 import { DiffSummary } from './DiffSummary';
 import { Button } from "@/components/ui/button";
@@ -742,10 +742,10 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
 
 
   // Memoize expensive parsing: parseToolBlocks + pairTools
-  const { text, pairedTools, renderParts, thinking, elapsedMs, processCount } = useMemo(() => {
-    const { text, tools, renderParts, thinking, elapsedMs, processCount } = parseToolBlocks(message.content);
+  const { text, pairedTools, renderParts, thinking } = useMemo(() => {
+    const { text, tools, renderParts, thinking } = parseToolBlocks(message.content);
     const pairedTools = pairTools(tools);
-    return { text, pairedTools, renderParts, thinking, elapsedMs, processCount };
+    return { text, pairedTools, renderParts, thinking };
   }, [message.content]);
 
   // Memoize file attachment parsing
@@ -788,7 +788,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
     minute: '2-digit',
   });
 
-  const shouldRenderAssistantSummary =
+  const hasAssistantProcess =
     !isUser && (!!thinking || renderParts.some((part) =>
       part.type === 'tools' ||
       part.type === 'codex_context_compaction' ||
@@ -930,12 +930,8 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
 
         {!isUser && (
           <>
-            {shouldRenderAssistantSummary && (
-              <ProcessCollapseGroup
-                elapsedMs={elapsedMs}
-                processCount={processCount}
-                defaultExpanded={false}
-              >
+            {hasAssistantProcess && (
+              <div className="w-full space-y-1 py-2">
                 {thinking && (
                   <ToolActionsGroup
                     tools={[]}
@@ -944,7 +940,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
                   />
                 )}
                 {processParts.map((part, index) => renderAssistantPart(part, index))}
-              </ProcessCollapseGroup>
+              </div>
             )}
             {planParts.map((part, index) => renderAssistantPart(part, index))}
             {finalParts.length > 0 && (
@@ -952,7 +948,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
                 {finalParts.map((part, index) => renderAssistantPart(part, index))}
               </div>
             )}
-            {finalParts.length === 0 && planParts.length === 0 && !shouldRenderAssistantSummary && (
+            {finalParts.length === 0 && planParts.length === 0 && !hasAssistantProcess && (
               <div className="contents" data-assistant-final-answer data-answer-complete="true">
                 {renderParts.map((part, index) => renderAssistantPart(part, index))}
               </div>

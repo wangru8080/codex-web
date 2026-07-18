@@ -14,6 +14,7 @@ export default defineConfig({
       "src/codex-web/**/*.test.ts",
       "src/lib/**/*.test.ts",
       "src/components/chat/ContextCompactionRow.test.tsx",
+      "src/components/chat/streaming-process-groups.test.ts",
       "server/**/*.test.ts",
     ],
     exclude: ["src/__tests__/**", "node_modules/**", ".next/**", "dist/**"],

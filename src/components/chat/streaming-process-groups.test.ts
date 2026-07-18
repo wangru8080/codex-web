@@ -1,0 +1,102 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import type { MessageContentBlock } from "@/types";
+
+import { groupConsecutiveToolBlocks } from "./streaming-process-groups";
+
+const thinking = { type: "thinking", thinking: "检查上下文" } satisfies MessageContentBlock;
+const firstTool = {
+  type: "tool_use",
+  id: "tool-1",
+  name: "exec_command",
+  input: { cmd: "pwd" },
+} satisfies MessageContentBlock;
+const secondTool = {
+  type: "tool_use",
+  id: "tool-2",
+  name: "exec_command",
+  input: { cmd: "git status --short" },
+} satisfies MessageContentBlock;
+const processText = {
+  type: "codex_process_text",
+  text: "继续检查测试配置。",
+} satisfies MessageContentBlock;
+const thirdTool = {
+  type: "tool_use",
+  id: "tool-3",
+  name: "read_file",
+  input: { path: "package.json" },
+} satisfies MessageContentBlock;
+
+describe("groupConsecutiveToolBlocks", () => {
+  it("把相邻工具合并为一组，并由过程正文切断分组", () => {
+    expect(
+      groupConsecutiveToolBlocks([
+        thinking,
+        firstTool,
+        secondTool,
+        processText,
+        thirdTool,
+      ]),
+    ).toEqual([
+      { type: "block", block: thinking },
+      { type: "tools", blocks: [firstTool, secondTool] },
+      { type: "block", block: processText },
+      { type: "tools", blocks: [thirdTool] },
+    ]);
+  });
+
+  it("普通块保持原始顺序且不会生成空工具组", () => {
+    const compaction = {
+      type: "codex_context_compaction",
+      status: "completed",
+      sourceBreadcrumb: "app-server.item/completed",
+    } satisfies MessageContentBlock;
+
+    expect(groupConsecutiveToolBlocks([thinking, processText, compaction])).toEqual([
+      { type: "block", block: thinking },
+      { type: "block", block: processText },
+      { type: "block", block: compaction },
+    ]);
+  });
+
+  it("单个工具仍形成可独立折叠的工具组", () => {
+    expect(groupConsecutiveToolBlocks([firstTool])).toEqual([
+      { type: "tools", blocks: [firstTool] },
+    ]);
+  });
+
+  it("空输入不产生任何分组", () => {
+    expect(groupConsecutiveToolBlocks([])).toEqual([]);
+  });
+});
+
+describe("连续工具分组展示接线", () => {
+  it("流式消息不再折叠整轮过程，并在工具组完成时切换实例", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/components/chat/StreamingMessage.tsx"),
+      "utf8",
+    );
+
+    expect(source).not.toContain("<ProcessCollapseGroup");
+    expect(source).toContain("groupConsecutiveToolBlocks(orderedProcessBlocks)");
+    expect(source).toContain("tools={tools}");
+    expect(source).toContain("hasRunningTool ? 'running' : 'complete'");
+    expect(source).toContain("defaultExpanded={hasRunningTool}");
+  });
+
+  it("历史消息直接显示过程内容，仅让连续工具组默认折叠", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/components/chat/MessageItem.tsx"),
+      "utf8",
+    );
+
+    expect(source).not.toContain("<ProcessCollapseGroup");
+    expect(source).toContain("processParts.map((part, index) => renderAssistantPart(part, index))");
+    expect(source).toContain("tools={segmentTools.map");
+    expect(source).toContain("defaultExpanded={false}");
+  });
+});
