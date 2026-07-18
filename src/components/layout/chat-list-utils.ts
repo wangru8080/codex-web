@@ -76,12 +76,18 @@ export function mergeSessionsForDisplay(
   return merged;
 }
 
-export function groupSessionsByProject(sessions: ChatSession[]): ProjectGroup[] {
+export function groupSessionsByProject(
+  sessions: ChatSession[],
+  activeWorkingDirectory = "",
+): ProjectGroup[] {
   const map = new Map<string, ChatSession[]>();
   for (const session of sessions) {
     const key = session.working_directory || "";
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(session);
+  }
+  if (activeWorkingDirectory.trim() && !map.has(activeWorkingDirectory)) {
+    map.set(activeWorkingDirectory, []);
   }
 
   const groups: ProjectGroup[] = [];
@@ -95,7 +101,9 @@ export function groupSessionsByProject(sessions: ChatSession[]): ProjectGroup[] 
       wd === ""
         ? "No Project"
         : groupSessions[0]?.project_name || wd.split("/").pop() || wd;
-    const latestUpdatedAt = parseDBDate(groupSessions[0].updated_at).getTime();
+    const latestUpdatedAt = groupSessions[0]
+      ? parseDBDate(groupSessions[0].updated_at).getTime()
+      : 0;
     groups.push({
       workingDirectory: wd,
       displayName,
@@ -104,8 +112,14 @@ export function groupSessionsByProject(sessions: ChatSession[]): ProjectGroup[] 
     });
   }
 
-  // Sort groups by most recently active first
-  groups.sort((a, b) => b.latestUpdatedAt - a.latestUpdatedAt);
+  // 当前项目即使还没有会话，也应立即出现在项目列表顶部。
+  groups.sort((a, b) => {
+    if (activeWorkingDirectory) {
+      if (a.workingDirectory === activeWorkingDirectory) return -1;
+      if (b.workingDirectory === activeWorkingDirectory) return 1;
+    }
+    return b.latestUpdatedAt - a.latestUpdatedAt;
+  });
   return groups;
 }
 

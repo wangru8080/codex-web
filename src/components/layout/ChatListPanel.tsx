@@ -244,8 +244,8 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   const filteredSessions = sessions;
 
   const projectGroups = useMemo(() => {
-    return groupSessionsByProject(filteredSessions);
-  }, [filteredSessions]);
+    return groupSessionsByProject(filteredSessions, workingDirectory);
+  }, [filteredSessions, workingDirectory]);
 
   // Auto-collapse: only expand the project with the most recent session activity.
   // Runs on first use AND whenever the project list changes (new projects added).
