@@ -2,12 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import {
-  Bell,
-  Columns,
-  X,
-  DotsThree,
-} from "@/components/ui/icon";
+import { Bell, DotsThree } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -188,93 +183,6 @@ export function SessionListItem({
           }
         }}
       />
-    </div>
-  );
-}
-
-interface SplitGroupSectionProps {
-  splitSessions: Array<{ sessionId: string; title: string }>;
-  activeColumnId: string;
-  streamingSessionId: string;
-  pendingApprovalSessionId: string;
-  activeStreamingSessions: Set<string>;
-  pendingApprovalSessionIds: Set<string>;
-  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
-  setActiveColumn: (sessionId: string) => void;
-  removeFromSplit: (sessionId: string) => void;
-}
-
-export function SplitGroupSection({
-  splitSessions,
-  activeColumnId,
-  streamingSessionId,
-  pendingApprovalSessionId,
-  activeStreamingSessions,
-  pendingApprovalSessionIds,
-  t,
-  setActiveColumn,
-  removeFromSplit,
-}: SplitGroupSectionProps) {
-  return (
-    <div className="mb-2 rounded-lg border border-border/60 bg-muted/30 p-1.5">
-      <div className="flex items-center gap-1.5 px-2 py-1">
-        <Columns className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium text-muted-foreground">{t('split.splitGroup' as TranslationKey)}</span>
-      </div>
-      <div className="mt-0.5 flex flex-col gap-0.5">
-        {splitSessions.map((session) => {
-          const isActiveInSplit = activeColumnId === session.sessionId;
-          const isSessionStreaming =
-            activeStreamingSessions.has(session.sessionId) || streamingSessionId === session.sessionId;
-          const needsApproval =
-            pendingApprovalSessionIds.has(session.sessionId) || pendingApprovalSessionId === session.sessionId;
-
-          return (
-            <div
-              key={session.sessionId}
-              className={cn(
-                "group relative flex items-center gap-1.5 rounded-md pl-7 pr-2 py-1.5 transition-all duration-150 min-w-0 cursor-pointer",
-                isActiveInSplit
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent/50"
-              )}
-              onClick={(e) => {
-                e.preventDefault();
-                setActiveColumn(session.sessionId);
-              }}
-            >
-              {isSessionStreaming && (
-                <span className="relative flex h-2 w-2 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-status-success opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-status-success" />
-                </span>
-              )}
-              {needsApproval && (
-                <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-status-warning-muted">
-                  <Bell size={10} className="text-status-warning-foreground" />
-                </span>
-              )}
-              <div className="flex-1 min-w-0">
-                <span className="line-clamp-1 text-[13px] font-medium leading-tight break-all">
-                  {session.title}
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="h-4 w-4 shrink-0 text-muted-foreground/60 hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeFromSplit(session.sessionId);
-                }}
-              >
-                <X className="h-2.5 w-2.5" />
-                <span className="sr-only">{t('split.closeSplit' as TranslationKey)}</span>
-              </Button>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
