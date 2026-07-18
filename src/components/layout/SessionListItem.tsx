@@ -27,18 +27,19 @@ interface SessionListItemProps {
   session: ChatSession;
   isActive: boolean;
   isHovered: boolean;
-  isDeleting: boolean;
+  isArchiving: boolean;
   isSessionStreaming: boolean;
   needsApproval: boolean;
   canSplit: boolean;
   readOnly?: boolean;
+  canManage?: boolean;
   /** Whether this session belongs to the assistant workspace */
   isWorkspace?: boolean;
   formatRelativeTime: (dateStr: string, t: (key: TranslationKey, params?: Record<string, string | number>) => string) => string;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
-  onDelete: (e: React.MouseEvent, sessionId: string) => void;
+  onArchive: (e: React.MouseEvent, sessionId: string) => void;
   onRename: (sessionId: string, newTitle: string) => void;
   onAddToSplit: (session: ChatSession) => void;
 }
@@ -47,24 +48,26 @@ export function SessionListItem({
   session,
   isActive,
   isHovered,
-  isDeleting,
+  isArchiving,
   isSessionStreaming,
   needsApproval,
   canSplit,
   readOnly,
+  canManage,
   isWorkspace,
   formatRelativeTime,
   t,
   onMouseEnter,
   onMouseLeave,
-  onDelete,
+  onArchive,
   onRename,
   onAddToSplit,
 }: SessionListItemProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
-  const showActions = isHovered || menuOpen || isDeleting;
+  const showActions = isHovered || menuOpen || isArchiving;
   const isReadOnly = !!session.read_only || !!readOnly;
+  const isManageable = canManage ?? !isReadOnly;
 
   return (
     <div
@@ -141,7 +144,7 @@ export function SessionListItem({
             <Columns size={14} />
             <span>{t('chatList.splitScreen' as TranslationKey)}</span>
           </DropdownMenuItem>
-          {!isReadOnly && (
+          {isManageable && (
             <DropdownMenuItem
               onSelect={(e) => {
                 // Prevent the default close-menu → focus-trigger behavior.
@@ -166,15 +169,14 @@ export function SessionListItem({
             <CodexWebIcon name="copy" size="sm" aria-hidden />
             <span>{t('chatList.copySessionId' as TranslationKey)}</span>
           </DropdownMenuItem>
-          {!isReadOnly && (
+          {isManageable && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                variant="destructive"
-                onClick={(e) => onDelete(e as unknown as React.MouseEvent, session.id)}
+                onClick={(e) => onArchive(e as unknown as React.MouseEvent, session.id)}
               >
-                <CodexWebIcon name="delete" size="sm" aria-hidden />
-                <span>{t('chatList.deleteConversation' as TranslationKey)}</span>
+                <CodexWebIcon name="archive" size="sm" aria-hidden />
+                <span>{t('chatList.archiveConversation' as TranslationKey)}</span>
               </DropdownMenuItem>
             </>
           )}

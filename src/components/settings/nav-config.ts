@@ -12,6 +12,7 @@ export type SettingsSection =
   | "general"
   | "appearance"
   | "tasks"
+  | "archived"
   | "about";
 
 export interface SettingsNavItem {
@@ -22,6 +23,7 @@ export interface SettingsNavItem {
   icon: CodexWebIconName;
   href: string;
   i18nKey: TranslationKey;
+  groupI18nKey?: TranslationKey;
 }
 
 export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
@@ -30,6 +32,14 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   { id: "appearance", label: "Appearance", icon: "appearance", href: "/settings/appearance", i18nKey: "settings.appearance" as TranslationKey },
   { id: "tasks", label: "Tasks", icon: "task", href: "/settings/tasks", i18nKey: "settings.tasks" as TranslationKey },
   { id: "about", label: "About", icon: "about", href: "/settings/about", i18nKey: "settings.about" as TranslationKey },
+  {
+    id: "archived",
+    label: "Archived Tasks",
+    icon: "archive",
+    href: "/settings/archived",
+    i18nKey: "settings.archivedTasks" as TranslationKey,
+    groupI18nKey: "settings.archivedGroup" as TranslationKey,
+  },
 ];
 
 export function pathnameToSettingsSection(pathname: string): SettingsSection {

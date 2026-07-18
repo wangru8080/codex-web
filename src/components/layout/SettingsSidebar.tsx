@@ -54,26 +54,32 @@ export function SettingsSidebar({ open }: SettingsSidebarProps) {
         {SETTINGS_NAV_ITEMS.map((item) => {
           const isActive = activeSection === item.id;
           return (
-            <Link
-              key={item.id}
-              href={item.href}
-              prefetch={false}
-              className={cn(
-                "group inline-flex items-center w-full justify-start gap-2 h-9 px-3 rounded-xl text-[13px]",
-                isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                  : "text-sidebar-foreground font-normal hover:bg-sidebar-accent/60",
+            <div key={item.id} className={item.groupI18nKey ? "mt-5" : undefined}>
+              {item.groupI18nKey && (
+                <div className="px-3 pb-1.5 text-xs font-medium text-muted-foreground/70">
+                  {t(item.groupI18nKey)}
+                </div>
               )}
-            >
-              <CodexWebIcon
-                name={item.icon}
-                size="md"
-                strokeWidth={isActive ? 2 : undefined}
-                className="text-inherit"
-                aria-hidden
-              />
-              {t(item.i18nKey)}
-            </Link>
+              <Link
+                href={item.href}
+                prefetch={false}
+                className={cn(
+                  "group inline-flex items-center w-full justify-start gap-2 h-9 px-3 rounded-xl text-[13px]",
+                  isActive
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground font-normal hover:bg-sidebar-accent/60",
+                )}
+              >
+                <CodexWebIcon
+                  name={item.icon}
+                  size="md"
+                  strokeWidth={isActive ? 2 : undefined}
+                  className="text-inherit"
+                  aria-hidden
+                />
+                {t(item.i18nKey)}
+              </Link>
+            </div>
           );
         })}
       </div>

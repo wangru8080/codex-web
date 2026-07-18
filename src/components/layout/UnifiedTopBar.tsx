@@ -30,6 +30,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useClientPlatform } from '@/hooks/useClientPlatform';
 import { copyWithToast } from "@/lib/clipboard";
 import type { TranslationKey } from "@/i18n";
+import { useAppServerActions } from "@/codex-web/AppServerProvider";
 
 export function UnifiedTopBar() {
   const {
@@ -54,6 +55,7 @@ export function UnifiedTopBar() {
   const { t } = useTranslation();
   const { isWindows } = useClientPlatform();
   const pathname = usePathname();
+  const { setThreadName, archiveThread } = useAppServerActions();
 
   // 新对话和历史对话共用右侧文件树与工作区。
   const isChatRoute = pathname === "/chat" || pathname.startsWith("/chat/");
@@ -68,33 +70,25 @@ export function UnifiedTopBar() {
     const trimmed = newTitle.trim();
     if (!trimmed || !sessionId || trimmed === sessionTitle) return;
     try {
-      const res = await fetch(`/api/chat/sessions/${sessionId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: trimmed }),
-      });
-      if (res.ok) {
-        setSessionTitle(trimmed);
-        window.dispatchEvent(new CustomEvent('session-updated', { detail: { id: sessionId, title: trimmed } }));
-      }
+      await setThreadName({ threadId: sessionId, name: trimmed });
+      setSessionTitle(trimmed);
+      window.dispatchEvent(new CustomEvent('session-updated', { detail: { id: sessionId, title: trimmed } }));
     } catch {
       // Silent — fail-soft like the sidebar handler.
     }
-  }, [sessionId, sessionTitle, setSessionTitle]);
+  }, [sessionId, sessionTitle, setSessionTitle, setThreadName]);
 
-  const handleDelete = useCallback(async () => {
+  const handleArchive = useCallback(async () => {
     if (!sessionId) return;
-    if (!confirm("Delete this conversation?")) return;
+    if (!confirm(t("chatList.archiveConfirm" as TranslationKey))) return;
     try {
-      const res = await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
-      if (res.ok) {
-        window.dispatchEvent(new CustomEvent('session-updated'));
-        router.push('/chat');
-      }
+      await archiveThread(sessionId);
+      window.dispatchEvent(new CustomEvent('session-updated'));
+      router.push('/chat');
     } catch {
       // Silent — same as sidebar.
     }
-  }, [sessionId, router]);
+  }, [archiveThread, sessionId, router, t]);
 
   const handleAddToSplit = useCallback(() => {
     if (!sessionId) return;
@@ -311,9 +305,9 @@ export function UnifiedTopBar() {
                   <span>{t('chatList.copySessionId' as TranslationKey)}</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onClick={handleDelete}>
-                  <CodexWebIcon name="delete" size="sm" aria-hidden />
-                  <span>{t('chatList.deleteConversation' as TranslationKey)}</span>
+                <DropdownMenuItem onClick={handleArchive}>
+                  <CodexWebIcon name="archive" size="sm" aria-hidden />
+                  <span>{t('chatList.archiveConversation' as TranslationKey)}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

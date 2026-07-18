@@ -51,13 +51,13 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   const router = useRouter();
   const { streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, workingDirectory, setChatListOpen } = usePanel();
   const appServerState = useAppServerState();
-  const { refreshThreads } = useAppServerActions();
+  const { refreshThreads, setThreadName, archiveThread } = useAppServerActions();
   const { addToSplit, removeFromSplit, isInSplit } = useSplit();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
-  const [deletingSession, setDeletingSession] = useState<string | null>(null);
+  const [archivingSession, setArchivingSession] = useState<string | null>(null);
   const [expandedSessionGroups, setExpandedSessionGroups] = useState<Set<string>>(new Set());
   const SESSION_TRUNCATE_LIMIT = 10;
   const appServerSessions = useMemo(
@@ -160,84 +160,71 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
     return () => clearInterval(interval);
   }, [fetchSessions]);
 
-  const handleDeleteSession = async (
+  const handleArchiveSession = async (
     e: React.MouseEvent,
     sessionId: string
   ) => {
     e.preventDefault();
     e.stopPropagation();
     const session = sessions.find((s) => s.id === sessionId);
-    if (session?.read_only || session?.origin === 'codex_rollout') return;
-    if (!confirm("Delete this conversation?")) return;
-    setDeletingSession(sessionId);
+    if (!session?.codex_thread_id) return;
+    if (!confirm(t("chatList.archiveConfirm" as TranslationKey))) return;
+    setArchivingSession(sessionId);
     try {
-      const res = await fetch(`/api/chat/sessions/${sessionId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-        // Drop from split group if it's there
-        if (isInSplit(sessionId)) {
-          removeFromSplit(sessionId);
-        }
-        if (pathname === `/chat/${sessionId}`) {
-          router.push("/chat");
-        }
+      await archiveThread(sessionId);
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (isInSplit(sessionId)) {
+        removeFromSplit(sessionId);
+      }
+      if (pathname === `/chat/${sessionId}`) {
+        router.push("/chat");
       }
     } catch {
       // Silently fail
     } finally {
-      setDeletingSession(null);
+      setArchivingSession(null);
     }
   };
 
   const handleRenameSession = async (sessionId: string, newTitle: string) => {
     const session = sessions.find((s) => s.id === sessionId);
-    if (session?.read_only || session?.origin === 'codex_rollout') return;
+    if (!session?.codex_thread_id) return;
     try {
-      const res = await fetch(`/api/chat/sessions/${sessionId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: newTitle }),
-      });
-      if (res.ok) {
-        setSessions((prev) =>
-          prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s))
-        );
-        window.dispatchEvent(new CustomEvent("session-updated"));
-      }
+      await setThreadName({ threadId: sessionId, name: newTitle });
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s))
+      );
+      window.dispatchEvent(new CustomEvent("session-updated"));
     } catch {
       // Silently fail
     }
   };
 
   const handleRemoveProject = async (workingDirectory: string) => {
-    if (!confirm(`Remove project "${workingDirectory.split('/').pop()}" and all its conversations?`)) return;
+    if (!confirm(t("chatList.archiveProjectConfirm" as TranslationKey, {
+      project: workingDirectory.split('/').pop() || workingDirectory,
+    }))) return;
     const projectSessions = sessions.filter((s) =>
       s.working_directory === workingDirectory
-      && !s.read_only
-      && s.origin !== 'codex_rollout'
+      && !!s.codex_thread_id
     );
-    const deletedIds = new Set<string>();
+    const archivedIds = new Set<string>();
     for (const session of projectSessions) {
       try {
-        const res = await fetch(`/api/chat/sessions/${session.id}`, { method: "DELETE" });
-        if (res.ok) {
-          deletedIds.add(session.id);
-          if (isInSplit(session.id)) {
-            removeFromSplit(session.id);
-          }
+        await archiveThread(session.id);
+        archivedIds.add(session.id);
+        if (isInSplit(session.id)) {
+          removeFromSplit(session.id);
         }
       } catch {
         // Continue with remaining
       }
     }
-    // Only remove sessions that were successfully deleted from backend
-    if (deletedIds.size > 0) {
-      setSessions((prev) => prev.filter((s) => !deletedIds.has(s.id)));
+    if (archivedIds.size > 0) {
+      setSessions((prev) => prev.filter((s) => !archivedIds.has(s.id)));
       if (pathname?.startsWith('/chat/')) {
         const currentSessionId = pathname.split('/chat/')[1];
-        if (deletedIds.has(currentSessionId)) {
+        if (archivedIds.has(currentSessionId)) {
           router.push("/chat");
         }
       }
@@ -480,17 +467,18 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
                                         session={session}
                                         isActive={isActive}
                                         isHovered={hoveredSession === session.id}
-                                        isDeleting={deletingSession === session.id}
+                                        isArchiving={archivingSession === session.id}
                                         isSessionStreaming={activeStreamingSessions.has(session.id) || streamingSessionId === session.id}
                                         needsApproval={pendingApprovalSessionIds.has(session.id) || pendingApprovalSessionId === session.id}
                                         canSplit={canSplit}
                                         readOnly={isReadOnly}
+                                        canManage={!!session.codex_thread_id}
                                         isWorkspace={false}
                                         formatRelativeTime={formatRelativeTime}
                                         t={t}
                                         onMouseEnter={() => setHoveredSession(session.id)}
                                         onMouseLeave={() => setHoveredSession(null)}
-                                        onDelete={handleDeleteSession}
+                                        onArchive={handleArchiveSession}
                                         onRename={handleRenameSession}
                                         onAddToSplit={(s) => addToSplit({
                                           sessionId: s.id,

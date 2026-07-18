@@ -23,9 +23,14 @@ import type { McpServerStatus } from "@/codex/protocol/generated/v2/McpServerSta
 import type { ConfigWriteResponse } from "@/codex/protocol/generated/v2/ConfigWriteResponse";
 import type { ThreadListParams } from "@/codex/protocol/generated/v2/ThreadListParams";
 import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
+import type { ThreadArchiveResponse } from "@/codex/protocol/generated/v2/ThreadArchiveResponse";
+import type { ThreadDeleteResponse } from "@/codex/protocol/generated/v2/ThreadDeleteResponse";
 import type { ThreadReadParams } from "@/codex/protocol/generated/v2/ThreadReadParams";
 import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadReadResponse";
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
+import type { ThreadSetNameParams } from "@/codex/protocol/generated/v2/ThreadSetNameParams";
+import type { ThreadSetNameResponse } from "@/codex/protocol/generated/v2/ThreadSetNameResponse";
+import type { ThreadUnarchiveResponse } from "@/codex/protocol/generated/v2/ThreadUnarchiveResponse";
 import type { ConfigRequirementsReadResponse } from "@/codex/protocol/generated/v2/ConfigRequirementsReadResponse";
 import type { ThreadSettingsUpdateResponse } from "@/codex/protocol/generated/v2/ThreadSettingsUpdateResponse";
 import type { ThreadStartParams } from "@/codex/protocol/generated/v2/ThreadStartParams";
@@ -155,6 +160,11 @@ export type AppServerActions = {
   sendTurnInThread: (params: SendTurnInThreadParams) => Promise<AppServerTurnState>;
   interruptTurn: (params?: InterruptTurnParams) => Promise<void>;
   refreshThreads: () => Promise<ThreadListResponse>;
+  listThreads: (params: ThreadListParams) => Promise<ThreadListResponse>;
+  setThreadName: (params: ThreadSetNameParams) => Promise<ThreadSetNameResponse>;
+  archiveThread: (threadId: string) => Promise<ThreadArchiveResponse>;
+  unarchiveThread: (threadId: string) => Promise<ThreadUnarchiveResponse>;
+  deleteThread: (threadId: string) => Promise<ThreadDeleteResponse>;
   readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
   listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
   readDirectory: (path: string) => Promise<FsReadDirectoryResponse>;
@@ -541,6 +551,52 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       threads: { source: "app-server.thread/list", data: threads },
     }));
     return threads;
+  }, []);
+
+  const listThreads = useCallback(async (params: ThreadListParams) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+    return (await client.request("thread/list", params)) as ThreadListResponse;
+  }, []);
+
+  const setThreadName = useCallback(async (params: ThreadSetNameParams) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+    const response = (await client.request("thread/name/set", params)) as ThreadSetNameResponse;
+    await refreshThreads();
+    return response;
+  }, [refreshThreads]);
+
+  const archiveThread = useCallback(async (threadId: string) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+    const response = (await client.request("thread/archive", { threadId })) as ThreadArchiveResponse;
+    await refreshThreads();
+    return response;
+  }, [refreshThreads]);
+
+  const unarchiveThread = useCallback(async (threadId: string) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+    const response = (await client.request("thread/unarchive", { threadId })) as ThreadUnarchiveResponse;
+    await refreshThreads();
+    return response;
+  }, [refreshThreads]);
+
+  const deleteThread = useCallback(async (threadId: string) => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+    return (await client.request("thread/delete", { threadId })) as ThreadDeleteResponse;
   }, []);
 
   const readThread = useCallback(async (threadId: string, options?: { includeTurns?: boolean }) => {
@@ -986,6 +1042,11 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       sendTurnInThread,
       interruptTurn,
       refreshThreads,
+      listThreads,
+      setThreadName,
+      archiveThread,
+      unarchiveThread,
+      deleteThread,
       readThread,
       listThreadTurns,
       readDirectory,
@@ -1013,7 +1074,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       updateMemorySettings,
       readAccountRateLimits,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits],
   );
 
   return (

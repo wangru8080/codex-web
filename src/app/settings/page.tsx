@@ -20,6 +20,7 @@ const SECTION_HASH_TO_PATH: Record<string, string> = {
   usage: "/settings/codex",
   assistant: "/settings/codex",
   tasks: "/settings/tasks",
+  archived: "/settings/archived",
   bridge: "/settings/general",
   about: "/settings/about",
 };
