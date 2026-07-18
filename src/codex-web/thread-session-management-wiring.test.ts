@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 describe("app-server 会话管理接线", () => {
   const provider = readFileSync(resolve(process.cwd(), "src/codex-web/AppServerProvider.tsx"), "utf8");
   const sidebar = readFileSync(resolve(process.cwd(), "src/components/layout/ChatListPanel.tsx"), "utf8");
+  const sessionItem = readFileSync(resolve(process.cwd(), "src/components/layout/SessionListItem.tsx"), "utf8");
   const topbar = readFileSync(resolve(process.cwd(), "src/components/layout/UnifiedTopBar.tsx"), "utf8");
   const archived = readFileSync(resolve(process.cwd(), "src/components/settings/ArchivedThreadsSection.tsx"), "utf8");
   const settingsNav = readFileSync(resolve(process.cwd(), "src/components/settings/nav-config.ts"), "utf8");
@@ -30,6 +31,12 @@ describe("app-server 会话管理接线", () => {
     expect(topbar).toContain("copyWithToast({ text: sessionId, t })");
     expect(topbar).toContain("addToSplit({");
     expect(topbar).not.toContain("unarchiveThread(sessionId)");
+  });
+
+  it("左侧会话菜单不再显示分屏入口", () => {
+    expect(sessionItem).not.toContain("chatList.splitScreen");
+    expect(sessionItem).not.toContain("onAddToSplit");
+    expect(sidebar).not.toContain("addToSplit");
   });
 
   it("归档设置页只从 app-server 读取真实归档 thread", () => {

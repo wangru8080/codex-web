@@ -52,7 +52,7 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   const { streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, workingDirectory, setChatListOpen } = usePanel();
   const appServerState = useAppServerState();
   const { refreshThreads, setThreadName, archiveThread } = useAppServerActions();
-  const { addToSplit, removeFromSplit, isInSplit } = useSplit();
+  const { removeFromSplit, isInSplit } = useSplit();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -460,7 +460,6 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
                                   {visibleSessions.map((session) => {
                                     const isActive = pathname === `/chat/${session.id}`;
                                     const isReadOnly = !!session.read_only || session.origin === 'codex_rollout';
-                                    const canSplit = !isReadOnly && !isActive && !isInSplit(session.id);
                                     return (
                                       <SessionListItem
                                         key={session.id}
@@ -470,7 +469,6 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
                                         isArchiving={archivingSession === session.id}
                                         isSessionStreaming={activeStreamingSessions.has(session.id) || streamingSessionId === session.id}
                                         needsApproval={pendingApprovalSessionIds.has(session.id) || pendingApprovalSessionId === session.id}
-                                        canSplit={canSplit}
                                         readOnly={isReadOnly}
                                         canManage={!!session.codex_thread_id}
                                         isWorkspace={false}
@@ -480,13 +478,6 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
                                         onMouseLeave={() => setHoveredSession(null)}
                                         onArchive={handleArchiveSession}
                                         onRename={handleRenameSession}
-                                        onAddToSplit={(s) => addToSplit({
-                                          sessionId: s.id,
-                                          title: s.title,
-                                          workingDirectory: s.working_directory || "",
-                                          projectName: s.project_name || "",
-                                          mode: s.mode,
-                                        })}
                                       />
                                     );
                                   })}

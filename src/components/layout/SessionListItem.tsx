@@ -30,7 +30,6 @@ interface SessionListItemProps {
   isArchiving: boolean;
   isSessionStreaming: boolean;
   needsApproval: boolean;
-  canSplit: boolean;
   readOnly?: boolean;
   canManage?: boolean;
   /** Whether this session belongs to the assistant workspace */
@@ -41,7 +40,6 @@ interface SessionListItemProps {
   onMouseLeave: () => void;
   onArchive: (e: React.MouseEvent, sessionId: string) => void;
   onRename: (sessionId: string, newTitle: string) => void;
-  onAddToSplit: (session: ChatSession) => void;
 }
 
 export function SessionListItem({
@@ -51,7 +49,6 @@ export function SessionListItem({
   isArchiving,
   isSessionStreaming,
   needsApproval,
-  canSplit,
   readOnly,
   canManage,
   isWorkspace,
@@ -61,7 +58,6 @@ export function SessionListItem({
   onMouseLeave,
   onArchive,
   onRename,
-  onAddToSplit,
 }: SessionListItemProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -137,13 +133,6 @@ export function SessionListItem({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[160px]">
-          <DropdownMenuItem
-            disabled={isReadOnly || isActive || !canSplit}
-            onClick={() => onAddToSplit(session)}
-          >
-            <Columns size={14} />
-            <span>{t('chatList.splitScreen' as TranslationKey)}</span>
-          </DropdownMenuItem>
           {isManageable && (
             <DropdownMenuItem
               onSelect={(e) => {
