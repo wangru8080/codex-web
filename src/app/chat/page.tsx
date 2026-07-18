@@ -121,6 +121,7 @@ function NewChatPageInner() {
   const [toolUses, setToolUses] = useState<CodexWebToolUseInfo[]>([]);
   const [toolResults, setToolResults] = useState<CodexWebToolResultInfo[]>([]);
   const [statusText, setStatusText] = useState<string | undefined>();
+  const streamingStartedAtRef = useRef(0);
   const [workingDir, setWorkingDir] = useState('');
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [errorBanner, setErrorBanner] = useState<{ message: string; description?: string } | null>(null);
@@ -299,6 +300,7 @@ function NewChatPageInner() {
     setToolUses([]);
     setToolResults([]);
     setStatusText(undefined);
+    streamingStartedAtRef.current = 0;
     setErrorBanner(null);
     setPendingPermission(null);
     setPermissionResolved(null);
@@ -329,8 +331,9 @@ function NewChatPageInner() {
     setToolResults(toolState.toolResults);
     setStreamingToolOutput(toolState.streamingToolOutput);
     if (appServerTurn.status === 'running') {
+      if (streamingStartedAtRef.current <= 0) streamingStartedAtRef.current = Date.now();
       setIsStreaming(true);
-      setStatusText('Codex 正在处理...');
+      setStatusText('已处理');
     } else if (appServerTurn.status === 'failed') {
       setStatusText('Codex 处理失败');
     } else if (appServerTurn.status === 'interrupted') {
@@ -383,6 +386,7 @@ function NewChatPageInner() {
     setToolResults([]);
     setStreamingToolOutput('');
     setStatusText(undefined);
+    streamingStartedAtRef.current = 0;
     setPendingPermission(null);
     setPermissionResolved(null);
     setPendingApprovalSessionId('');
@@ -712,6 +716,7 @@ function NewChatPageInner() {
         // optimistic user bubble. Deferring to here keeps `isNewChat` true
         // through any pre-acceptance failure, so the composer never remounts and
         // the screenshot survives (#615).
+        streamingStartedAtRef.current = Date.now();
         setIsStreaming(true);
         setStreamingContent('');
         setToolUses([]);
@@ -759,6 +764,7 @@ function NewChatPageInner() {
           setToolResults([]);
           setStreamingToolOutput('');
           setStatusText(undefined);
+          streamingStartedAtRef.current = 0;
           setPendingPermission(null);
           setPermissionResolved(null);
           setPendingApprovalSessionId('');
@@ -1043,6 +1049,7 @@ function NewChatPageInner() {
             processBlocks={appServerProcessBlocks}
             planBlocks={appServerTurn?.planBlocks}
             statusText={statusText}
+            startedAt={streamingStartedAtRef.current}
           />
           {composerStack}
         </>

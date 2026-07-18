@@ -537,6 +537,7 @@ export function ChatView({
   // Derive rendering state from snapshot
   const legacyIsStreaming = streamSnapshot?.phase === 'active';
   const [appServerLocalStreaming, setAppServerLocalStreaming] = useState(false);
+  const [appServerPanelClock, setAppServerPanelClock] = useState({ turnKey: '', startedAt: 0 });
   const [appServerErrorBanner, setAppServerErrorBanner] = useState<{ message: string; description?: string } | null>(null);
   const finalizedAppServerTurnRef = useRef<string>('');
   const finalizedAppServerTurnPresentationKeyRef = useRef<string>('');
@@ -550,7 +551,7 @@ export function ChatView({
   );
   const appServerStatusText =
     appServerTurn?.status === 'running'
-      ? 'Codex 正在处理...'
+      ? '已处理'
       : appServerTurn?.status === 'failed'
         ? 'Codex 处理失败'
         : appServerTurn?.status === 'interrupted'
@@ -581,18 +582,28 @@ export function ChatView({
   const appServerPanelStartedAt =
     appServerTurnIsTerminal && typeof appServerTurn?.durationMs === 'number'
       ? Date.now() - appServerTurn.durationMs
-      : streamSnapshot?.startedAt;
+      : appServerSend
+        ? appServerPanelClock.startedAt
+        : streamSnapshot?.startedAt;
   const rewindPoints = getRewindPoints(activeSessionId);
   const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
   const [dismissedPlanPromptKey, setDismissedPlanPromptKey] = useState('');
 
   useEffect(() => {
     if (!appServerSend || appServerTurn?.status !== 'running') return;
-    if (appServerTurn.threadId && appServerTurn.threadId !== activeSessionId) return;
     const turnKey = appServerTurnPresentationKey(appServerTurn);
     if (turnKey && turnKey === finalizedAppServerTurnPresentationKeyRef.current) return;
+    setAppServerPanelClock((current) => {
+      if (current.turnKey === turnKey) return current;
+      return {
+        turnKey,
+        startedAt: current.turnKey === 'pending' && current.startedAt > 0
+          ? current.startedAt
+          : Date.now(),
+      };
+    });
     setAppServerLocalStreaming(true);
-  }, [activeSessionId, appServerSend, appServerTurn?.status, appServerTurn?.threadId]);
+  }, [appServerSend, appServerTurn?.status, appServerTurn?.threadId, appServerTurn?.turnId]);
 
   // ── Skill nudge banner ──
   // Listens for 'skill-nudge' window events dispatched by stream-session-manager
@@ -1328,6 +1339,7 @@ export function ChatView({
           return;
         }
 
+        setAppServerPanelClock({ turnKey: 'pending', startedAt: Date.now() });
         setAppServerLocalStreaming(true);
         setAppServerErrorBanner(null);
         let accepted = false;

@@ -84,6 +84,10 @@ describe("连续工具分组展示接线", () => {
     expect(source).toContain("<ProcessCollapseGroup");
     expect(source).toContain("defaultExpanded={!finalStarted}");
     expect(source).toContain("active={!finalStarted && isStreaming}");
+    expect(source).toContain("<span>已处理</span>");
+    expect(source).not.toContain("finalStarted ? '已处理' : '正在处理'");
+    expect(source).toContain("displayText === '已处理'");
+    expect(source).toContain("isStreaming && !hasProcessActivity && <StreamingStatusBar");
     expect(source).toContain("groupConsecutiveToolBlocks(orderedProcessBlocks)");
     expect(source).toContain("tools={tools}");
     expect(source).toContain("hasRunningTool ? 'running' : 'complete'");
@@ -102,5 +106,31 @@ describe("连续工具分组展示接线", () => {
     expect(source).toContain("processParts.map((part, index) => renderAssistantPart(part, index))");
     expect(source).toContain("tools={segmentTools.map");
     expect(source).toContain("defaultExpanded={false}");
+  });
+
+  it("app-server 实时过程使用稳定起始时间和已处理文案", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/components/chat/ChatView.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("const [appServerPanelClock, setAppServerPanelClock]");
+    expect(source).toContain("? '已处理'");
+    expect(source).toContain("setAppServerPanelClock({ turnKey: 'pending', startedAt: Date.now() })");
+    expect(source).toContain("? appServerPanelClock.startedAt");
+    expect(source).not.toContain("appServerTurn.threadId !== activeSessionId) return");
+  });
+
+  it("新会话实时过程传递开始时间并使用已处理文案", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/app/chat/page.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("const streamingStartedAtRef = useRef(0)");
+    expect(source).toContain("streamingStartedAtRef.current = Date.now()");
+    expect(source).toContain("setStatusText('已处理')");
+    expect(source).toContain("startedAt={streamingStartedAtRef.current}");
+    expect(source).not.toContain("setStatusText('Codex 正在处理...')");
   });
 });
