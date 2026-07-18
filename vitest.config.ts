@@ -15,6 +15,7 @@ export default defineConfig({
       "src/lib/**/*.test.ts",
       "src/components/chat/ContextCompactionRow.test.tsx",
       "src/components/chat/streaming-process-groups.test.ts",
+      "src/components/ui/semantic-icon.test.tsx",
       "server/**/*.test.ts",
     ],
     exclude: ["src/__tests__/**", "node_modules/**", ".next/**", "dist/**"],

@@ -372,8 +372,8 @@ export interface CodexWebIconProps {
   /** Hide the icon from assistive tech when it is purely decorative. */
   'aria-hidden'?: boolean;
   /**
-   * Optional stroke width override. HugeIcons defaults to 1.5; bump to
-   * 2 for emphasis (e.g. active nav). Leave undefined to inherit.
+   * 可选描边宽度。默认使用 2，避免小尺寸图标因亚像素描边而发虚；
+   * 调用方仍可传入其他值覆盖默认值。
    */
   strokeWidth?: number;
 }
@@ -420,7 +420,7 @@ export function CodexWebIcon({
     <HugeiconsIcon
       icon={iconDef}
       size={pixelSize}
-      strokeWidth={strokeWidth}
+      strokeWidth={strokeWidth ?? 2}
       className={cn('text-muted-foreground', className)}
       aria-label={ariaLabel}
       aria-hidden={ariaHidden}
