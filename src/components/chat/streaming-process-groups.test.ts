@@ -75,26 +75,30 @@ describe("groupConsecutiveToolBlocks", () => {
 });
 
 describe("连续工具分组展示接线", () => {
-  it("流式消息不再折叠整轮过程，并在工具组完成时切换实例", () => {
+  it("流式消息在整轮过程内分组工具，并在 final 开始后折叠整轮过程", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/components/chat/StreamingMessage.tsx"),
       "utf8",
     );
 
-    expect(source).not.toContain("<ProcessCollapseGroup");
+    expect(source).toContain("<ProcessCollapseGroup");
+    expect(source).toContain("defaultExpanded={!finalStarted}");
+    expect(source).toContain("active={!finalStarted && isStreaming}");
     expect(source).toContain("groupConsecutiveToolBlocks(orderedProcessBlocks)");
     expect(source).toContain("tools={tools}");
     expect(source).toContain("hasRunningTool ? 'running' : 'complete'");
     expect(source).toContain("defaultExpanded={hasRunningTool}");
   });
 
-  it("历史消息直接显示过程内容，仅让连续工具组默认折叠", () => {
+  it("历史消息默认折叠整轮过程，并保留连续工具子分组", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/components/chat/MessageItem.tsx"),
       "utf8",
     );
 
-    expect(source).not.toContain("<ProcessCollapseGroup");
+    expect(source).toContain("<ProcessCollapseGroup");
+    expect(source).toContain("elapsedMs={elapsedMs}");
+    expect(source).toContain("processCount={processCount}");
     expect(source).toContain("processParts.map((part, index) => renderAssistantPart(part, index))");
     expect(source).toContain("tools={segmentTools.map");
     expect(source).toContain("defaultExpanded={false}");

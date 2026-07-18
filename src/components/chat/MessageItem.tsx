@@ -9,7 +9,7 @@ import {
   MessageContent,
   MessageResponse,
 } from '@/components/ai-elements/message';
-import { ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
+import { ProcessCollapseGroup, ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
 import { MediaPreview } from './MediaPreview';
 import { DiffSummary } from './DiffSummary';
 import { Button } from "@/components/ui/button";
@@ -742,10 +742,10 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
 
 
   // Memoize expensive parsing: parseToolBlocks + pairTools
-  const { text, pairedTools, renderParts, thinking } = useMemo(() => {
-    const { text, tools, renderParts, thinking } = parseToolBlocks(message.content);
+  const { text, pairedTools, renderParts, thinking, elapsedMs, processCount } = useMemo(() => {
+    const { text, tools, renderParts, thinking, elapsedMs, processCount } = parseToolBlocks(message.content);
     const pairedTools = pairTools(tools);
-    return { text, pairedTools, renderParts, thinking };
+    return { text, pairedTools, renderParts, thinking, elapsedMs, processCount };
   }, [message.content]);
 
   // Memoize file attachment parsing
@@ -931,7 +931,11 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
         {!isUser && (
           <>
             {hasAssistantProcess && (
-              <div className="w-full space-y-1 py-2">
+              <ProcessCollapseGroup
+                elapsedMs={elapsedMs}
+                processCount={processCount}
+                defaultExpanded={false}
+              >
                 {thinking && (
                   <ToolActionsGroup
                     tools={[]}
@@ -940,7 +944,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
                   />
                 )}
                 {processParts.map((part, index) => renderAssistantPart(part, index))}
-              </div>
+              </ProcessCollapseGroup>
             )}
             {planParts.map((part, index) => renderAssistantPart(part, index))}
             {finalParts.length > 0 && (

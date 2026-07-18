@@ -7,7 +7,7 @@ import {
   MessageContent,
   StreamingMessageResponse as MessageResponse,
 } from '@/components/ai-elements/message';
-import { ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
+import { ProcessCollapseGroup, ToolActionsGroup } from '@/components/ai-elements/tool-actions-group';
 import { MediaPreview } from './MediaPreview';
 import { Button } from '@/components/ui/button';
 import { Shimmer } from '@/components/ai-elements/shimmer';
@@ -318,6 +318,7 @@ export function StreamingMessage({
     () => toolUses.filter((tool) => !toolResultsById.has(tool.id)),
     [toolUses, toolResultsById]
   );
+  const finalStarted = content.trim().length > 0;
   const toolItems = useMemo(
     () => toolUses.map((tool) => {
       const result = toolResultsById.get(tool.id);
@@ -377,9 +378,19 @@ export function StreamingMessage({
   return (
     <AIMessage from="assistant">
       <MessageContent>
-        {/* 连续工具共用一个折叠组；过程正文始终按原顺序直接展示。 */}
+        {/* 整轮过程在 final 开始后折叠，连续工具在内部按组折叠。 */}
         {hasProcessActivity && (
-          <div className="w-full space-y-1 py-2">
+          <ProcessCollapseGroup
+            defaultExpanded={!finalStarted}
+            active={!finalStarted && isStreaming}
+            summary={(
+              <span className="inline-flex items-center gap-1">
+                <span>{finalStarted ? '已处理' : '正在处理'}</span>
+                <ElapsedTimer key={startedAt} startedAt={startedAt} />
+              </span>
+            )}
+          >
+          <div className="w-full space-y-1">
             {hasOrderedProcess ? processSegments.map((segment, index) => {
               if (segment.type === 'tools') {
                 const tools = segment.blocks.map((block) => {
@@ -410,9 +421,9 @@ export function StreamingMessage({
                   <ToolActionsGroup
                     key={`process-thinking-${index}`}
                     tools={[]}
-                    isStreaming={isStreaming}
+                    isStreaming={!finalStarted && isStreaming}
                     thinkingContent={block.thinking}
-                    defaultExpanded={isStreaming}
+                    defaultExpanded={!finalStarted}
                   />
                 );
               }
@@ -431,9 +442,9 @@ export function StreamingMessage({
             {thinkingContent && (
               <ToolActionsGroup
                 tools={[]}
-                isStreaming={isStreaming}
+                isStreaming={!finalStarted && isStreaming}
                 thinkingContent={thinkingContent}
-                defaultExpanded={isStreaming}
+                defaultExpanded={!finalStarted}
               />
             )}
             {toolItems.length > 0 && (() => {
@@ -450,6 +461,7 @@ export function StreamingMessage({
             })()}
             </>}
           </div>
+          </ProcessCollapseGroup>
         )}
 
         {/* Media from tool results — rendered outside tool group so images stay visible */}
