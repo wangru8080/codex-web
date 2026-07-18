@@ -256,15 +256,6 @@ function ElapsedTimer({ startedAt }: { startedAt: number }) {
 function StreamingStatusBar({ statusText, onForceStop, startedAt }: { statusText?: string; onForceStop?: () => void; startedAt: number }) {
   const displayText = statusText || 'Thinking';
 
-  if (displayText === '已处理') {
-    return (
-      <div className="flex items-center gap-1 border-b border-border/60 py-2.5 text-sm text-muted-foreground">
-        <span>已处理</span>
-        <ElapsedTimer key={startedAt} startedAt={startedAt} />
-      </div>
-    );
-  }
-
   // Parse elapsed seconds from statusText like "Running bash... (45s)"
   const elapsedMatch = statusText?.match(/\((\d+)s\)/);
   const toolElapsed = elapsedMatch ? parseInt(elapsedMatch[1], 10) : 0;
@@ -711,7 +702,7 @@ export function StreamingMessage({
         )}
 
         {/* Status bar during streaming — priority: tool status > widget > generating > thinking */}
-        {isStreaming && !hasProcessActivity && <StreamingStatusBar statusText={
+        {isStreaming && !hasProcessActivity && statusText !== '已处理' && <StreamingStatusBar statusText={
           statusText
           || getRunningCommandSummary()
           || (content && /```show-widget/.test(content) ? (() => {

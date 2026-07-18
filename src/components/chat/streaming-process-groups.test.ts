@@ -86,8 +86,8 @@ describe("连续工具分组展示接线", () => {
     expect(source).toContain("active={!finalStarted && isStreaming}");
     expect(source).toContain("<span>已处理</span>");
     expect(source).not.toContain("finalStarted ? '已处理' : '正在处理'");
-    expect(source).toContain("displayText === '已处理'");
-    expect(source).toContain("isStreaming && !hasProcessActivity && <StreamingStatusBar");
+    expect(source).not.toContain("displayText === '已处理'");
+    expect(source).toContain("isStreaming && !hasProcessActivity && statusText !== '已处理' && <StreamingStatusBar");
     expect(source).toContain("groupConsecutiveToolBlocks(orderedProcessBlocks)");
     expect(source).toContain("tools={tools}");
     expect(source).toContain("hasRunningTool ? 'running' : 'complete'");
