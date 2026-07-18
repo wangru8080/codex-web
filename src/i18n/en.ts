@@ -45,17 +45,21 @@ const en = {
   'chatList.showLess': 'Show less',
 
   // ── Global search ───────────────────────────────────────────
-  'globalSearch.placeholder': 'Search... (try session:, message:, file:)',
-  'globalSearch.hint': 'Type to search across sessions and messages',
+  'globalSearch.title': 'Global Search',
+  'globalSearch.description': 'Search sessions and workspace files',
+  'globalSearch.placeholder': 'Search sessions and files... (try session:, message:, file:)',
+  'globalSearch.hint': 'Type to search sessions and workspace files',
   'globalSearch.hintPrefix': 'Prefix with',
   'globalSearch.toNarrowScope': 'to narrow scope',
   'globalSearch.noResults': 'No results found',
   'globalSearch.searching': 'Searching...',
+  'globalSearch.searchFailed': 'Some search requests failed. Try again shortly.',
+  'globalSearch.messagesUnsupported': 'The app-server does not currently provide full-text history search, so this capability is unsupported.',
+  'globalSearch.noFileRoots': 'There are no workspace folders available to search.',
   'globalSearch.sessions': 'Sessions',
   'globalSearch.messages': 'Messages',
   'globalSearch.files': 'Files',
   'globalSearch.activeScope': 'Searching in {scope}',
-  'globalSearch.toolLabel': 'Tool',
 
   // ── Message list ────────────────────────────────────────────
   'messageList.claudeChat': 'CodexWeb Chat',

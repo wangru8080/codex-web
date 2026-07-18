@@ -3,6 +3,16 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/hooks/useTranslation';
+import { usePanel } from '@/hooks/usePanel';
+import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import {
+  buildGlobalFileSearchRoots,
+  buildGlobalThreadSearchParams,
+  fuzzyFileToGlobalSearchResult,
+  threadToGlobalSearchSession,
+  type GlobalSearchFile,
+  type GlobalSearchSession,
+} from '@/codex-web/global-search-adapter';
 import {
   CommandDialog,
   CommandInput,
@@ -11,42 +21,13 @@ import {
   CommandGroup,
   CommandItem,
 } from '@/components/ui/command';
-import { ChatCircleText, NotePencil, Folder, File, UserCircle, Sparkle, Wrench, CaretDown, CaretRight } from '@/components/ui/icon';
+import { ChatCircleText, NotePencil, Folder, File } from '@/components/ui/icon';
 import type { IconComponent } from '@/types';
 import type { TranslationKey } from '@/i18n';
 
-interface SearchResultSession {
-  type: 'session';
-  id: string;
-  title: string;
-  projectName: string;
-  updatedAt: string;
-}
-
-interface SearchResultMessage {
-  type: 'message';
-  sessionId: string;
-  sessionTitle: string;
-  messageId: string;
-  role: 'user' | 'assistant';
-  snippet: string;
-  createdAt: string;
-  contentType: 'user' | 'assistant' | 'tool';
-}
-
-interface SearchResultFile {
-  type: 'file';
-  sessionId: string;
-  sessionTitle: string;
-  path: string;
-  name: string;
-  nodeType: 'file' | 'directory';
-}
-
-interface SearchResponse {
-  sessions: SearchResultSession[];
-  messages: SearchResultMessage[];
-  files: SearchResultFile[];
+interface SearchResults {
+  sessions: GlobalSearchSession[];
+  files: GlobalSearchFile[];
 }
 
 interface GlobalSearchDialogProps {
@@ -58,30 +39,27 @@ type SearchScope = 'all' | 'sessions' | 'messages' | 'files';
 
 const TYPE_ICONS: Record<string, IconComponent> = {
   sessions: ChatCircleText,
-  messages: NotePencil,
   files: Folder,
 };
 
-const TYPE_LABEL_KEYS: Record<keyof SearchResponse, TranslationKey> = {
+const TYPE_LABEL_KEYS: Record<Exclude<SearchScope, 'all'>, TranslationKey> = {
   sessions: 'globalSearch.sessions',
   messages: 'globalSearch.messages',
   files: 'globalSearch.files',
 };
 
-const CONTENT_TYPE_ICONS: Record<SearchResultMessage['contentType'], IconComponent> = {
-  user: UserCircle,
-  assistant: Sparkle,
-  tool: Wrench,
-};
-
 export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogProps) {
   const { t } = useTranslation();
   const router = useRouter();
+  const { workingDirectory, sessionId, sessionTitle } = usePanel();
+  const appServerState = useAppServerState();
+  const { listThreads, fuzzyFileSearch } = useAppServerActions();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<SearchResponse>({ sessions: [], messages: [], files: [] });
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const abortRef = useRef<AbortController | null>(null);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const [results, setResults] = useState<SearchResults>({ sessions: [], files: [] });
+  const [compositionRevision, setCompositionRevision] = useState(0);
+  const searchSequenceRef = useRef(0);
   const composingRef = useRef(false);
   const normalizedQuery = query.trim();
   const parsedQuery = useMemo<{ scope: SearchScope; term: string; prefix: string | null }>(() => {
@@ -108,89 +86,100 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
   const searchTerm = parsedQuery.term;
   const activeScope = parsedQuery.scope;
   const activePrefix = parsedQuery.prefix;
+  const searchesMessages = activeScope === 'all' || activeScope === 'messages';
+  const knownThreads = useMemo(
+    () => appServerState.threads?.data.data ?? [],
+    [appServerState.threads],
+  );
+  const fileSearchRoots = useMemo(
+    () => buildGlobalFileSearchRoots(workingDirectory, knownThreads),
+    [knownThreads, workingDirectory],
+  );
+  const activeThread = useMemo(
+    () => sessionId && workingDirectory
+      ? { id: sessionId, title: sessionTitle || 'Codex 会话', cwd: workingDirectory }
+      : null,
+    [sessionId, sessionTitle, workingDirectory],
+  );
 
-  const performSearch = useCallback(async (q: string) => {
+  const performSearch = useCallback(async (term: string, scope: SearchScope) => {
     if (composingRef.current) return;
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
-    if (!q.trim()) {
-      abortRef.current = null;
-      setResults({ sessions: [], messages: [], files: [] });
+    searchSequenceRef.current += 1;
+    const sequence = searchSequenceRef.current;
+    if (!term) {
+      setResults({ sessions: [], files: [] });
+      setSearchFailed(false);
       setLoading(false);
       return;
     }
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setLoading(true);
-
-    try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error('Search failed');
-      const data: SearchResponse = await res.json();
-      if (!controller.signal.aborted) {
-        setResults(data);
-      }
-    } catch {
-      if (!controller.signal.aborted) {
-        setResults({ sessions: [], messages: [], files: [] });
-      }
-    } finally {
-      if (!controller.signal.aborted) {
-        abortRef.current = null;
-        setLoading(false);
-      }
+    const searchesSessions = scope === 'all' || scope === 'sessions';
+    const searchesFiles = scope === 'all' || scope === 'files';
+    if (!searchesSessions && !searchesFiles) {
+      setResults({ sessions: [], files: [] });
+      setSearchFailed(false);
+      setLoading(false);
+      return;
     }
-  }, []);
+
+    setLoading(true);
+    setSearchFailed(false);
+
+    const sessionRequest = searchesSessions
+      ? listThreads(buildGlobalThreadSearchParams(term))
+      : Promise.resolve(null);
+    const fileRequest = searchesFiles && fileSearchRoots.length > 0
+      ? fuzzyFileSearch({
+          query: term,
+          roots: fileSearchRoots,
+          cancellationToken: 'global-search-dialog',
+        })
+      : Promise.resolve(null);
+    const [sessionResult, fileResult] = await Promise.allSettled([sessionRequest, fileRequest]);
+    if (sequence !== searchSequenceRef.current) return;
+
+    setResults({
+      sessions: sessionResult.status === 'fulfilled' && sessionResult.value
+        ? sessionResult.value.data.map(threadToGlobalSearchSession)
+        : [],
+      files: fileResult.status === 'fulfilled' && fileResult.value
+        ? fileResult.value.files
+            .map((file) => fuzzyFileToGlobalSearchResult(file, knownThreads, activeThread))
+            .filter((file): file is GlobalSearchFile => file !== null)
+        : [],
+    });
+    setSearchFailed(sessionResult.status === 'rejected' || fileResult.status === 'rejected');
+    setLoading(false);
+  }, [activeThread, fileSearchRoots, fuzzyFileSearch, knownThreads, listThreads]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      performSearch(query);
+      void performSearch(searchTerm, activeScope);
     }, 150);
     return () => clearTimeout(timer);
-  }, [query, performSearch]);
+  }, [activeScope, compositionRevision, performSearch, searchTerm]);
 
   useEffect(() => {
     if (!open) {
-      abortRef.current?.abort();
-      abortRef.current = null;
+      searchSequenceRef.current += 1;
       setQuery('');
-      setResults({ sessions: [], messages: [], files: [] });
-      setCollapsedGroups(new Set());
+      setResults({ sessions: [], files: [] });
+      setSearchFailed(false);
       setLoading(false);
     }
   }, [open]);
 
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
-
-  const toggleGroup = useCallback((sessionId: string) => {
-    setCollapsedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(sessionId)) {
-        next.delete(sessionId);
-      } else {
-        next.add(sessionId);
-      }
-      return next;
-    });
+  useEffect(() => () => {
+    searchSequenceRef.current += 1;
   }, []);
 
   const handleSelect = useCallback(
-    (item: SearchResultSession | SearchResultMessage | SearchResultFile) => {
+    (item: GlobalSearchSession | GlobalSearchFile) => {
       onOpenChange(false);
       const qParam = query.trim() ? `&q=${encodeURIComponent(query.trim())}` : '';
       if (item.type === 'session') {
         router.push(`/chat/${item.id}`);
-      } else if (item.type === 'message') {
-        router.push(`/chat/${item.sessionId}?message=${item.messageId}${qParam}`);
-      } else if (item.type === 'file') {
+      } else {
         const seek = Date.now().toString(36);
         router.push(`/chat/${item.sessionId}?file=${encodeURIComponent(item.path)}&seek=${seek}${qParam}`);
       }
@@ -198,42 +187,11 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
     [router, onOpenChange, query],
   );
 
-  const hasResults =
-    results.sessions.length > 0 ||
-    results.messages.length > 0 ||
-    results.files.length > 0;
-
-  const groupedMessages = useMemo(() => {
-    const groups: Record<string, { sessionTitle: string; messages: SearchResultMessage[] }> = {};
-    for (const msg of results.messages) {
-      if (!groups[msg.sessionId]) {
-        groups[msg.sessionId] = { sessionTitle: msg.sessionTitle, messages: [] };
-      }
-      groups[msg.sessionId].messages.push(msg);
-    }
-    return Object.values(groups);
-  }, [results.messages]);
-
-  const renderHighlightedSnippet = (snippet: string, searchTerm: string) => {
-    if (!searchTerm) return <span>{snippet}</span>;
-    const lowerSnippet = snippet.toLowerCase();
-    const lowerTerm = searchTerm.toLowerCase();
-    const idx = lowerSnippet.indexOf(lowerTerm);
-    if (idx === -1) return <span>{snippet}</span>;
-    return (
-      <span>
-        {snippet.slice(0, idx)}
-        <mark className="rounded bg-primary/25 px-0.5 text-foreground">
-          {snippet.slice(idx, idx + searchTerm.length)}
-        </mark>
-        {snippet.slice(idx + searchTerm.length)}
-      </span>
-    );
-  };
+  const hasResults = results.sessions.length > 0 || results.files.length > 0;
 
   const renderGroup = (
-    key: keyof SearchResponse,
-    items: (SearchResultSession | SearchResultFile)[],
+    key: keyof SearchResults,
+    items: (GlobalSearchSession | GlobalSearchFile)[],
   ) => {
     if (items.length === 0) return null;
     const Icon = TYPE_ICONS[key];
@@ -281,8 +239,8 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Global Search"
-      description="Search across sessions, messages, and files"
+      title={t('globalSearch.title')}
+      description={t('globalSearch.description')}
       className="sm:max-w-3xl h-[min(80vh,520px)] flex flex-col overflow-hidden"
       showCloseButton={false}
       shouldFilter={false}
@@ -297,6 +255,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
           composingRef.current = false;
           const value = (e.target as HTMLInputElement).value;
           setQuery(value);
+          setCompositionRevision((current) => current + 1);
         }}
       />
       {normalizedQuery && activeScope !== 'all' && (
@@ -323,64 +282,25 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
             </p>
           </div>
         )}
-        {normalizedQuery && !loading && !hasResults && (
+        {normalizedQuery && !loading && !hasResults && activeScope !== 'messages' && !searchFailed && (
           <CommandEmpty>{t('globalSearch.noResults')}</CommandEmpty>
         )}
+        {normalizedQuery && searchFailed && (
+          <div className="px-4 py-3 text-sm text-destructive">{t('globalSearch.searchFailed')}</div>
+        )}
         {normalizedQuery && renderGroup('sessions', results.sessions)}
-
-        {normalizedQuery && groupedMessages.map((group, groupIdx) => {
-          const isCollapsed = collapsedGroups.has(group.messages[0]?.sessionId || `group-${groupIdx}`);
-          const sessionId = group.messages[0]?.sessionId || `group-${groupIdx}`;
-          return (
-            <CommandGroup key={`msg-group-${groupIdx}`}>
-              <CommandItem
-                value={`message-group-${sessionId}`}
-                onSelect={() => toggleGroup(sessionId)}
-                className="flex w-full items-center gap-1.5 rounded bg-muted/40 px-1 py-1 text-left font-medium text-foreground"
-                aria-expanded={!isCollapsed}
-              >
-                <div className="flex min-w-0 items-center gap-1.5">
-                  {isCollapsed ? (
-                    <CaretRight size={14} className="shrink-0 text-muted-foreground" />
-                  ) : (
-                    <CaretDown size={14} className="shrink-0 text-muted-foreground" />
-                  )}
-                  <NotePencil size={14} className="shrink-0 text-muted-foreground" />
-                  <span className="truncate max-w-[280px]" title={group.sessionTitle.replace(/\n/g, ' ')}>
-                    {group.sessionTitle.replace(/\n/g, ' ')}
-                  </span>
-                  <span className="ml-1 rounded-full bg-muted px-1.5 py-0 text-[10px] text-muted-foreground">
-                    {group.messages.length}
-                  </span>
-                </div>
-              </CommandItem>
-              {!isCollapsed && group.messages.map((item, idx) => {
-                const Icon = CONTENT_TYPE_ICONS[item.contentType];
-                const labelKey: TranslationKey =
-                  item.contentType === 'user'
-                    ? 'messageList.userLabel'
-                    : item.contentType === 'tool'
-                      ? ('globalSearch.toolLabel' as TranslationKey)
-                      : 'messageList.assistantLabel';
-                return (
-                  <CommandItem
-                    key={`message-${groupIdx}-${idx}`}
-                    value={`message-${groupIdx}-${idx}-${item.messageId}`}
-                    onSelect={() => handleSelect(item)}
-                    className="flex items-start gap-2 py-2"
-                  >
-                    <Icon size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">{renderHighlightedSnippet(item.snippet, searchTerm)}</p>
-                      <p className="truncate text-xs text-muted-foreground">{t(labelKey)}</p>
-                    </div>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          );
-        })}
-
+        {normalizedQuery && searchesMessages && (
+          <div className="flex items-start gap-2 border-y border-border/60 px-4 py-3 text-sm text-muted-foreground">
+            <NotePencil size={16} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-foreground">{t('globalSearch.messages')}</p>
+              <p className="mt-0.5 text-xs">{t('globalSearch.messagesUnsupported')}</p>
+            </div>
+          </div>
+        )}
+        {normalizedQuery && activeScope === 'files' && fileSearchRoots.length === 0 && (
+          <div className="px-4 py-3 text-sm text-muted-foreground">{t('globalSearch.noFileRoots')}</div>
+        )}
         {normalizedQuery && renderGroup('files', results.files)}
         {loading && (
           <div className="py-4 text-center text-sm text-muted-foreground">{t('globalSearch.searching')}</div>

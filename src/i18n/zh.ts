@@ -42,17 +42,21 @@ const zh: Record<TranslationKey, string> = {
   'chatList.showLess': '收起',
 
   // ── Global search ───────────────────────────────────────────
-  'globalSearch.placeholder': '搜索...（尝试 session: / message: / file:）',
-  'globalSearch.hint': '输入关键词搜索会话和消息',
+  'globalSearch.title': '全局搜索',
+  'globalSearch.description': '搜索会话和工作区文件',
+  'globalSearch.placeholder': '搜索会话和文件...（尝试 session: / message: / file:）',
+  'globalSearch.hint': '输入关键词搜索会话和工作区文件',
   'globalSearch.hintPrefix': '使用前缀',
   'globalSearch.toNarrowScope': '限定搜索范围',
   'globalSearch.noResults': '未找到结果',
   'globalSearch.searching': '搜索中...',
+  'globalSearch.searchFailed': '部分搜索请求失败，请稍后重试',
+  'globalSearch.messagesUnsupported': 'app-server 暂不提供历史消息全文搜索接口，此能力当前不支持。',
+  'globalSearch.noFileRoots': '当前没有可供搜索的工作区目录',
   'globalSearch.sessions': '会话',
   'globalSearch.messages': '消息',
   'globalSearch.files': '文件',
   'globalSearch.activeScope': '当前搜索范围：{scope}',
-  'globalSearch.toolLabel': '工具',
 
   // ── Message list ────────────────────────────────────────────
   'messageList.claudeChat': 'CodexWeb 对话',
