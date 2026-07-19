@@ -24,7 +24,10 @@ import { useNativeFolderPicker } from '@/hooks/useNativeFolderPicker';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
-import { appServerTurnToMessageBlocks, appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
+import {
+  appServerTerminalTurnToMessageContent,
+  appServerTurnToMessageBlocks,
+} from '@/codex-web/app-server-message-blocks';
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import { selectActiveTurnByThreadIds } from '@/codex-web/active-turns-adapter';
 import { getExistingNewChatThreadId } from '@/codex-web/new-chat-turn-routing';
@@ -355,28 +358,19 @@ function NewChatPageInner() {
     if (finalizedAppServerTurnRef.current === finalKey) return;
     finalizedAppServerTurnRef.current = finalKey;
     setLivePlanPromptTurnKey(finalKey);
+    const assistantContent = appServerTerminalTurnToMessageContent(appServerTurn);
 
     if (appServerTurn.status === 'failed') {
       setErrorBanner({
         message: 'Codex 处理失败',
         description: appServerTurn.errorMessage || undefined,
       });
-    } else if (appServerTurn.status === 'interrupted') {
-      const assistantMessage: Message = {
-        id: 'temp-interrupted-' + Date.now(),
-        session_id: appServerTurn.threadId || createdSessionId || '',
-        role: 'assistant',
-        content: 'Codex 已中断。可以继续发送下一轮。',
-        created_at: new Date().toISOString(),
-        token_usage: null,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-    } else if (appServerTurn.assistantText.trim() || appServerTurn.items.length > 0) {
+    } else if (assistantContent) {
       const assistantMessage: Message = {
         id: 'temp-assistant-' + Date.now(),
         session_id: appServerTurn.threadId || createdSessionId || '',
         role: 'assistant',
-        content: appServerTurnToMessageContent(appServerTurn),
+        content: assistantContent,
         created_at: new Date().toISOString(),
         token_usage: null,
       };

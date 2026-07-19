@@ -63,7 +63,10 @@ import {
   respondToPermission,
 } from '@/lib/stream-session-manager';
 import type { AppServerApprovalDecision, AppServerApprovalRequest } from '@/codex-web/approval-adapter';
-import { appServerTurnToMessageBlocks, appServerTurnToMessageContent } from '@/codex-web/app-server-message-blocks';
+import {
+  appServerTerminalTurnToMessageContent,
+  appServerTurnToMessageBlocks,
+} from '@/codex-web/app-server-message-blocks';
 import {
   appServerTurnPresentationKey,
   shouldPresentAppServerTurnAsStreaming,
@@ -803,28 +806,19 @@ export function ChatView({
     finalizedAppServerTurnRef.current = finalKey;
     finalizedAppServerTurnPresentationKeyRef.current = appServerTurnPresentationKey(appServerTurn);
     setLivePlanPromptTurnKey(finalKey);
+    const assistantContent = appServerTerminalTurnToMessageContent(appServerTurn);
 
     if (appServerTurn.status === 'failed') {
       setAppServerErrorBanner({
         message: 'Codex 发送失败',
         description: appServerTurn.errorMessage || undefined,
       });
-    } else if (appServerTurn.status === 'interrupted') {
-      const interruptedMessage: Message = {
-        id: 'temp-interrupted-' + Date.now(),
-        session_id: appServerTurn.threadId || activeSessionId,
-        role: 'assistant',
-        content: 'Codex 已中断。可以继续发送下一轮。',
-        created_at: new Date().toISOString(),
-        token_usage: null,
-      };
-      cappedSetMessages((prev) => [...prev, interruptedMessage]);
-    } else if (appServerTurn.assistantText.trim() || appServerTurn.items.length > 0) {
+    } else if (assistantContent) {
       const assistantMessage: Message = {
         id: 'temp-assistant-' + Date.now(),
         session_id: appServerTurn.threadId || activeSessionId,
         role: 'assistant',
-        content: appServerTurnToMessageContent(appServerTurn),
+        content: assistantContent,
         created_at: new Date().toISOString(),
         token_usage: null,
       };

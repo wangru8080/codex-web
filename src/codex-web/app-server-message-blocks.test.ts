@@ -1,8 +1,15 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 
-import { turnItemsToMessageContent } from "./app-server-message-blocks";
+import {
+  appServerTerminalTurnToMessageContent,
+  turnItemsToMessageContent,
+} from "./app-server-message-blocks";
+import { createAcceptedTurnState } from "./turn-reducer";
 
 describe("app-server-message-blocks", () => {
   it("把实时上下文压缩转换为带生命周期来源的过程块", () => {
@@ -172,6 +179,50 @@ describe("app-server-message-blocks", () => {
       { type: "codex_summary", elapsed_ms: 283000, process_count: 3 },
       { type: "text", text: "这是今天的科技新闻。" },
     ]);
+  });
+
+  it("中断后保留已经收到的部分正文", () => {
+    const turn = {
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      status: "interrupted" as const,
+      assistantText: "已经输出的部分回答。",
+    };
+
+    expect(appServerTerminalTurnToMessageContent(turn)).toBe("已经输出的部分回答。");
+  });
+
+  it("中断时没有任何输出就不新增助手消息", () => {
+    const turn = {
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      status: "interrupted" as const,
+    };
+
+    expect(appServerTerminalTurnToMessageContent(turn)).toBeNull();
+  });
+
+  it("完成回合继续保存正文，失败回合不保存为助手消息", () => {
+    const completed = {
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      status: "completed" as const,
+      assistantText: "完整回答。",
+    };
+    const failed = {
+      ...completed,
+      status: "failed" as const,
+    };
+
+    expect(appServerTerminalTurnToMessageContent(completed)).toBe("完整回答。");
+    expect(appServerTerminalTurnToMessageContent(failed)).toBeNull();
+  });
+
+  it("新会话与历史会话都使用终态内容适配器且不再写入固定中断提示", () => {
+    const newChatPage = readFileSync(resolve(process.cwd(), "src/app/chat/page.tsx"), "utf8");
+    const chatView = readFileSync(resolve(process.cwd(), "src/components/chat/ChatView.tsx"), "utf8");
+
+    expect(newChatPage).toContain("appServerTerminalTurnToMessageContent(appServerTurn)");
+    expect(chatView).toContain("appServerTerminalTurnToMessageContent(appServerTurn)");
+    expect(newChatPage).not.toContain("Codex 已中断。可以继续发送下一轮。");
+    expect(chatView).not.toContain("Codex 已中断。可以继续发送下一轮。");
   });
 });
 

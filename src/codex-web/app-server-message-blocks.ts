@@ -36,6 +36,21 @@ export function appServerTurnToMessageContent(turn: AppServerTurnState): string 
   });
 }
 
+export function appServerTerminalTurnToMessageContent(
+  turn: AppServerTurnState,
+): string | null {
+  if (turn.status !== "completed" && turn.status !== "interrupted") return null;
+  if (
+    !turn.assistantText.trim() &&
+    !turn.reasoningText.trim() &&
+    turn.items.length === 0 &&
+    turn.planBlocks.length === 0
+  ) {
+    return null;
+  }
+  return appServerTurnToMessageContent(turn);
+}
+
 export function appServerTurnToMessageBlocks(turn: AppServerTurnState): MessageContentBlock[] {
   return turnItemsToMessageBlocks({
     items: turn.items,
