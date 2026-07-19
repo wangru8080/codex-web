@@ -7,6 +7,7 @@ describe("app-server 上下文窗口圆环接线", () => {
   const provider = readFileSync(resolve(process.cwd(), "src/codex-web/AppServerProvider.tsx"), "utf8");
   const state = readFileSync(resolve(process.cwd(), "src/codex-web/app-server-state.ts"), "utf8");
   const input = readFileSync(resolve(process.cwd(), "src/components/chat/MessageInput.tsx"), "utf8");
+  const indicator = readFileSync(resolve(process.cwd(), "src/components/chat/ContextWindowIndicator.tsx"), "utf8");
   const chatView = readFileSync(resolve(process.cwd(), "src/components/chat/ChatView.tsx"), "utf8");
   const newChat = readFileSync(resolve(process.cwd(), "src/app/chat/page.tsx"), "utf8");
   const history = readFileSync(resolve(process.cwd(), "src/app/chat/[id]/page.tsx"), "utf8");
@@ -22,6 +23,18 @@ describe("app-server 上下文窗口圆环接线", () => {
     expect(input.indexOf("<ContextWindowIndicator")).toBeLessThan(
       input.indexOf("<ComposerReasoningModelSelector"),
     );
+  });
+
+  it("圆环支持点击固定详情并可明确关闭", () => {
+    expect(indicator).toContain("open={open}");
+    expect(indicator).toContain("onOpenChange={handleOpenChange}");
+    expect(indicator).toContain("onClick={handleClick}");
+    expect(indicator).toContain("aria-expanded={open}");
+    expect(indicator).toContain("pinnedRef.current = nextPinned");
+    expect(indicator).toContain("if (!nextOpen && pinnedRef.current) return");
+    expect(indicator).toContain("onBlur={closePinned}");
+    expect(indicator).toContain("onEscapeKeyDown={closePinned}");
+    expect(indicator).toContain("onPointerDownOutside={closePinned}");
   });
 
   it("新对话和历史会话不再渲染外部 RunCockpit", () => {

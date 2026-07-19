@@ -1,5 +1,7 @@
 "use client";
 
+import { useRef, useState } from "react";
+
 import type { ThreadTokenUsage } from "@/codex/protocol/generated/v2/ThreadTokenUsage";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -15,17 +17,42 @@ export function ContextWindowIndicator({
   usage?: ThreadTokenUsage | null;
 }) {
   const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const pinnedRef = useRef(false);
   const display = contextWindowUsageDisplay(usage);
   const dashOffset = CIRCUMFERENCE * (1 - display.percentUsed / 100);
 
+  const closePinned = () => {
+    pinnedRef.current = false;
+    setPinned(false);
+    setOpen(false);
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && pinnedRef.current) return;
+    setOpen(nextOpen);
+  };
+
+  const handleClick = () => {
+    const nextPinned = !pinnedRef.current;
+    pinnedRef.current = nextPinned;
+    setPinned(nextPinned);
+    setOpen(nextPinned);
+  };
+
   return (
-    <Tooltip>
+    <Tooltip open={open} onOpenChange={handleOpenChange}>
       <TooltipTrigger asChild>
         <button
           type="button"
           data-context-window-indicator=""
           data-percent-used={display.percentUsed}
+          data-pinned={pinned ? "" : undefined}
           aria-label={t("contextWindow.ariaLabel" as TranslationKey)}
+          aria-expanded={open}
+          onClick={handleClick}
+          onBlur={closePinned}
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <svg viewBox="0 0 20 20" className="size-5 -rotate-90" aria-hidden>
@@ -57,6 +84,8 @@ export function ContextWindowIndicator({
         side="top"
         align="center"
         sideOffset={8}
+        onEscapeKeyDown={closePinned}
+        onPointerDownOutside={closePinned}
         className="min-w-[220px] rounded-lg border bg-popover px-4 py-3 text-popover-foreground shadow-md [&>svg]:bg-popover [&>svg]:fill-popover"
       >
         {display.hasData ? (
