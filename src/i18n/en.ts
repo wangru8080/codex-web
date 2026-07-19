@@ -1744,6 +1744,12 @@ const en = {
   'chat.newChat.welcome.assistant.1': 'Anything on your mind?',
   'chat.newChat.welcome.assistant.2': 'Need a hand with something?',
   'chat.newChat.welcome.assistant.3': 'Where shall we start?',
+  'newChat.projectSelector.change': 'Change project',
+  'newChat.projectSelector.clear': 'Clear current project',
+  'newChat.projectSelector.select': 'Select project',
+  'newChat.projectSelector.search': 'Search projects...',
+  'newChat.projectSelector.noResults': 'No matching projects',
+  'newChat.projectSelector.newProject': 'New project',
 
   // Platform
   'platform.openInFileManager': 'Double-click to open in {fileManager}',

@@ -1722,6 +1722,12 @@ const zh: Record<TranslationKey, string> = {
   'chat.newChat.welcome.assistant.1': '今天想聊点什么？',
   'chat.newChat.welcome.assistant.2': '需要帮你梳理点什么？',
   'chat.newChat.welcome.assistant.3': '想从哪儿聊起？',
+  'newChat.projectSelector.change': '切换项目',
+  'newChat.projectSelector.clear': '清除当前项目',
+  'newChat.projectSelector.select': '选择项目',
+  'newChat.projectSelector.search': '搜索项目...',
+  'newChat.projectSelector.noResults': '未找到匹配项目',
+  'newChat.projectSelector.newProject': '新建项目',
 
   // Platform
   'platform.openInFileManager': '双击在{fileManager}中打开',

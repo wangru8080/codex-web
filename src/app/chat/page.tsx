@@ -9,6 +9,7 @@ import type { ChatRuntime } from '@/lib/chat-runtime-shared';
 import { PermissionPrompt } from '@/components/chat/PermissionPrompt';
 import { ChatEmptyState } from '@/components/chat/ChatEmptyState';
 import { NewChatWelcome } from '@/components/chat/NewChatWelcome';
+import { NewChatProjectSelector } from '@/components/chat/NewChatProjectSelector';
 import { RunCheckpoint } from '@/components/chat/RunCheckpoint';
 import { GoalProgressRow } from '@/components/chat/GoalProgressRow';
 import { PlanImplementationPromptBar } from '@/components/chat/PlanImplementationPromptBar';
@@ -124,6 +125,8 @@ function NewChatPageInner() {
   const streamingStartedAtRef = useRef(0);
   const [workingDir, setWorkingDir] = useState('');
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const workingDirectoryInitializedRef = useRef(false);
+  const workingDirectoryClearedRef = useRef(false);
   const [errorBanner, setErrorBanner] = useState<{ message: string; description?: string } | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   // Codex 模型发现没有返回可用模型时置为 true。
@@ -437,6 +440,7 @@ function NewChatPageInner() {
 
   // 初始化工作目录，并通过 app-server 验证目录仍然存在。
   useEffect(() => {
+    if (workingDirectoryInitializedRef.current || workingDirectoryClearedRef.current) return;
     let cancelled = false;
 
     const validateDir = async (path: string): Promise<boolean> => {
@@ -450,8 +454,8 @@ function NewChatPageInner() {
 
     const tryFallbackToDefault = async () => {
       const defaultProject = appServerState.threads?.data.data.find((thread) => thread.cwd.trim())?.cwd;
-      if (!defaultProject || cancelled) return;
-      if (await validateDir(defaultProject) && !cancelled) {
+      if (!defaultProject || cancelled || workingDirectoryClearedRef.current) return;
+      if (await validateDir(defaultProject) && !cancelled && !workingDirectoryClearedRef.current) {
         setWorkingDir(defaultProject);
         localStorage.setItem('codepilot:last-working-directory', defaultProject);
       }
@@ -459,10 +463,12 @@ function NewChatPageInner() {
 
     const init = async () => {
       const saved = localStorage.getItem('codepilot:last-working-directory');
+      if (!saved && !appServerState.threads) return;
+      workingDirectoryInitializedRef.current = true;
       if (saved) {
-        if (await validateDir(saved) && !cancelled) {
+        if (await validateDir(saved) && !cancelled && !workingDirectoryClearedRef.current) {
           setWorkingDir(saved);
-        } else if (!cancelled) {
+        } else if (!cancelled && !workingDirectoryClearedRef.current) {
           // Stale — clear and try setup default
           localStorage.removeItem('codepilot:last-working-directory');
           await tryFallbackToDefault();
@@ -490,8 +496,13 @@ function NewChatPageInner() {
     const projects = appServerState.threads?.data.data
       .map((thread) => thread.cwd.trim())
       .filter(Boolean) ?? [];
-    setRecentProjects([...new Set(projects)].slice(0, 8));
+    setRecentProjects([...new Set(projects)]);
   }, [appServerState.threads]);
+
+  const projectOptions = useMemo(() => {
+    const projects = recentProjects.filter((path) => path !== workingDir);
+    return workingDir.trim() ? [workingDir, ...projects] : projects;
+  }, [recentProjects, workingDir]);
 
   const handleSelectFolder = useCallback(async () => {
     if (isElectron) {
@@ -514,6 +525,12 @@ function NewChatPageInner() {
   const handleSelectProject = useCallback((path: string) => {
     setWorkingDir(path);
     localStorage.setItem('codepilot:last-working-directory', path);
+  }, []);
+
+  const handleClearProject = useCallback(() => {
+    workingDirectoryClearedRef.current = true;
+    setWorkingDir('');
+    localStorage.removeItem('codepilot:last-working-directory');
   }, []);
 
   const stopStreaming = useCallback(() => {
@@ -983,6 +1000,15 @@ function NewChatPageInner() {
         onPermissionResponse={handlePermissionResponse}
         toolUses={toolUses}
       />
+      {isNewChat && (
+        <NewChatProjectSelector
+          currentProject={workingDir}
+          projects={projectOptions}
+          onSelectProject={handleSelectProject}
+          onClearProject={handleClearProject}
+          onCreateProject={handleSelectFolder}
+        />
+      )}
       <MessageInput
         key="composer-message-input"
         sessionId={createdSessionId}
