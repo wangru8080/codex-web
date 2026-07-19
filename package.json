@@ -12,6 +12,7 @@
     "start": "tsx scripts/start-next-with-bridge.ts",
     "build:server": "tsc -p tsconfig.build.json",
     "test:smoke": "tsx scripts/smoke.ts",
+    "test:smoke:user-input": "tsx scripts/user-input-server-request-smoke.ts",
     "test:smoke:permissions": "tsx scripts/permission-policy-smoke.ts",
     "test:e2e:permissions": "tsx scripts/permission-policy-tool-e2e.ts",
     "test:smoke:goal-plan": "tsx scripts/goal-plan-plus-smoke.ts",

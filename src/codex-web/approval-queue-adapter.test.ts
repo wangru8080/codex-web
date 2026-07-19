@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AppServerApprovalRequest } from "./approval-adapter";
+import type { AppServerPendingRequest } from "./approval-adapter";
 import {
   approvalRequestMatchesThread,
   enqueueApproval,
@@ -70,9 +70,48 @@ describe("approval-queue-adapter", () => {
     expect(visibleForA?.requestId).toBe("req-a");
     expect(approvalRequestMatchesThread(queue[1], ["thread-a"])).toBe(false);
   });
+
+  it("用户输入和 MCP elicitation 与 approval 共用 FIFO", () => {
+    const input: AppServerPendingRequest = {
+      requestId: "input-1",
+      method: "item/tool/requestUserInput",
+      threadId: "thread-a",
+      turnId: "turn-1",
+      itemId: "tool-1",
+      params: {
+        threadId: "thread-a",
+        turnId: "turn-1",
+        itemId: "tool-1",
+        questions: [],
+        autoResolutionMs: null,
+      },
+    };
+    const elicitation: AppServerPendingRequest = {
+      requestId: "mcp-1",
+      method: "mcpServer/elicitation/request",
+      threadId: "thread-b",
+      turnId: null,
+      serverName: "demo",
+      params: {
+        threadId: "thread-b",
+        turnId: null,
+        serverName: "demo",
+        mode: "url",
+        message: "登录",
+        url: "https://example.com/login",
+        elicitationId: "login-1",
+        _meta: null,
+      },
+    };
+
+    const queue = enqueueApproval(enqueueApproval([], input), elicitation);
+
+    expect(queue.map((item) => item.requestId)).toEqual(["input-1", "mcp-1"]);
+    expect(firstApproval(queue, (item) => approvalRequestMatchesThread(item, ["thread-b"]))?.requestId).toBe("mcp-1");
+  });
 });
 
-function approval(requestId: string | number, threadId: string): AppServerApprovalRequest {
+function approval(requestId: string | number, threadId: string): AppServerPendingRequest {
   return {
     requestId,
     method: "item/commandExecution/requestApproval",

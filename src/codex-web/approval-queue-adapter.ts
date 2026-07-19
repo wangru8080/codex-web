@@ -1,12 +1,12 @@
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
 
-import type { AppServerApprovalRequest } from "./approval-adapter";
+import type { AppServerPendingRequest } from "./approval-adapter";
 import { approvalRequestKey } from "./approval-response-guard";
 
 export function enqueueApproval(
-  queue: AppServerApprovalRequest[],
-  approval: AppServerApprovalRequest,
-): AppServerApprovalRequest[] {
+  queue: AppServerPendingRequest[],
+  approval: AppServerPendingRequest,
+): AppServerPendingRequest[] {
   const key = approvalRequestKey(approval.requestId);
   if (queue.some((item) => approvalRequestKey(item.requestId) === key)) {
     return queue;
@@ -15,36 +15,36 @@ export function enqueueApproval(
 }
 
 export function removeApproval(
-  queue: AppServerApprovalRequest[],
+  queue: AppServerPendingRequest[],
   requestId: JsonRpcId,
-): AppServerApprovalRequest[] {
+): AppServerPendingRequest[] {
   const key = approvalRequestKey(requestId);
   return queue.filter((item) => approvalRequestKey(item.requestId) !== key);
 }
 
 export function firstApproval(
-  queue: AppServerApprovalRequest[],
-  predicate?: (approval: AppServerApprovalRequest) => boolean,
-): AppServerApprovalRequest | null {
+  queue: AppServerPendingRequest[],
+  predicate?: (approval: AppServerPendingRequest) => boolean,
+): AppServerPendingRequest | null {
   return (predicate ? queue.find(predicate) : queue[0]) ?? null;
 }
 
 export function findApprovalByRequestId(
-  queue: AppServerApprovalRequest[],
+  queue: AppServerPendingRequest[],
   requestId: JsonRpcId,
-): AppServerApprovalRequest | null {
+): AppServerPendingRequest | null {
   const key = approvalRequestKey(requestId);
   return queue.find((item) => approvalRequestKey(item.requestId) === key) ?? null;
 }
 
 export function approvalRequestMatchesThread(
-  approval: AppServerApprovalRequest,
+  approval: AppServerPendingRequest,
   threadIds: Array<string | null | undefined>,
 ): boolean {
   const ids = new Set(threadIds.filter((id): id is string => !!id));
   return ids.has(approval.threadId);
 }
 
-export function sourcedApproval(approval: AppServerApprovalRequest | null) {
+export function sourcedApproval(approval: AppServerPendingRequest | null) {
   return approval ? { source: "app-server.serverRequest" as const, data: approval } : null;
 }

@@ -473,6 +473,7 @@ export function PermissionPrompt({
             <ConfirmationActions>
               <ConfirmationAction
                 variant="outline"
+                data-testid="app-server-approval-deny"
                 onClick={() => onPermissionResponse('deny')}
               >
                 Deny

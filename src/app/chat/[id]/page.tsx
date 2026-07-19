@@ -87,7 +87,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     sendOneTurn,
     sendTurnInThread,
     interruptTurn,
-    respondToApproval,
+    respondToServerRequest,
     setThreadGoal,
     clearThreadGoal,
     updateThreadPermissions,
@@ -360,7 +360,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     : { visibleTurn: null, notice: null };
   const appServerTurn = activeTurnVisibility.visibleTurn;
   const appServerNotice = activeTurnVisibility.notice ?? paginationNotice;
-  const appServerApproval = isAppServerThread
+  const appServerRequest = isAppServerThread
     ? firstApproval(appServerState.pendingApprovals, (approval) =>
         approvalRequestMatchesThread(approval, [id, resumedThreadId]),
       )
@@ -399,15 +399,17 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         workingDirectory={sessionWorkingDirectory}
         projectName={sessionProjectName}
         appServerTurn={appServerTurn}
-        appServerApproval={appServerApproval}
+        appServerRequest={appServerRequest}
         appServerThreadId={resumedThreadId || id}
         appServerTokenUsage={appServerTokenUsage}
         appServerGoal={appServerGoal}
         appServerNotice={appServerNotice}
         appServerSyncedUserMessages={appServerSyncedUserMessages}
         onAppServerUserMessageAccepted={publishCrossClientUserMessage}
-        onAppServerApprovalDecision={(decision) =>
-          appServerApproval ? respondToApproval(decision, appServerApproval.requestId) : respondToApproval(decision)
+        onAppServerRequestResponse={(input) =>
+          appServerRequest
+            ? respondToServerRequest(input, appServerRequest.requestId)
+            : respondToServerRequest(input)
         }
         onAppServerPermissionChange={canResumeAppServerThread ? async (permissionProfile) => {
           let threadId = resumedThreadId;

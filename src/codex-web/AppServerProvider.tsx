@@ -52,9 +52,10 @@ import type { JsonRpcId } from "@/codex/protocol/json-rpc";
 import type { FileAttachment, PermissionProfile, SkillInputReference } from "@/types";
 import type { MCPServer } from "@/types";
 import {
-  buildApprovalResponse,
-  mapServerRequestToApproval,
+  buildServerRequestResponse,
+  mapServerRequestToPendingRequest,
   type AppServerApprovalDecision,
+  type AppServerRequestResponseInput,
 } from "./approval-adapter";
 import {
   enqueueApproval,
@@ -191,6 +192,7 @@ export type AppServerActions = {
   setThreadGoal: (params: ThreadGoalSetParams) => Promise<ThreadGoalSetResponse>;
   clearThreadGoal: (threadId: string) => Promise<ThreadGoalClearResponse>;
   respondToApproval: (decision: AppServerApprovalDecision, requestId?: JsonRpcId) => Promise<void>;
+  respondToServerRequest: (input: AppServerRequestResponseInput, requestId?: JsonRpcId) => Promise<void>;
   resetTurn: () => void;
   updateThreadPermissions: (params: { threadId: string; cwd: string; permissionProfile: PermissionProfile }) => Promise<void>;
   updateThreadModelSettings: (params: { threadId: string; model?: string; effort?: ReasoningEffort }) => Promise<void>;
@@ -265,7 +267,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const client = new AppServerBrowserClient(bridgeUrl);
     clientRef.current = client;
     client.onServerRequest((request) => {
-      const approval = mapServerRequestToApproval(request);
+      const approval = mapServerRequestToPendingRequest(request);
       if (!approval) {
         client.respondError(request.id, `Codex Web 暂不支持 app-server request: ${request.method}`);
         setState((current) => ({
@@ -509,7 +511,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     await confirmation;
   }, [state.threadSettingsByThreadId]);
 
-  const respondToApproval = useCallback(async (decision: AppServerApprovalDecision, requestId?: JsonRpcId) => {
+  const respondToServerRequest = useCallback(async (input: AppServerRequestResponseInput, requestId?: JsonRpcId) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -520,7 +522,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         ? state.pendingApproval?.data ?? null
         : findApprovalByRequestId(state.pendingApprovals, requestId);
     if (!approval) {
-      throw new Error("没有待处理的 app-server approval");
+      throw new Error("没有待处理的 app-server request");
     }
 
     const guard = beginApprovalResponse({
@@ -534,13 +536,13 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         ...current,
         diagnostics: appendDiagnostic(current.diagnostics, {
           source: "app-server.serverRequest",
-          data: { message: `approval response skipped: ${guard.reason}` },
+          data: { message: `server request response skipped: ${guard.reason}` },
         }),
       }));
-      throw new Error(`app-server approval 已处理或已失效: ${guard.reason}`);
+      throw new Error(`app-server request 已处理或已失效: ${guard.reason}`);
     }
 
-    const response = buildApprovalResponse(approval, decision);
+    const response = buildServerRequestResponse(approval, input);
     try {
       client.respond(approval.requestId, response);
       approvalResponseStateRef.current = completeApprovalResponse({
@@ -564,6 +566,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw error;
     }
   }, [state.pendingApproval, state.pendingApprovals]);
+
+  const respondToApproval = useCallback(
+    (decision: AppServerApprovalDecision, requestId?: JsonRpcId) =>
+      respondToServerRequest({ type: "approval", decision }, requestId),
+    [respondToServerRequest],
+  );
 
   const refreshThreads = useCallback(async () => {
     const client = clientRef.current;
@@ -1109,6 +1117,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       setThreadGoal,
       clearThreadGoal,
       respondToApproval,
+      respondToServerRequest,
       resetTurn,
       updateThreadPermissions,
       updateThreadModelSettings,
@@ -1119,7 +1128,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       readAccountRateLimits,
       publishCrossClientUserMessage,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, publishCrossClientUserMessage],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, publishCrossClientUserMessage],
   );
 
   return (

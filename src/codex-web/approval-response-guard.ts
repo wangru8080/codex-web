@@ -1,5 +1,5 @@
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
-import type { AppServerApprovalRequest } from "./approval-adapter";
+import type { AppServerPendingRequest } from "./approval-adapter";
 
 export type ApprovalResponsePhase = "idle" | "responding" | "resolved";
 
@@ -23,7 +23,7 @@ export function beginApprovalResponse({
   requestId,
   state,
 }: {
-  pendingApproval: AppServerApprovalRequest | null;
+  pendingApproval: AppServerPendingRequest | null;
   requestId: JsonRpcId;
   state: ApprovalResponseGuardState;
 }): ApprovalResponseGuardResult {

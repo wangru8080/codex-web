@@ -5,6 +5,12 @@ import type { FileChangeRequestApprovalResponse } from "@/codex/protocol/generat
 import type { GrantedPermissionProfile } from "@/codex/protocol/generated/v2/GrantedPermissionProfile";
 import type { PermissionsRequestApprovalParams } from "@/codex/protocol/generated/v2/PermissionsRequestApprovalParams";
 import type { PermissionsRequestApprovalResponse } from "@/codex/protocol/generated/v2/PermissionsRequestApprovalResponse";
+import type { McpServerElicitationAction } from "@/codex/protocol/generated/v2/McpServerElicitationAction";
+import type { McpServerElicitationRequestParams } from "@/codex/protocol/generated/v2/McpServerElicitationRequestParams";
+import type { McpServerElicitationRequestResponse } from "@/codex/protocol/generated/v2/McpServerElicitationRequestResponse";
+import type { ToolRequestUserInputParams } from "@/codex/protocol/generated/v2/ToolRequestUserInputParams";
+import type { ToolRequestUserInputResponse } from "@/codex/protocol/generated/v2/ToolRequestUserInputResponse";
+import type { JsonValue } from "@/codex/protocol/generated/serde_json/JsonValue";
 import type { JsonRpcId, JsonRpcRequest } from "@/codex/protocol/json-rpc";
 import type { PermissionRequestEvent } from "@/types";
 
@@ -43,6 +49,76 @@ export type AppServerApprovalRequest =
       params: PermissionsRequestApprovalParams;
       permission: PermissionRequestEvent;
     };
+
+export type AppServerUserInputRequest =
+  | {
+      requestId: JsonRpcId;
+      method: "item/tool/requestUserInput";
+      threadId: string;
+      turnId: string;
+      itemId: string;
+      params: ToolRequestUserInputParams;
+    }
+  | {
+      requestId: JsonRpcId;
+      method: "mcpServer/elicitation/request";
+      threadId: string;
+      turnId: string | null;
+      serverName: string;
+      params: McpServerElicitationRequestParams;
+    };
+
+export type AppServerPendingRequest = AppServerApprovalRequest | AppServerUserInputRequest;
+
+export type AppServerRequestResponseInput =
+  | { type: "approval"; decision: AppServerApprovalDecision }
+  | { type: "userInput"; answers: ToolRequestUserInputResponse["answers"] }
+  | {
+      type: "elicitation";
+      action: McpServerElicitationAction;
+      content?: JsonValue;
+      _meta?: JsonValue;
+    };
+
+export type AppServerRequestResponse =
+  | CommandExecutionRequestApprovalResponse
+  | FileChangeRequestApprovalResponse
+  | PermissionsRequestApprovalResponse
+  | ToolRequestUserInputResponse
+  | McpServerElicitationRequestResponse;
+
+export function mapServerRequestToPendingRequest(request: JsonRpcRequest): AppServerPendingRequest | null {
+  const approval = mapServerRequestToApproval(request);
+  if (approval) {
+    return approval;
+  }
+
+  if (request.method === "item/tool/requestUserInput") {
+    const params = request.params as ToolRequestUserInputParams;
+    return {
+      requestId: request.id,
+      method: request.method,
+      threadId: params.threadId,
+      turnId: params.turnId,
+      itemId: params.itemId,
+      params,
+    };
+  }
+
+  if (request.method === "mcpServer/elicitation/request") {
+    const params = request.params as McpServerElicitationRequestParams;
+    return {
+      requestId: request.id,
+      method: request.method,
+      threadId: params.threadId,
+      turnId: params.turnId,
+      serverName: params.serverName,
+      params,
+    };
+  }
+
+  return null;
+}
 
 export function mapServerRequestToApproval(request: JsonRpcRequest): AppServerApprovalRequest | null {
   if (request.method === "item/commandExecution/requestApproval") {
@@ -149,6 +225,41 @@ export function buildApprovalResponse(
   return {
     permissions: grantedPermissionsFromRequest(approval.params.permissions),
     scope: decision === "allow_session" ? "session" : "turn",
+  };
+}
+
+export function buildServerRequestResponse(
+  request: AppServerPendingRequest,
+  input: AppServerRequestResponseInput,
+): AppServerRequestResponse {
+  if (
+    request.method === "item/commandExecution/requestApproval" ||
+    request.method === "item/fileChange/requestApproval" ||
+    request.method === "item/permissions/requestApproval"
+  ) {
+    if (input.type !== "approval") {
+      throw new Error("响应类型与 app-server request 不匹配");
+    }
+    return buildApprovalResponse(request, input.decision);
+  }
+
+  if (request.method === "item/tool/requestUserInput") {
+    if (input.type !== "userInput") {
+      throw new Error("响应类型与 app-server request 不匹配");
+    }
+    return { answers: input.answers };
+  }
+
+  if (input.type !== "elicitation") {
+    throw new Error("响应类型与 app-server request 不匹配");
+  }
+  if (input.action !== "accept") {
+    return { action: input.action, content: null, _meta: null };
+  }
+  return {
+    action: input.action,
+    content: input.content ?? null,
+    _meta: input._meta ?? null,
   };
 }
 

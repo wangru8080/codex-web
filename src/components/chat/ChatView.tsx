@@ -28,6 +28,7 @@ import { usePanel } from '@/hooks/usePanel';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { PermissionPrompt } from './PermissionPrompt';
+import { AppServerRequestPrompt } from './AppServerRequestPrompt';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,7 +63,10 @@ import {
   getRewindPoints,
   respondToPermission,
 } from '@/lib/stream-session-manager';
-import type { AppServerApprovalDecision, AppServerApprovalRequest } from '@/codex-web/approval-adapter';
+import type {
+  AppServerPendingRequest,
+  AppServerRequestResponseInput,
+} from '@/codex-web/approval-adapter';
 import {
   appServerTerminalTurnToMessageContent,
   appServerTurnToMessageBlocks,
@@ -122,12 +126,12 @@ interface ChatViewProps {
   workingDirectory?: string;
   projectName?: string;
   appServerTurn?: AppServerTurnState | null;
-  appServerApproval?: AppServerApprovalRequest | null;
+  appServerRequest?: AppServerPendingRequest | null;
   appServerThreadId?: string | null;
   appServerTokenUsage?: ThreadTokenUsage | null;
   appServerGoal?: { source: string; data: ThreadGoal } | null;
   appServerNotice?: { message: string; description?: string } | null;
-  onAppServerApprovalDecision?: (decision: AppServerApprovalDecision) => Promise<void>;
+  onAppServerRequestResponse?: (input: AppServerRequestResponseInput) => Promise<void>;
   onAppServerPermissionChange?: (permissionProfile: PermissionProfile) => Promise<void>;
   onAppServerModelChange?: (model: string) => Promise<void>;
   onAppServerEffortChange?: (effort: ReasoningEffort) => Promise<void>;
@@ -174,12 +178,12 @@ export function ChatView({
   workingDirectory: sessionWorkingDirectory,
   projectName,
   appServerTurn,
-  appServerApproval,
+  appServerRequest,
   appServerThreadId,
   appServerTokenUsage,
   appServerGoal,
   appServerNotice,
-  onAppServerApprovalDecision,
+  onAppServerRequestResponse,
   onAppServerPermissionChange,
   onAppServerModelChange,
   onAppServerEffortChange,
@@ -584,7 +588,10 @@ export function ChatView({
   const streamingToolOutput = appServerSend ? appServerToolState.streamingToolOutput : streamSnapshot?.streamingToolOutput ?? '';
   const streamingThinkingContent = appServerSend ? appServerTurn?.reasoningText ?? '' : streamSnapshot?.streamingThinkingContent ?? '';
   const statusText = appServerSend ? appServerStatusText : streamSnapshot?.statusText;
-  const pendingPermission = appServerApproval?.permission ?? streamSnapshot?.pendingPermission ?? null;
+  const appServerPermission = appServerRequest && "permission" in appServerRequest
+    ? appServerRequest.permission
+    : null;
+  const pendingPermission = appServerPermission ?? streamSnapshot?.pendingPermission ?? null;
   const permissionResolved = streamSnapshot?.permissionResolved ?? null;
   const appServerTurnIsTerminal =
     appServerTurn?.status === 'completed' ||
@@ -1188,16 +1195,27 @@ export function ChatView({
 
   const handlePermissionResponse = useCallback(
     async (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => {
-      if (appServerApproval && onAppServerApprovalDecision) {
+      if (appServerPermission && onAppServerRequestResponse) {
         setPendingApprovalSessionId('');
-        await onAppServerApprovalDecision(decision);
+        await onAppServerRequestResponse({ type: 'approval', decision });
         return;
       }
 
       setPendingApprovalSessionId('');
       await respondToPermission(activeSessionId, decision, updatedInput, denyMessage);
     },
-    [activeSessionId, appServerApproval, onAppServerApprovalDecision, setPendingApprovalSessionId]
+    [activeSessionId, appServerPermission, onAppServerRequestResponse, setPendingApprovalSessionId]
+  );
+
+  const handleAppServerRequestResponse = useCallback(
+    async (input: AppServerRequestResponseInput) => {
+      if (!onAppServerRequestResponse) {
+        throw new Error('缺少 app-server request 响应处理器');
+      }
+      await onAppServerRequestResponse(input);
+      setPendingApprovalSessionId('');
+    },
+    [onAppServerRequestResponse, setPendingApprovalSessionId],
   );
 
   const handleGoalEdit = useCallback(() => {
@@ -1332,8 +1350,8 @@ export function ChatView({
     async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly SkillInputReference[], modeOverride?: string) => {
       if (readOnly) return false;
       if (appServerSend) {
-        if (appServerApproval) {
-          console.warn('[ChatView] app-server approval pending，发送已暂缓');
+        if (appServerRequest) {
+          console.warn('[ChatView] app-server request pending，发送已暂缓');
           return false;
         }
 
@@ -1497,7 +1515,7 @@ export function ChatView({
       cappedSetMessages((prev) => [...prev, userMessage]);
       doStartStream(content, files, systemPromptAppend, displayOverride, mentions, selectedSkills, effectiveSessionId);
     },
-    [readOnly, appServerSend, appServerApproval, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, selectedEffort, mode, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible, onAppServerUserMessageAccepted]
+    [readOnly, appServerSend, appServerRequest, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, selectedEffort, mode, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible, onAppServerUserMessageAccepted]
   );
 
   sendMessageRef.current = sendMessage;
@@ -1806,6 +1824,16 @@ export function ChatView({
                 onDismiss={appServerErrorBanner ? () => setAppServerErrorBanner(null) : undefined}
               />
             )}
+            <PermissionPrompt
+              pendingPermission={appServerPermission ?? pendingPermission}
+              permissionResolved={permissionResolved}
+              onPermissionResponse={handlePermissionResponse}
+              toolUses={toolUses}
+            />
+            <AppServerRequestPrompt
+              request={appServerRequest}
+              onRespond={handleAppServerRequestResponse}
+            />
             <MessageInput
               key={activeSessionId}
               onSend={sendMessage}
@@ -1813,7 +1841,7 @@ export function ChatView({
               onStop={stopStreaming}
               disabled={
                 readOnly
-                || !!appServerApproval
+                || !!appServerRequest
                 || (!appServerSend && (
                   noCompatibleProvider
                   || providerFetchState === 'idle'
@@ -1896,10 +1924,14 @@ export function ChatView({
       )}
       {/* Permission prompt */}
       <PermissionPrompt
-        pendingPermission={appServerApproval?.permission ?? pendingPermission}
+        pendingPermission={appServerPermission ?? pendingPermission}
         permissionResolved={permissionResolved}
         onPermissionResponse={handlePermissionResponse}
         toolUses={toolUses}
+      />
+      <AppServerRequestPrompt
+        request={appServerRequest}
+        onRespond={handleAppServerRequestResponse}
       />
       {/* Phase 1b — confirmation dialog for destructive chip actions */}
       <AlertDialog
@@ -2114,7 +2146,7 @@ export function ChatView({
         // guard above is belt-and-suspenders.
         disabled={
           readOnly
-          || !!appServerApproval
+          || !!appServerRequest
           || (!appServerSend && (
             noCompatibleProvider
             || providerFetchState === 'idle'

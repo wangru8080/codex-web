@@ -7,6 +7,8 @@ import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput, composerDraftKey } from '@/components/chat/MessageInput';
 import type { ChatRuntime } from '@/lib/chat-runtime-shared';
 import { PermissionPrompt } from '@/components/chat/PermissionPrompt';
+import { AppServerRequestPrompt } from '@/components/chat/AppServerRequestPrompt';
+import type { AppServerRequestResponseInput } from '@/codex-web/approval-adapter';
 import { ChatEmptyState } from '@/components/chat/ChatEmptyState';
 import { NewChatWelcome } from '@/components/chat/NewChatWelcome';
 import { NewChatProjectSelector } from '@/components/chat/NewChatProjectSelector';
@@ -111,6 +113,7 @@ function NewChatPageInner() {
     sendTurnInThread,
     interruptTurn,
     respondToApproval,
+    respondToServerRequest,
     setThreadGoal,
     clearThreadGoal,
     readDirectory,
@@ -308,7 +311,10 @@ function NewChatPageInner() {
   const contextWindowUsage = createdSessionId
     ? appServerState.threadTokenUsageByThreadId[createdSessionId]?.data ?? null
     : null;
-  const visiblePendingPermission = appServerApproval?.permission ?? pendingPermission;
+  const appServerPermission = appServerApproval && "permission" in appServerApproval
+    ? appServerApproval.permission
+    : null;
+  const visiblePendingPermission = appServerPermission ?? pendingPermission;
 
   const applyNewChatModelDefaults = useCallback(() => {
     if (appServerState.connection.data !== 'connected') {
@@ -596,7 +602,7 @@ function NewChatPageInner() {
   }, [appServerTurn, interruptTurn]);
 
   const handlePermissionResponse = useCallback(async (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => {
-    if (appServerApproval) {
+    if (appServerPermission && appServerApproval) {
       setPermissionResolved(decision === 'deny' ? 'deny' : 'allow');
       setPendingApprovalSessionId('');
       try {
@@ -643,7 +649,15 @@ function NewChatPageInner() {
       setPendingPermission(null);
       setPermissionResolved(null);
     }, 1000);
-  }, [appServerApproval, pendingPermission, respondToApproval, setPendingApprovalSessionId]);
+  }, [appServerApproval, appServerPermission, pendingPermission, respondToApproval, setPendingApprovalSessionId]);
+
+  const handleAppServerRequestResponse = useCallback(async (input: AppServerRequestResponseInput) => {
+    if (!appServerApproval) {
+      throw new Error('没有待处理的 app-server request');
+    }
+    await respondToServerRequest(input, appServerApproval.requestId);
+    setPendingApprovalSessionId('');
+  }, [appServerApproval, respondToServerRequest, setPendingApprovalSessionId]);
 
   const handleGoalStatusChange = useCallback((status: ThreadGoalStatus) => {
     const goal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId]?.data : null;
@@ -1051,6 +1065,11 @@ function NewChatPageInner() {
         permissionResolved={permissionResolved}
         onPermissionResponse={handlePermissionResponse}
         toolUses={toolUses}
+      />
+      <AppServerRequestPrompt
+        key="composer-app-server-request-prompt"
+        request={appServerApproval}
+        onRespond={handleAppServerRequestResponse}
       />
       {isNewChat && (
         <NewChatProjectSelector
