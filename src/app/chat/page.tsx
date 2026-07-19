@@ -127,6 +127,7 @@ function NewChatPageInner() {
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const workingDirectoryInitializedRef = useRef(false);
   const workingDirectoryClearedRef = useRef(false);
+  const workingDirectorySelectionVersionRef = useRef(0);
   const [errorBanner, setErrorBanner] = useState<{ message: string; description?: string } | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   // Codex 模型发现没有返回可用模型时置为 true。
@@ -442,6 +443,12 @@ function NewChatPageInner() {
   useEffect(() => {
     if (workingDirectoryInitializedRef.current || workingDirectoryClearedRef.current) return;
     let cancelled = false;
+    const initializationVersion = workingDirectorySelectionVersionRef.current;
+
+    const canApplyInitialization = () =>
+      !cancelled
+      && !workingDirectoryClearedRef.current
+      && workingDirectorySelectionVersionRef.current === initializationVersion;
 
     const validateDir = async (path: string): Promise<boolean> => {
       try {
@@ -454,8 +461,8 @@ function NewChatPageInner() {
 
     const tryFallbackToDefault = async () => {
       const defaultProject = appServerState.threads?.data.data.find((thread) => thread.cwd.trim())?.cwd;
-      if (!defaultProject || cancelled || workingDirectoryClearedRef.current) return;
-      if (await validateDir(defaultProject) && !cancelled && !workingDirectoryClearedRef.current) {
+      if (!defaultProject || !canApplyInitialization()) return;
+      if (await validateDir(defaultProject) && canApplyInitialization()) {
         setWorkingDir(defaultProject);
         localStorage.setItem('codepilot:last-working-directory', defaultProject);
       }
@@ -466,9 +473,9 @@ function NewChatPageInner() {
       if (!saved && !appServerState.threads) return;
       workingDirectoryInitializedRef.current = true;
       if (saved) {
-        if (await validateDir(saved) && !cancelled && !workingDirectoryClearedRef.current) {
+        if (await validateDir(saved) && canApplyInitialization()) {
           setWorkingDir(saved);
-        } else if (!cancelled && !workingDirectoryClearedRef.current) {
+        } else if (canApplyInitialization()) {
           // Stale — clear and try setup default
           localStorage.removeItem('codepilot:last-working-directory');
           await tryFallbackToDefault();
@@ -480,16 +487,24 @@ function NewChatPageInner() {
 
     init();
 
-    const handler = (e: Event) => {
-      const path = (e as CustomEvent).detail?.path;
-      if (path) setWorkingDir(path);
-    };
-    window.addEventListener('project-directory-changed', handler);
     return () => {
       cancelled = true;
-      window.removeEventListener('project-directory-changed', handler);
     };
   }, [appServerState.threads, readDirectory]);
+
+  // 侧栏项目切换监听必须独立于只执行一次的目录初始化。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const path = (e as CustomEvent).detail?.path;
+      if (path) {
+        workingDirectorySelectionVersionRef.current += 1;
+        workingDirectoryClearedRef.current = false;
+        setWorkingDir(path);
+      }
+    };
+    window.addEventListener('project-directory-changed', handler);
+    return () => window.removeEventListener('project-directory-changed', handler);
+  }, []);
 
   // 最近项目来自 app-server thread/list。
   useEffect(() => {
@@ -508,6 +523,8 @@ function NewChatPageInner() {
     if (isElectron) {
       const path = await openNativePicker({ title: t('folderPicker.title') });
       if (path) {
+        workingDirectorySelectionVersionRef.current += 1;
+        workingDirectoryClearedRef.current = false;
         setWorkingDir(path);
         localStorage.setItem('codepilot:last-working-directory', path);
       }
@@ -517,17 +534,22 @@ function NewChatPageInner() {
   }, [isElectron, openNativePicker, t]);
 
   const handleFolderPickerSelect = useCallback((path: string) => {
+    workingDirectorySelectionVersionRef.current += 1;
+    workingDirectoryClearedRef.current = false;
     setWorkingDir(path);
     localStorage.setItem('codepilot:last-working-directory', path);
     setFolderPickerOpen(false);
   }, []);
 
   const handleSelectProject = useCallback((path: string) => {
+    workingDirectorySelectionVersionRef.current += 1;
+    workingDirectoryClearedRef.current = false;
     setWorkingDir(path);
     localStorage.setItem('codepilot:last-working-directory', path);
   }, []);
 
   const handleClearProject = useCallback(() => {
+    workingDirectorySelectionVersionRef.current += 1;
     workingDirectoryClearedRef.current = true;
     setWorkingDir('');
     localStorage.removeItem('codepilot:last-working-directory');
