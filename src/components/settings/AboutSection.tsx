@@ -29,7 +29,7 @@ import { ImportSessionDialog } from "@/components/layout/ImportSessionDialog";
 import { showToast } from "@/hooks/useToast";
 import type { TranslationKey } from "@/i18n";
 
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0";
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.1.0";
 
 /**
  * Best-effort platform / channel detection. Electron sets a UA marker so

@@ -387,7 +387,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       try {
         await client.connect();
         const initialize = (await client.request("initialize", {
-          clientInfo: { name: "codex_web", title: "Codex Web", version: "0.0.0" },
+          clientInfo: { name: "codex_web", title: "Codex Web", version: "0.1.0" },
           capabilities: appServerInitializeCapabilities(),
         })) as InitializeResponse;
         client.notify("initialized");

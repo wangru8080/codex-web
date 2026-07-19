@@ -43,7 +43,7 @@ export type BootstrapResult = {
 const clientInfo = {
   name: "codex_web",
   title: "Codex Web",
-  version: "0.0.0",
+  version: "0.1.0",
 };
 
 export class AppServerSession {

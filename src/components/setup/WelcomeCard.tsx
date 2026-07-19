@@ -5,7 +5,7 @@ import { MonolithIcon } from '@/components/brand/MonolithIcon';
 
 export function WelcomeCard() {
   const { t } = useTranslation();
-  const version = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0';
+  const version = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0';
 
   return (
     <div className="rounded-lg border bg-card p-4 flex items-center gap-3">
