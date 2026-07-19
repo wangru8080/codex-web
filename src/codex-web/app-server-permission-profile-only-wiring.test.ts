@@ -34,6 +34,15 @@ describe("app-server permission profile 唯一管理", () => {
     expect(chatViewPrompt).not.toContain("permissionProfile={permissionProfile}");
   });
 
+  it("审批操作按钮使用中文文案", () => {
+    const prompt = source("src/components/chat/PermissionPrompt.tsx");
+
+    expect(prompt).toContain("拒绝");
+    expect(prompt).toContain("允许一次");
+    expect(prompt).not.toContain("                Deny");
+    expect(prompt).not.toContain("                Allow Once");
+  });
+
   it("保留 full_access 的正式 app-server 映射", () => {
     const runtimeOptions = source("src/codex-web/app-server-runtime-options.ts");
 

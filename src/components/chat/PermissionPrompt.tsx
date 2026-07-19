@@ -476,13 +476,13 @@ export function PermissionPrompt({
                 data-testid="app-server-approval-deny"
                 onClick={() => onPermissionResponse('deny')}
               >
-                Deny
+                拒绝
               </ConfirmationAction>
               <ConfirmationAction
                 variant="outline"
                 onClick={() => onPermissionResponse('allow')}
               >
-                Allow Once
+                允许一次
               </ConfirmationAction>
               {pendingPermission.suggestions && pendingPermission.suggestions.length > 0 && (
                 <ConfirmationAction
