@@ -111,6 +111,11 @@ import { withReasoningEffort } from "./turn-start-request";
 import { buildAppServerTurnInput } from "./turn-input";
 import { persistAttachments } from "./attachment-persistence";
 import { readMatchingFsChangedPaths } from "./app-server-file-watch";
+import {
+  CROSS_CLIENT_USER_MESSAGE_METHOD,
+  reduceCrossClientUserMessage,
+  type CrossClientUserMessage,
+} from "./cross-client-sync";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -149,7 +154,7 @@ export type SendTurnInThreadParams = {
   effort?: ReasoningEffort;
   mode?: string;
   permissionProfile?: PermissionProfile;
-  onAccepted?: (threadId: string) => void;
+  onAccepted?: (threadId: string, turnId: string) => void;
   skills?: readonly SkillInputReference[];
 };
 
@@ -194,6 +199,7 @@ export type AppServerActions = {
   fuzzyFileSearch: (params: FuzzyFileSearchParams) => Promise<FuzzyFileSearchResponse>;
   updateMemorySettings: (params: { threadId?: string; useMemories: boolean; generateMemories: boolean }) => Promise<void>;
   readAccountRateLimits: () => Promise<GetAccountRateLimitsResponse>;
+  publishCrossClientUserMessage: (event: CrossClientUserMessage) => void;
 };
 
 export function AppServerProvider({ children }: { children: React.ReactNode }) {
@@ -287,6 +293,26 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     });
 
     client.onNotification((notification) => {
+      if (notification.method === CROSS_CLIENT_USER_MESSAGE_METHOD) {
+        setState((current) => {
+          const crossClientState = reduceCrossClientUserMessage({
+            byThreadId: current.crossClientUserMessagesByThreadId,
+            latest: current.latestCrossClientUserMessage,
+          }, notification);
+          if (
+            crossClientState.byThreadId === current.crossClientUserMessagesByThreadId &&
+            crossClientState.latest === current.latestCrossClientUserMessage
+          ) {
+            return current;
+          }
+          return {
+            ...current,
+            crossClientUserMessagesByThreadId: crossClientState.byThreadId,
+            latestCrossClientUserMessage: crossClientState.latest,
+          };
+        });
+        return;
+      }
       if (notification.method === "thread/settings/updated") {
         const params = notification.params as { threadId?: string } | undefined;
         const threadId = params?.threadId;
@@ -947,7 +973,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       });
       throw error;
     }
-    onAccepted?.(threadId);
+    onAccepted?.(threadId, turnResponse.turn.id);
     const acceptedTurn = createAcceptedTurnState(threadId, turnResponse.turn.id);
     setState((current) => ({
       ...current,
@@ -1034,6 +1060,24 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     ) as TurnInterruptResponse;
   }, [state.activeTurn, state.activeTurnsByThreadId]);
 
+  const publishCrossClientUserMessage = useCallback((event: CrossClientUserMessage) => {
+    const client = clientRef.current;
+    if (!client) {
+      return;
+    }
+    try {
+      client.notify(CROSS_CLIENT_USER_MESSAGE_METHOD, event);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        diagnostics: appendDiagnostic(current.diagnostics, {
+          source: "web-bridge",
+          data: { message: error instanceof Error ? error.message : String(error) },
+        }),
+      }));
+    }
+  }, []);
+
   const actions = useMemo<AppServerActions>(
     () => ({
       startThread,
@@ -1073,8 +1117,9 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       fuzzyFileSearch,
       updateMemorySettings,
       readAccountRateLimits,
+      publishCrossClientUserMessage,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, publishCrossClientUserMessage],
   );
 
   return (

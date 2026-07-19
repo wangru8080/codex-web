@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, use } from 'react';
+import { useEffect, useState, useRef, use, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Message, ChatSession, PermissionProfile } from '@/types';
@@ -92,12 +92,17 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     clearThreadGoal,
     updateThreadPermissions,
     updateThreadModelSettings,
+    publishCrossClientUserMessage,
   } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
   const { t } = useTranslation();
   const defaultPanelAppliedRef = useRef(false);
   const turnSnapshotsRef = useRef(appServerState.turnSnapshots);
+  const appServerSyncedUserMessages = useMemo(() => {
+    const threadIds = resumedThreadId && resumedThreadId !== id ? [id, resumedThreadId] : [id];
+    return threadIds.flatMap((threadId) => appServerState.crossClientUserMessagesByThreadId[threadId] ?? []);
+  }, [appServerState.crossClientUserMessagesByThreadId, id, resumedThreadId]);
 
   useEffect(() => {
     turnSnapshotsRef.current = appServerState.turnSnapshots;
@@ -399,6 +404,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         appServerTokenUsage={appServerTokenUsage}
         appServerGoal={appServerGoal}
         appServerNotice={appServerNotice}
+        appServerSyncedUserMessages={appServerSyncedUserMessages}
+        onAppServerUserMessageAccepted={publishCrossClientUserMessage}
         onAppServerApprovalDecision={(decision) =>
           appServerApproval ? respondToApproval(decision, appServerApproval.requestId) : respondToApproval(decision)
         }

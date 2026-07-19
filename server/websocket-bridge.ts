@@ -3,6 +3,11 @@ import { randomBytes } from "node:crypto";
 import WebSocket, { WebSocketServer } from "ws";
 
 import { startCodexAppServer, type CodexProcessOptions } from "./codex-process";
+import {
+  appServerMessageDelivery,
+  BridgeServerRequestRouter,
+  isBridgeSyncNotification,
+} from "./bridge-message-routing";
 import { JsonRpcClient } from "./json-rpc-client";
 import { validateBridgeRequest } from "./security";
 import type { JsonRpcMessage, JsonRpcResponse } from "../src/codex/protocol/json-rpc";
@@ -37,7 +42,16 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
   });
   const bridgePath = options.path ?? "/";
   const sockets = new Set<WebSocket>();
+  const serverRequestRouter = new BridgeServerRequestRouter<JsonRpcClient>();
   const wsServer = new WebSocketServer({ noServer: true });
+  const broadcast = (message: JsonRpcMessage, excludedSocket?: WebSocket) => {
+    const serialized = JSON.stringify(message);
+    for (const socket of sockets) {
+      if (socket !== excludedSocket && socket.readyState === WebSocket.OPEN) {
+        socket.send(serialized);
+      }
+    }
+  };
 
   const handleUpgrade = (request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -63,7 +77,7 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
 
   wsServer.on("connection", (webSocket, request) => {
     sockets.add(webSocket);
-    attachAppServer(webSocket, request, options);
+    attachAppServer(webSocket, request, options, serverRequestRouter, broadcast);
     webSocket.on("close", () => sockets.delete(webSocket));
   });
 
@@ -119,6 +133,8 @@ function attachAppServer(
   webSocket: WebSocket,
   _request: IncomingMessage,
   options: WebSocketBridgeOptions,
+  serverRequestRouter: BridgeServerRequestRouter<JsonRpcClient>,
+  broadcast: (message: JsonRpcMessage, excludedSocket?: WebSocket) => void,
 ): void {
   const process = startCodexAppServer(options);
   const rpc = new JsonRpcClient({
@@ -128,17 +144,42 @@ function attachAppServer(
   });
 
   rpc.on("message", (message) => {
+    const delivery = appServerMessageDelivery(message);
+    if (delivery === "broadcast") {
+      broadcast(message);
+      return;
+    }
+    if (delivery === "server-request" && "method" in message && message.id !== undefined) {
+      const publicId = serverRequestRouter.register(rpc, message.id);
+      broadcast({ ...message, id: publicId });
+      return;
+    }
     if (webSocket.readyState === WebSocket.OPEN) {
       webSocket.send(JSON.stringify(message));
     }
   });
   rpc.on("error", (error) => sendBridgeError(webSocket, error.message));
-  rpc.on("close", (error) => sendBridgeError(webSocket, error?.message ?? "app-server 已关闭"));
+  rpc.on("close", (error) => {
+    serverRequestRouter.deleteOwner(rpc);
+    sendBridgeError(webSocket, error?.message ?? "app-server 已关闭");
+  });
 
   webSocket.on("message", (data) => {
     try {
       const text = data.toString("utf8");
       const message = JSON.parse(text) as JsonRpcMessage;
+      if (isBridgeSyncNotification(message)) {
+        broadcast(message, webSocket);
+        return;
+      }
+      if (!("method" in message) && serverRequestRouter.isPublicId(message.id)) {
+        const route = serverRequestRouter.take(message.id);
+        if (route) {
+          broadcast({ method: "serverRequest/resolved", params: { requestId: message.id } });
+          route.owner.sendRaw({ ...message, id: route.originalId });
+        }
+        return;
+      }
       const intercepted = options.clientMessageInterceptor?.(message);
       if (intercepted) {
         webSocket.send(JSON.stringify(intercepted));
@@ -151,6 +192,7 @@ function attachAppServer(
   });
 
   webSocket.on("close", () => {
+    serverRequestRouter.deleteOwner(rpc);
     rpc.close(new Error("浏览器连接已关闭"));
     process.stop();
   });

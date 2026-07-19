@@ -81,6 +81,10 @@ import { editedGoalStatus, goalSummaryLines } from '@/codex-web/goal-display-ada
 import { selectPlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
 import { GoalProgressRow } from './GoalProgressRow';
 import { PlanImplementationPromptBar } from './PlanImplementationPromptBar';
+import {
+  mergeCrossClientUserMessages,
+  type CrossClientUserMessage,
+} from '@/codex-web/cross-client-sync';
 
 interface QueuedMessage {
   content: string;
@@ -131,7 +135,9 @@ interface ChatViewProps {
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
   onAppServerGoalClear?: () => Promise<void>;
-  appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; skills?: readonly SkillInputReference[]; onAccepted?: (threadId: string) => void }) => Promise<AppServerTurnState>;
+  appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; skills?: readonly SkillInputReference[]; onAccepted?: (threadId: string, turnId: string) => void }) => Promise<AppServerTurnState>;
+  appServerSyncedUserMessages?: readonly CrossClientUserMessage[];
+  onAppServerUserMessageAccepted?: (event: CrossClientUserMessage) => void;
   appServerClearContextAndSend?: (content: string, effort?: ReasoningEffort) => Promise<void>;
   appServerInterrupt?: () => Promise<void>;
   appServerLoadEarlier?: () => Promise<MessagesResponse>;
@@ -182,6 +188,8 @@ export function ChatView({
   onAppServerGoalEdit,
   onAppServerGoalClear,
   appServerSend,
+  appServerSyncedUserMessages = [],
+  onAppServerUserMessageAccepted,
   appServerClearContextAndSend,
   appServerInterrupt,
   appServerLoadEarlier,
@@ -283,6 +291,10 @@ export function ChatView({
       return next;
     });
   }, []);
+  useEffect(() => {
+    if (appServerSyncedUserMessages.length === 0) return;
+    cappedSetMessages((current) => mergeCrossClientUserMessages(current, appServerSyncedUserMessages));
+  }, [appServerSyncedUserMessages, cappedSetMessages]);
   const [mode, setMode] = useState<string>(initialMode || 'code');
   const [currentModel, setCurrentModel] = useState(() => modelName || (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') : null) || 'sonnet');
   // providerId='' is a LEGITIMATE historic env-mode session value — only
@@ -1349,11 +1361,11 @@ export function ChatView({
             mode: modeOverride ?? mode,
             permissionProfile,
             skills: selectedSkills,
-            onAccepted: (threadId) => {
+            onAccepted: (threadId, turnId) => {
               if (accepted) return;
               accepted = true;
               const userMessage: Message = {
-                id: 'temp-' + Date.now(),
+                id: `temp-user-${turnId}`,
                 session_id: threadId || activeSessionId,
                 role: 'user',
                 content: files && files.length > 0
@@ -1364,6 +1376,12 @@ export function ChatView({
               };
               pendingOptimisticUserIdRef.current = userMessage.id;
               cappedSetMessages((prev) => [...prev, userMessage]);
+              onAppServerUserMessageAccepted?.({
+                threadId,
+                turnId,
+                isNewThread: false,
+                message: userMessage,
+              });
             },
           });
           handoffToAppServerTurn = true;
@@ -1479,7 +1497,7 @@ export function ChatView({
       cappedSetMessages((prev) => [...prev, userMessage]);
       doStartStream(content, files, systemPromptAppend, displayOverride, mentions, selectedSkills, effectiveSessionId);
     },
-    [readOnly, appServerSend, appServerApproval, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, selectedEffort, mode, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]
+    [readOnly, appServerSend, appServerApproval, activeSessionId, adoptCodexSessionId, sessionId, workingDirectory, currentModel, selectedEffort, mode, permissionProfile, router, isStreaming, doStartStream, cappedSetMessages, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible, onAppServerUserMessageAccepted]
   );
 
   sendMessageRef.current = sendMessage;

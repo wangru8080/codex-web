@@ -41,6 +41,7 @@ import {
   type CodexWebToolResultInfo,
   type CodexWebToolUseInfo,
 } from '@/codex-web/tool-adapter';
+import { mergeCrossClientUserMessages } from '@/codex-web/cross-client-sync';
 
 const DEFAULT_CODEX_PROVIDER_ID = 'codex_account';
 const DEFAULT_CODEX_MODEL = 'gpt-5.5';
@@ -115,6 +116,7 @@ function NewChatPageInner() {
     readDirectory,
     updateThreadPermissions,
     updateThreadModelSettings,
+    publishCrossClientUserMessage,
   } = useAppServerActions();
   const { t } = useTranslation();
   const { isElectron, openNativePicker } = useNativeFolderPicker();
@@ -229,6 +231,34 @@ function NewChatPageInner() {
     }
   }, []);
   const [createdSessionId, setCreatedSessionId] = useState<string | undefined>();
+  const lastSeenCrossClientMessageIdRef = useRef('');
+  useEffect(() => {
+    const latest = appServerState.latestCrossClientUserMessage;
+    if (!latest || latest.message.id === lastSeenCrossClientMessageIdRef.current) return;
+    lastSeenCrossClientMessageIdRef.current = latest.message.id;
+
+    if (!createdSessionId) {
+      if (!latest.isNewThread || messages.length > 0) return;
+      setCreatedSessionId(latest.threadId);
+      setMessages((current) => mergeCrossClientUserMessages(
+        current,
+        appServerState.crossClientUserMessagesByThreadId[latest.threadId] ?? [latest],
+      ));
+      return;
+    }
+
+    if (latest.threadId === createdSessionId) {
+      setMessages((current) => mergeCrossClientUserMessages(
+        current,
+        appServerState.crossClientUserMessagesByThreadId[createdSessionId] ?? [],
+      ));
+    }
+  }, [
+    appServerState.crossClientUserMessagesByThreadId,
+    appServerState.latestCrossClientUserMessage,
+    createdSessionId,
+    messages.length,
+  ]);
   const handlePermissionProfileChange = useCallback(async (next: PermissionProfile) => {
     try {
       if (createdSessionId) {
@@ -763,7 +793,7 @@ function NewChatPageInner() {
             ? `<!--files:${JSON.stringify(files.map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, data: f.data })))}-->${displayUserContent}`
             : displayUserContent;
           const userMessage: Message = {
-            id: 'temp-' + Date.now(),
+            id: `temp-user-${acceptedTurn.turnId}`,
             session_id: acceptedTurn.threadId || messageSessionId,
             role: 'user',
             content: contentWithFileMeta,
@@ -771,6 +801,12 @@ function NewChatPageInner() {
             token_usage: null,
           };
           setMessages((prev) => existingThreadId ? [...prev, userMessage] : [userMessage]);
+          publishCrossClientUserMessage({
+            threadId: userMessage.session_id,
+            turnId: acceptedTurn.turnId,
+            isNewThread: !existingThreadId,
+            message: userMessage,
+          });
         }
         if (acceptedTurn.threadId) {
           setCreatedSessionId(acceptedTurn.threadId);
@@ -806,7 +842,7 @@ function NewChatPageInner() {
         }
       }
     },
-    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, selectedEffort, mode, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread]
+    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, selectedEffort, mode, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread, publishCrossClientUserMessage]
   );
 
   const appServerGoal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId] ?? null : null;
