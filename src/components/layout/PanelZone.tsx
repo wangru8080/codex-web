@@ -29,6 +29,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useState } from "react";
 import { usePanel } from "@/hooks/usePanel";
 import { CardFrame, CardSurface, ResizeGutter } from "./card-primitives";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
 const FileTreePanel = dynamic(
   () => import("./panels/FileTreePanel").then((m) => ({ default: m.FileTreePanel })),
@@ -39,8 +40,8 @@ const TREE_MIN_WIDTH = 220;
 const TREE_MAX_WIDTH = 500;
 const TREE_DEFAULT_WIDTH = 280;
 
-export function PanelZone() {
-  const { fileTreeOpen } = usePanel();
+export function PanelZone({ compactViewport }: { compactViewport: boolean }) {
+  const { fileTreeOpen, setFileTreeOpen } = usePanel();
   const [treeWidth, setTreeWidth] = useState(TREE_DEFAULT_WIDTH);
 
   const handleTreeResize = useCallback((delta: number) => {
@@ -49,6 +50,26 @@ export function PanelZone() {
   }, []);
 
   if (!fileTreeOpen) return null;
+
+  if (compactViewport) {
+    return (
+      <Sheet open onOpenChange={setFileTreeOpen}>
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          className="w-[min(92vw,420px)] max-w-none gap-0 p-0"
+        >
+          <SheetTitle className="sr-only">Files</SheetTitle>
+          <SheetDescription className="sr-only">
+            在移动端显示当前工作区的文件树。
+          </SheetDescription>
+          <CardSurface kind="fileTree">
+            <FileTreePanel />
+          </CardSurface>
+        </SheetContent>
+      </Sheet>
+    );
+  }
 
   return (
     <>

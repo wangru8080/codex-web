@@ -9,6 +9,7 @@ import { SpinnerGap } from "@/components/ui/icon";
 import { usePanel } from '@/hooks/usePanel';
 import { useWorkspaceSidebarOptional } from '@/hooks/useWorkspaceSidebar';
 import { useTranslation } from '@/hooks/useTranslation';
+import { useCompactViewport } from '@/hooks/useCompactViewport';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
 import {
   selectVisibleActiveTurn,
@@ -96,6 +97,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
+  const compactViewport = useCompactViewport();
   const { t } = useTranslation();
   const defaultPanelAppliedRef = useRef(false);
   const turnSnapshotsRef = useRef(appServerState.turnSnapshots);
@@ -257,6 +259,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   // Uses sessionStorage to track which sessions have already been initialized,
   // so re-opening an untouched (zero-message) session won't override the layout.
   useEffect(() => {
+    if (compactViewport === null) return;
     if (defaultPanelAppliedRef.current) return;
     defaultPanelAppliedRef.current = true;
 
@@ -274,6 +277,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           // file tree opens lightweight; sidebar stays as the user
           // last left it (they're independent inputs per Phase 2).
           setFileTreeOpen(true);
+          return;
+        }
+        if (compactViewport && !targetFilePath) {
+          setFileTreeOpen(false);
+          if (ws) ws.setOpen(false);
           return;
         }
         const res = await fetch('/api/settings/app');
@@ -312,7 +320,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     // provider; intentionally tracked via the `ws` reference identity
     // rather than the inner functions to avoid noisy re-runs on every
     // sidebar state change. (deps are complete — no suppression needed.)
-  }, [id, targetFilePath, setFileTreeOpen, ws]);
+  }, [compactViewport, id, targetFilePath, setFileTreeOpen, ws]);
 
   useEffect(() => {
     const threadId = resumedThreadId || id;

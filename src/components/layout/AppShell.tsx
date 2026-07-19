@@ -25,6 +25,8 @@ import { useNotificationPoll } from '@/hooks/useNotificationPoll';
 import { useNotificationClickRoute } from '@/hooks/useNotificationClickRoute';
 import { useGlobalSearchShortcut } from '@/hooks/useGlobalSearchShortcut';
 import { GlobalSearchDialog } from './GlobalSearchDialog';
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
+import { useCompactViewport } from '@/hooks/useCompactViewport';
 
 // AppShell 静态导入约束（Phase A 内存优化，2026-05-08）：以下四个组件
 // 仅在对应路由、状态或弹窗触发时渲染。使用 next/dynamic + ssr:false 可避免
@@ -135,10 +137,14 @@ const LG_BREAKPOINT = 1024;
 function ChatContentRow({
   isChatDetailRoute,
   isSplitActive,
+  compactViewport,
+  compactViewportConfirmed,
   children,
 }: {
   isChatDetailRoute: boolean;
   isSplitActive: boolean;
+  compactViewport: boolean;
+  compactViewportConfirmed: boolean;
   children: React.ReactNode;
 }) {
   // Phase 7c-C — main column and workspace sidebar both wrapped in
@@ -146,6 +152,10 @@ function ChatContentRow({
   // + TabPanel content; its width state and ResizeHandle wiring live
   // here so the row's layout geometry is in one place.
   const ws = useWorkspaceSidebar();
+  const setWorkspaceOpen = ws.setOpen;
+  useEffect(() => {
+    if (compactViewportConfirmed) setWorkspaceOpen(false);
+  }, [compactViewportConfirmed, setWorkspaceOpen]);
   const handleWorkspaceResize = useCallback(
     (delta: number) => {
       ws.setWidth(ws.state.width - delta);
@@ -168,7 +178,23 @@ function ChatContentRow({
       </CardFrame>
       {/* Workspace sidebar: ResizeGutter as sibling of the frame so
           its visible line lands in the gap between main and workspace. */}
-      {isChatDetailRoute && ws.state.open && (
+      {isChatDetailRoute && ws.state.open && (compactViewport ? (
+        <Sheet open onOpenChange={ws.setOpen}>
+          <SheetContent
+            side="right"
+            showCloseButton={false}
+            className="w-[min(92vw,420px)] max-w-none gap-0 p-0"
+          >
+            <SheetTitle className="sr-only">Workspace</SheetTitle>
+            <SheetDescription className="sr-only">
+              在移动端显示工作区侧栏内容。
+            </SheetDescription>
+            <CardSurface kind="workspace">
+              <WorkspaceSidebar />
+            </CardSurface>
+          </SheetContent>
+        </Sheet>
+      ) : (
         <>
           <ResizeGutter
             onResize={handleWorkspaceResize}
@@ -180,8 +206,8 @@ function ChatContentRow({
             </CardSurface>
           </CardFrame>
         </>
-      )}
-      {isChatDetailRoute && <PanelZone />}
+      ))}
+      {isChatDetailRoute && <PanelZone compactViewport={compactViewport} />}
     </>
   );
 }
@@ -192,6 +218,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const [chatListOpenRaw, setChatListOpenRaw] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const compactViewportState = useCompactViewport();
+  const compactViewport = compactViewportState !== false;
 
   useGlobalSearchShortcut(() => setSearchOpen(true));
 
@@ -285,6 +313,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
   const [isAssistantWorkspace, setIsAssistantWorkspace] = useState(false);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (compactViewportState !== true) return;
+    setChatListOpenRaw(false);
+    setFileTreeOpen(false);
+  }, [compactViewportState]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // --- Git summary (derived from polling hook, no setState needed) ---
   const [currentWorktreeLabel, setCurrentWorktreeLabel] = useState("");
@@ -645,7 +681,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   anti-FOUC <head> script before hydration and has no
                   causal link to a layout <div> deep in <body>. See
                   tech-debt #29's resolution for the real cause. */}
-              {chatListOpen && (
+              {chatListOpen && compactViewport ? (
+                <Sheet open onOpenChange={setChatListOpen}>
+                  <SheetContent
+                    side="left"
+                    className="w-[min(88vw,320px)] max-w-none gap-0 p-0 pt-10"
+                  >
+                    <SheetTitle className="sr-only">Navigation</SheetTitle>
+                    <SheetDescription className="sr-only">
+                      在移动端显示会话列表与导航。
+                    </SheetDescription>
+                    <CardSurface
+                      kind="sidebar"
+                      variant={pathname.startsWith('/settings') ? 'settings' : 'chat-list'}
+                    >
+                      <ErrorBoundary>
+                        {pathname.startsWith('/settings') ? (
+                          <SettingsSidebar open={chatListOpen} />
+                        ) : (
+                          <ChatListPanel
+                            open={chatListOpen}
+                            hasUpdate={updateContextValue.updateInfo?.updateAvailable ?? false}
+                            readyToInstall={updateContextValue.updateInfo?.readyToInstall ?? false}
+                          />
+                        )}
+                      </ErrorBoundary>
+                    </CardSurface>
+                  </SheetContent>
+                </Sheet>
+              ) : chatListOpen ? (
                 <CardFrame kind="sidebar" width={chatListWidth}>
                   <CardSurface
                     kind="sidebar"
@@ -664,8 +728,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </ErrorBoundary>
                   </CardSurface>
                 </CardFrame>
-              )}
-              {chatListOpen && (
+              ) : null}
+              {chatListOpen && !compactViewport && (
                 <ResizeGutter
                   onResize={handleChatListResize}
                   onResizeEnd={handleChatListResizeEnd}
@@ -675,7 +739,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }}
                 />
               )}
-              <ChatContentRow isChatDetailRoute={isChatWorkspaceRoute} isSplitActive={isSplitActive}>
+              <ChatContentRow
+                isChatDetailRoute={isChatWorkspaceRoute}
+                isSplitActive={isSplitActive}
+                compactViewport={compactViewport}
+                compactViewportConfirmed={compactViewportState === true}
+              >
                 {children}
               </ChatContentRow>
             </div>

@@ -31,6 +31,7 @@ import { useClientPlatform } from '@/hooks/useClientPlatform';
 import { copyWithToast } from "@/lib/clipboard";
 import type { TranslationKey } from "@/i18n";
 import { useAppServerActions } from "@/codex-web/AppServerProvider";
+import { useCompactViewport } from '@/hooks/useCompactViewport';
 
 export function UnifiedTopBar() {
   const {
@@ -56,6 +57,7 @@ export function UnifiedTopBar() {
   const { isWindows } = useClientPlatform();
   const pathname = usePathname();
   const { setThreadName, archiveThread } = useAppServerActions();
+  const compactViewport = useCompactViewport();
 
   // 新对话和历史对话共用右侧文件树与工作区。
   const isChatRoute = pathname === "/chat" || pathname.startsWith("/chat/");
@@ -141,7 +143,14 @@ export function UnifiedTopBar() {
           type="button"
           variant="ghost"
           size="icon-sm"
-          onClick={() => setChatListOpen(!chatListOpen)}
+          onClick={() => {
+            const nextOpen = !chatListOpen;
+            if (nextOpen && compactViewport) {
+              setFileTreeOpen(false);
+              ws?.setOpen(false);
+            }
+            setChatListOpen(nextOpen);
+          }}
           aria-label={t((chatListOpen ? 'chatList.collapseSidebar' : 'chatList.expandSidebar') as TranslationKey)}
           // ml + translateY route through platform tokens: 0/0 on
           // web/win32/linux (no shift), 78px/2px on macOS so the button
@@ -374,11 +383,16 @@ export function UnifiedTopBar() {
                   fileTreeOpen ? '' : 'text-muted-foreground hover:text-foreground'
                 }
                 onClick={() => {
+                  const nextOpen = !fileTreeOpen;
+                  if (nextOpen && compactViewport) {
+                    setChatListOpen(false);
+                    ws?.setOpen(false);
+                  }
                   // v13: file-tree and Workspace Sidebar are additive,
                   // not mutex. Each toggle flips its own panel only;
                   // user can have both open simultaneously and chat
                   // area shrinks to fit.
-                  setFileTreeOpen(!fileTreeOpen);
+                  setFileTreeOpen(nextOpen);
                 }}
               >
                 <CodexWebIcon name="file_tree" size="md" className="text-inherit" aria-hidden />
@@ -400,9 +414,14 @@ export function UnifiedTopBar() {
                   size="icon-sm"
                   className={ws.state.open ? "" : "text-muted-foreground hover:text-foreground"}
                   onClick={() => {
+                    const nextOpen = !ws.state.open;
+                    if (nextOpen && compactViewport) {
+                      setChatListOpen(false);
+                      setFileTreeOpen(false);
+                    }
                     // v13: see file-tree button above — additive, not
                     // mutex. Each toggle is independent.
-                    ws.setOpen(!ws.state.open);
+                    ws.setOpen(nextOpen);
                   }}
                   aria-label={t('workspaceSidebar.toggle' as TranslationKey)}
                 >
