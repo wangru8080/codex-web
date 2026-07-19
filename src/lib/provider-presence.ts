@@ -16,10 +16,6 @@
  *
  * Used by:
  *   - `/api/chat` entry precheck (412 + NEEDS_PROVIDER_SETUP when false)
- *   - `/api/setup` Provider card status (kept in lockstep to avoid the
- *     "intercepted at chat but setup shows green" skew)
- *   - ProviderCard consumes `/api/setup` output, so it inherits the same
- *     judgement transitively.
  */
 
 import type { ApiProvider } from '@/types';

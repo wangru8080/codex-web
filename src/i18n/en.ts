@@ -1646,64 +1646,6 @@ const en = {
   'terminal.disconnected': 'Disconnected',
   'terminal.exited': 'Process exited',
 
-  // ── Setup Center ──────────────────────────────────────────────
-  'setup.title': 'Welcome to CodexWeb',
-  'setup.subtitle': 'Configure your Codex account and default project directory.',
-  'setup.skipAndEnter': 'Skip and Enter',
-  'setup.progress': '{completed}/2 completed',
-  'setup.openSetupCenter': 'Initial Setup Guide',
-  'setup.openSetupCenterDesc': 'Configure your Codex account, API key, CODEX_HOME credentials, and default project directory',
-  'setup.open': 'Open',
-
-  // Setup: Welcome card
-  'setup.welcome.title': 'Welcome',
-  'setup.welcome.description': 'CodexWeb is now a Codex-only Web entry. Use OpenAI account authorization, an API key, or existing CODEX_HOME credentials on the server.',
-
-  // Setup: Codex account card
-  'setup.codex.title': 'Codex Account',
-  'setup.codex.description': 'Sign in to Codex to use the server-side Codex Runtime from the browser.',
-  'setup.codex.loading': 'Reading Codex account status...',
-  'setup.codex.refresh': 'Refresh',
-  'setup.codex.startOAuth': 'OpenAI account authorization',
-  'setup.codex.openSettings': 'Open Codex settings',
-
-  // Setup: Claude Code card
-  'setup.claude.title': 'Claude Code CLI (Optional)',
-  'setup.claude.description': 'Install Claude Code CLI for full command-line capabilities. CodexWeb works without it via the AI SDK engine.',
-  'setup.claude.detected': 'Claude Code detected',
-  'setup.claude.notFound': 'Claude Code not found',
-  'setup.claude.conflict': 'Multiple installations detected — this may cause version conflicts',
-  'setup.claude.conflictUsing': 'Currently using',
-  'setup.claude.conflictOther': 'Also found',
-  'setup.claude.conflictRemoveHint': 'To remove, run:',
-  'setup.claude.conflictResolved': 'After cleanup, click Re-detect to verify.',
-  'setup.claude.missingGit': 'Git for Windows required',
-  'setup.claude.useRecommended': 'Use Recommended',
-  'setup.claude.install': 'Install',
-  'setup.claude.redetect': 'Re-detect',
-  'setup.claude.viewCleanup': 'View Cleanup',
-  'setup.claude.skip': 'Skip',
-
-  // Setup: Provider card
-  'setup.provider.title': 'API Provider',
-  'setup.provider.description': 'Configure how CodexWeb connects to AI models.',
-  'setup.provider.envDetected': 'Environment variables detected — use Claude Code env as your provider.',
-  'setup.provider.useEnv': 'Use Claude Code Env',
-  'setup.provider.noProvider': 'No provider configured. Select a preset to get started.',
-  'setup.provider.configured': 'Provider configured',
-  'setup.provider.skip': 'Skip',
-  'setup.provider.skipped': 'Skipped. Add a provider anytime in Settings › Providers.',
-  'setup.provider.openSettings': 'Open provider settings',
-
-  // Setup: Project directory card
-  'setup.project.title': 'Project Directory',
-  'setup.project.description': 'Choose a default project directory to start working in.',
-  'setup.project.selectDirectory': 'Select Directory',
-  'setup.project.recentProjects': 'Recent Projects',
-  'setup.project.noRecent': 'No recent projects found.',
-  'setup.project.selected': 'Project directory set',
-  'setup.project.skip': 'Skip',
-
   // Chat empty state
   'chat.empty.noDirectory': 'Select a project directory to get started',
   'chat.empty.noProvider': 'Configure a Codex account to start chatting',
@@ -1861,14 +1803,13 @@ const en = {
   'about.platform.channel': 'Release channel',
   'about.platform.appVersion': 'App version',
   'about.support.title': 'Support & logs',
-  'about.support.desc': 'Open the logs folder, export a diagnostic bundle, or rerun setup',
+  'about.support.desc': 'Open the logs folder, export diagnostics, or import chat history',
   'about.support.openLogs': 'Open logs folder',
   'about.support.openLogsFailed': 'Could not open the logs folder',
   'about.support.openLogsFailedWith': 'Could not open the logs folder: {error}',
   'about.support.exportDiagnostics': 'Export diagnostics',
   'about.support.exportFailed': 'Failed to export diagnostics',
   'about.support.exportFailedWithLogFolder': 'Failed to export diagnostics. Try the open-logs button instead.',
-  'about.support.runSetupWizard': 'Run setup wizard',
   'about.docs.title': 'Help & links',
   'about.docs.desc': 'GitHub repo, feedback, and release notes',
   'about.docs.submitFeedback': 'Submit feedback',

@@ -577,9 +577,8 @@ export function ProviderManager() {
               setOpenaiAuth(status);
               setOpenaiLoggingIn(false);
               fetchModels(); // refresh model list to include OpenAI models
-              // OAuth is a virtual provider source that hasCodexWebProvider()
-              // counts; broadcast so listeners (SetupCenter's ProviderCard,
-              // anywhere reading provider presence) re-evaluate.
+              // OAuth 也是 hasCodexWebProvider() 统计的虚拟来源；广播事件让
+              // 所有监听 provider 是否存在的界面重新计算状态。
               window.dispatchEvent(new Event('provider-changed'));
             }
           }
@@ -596,8 +595,7 @@ export function ProviderManager() {
       await fetch("/api/openai-oauth/status", { method: "DELETE" });
       setOpenaiAuth({ authenticated: false });
       fetchModels(); // refresh model list
-      // Logout removes the virtual OAuth provider; listeners must re-check
-      // so SetupCenter's ProviderCard can downgrade if OAuth was the only source.
+      // 登出会移除虚拟 OAuth provider，因此需要通知监听方重新检查。
       window.dispatchEvent(new Event('provider-changed'));
     } catch { /* ignore */ }
   };
@@ -716,9 +714,7 @@ export function ProviderManager() {
         const officialDbProviders = llmDbProviders.filter(p => categorizeProvider(p) === 'official');
         const codePlanDbProviders = llmDbProviders.filter(p => categorizeProvider(p) === 'codeplan');
         const thirdpartyDbProviders = llmDbProviders.filter(p => categorizeProvider(p) === 'thirdparty');
-        // Only API_KEY / AUTH_TOKEN count as a credential — ANTHROPIC_BASE_URL
-        // alone shouldn't mark Claude Code as Ready (matches SetupCenter's
-        // ProviderCard credentialKeys check).
+        // 只有 API_KEY / AUTH_TOKEN 才算凭据，单独的 BASE_URL 不能标记为就绪。
         const hasEnvClaude = !!envDetected && (
           'ANTHROPIC_API_KEY' in envDetected || 'ANTHROPIC_AUTH_TOKEN' in envDetected
         );

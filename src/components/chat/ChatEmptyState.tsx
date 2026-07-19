@@ -61,7 +61,7 @@ export function ChatEmptyState({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => window.dispatchEvent(new CustomEvent('open-setup-center', { detail: { initialCard: 'codex' } }))}
+              onClick={() => window.location.assign('/settings/codex')}
             >
               {t('chat.empty.openSetup')}
             </Button>

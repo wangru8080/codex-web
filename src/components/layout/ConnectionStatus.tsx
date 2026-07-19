@@ -79,7 +79,6 @@ export function ConnectionStatus() {
   const stableCountRef = useRef(0);
   const lastConnectedRef = useRef<boolean | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoPromptedRef = useRef(false);
 
   // Use a ref-based approach to avoid circular deps between check and schedule
   const checkRef = useRef<() => void>(() => {});
@@ -141,23 +140,6 @@ export function ConnectionStatus() {
     stableCountRef.current = 0;
     checkStatus();
   }, [checkStatus]);
-
-  // Auto-prompt setup center on first disconnect detection (instead of install wizard)
-  useEffect(() => {
-    if (
-      status !== null &&
-      !status.connected &&
-      !autoPromptedRef.current &&
-      !dialogOpen
-    ) {
-      const dismissed = localStorage.getItem("codepilot:install-wizard-dismissed");
-      if (!dismissed) {
-        autoPromptedRef.current = true;
-        window.dispatchEvent(new CustomEvent('open-setup-center', { detail: { initialCard: 'claude' } }));
-        localStorage.setItem("codepilot:install-wizard-dismissed", "1");  
-      }
-    }
-  }, [status, dialogOpen]);
 
   const handleWizardOpenChange = useCallback((open: boolean) => {
     setWizardOpen(open);

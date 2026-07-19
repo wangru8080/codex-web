@@ -1627,64 +1627,6 @@ const zh: Record<TranslationKey, string> = {
   'terminal.disconnected': '已断开',
   'terminal.exited': '进程已退出',
 
-  // ── Setup Center ──────────────────────────────────────────────
-  'setup.title': '欢迎使用 CodexWeb',
-  'setup.subtitle': '配置 Codex 账户和默认项目目录。',
-  'setup.skipAndEnter': '跳过并进入',
-  'setup.progress': '{completed}/2 已完成',
-  'setup.openSetupCenter': '首次设置引导',
-  'setup.openSetupCenterDesc': '配置 Codex 账户、API Key、CODEX_HOME 凭据和默认项目目录',
-  'setup.open': '打开',
-
-  // Setup: Welcome card
-  'setup.welcome.title': '欢迎',
-  'setup.welcome.description': 'CodexWeb 已收缩为 Codex 专用 Web 入口。使用 OpenAI 账户授权、API Key，或服务器已有 CODEX_HOME 凭据开始工作。',
-
-  // Setup: Codex account card
-  'setup.codex.title': 'Codex 账户',
-  'setup.codex.description': '登录 Codex 后即可在浏览器中使用服务器上的 Codex Runtime。',
-  'setup.codex.loading': '正在读取 Codex 账户状态...',
-  'setup.codex.refresh': '刷新',
-  'setup.codex.startOAuth': 'OpenAI 账户授权',
-  'setup.codex.openSettings': '打开 Codex 设置',
-
-  // Setup: Claude Code card
-  'setup.claude.title': 'Claude Code CLI（可选）',
-  'setup.claude.description': '安装 Claude Code CLI 可获得完整命令行能力。不安装也能通过 AI SDK 引擎正常使用。',
-  'setup.claude.detected': '已检测到 Claude Code',
-  'setup.claude.notFound': '未找到 Claude Code',
-  'setup.claude.conflict': '检测到多个安装版本，可能导致版本冲突',
-  'setup.claude.conflictUsing': '当前使用',
-  'setup.claude.conflictOther': '另外发现',
-  'setup.claude.conflictRemoveHint': '卸载命令：',
-  'setup.claude.conflictResolved': '清理完成后，点击"重新检测"以确认。',
-  'setup.claude.missingGit': '需要安装 Git for Windows',
-  'setup.claude.useRecommended': '使用推荐版本',
-  'setup.claude.install': '安装',
-  'setup.claude.redetect': '重新检测',
-  'setup.claude.viewCleanup': '查看清理方式',
-  'setup.claude.skip': '跳过',
-
-  // Setup: Provider card
-  'setup.provider.title': 'API 服务商',
-  'setup.provider.description': '配置 CodexWeb 连接 AI 模型的方式。',
-  'setup.provider.envDetected': '检测到环境变量 — 使用 Claude Code 环境变量作为服务商。',
-  'setup.provider.useEnv': '使用 Claude Code 环境',
-  'setup.provider.noProvider': '未配置服务商。选择一个预设开始。',
-  'setup.provider.configured': '服务商已配置',
-  'setup.provider.skip': '跳过',
-  'setup.provider.skipped': '已跳过，可在 设置 › 服务商 里随时添加。',
-  'setup.provider.openSettings': '打开服务商设置',
-
-  // Setup: Project directory card
-  'setup.project.title': '项目目录',
-  'setup.project.description': '选择一个默认项目目录以开始工作。',
-  'setup.project.selectDirectory': '选择目录',
-  'setup.project.recentProjects': '最近的项目',
-  'setup.project.noRecent': '暂无最近的项目。',
-  'setup.project.selected': '已设置项目目录',
-  'setup.project.skip': '跳过',
-
   // Chat empty state
   'chat.empty.noDirectory': '选择一个项目目录以开始',
   'chat.empty.noProvider': '配置 Codex 账户以开始对话',
@@ -1837,14 +1779,13 @@ const zh: Record<TranslationKey, string> = {
   'about.platform.channel': '发布渠道',
   'about.platform.appVersion': '应用版本',
   'about.support.title': '支持与日志',
-  'about.support.desc': '打开日志文件夹、导出诊断包，或重新进入安装向导',
+  'about.support.desc': '打开日志文件夹、导出诊断包或导入历史会话',
   'about.support.openLogs': '打开日志文件夹',
   'about.support.openLogsFailed': '无法打开日志文件夹',
   'about.support.openLogsFailedWith': '打开日志文件夹失败：{error}',
   'about.support.exportDiagnostics': '导出诊断包',
   'about.support.exportFailed': '诊断包导出失败',
   'about.support.exportFailedWithLogFolder': '诊断包导出失败，可改用「打开日志文件夹」',
-  'about.support.runSetupWizard': '重新进入安装向导',
   'about.docs.title': '帮助与链接',
   'about.docs.desc': 'GitHub 仓库、反馈入口与发布说明',
   'about.docs.submitFeedback': '提交反馈',

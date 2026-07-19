@@ -1080,19 +1080,6 @@ export const SETTING_KEYS = {
 } as const;
 
 // ==========================================
-// Setup Center Types
-// ==========================================
-
-export type SetupCardStatus = 'not-configured' | 'completed' | 'skipped' | 'needs-fix';
-export interface SetupState {
-  completed: boolean;
-  claude: SetupCardStatus;
-  provider: SetupCardStatus;
-  project: SetupCardStatus;
-  defaultProject?: string;
-}
-
-// ==========================================
 // Assistant Workspace Types
 // ==========================================
 

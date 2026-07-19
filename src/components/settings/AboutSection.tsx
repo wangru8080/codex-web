@@ -379,15 +379,6 @@ export function AboutSection() {
             variant="outline"
             size="sm"
             className="text-xs gap-1.5"
-            onClick={() => window.dispatchEvent(new CustomEvent("open-setup-center"))}
-          >
-            <CodexWebIcon name="diagnose" size="sm" aria-hidden />
-            {t("about.support.runSetupWizard")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs gap-1.5"
             onClick={() => setImportDialogOpen(true)}
           >
             <CodexWebIcon name="download" size="sm" aria-hidden />

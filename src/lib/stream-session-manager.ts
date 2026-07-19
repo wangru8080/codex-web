@@ -477,9 +477,7 @@ async function runStream(stream: ActiveStream, params: StartStreamParams): Promi
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       if (err?.code === 'NEEDS_PROVIDER_SETUP' && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('open-setup-center', {
-          detail: { initialCard: err.initialCard ?? 'codex' },
-        }));
+        window.location.assign('/settings/codex');
       }
       // Phase 2 Step 4b — `INVALID_SESSION_PROVIDER` 409: chat route
       // refuses to send because the session points at a deleted

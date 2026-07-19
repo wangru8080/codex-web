@@ -26,19 +26,10 @@ import { useNotificationClickRoute } from '@/hooks/useNotificationClickRoute';
 import { useGlobalSearchShortcut } from '@/hooks/useGlobalSearchShortcut';
 import { GlobalSearchDialog } from './GlobalSearchDialog';
 
-// AppShell static-import contract (Phase A memory cut, 2026-05-08): the six
-// components below are conditionally rendered (gated by route, modal state,
-// or dialog-trigger state). Lazy-loading them via next/dynamic + ssr:false
-// keeps their compile graphs out of the initial /chat dev compile (which
-// previously hit ~2.3 GB on first paint just from AppShell's static chain).
-// Locked in by `src/__tests__/unit/appshell-lazy-imports.test.ts` — adding
-// a static import here regresses memory and will fail CI.
-//
-// Each loader keeps the named export shape so downstream JSX is unchanged.
-const SetupCenter = dynamic(
-  () => import('@/components/setup/SetupCenter').then((m) => ({ default: m.SetupCenter })),
-  { ssr: false },
-);
+// AppShell 静态导入约束（Phase A 内存优化，2026-05-08）：以下四个组件
+// 仅在对应路由、状态或弹窗触发时渲染。使用 next/dynamic + ssr:false 可避免
+// 它们进入首次 /chat 开发编译图；改回静态导入会造成明显内存回归。
+// 每个加载器保留具名导出的形状，避免影响下游 JSX。
 const SplitChatContainer = dynamic(
   () => import('./SplitChatContainer').then((m) => ({ default: m.SplitChatContainer })),
   { ssr: false },
@@ -200,8 +191,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const [chatListOpenRaw, setChatListOpenRaw] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(false);
-  const [setupInitialCard, setSetupInitialCard] = useState<'codex' | 'claude' | 'provider' | 'project' | undefined>();
   const [searchOpen, setSearchOpen] = useState(false);
 
   useGlobalSearchShortcut(() => setSearchOpen(true));
@@ -225,47 +214,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // taskId / sessionId payload) to the right page.
   useNotificationClickRoute();
 
-  // Check if setup is needed
-  useEffect(() => {
-    fetch('/api/setup')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data && !data.completed) {
-          setSetupOpen(true);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // Listen for open-setup-center events
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      setSetupInitialCard(detail?.initialCard);
-      setSetupOpen(true);
-    };
-    window.addEventListener('open-setup-center', handler);
-    return () => window.removeEventListener('open-setup-center', handler);
-  }, []);
-
   // Hash 桥接：旧错误消息或外部深链仍可能带着 #providers。
-  // 在 Codex-only UI 中，它会打开 Codex 账户卡片。/settings 页面自身
+  // 在 Codex-only UI 中，它会进入 Codex 设置页。/settings 页面自身
   // 已由根页面负责 hash 到路由的转换，这里提前返回以避免来回跳转。
   useEffect(() => {
-    const maybeOpenFromHash = () => {
+    const maybeRedirectFromHash = () => {
       if (typeof window === 'undefined') return;
       if (window.location.pathname.startsWith('/settings')) return;
       if (window.location.hash === '#providers') {
-        setSetupInitialCard('codex');
-        setSetupOpen(true);
-        // 清掉 hash，后续再次跳转到 /#providers 时仍能触发。
         history.replaceState(null, '', window.location.pathname + window.location.search);
+        router.replace('/settings/codex');
       }
     };
-    maybeOpenFromHash();
-    window.addEventListener('hashchange', maybeOpenFromHash);
-    return () => window.removeEventListener('hashchange', maybeOpenFromHash);
-  }, []);
+    maybeRedirectFromHash();
+    window.addEventListener('hashchange', maybeRedirectFromHash);
+    return () => window.removeEventListener('hashchange', maybeRedirectFromHash);
+  }, [router]);
 
   // Listen for open-global-search events from ChatListPanel
   useEffect(() => {
@@ -730,12 +694,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             && <UpdateDialog />}
           <Toaster />
           <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-          {setupOpen && (
-            <SetupCenter
-              onClose={() => setSetupOpen(false)}
-              initialCard={setupInitialCard}
-            />
-          )}
         </TooltipProvider>
         </BatchImageGenContext.Provider>
         </SplitContext.Provider>
