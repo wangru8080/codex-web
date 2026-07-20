@@ -240,6 +240,7 @@ export interface MediaBlock {
   data?: string;        // base64 (transit only, cleared after save to disk)
   mimeType: string;     // e.g. 'image/png', 'video/mp4'
   localPath?: string;   // local file path (after save to .codepilot-media/)
+  url?: string;         // app-server 工具返回的 http(s) 媒体 URL
   mediaId?: string;     // media_generations.id (after DB save)
   /**
    * Source-of-origin metadata captured at block-emit time. Used by the

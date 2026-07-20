@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
 
@@ -51,6 +52,7 @@ export function ImageLightbox({ images, initialIndex, open, onOpenChange }: Imag
         showCloseButton
       >
         <DialogTitle className="sr-only">Image preview</DialogTitle>
+        <DialogDescription className="sr-only">{current.alt}</DialogDescription>
         <div className="relative flex items-center justify-center min-h-[50vh]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

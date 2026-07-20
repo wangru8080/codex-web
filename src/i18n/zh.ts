@@ -1767,6 +1767,8 @@ const zh: Record<TranslationKey, string> = {
   'wizard.startChatting': '开始对话',
   'chat.contextCompaction.running': '上下文开始压缩',
   'chat.contextCompaction.completed': '上下文已压缩',
+  'media.outputLoading': '正在加载媒体输出',
+  'media.outputLoadFailed': '媒体输出加载失败',
 };
 
 export default zh;

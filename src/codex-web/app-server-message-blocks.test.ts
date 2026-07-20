@@ -7,6 +7,7 @@ import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 
 import {
   appServerTerminalTurnToMessageContent,
+  turnItemsToMessageBlocks,
   turnItemsToMessageContent,
 } from "./app-server-message-blocks";
 import { createAcceptedTurnState } from "./turn-reducer";
@@ -153,6 +154,33 @@ describe("app-server-message-blocks", () => {
     });
 
     expect(content).toBe("直接回答。");
+  });
+
+  it("把 app-server 图片媒体透传到现有 tool_result UI", () => {
+    const blocks = turnItemsToMessageBlocks({
+      items: [{
+        type: "imageGeneration",
+        id: "image-gen-1",
+        status: "completed",
+        revisedPrompt: null,
+        result: "",
+        savedPath: "/isolated-codex-home/generated/image-gen-1.png",
+      }],
+    });
+
+    expect(blocks).toEqual([
+      expect.objectContaining({ type: "tool_use", id: "image-gen-1" }),
+      expect.objectContaining({
+        type: "tool_result",
+        tool_use_id: "image-gen-1",
+        media: [{
+          type: "image",
+          mimeType: "image/png",
+          localPath: "/isolated-codex-home/generated/image-gen-1.png",
+        }],
+      }),
+      { type: "codex_summary", process_count: 1 },
+    ]);
   });
 
   it("按 commentary、搜索、commentary、final 的原始顺序构建消息", () => {

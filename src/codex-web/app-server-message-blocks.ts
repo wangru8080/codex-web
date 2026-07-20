@@ -152,6 +152,7 @@ export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): M
         tool_use_id: result.tool_use_id,
         content: result.content,
         is_error: result.is_error,
+        media: result.media,
       });
     }
   }

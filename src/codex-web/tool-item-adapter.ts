@@ -1,6 +1,8 @@
 import type { FileUpdateChange } from "@/codex/protocol/generated/v2/FileUpdateChange";
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
+import type { MediaBlock } from "@/types";
 
+import { mediaTypeForPath } from "./app-server-files";
 import { formatToolDisplayOutput } from "./tool-output-display";
 
 export interface CodexWebToolUseInfo {
@@ -13,6 +15,7 @@ export interface CodexWebToolResultInfo {
   tool_use_id: string;
   content: string;
   is_error?: boolean;
+  media?: MediaBlock[];
 }
 
 export type ToolItemContext = {
@@ -52,6 +55,30 @@ export function codexWebToolUseFromItem(
         query: item.query,
         action: item.action,
         sourceBreadcrumb: "app-server.webSearch",
+      },
+    };
+  }
+
+  if (item.type === "imageView") {
+    return {
+      id: item.id,
+      name: "view_image",
+      input: {
+        path: item.path,
+        sourceBreadcrumb: "app-server.imageView",
+      },
+    };
+  }
+
+  if (item.type === "imageGeneration") {
+    return {
+      id: item.id,
+      name: "image_generation",
+      input: {
+        status: item.status,
+        revisedPrompt: item.revisedPrompt,
+        savedPath: item.savedPath,
+        sourceBreadcrumb: "app-server.imageGeneration",
       },
     };
   }
@@ -152,6 +179,37 @@ export function codexWebToolResultFromItem(
     };
   }
 
+  if (item.type === "imageView") {
+    return {
+      tool_use_id: item.id,
+      content: [`path: ${item.path}`, "source: app-server.imageView"].join("\n"),
+      is_error: false,
+      media: [mediaFromPath(item.path)],
+    };
+  }
+
+  if (item.type === "imageGeneration") {
+    if (!item.status && !item.savedPath && !item.result) return null;
+
+    const media = item.savedPath
+      ? [mediaFromPath(item.savedPath)]
+      : item.result
+        ? [{ type: "image" as const, mimeType: "image/png", data: item.result }]
+        : [];
+    const failed = item.status.toLowerCase().includes("fail");
+    return {
+      tool_use_id: item.id,
+      content: [
+        `status: ${item.status || "completed"}`,
+        item.revisedPrompt ? `revised prompt: ${item.revisedPrompt}` : "",
+        item.savedPath ? `saved path: ${item.savedPath}` : "",
+        "source: app-server.imageGeneration",
+      ].filter(Boolean).join("\n"),
+      is_error: failed,
+      ...(media.length > 0 ? { media } : {}),
+    };
+  }
+
   if (item.type === "fileChange") {
     if (item.status === "inProgress") return null;
 
@@ -169,16 +227,21 @@ export function codexWebToolResultFromItem(
   if (item.type === "mcpToolCall") {
     if (item.status === "inProgress") return null;
 
+    const media = mediaFromMcpResult(item.result);
     return {
       tool_use_id: item.id,
       content: display(formatMcpResult(item), context, "app-server mcpToolCall item / diagnostics"),
       is_error: item.status === "failed" || !!item.error || mcpResultHasErrorContent(item.result),
+      ...(media.length > 0 ? { media } : {}),
     };
   }
 
   if (item.type === "dynamicToolCall") {
     if (item.status === "inProgress") return null;
 
+    const media = (item.contentItems ?? []).flatMap((contentItem) =>
+      contentItem.type === "inputImage" ? mediaFromImageUrl(contentItem.imageUrl) : [],
+    );
     return {
       tool_use_id: item.id,
       content: display(
@@ -187,6 +250,7 @@ export function codexWebToolResultFromItem(
         "app-server dynamicToolCall item / diagnostics",
       ),
       is_error: item.status === "failed" || item.success === false,
+      ...(media.length > 0 ? { media } : {}),
     };
   }
 
@@ -261,7 +325,11 @@ function formatChangeKind(kind: FileUpdateChange["kind"]): string {
 function formatMcpResult(item: Extract<ThreadItem, { type: "mcpToolCall" }>): string {
   if (item.error?.message) return item.error.message;
 
-  const resultText = item.result ? stringifyJson(item.result.structuredContent ?? item.result.content) : "";
+  const resultText = item.result
+    ? item.result.structuredContent !== null
+      ? stringifyJson(item.result.structuredContent)
+      : formatMcpContent(item.result.content)
+    : "";
   return [
     resultText,
     `status: ${item.status}`,
@@ -286,8 +354,11 @@ function mcpResultHasErrorContent(
 }
 
 function formatDynamicToolResult(item: Extract<ThreadItem, { type: "dynamicToolCall" }>): string {
+  const content = (item.contentItems ?? []).map((contentItem) =>
+    contentItem.type === "inputText" ? contentItem.text : "[图片输出]",
+  ).join("\n");
   return [
-    item.contentItems ? stringifyJson(item.contentItems) : "",
+    content,
     `status: ${item.status}`,
     item.success === null ? "" : `success: ${item.success}`,
     typeof item.durationMs === "number" ? `duration: ${item.durationMs}ms` : "",
@@ -295,6 +366,59 @@ function formatDynamicToolResult(item: Extract<ThreadItem, { type: "dynamicToolC
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function mediaFromPath(path: string): MediaBlock {
+  return { type: "image", mimeType: mediaTypeForPath(path), localPath: path };
+}
+
+function mediaFromImageUrl(imageUrl: string): MediaBlock[] {
+  const dataUrl = /^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i.exec(imageUrl);
+  if (dataUrl) {
+    return [{ type: "image", mimeType: dataUrl[1], data: dataUrl[2] }];
+  }
+  if (/^https?:\/\//i.test(imageUrl)) {
+    return [{ type: "image", mimeType: "image/*", url: imageUrl }];
+  }
+  return [];
+}
+
+function mediaFromMcpResult(
+  result: Extract<ThreadItem, { type: "mcpToolCall" }>["result"],
+): MediaBlock[] {
+  if (!result) return [];
+
+  return result.content.flatMap((content): MediaBlock[] => {
+    if (!content || typeof content !== "object" || Array.isArray(content)) return [];
+    const block = content as Record<string, unknown>;
+    if (block.type === "image" && typeof block.data === "string") {
+      const mimeType = typeof block.mimeType === "string"
+        ? block.mimeType
+        : typeof block.mime_type === "string"
+          ? block.mime_type
+          : "image/png";
+      return [{ type: "image", mimeType, data: block.data }];
+    }
+    if (block.type === "image_url") {
+      const imageUrl = typeof block.url === "string"
+        ? block.url
+        : typeof block.image_url === "string"
+          ? block.image_url
+          : "";
+      return mediaFromImageUrl(imageUrl);
+    }
+    return [];
+  });
+}
+
+function formatMcpContent(content: readonly unknown[]): string {
+  return content.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return stringifyJson(value);
+    const block = value as Record<string, unknown>;
+    if (block.type === "text" && typeof block.text === "string") return block.text;
+    if (block.type === "image" || block.type === "image_url") return "[图片输出]";
+    return stringifyJson(value);
+  }).filter(Boolean).join("\n");
 }
 
 function formatCollabToolResult(item: Extract<ThreadItem, { type: "collabAgentToolCall" }>): string {

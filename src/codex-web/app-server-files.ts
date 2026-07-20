@@ -131,7 +131,7 @@ function languageForPath(path: string): string {
   return languages[extension] ?? "text";
 }
 
-function mediaTypeForPath(path: string): string {
+export function mediaTypeForPath(path: string): string {
   const extension = fileExtension(path);
   const mediaTypes: Record<string, string> = {
     png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",

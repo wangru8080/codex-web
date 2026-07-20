@@ -1792,6 +1792,8 @@ const en = {
   'wizard.startChatting': 'Start chatting',
   'chat.contextCompaction.running': 'Automatically compacting context',
   'chat.contextCompaction.completed': 'Context automatically compacted',
+  'media.outputLoading': 'Loading media output',
+  'media.outputLoadFailed': 'Failed to load media output',
 } as const;
 
 export type TranslationKey = keyof typeof en;

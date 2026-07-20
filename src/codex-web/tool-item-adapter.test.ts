@@ -180,6 +180,127 @@ describe("tool-item-adapter", () => {
     });
   });
 
+  it("映射 imageView 和 imageGeneration 图片输出", () => {
+    const viewed: ThreadItem = {
+      type: "imageView",
+      id: "image-view-1",
+      path: "/repo/output/chart.webp",
+    };
+    const generated: ThreadItem = {
+      type: "imageGeneration",
+      id: "image-gen-1",
+      status: "completed",
+      revisedPrompt: "一张精确的架构图",
+      result: "ignored-when-saved-path-exists",
+      savedPath: "/isolated-codex-home/generated/image-gen-1.png",
+    };
+
+    expect(codexWebToolUseFromItem(viewed)).toMatchObject({
+      name: "view_image",
+      input: { sourceBreadcrumb: "app-server.imageView" },
+    });
+    expect(codexWebToolResultFromItem(viewed)).toMatchObject({
+      media: [{
+        type: "image",
+        mimeType: "image/webp",
+        localPath: "/repo/output/chart.webp",
+      }],
+    });
+    expect(codexWebToolUseFromItem(generated)).toMatchObject({ name: "image_generation" });
+    expect(codexWebToolResultFromItem(generated)).toMatchObject({
+      content: expect.stringContaining("source: app-server.imageGeneration"),
+      media: [{
+        type: "image",
+        mimeType: "image/png",
+        localPath: "/isolated-codex-home/generated/image-gen-1.png",
+      }],
+    });
+  });
+
+  it("图片生成没有 savedPath 时使用协议 Base64，开始态不提前生成结果", () => {
+    const started: ThreadItem = {
+      type: "imageGeneration",
+      id: "image-gen-running",
+      status: "",
+      revisedPrompt: null,
+      result: "",
+    };
+    const completed: ThreadItem = {
+      ...started,
+      status: "completed",
+      result: "aW1hZ2U=",
+    };
+
+    expect(codexWebToolResultFromItem(started)).toBeNull();
+    expect(codexWebToolResultFromItem(completed)).toMatchObject({
+      media: [{ type: "image", mimeType: "image/png", data: "aW1hZ2U=" }],
+    });
+  });
+
+  it("提取 dynamic 和 MCP 图片，文本输出不包含 Base64", () => {
+    const dynamicItem: ThreadItem = {
+      type: "dynamicToolCall",
+      id: "dyn-image",
+      namespace: "canvas",
+      tool: "render",
+      arguments: {},
+      status: "completed",
+      contentItems: [
+        { type: "inputText", text: "rendered" },
+        { type: "inputImage", imageUrl: "data:image/jpeg;base64,aW1hZ2U=" },
+      ],
+      success: true,
+      durationMs: 4,
+    };
+    const mcpItem: ThreadItem = {
+      type: "mcpToolCall",
+      id: "mcp-image",
+      server: "charts",
+      tool: "render",
+      status: "completed",
+      arguments: {},
+      appContext: null,
+      pluginId: null,
+      result: {
+        content: [{ type: "image", data: "bWNwLWltYWdl", mimeType: "image/png" }],
+        structuredContent: null,
+        _meta: null,
+      },
+      error: null,
+      durationMs: 5,
+    };
+
+    const dynamicResult = codexWebToolResultFromItem(dynamicItem);
+    expect(dynamicResult).toMatchObject({
+      media: [{ type: "image", mimeType: "image/jpeg", data: "aW1hZ2U=" }],
+    });
+    expect(dynamicResult?.content).toContain("[图片输出]");
+    expect(dynamicResult?.content).not.toContain("aW1hZ2U=");
+
+    const mcpResult = codexWebToolResultFromItem(mcpItem);
+    expect(mcpResult).toMatchObject({
+      media: [{ type: "image", mimeType: "image/png", data: "bWNwLWltYWdl" }],
+    });
+    expect(mcpResult?.content).toContain("[图片输出]");
+    expect(mcpResult?.content).not.toContain("bWNwLWltYWdl");
+  });
+
+  it("无图片的动态工具结果不生成 media 字段", () => {
+    const item: ThreadItem = {
+      type: "dynamicToolCall",
+      id: "dyn-text",
+      namespace: null,
+      tool: "echo",
+      arguments: {},
+      status: "completed",
+      contentItems: [{ type: "inputText", text: "只有文本" }],
+      success: true,
+      durationMs: 1,
+    };
+
+    expect(codexWebToolResultFromItem(item)).not.toHaveProperty("media");
+  });
+
   it("运行中 item 不产生 result，但保留增量输出", () => {
     const item: ThreadItem = {
       type: "commandExecution",
