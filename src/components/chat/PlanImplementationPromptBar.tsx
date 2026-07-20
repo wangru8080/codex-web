@@ -3,6 +3,7 @@
 import type { PlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, X } from '@/components/ui/icon';
+import { useTranslation } from '@/hooks/useTranslation';
 
 type PlanImplementationPromptBarProps = {
   prompt: PlanImplementationPrompt;
@@ -19,6 +20,7 @@ export function PlanImplementationPromptBar({
   onClearContextImplement,
   onStay,
 }: PlanImplementationPromptBarProps) {
+  const { t } = useTranslation();
   const implement = prompt.actions.find((action) => action.id === 'implement');
   const clearContext = prompt.actions.find((action) => action.id === 'clearContext');
   const stay = prompt.actions.find((action) => action.id === 'stay');
@@ -27,7 +29,7 @@ export function PlanImplementationPromptBar({
     <div className="mx-auto mb-2 w-full max-w-3xl rounded-md border border-border/70 bg-muted/30 px-3 py-2">
       <div className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
         <CheckCircle size={15} className="text-muted-foreground" />
-        <span>{prompt.title}</span>
+        <span>{t('chat.plan.implementationTitle')}</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {implement && (
@@ -38,7 +40,7 @@ export function PlanImplementationPromptBar({
             title={implement.disabledReason}
             onClick={() => implement.userMessage && onImplement?.(implement.userMessage)}
           >
-            {implement.label}
+            {t('chat.plan.implement')}
           </Button>
         )}
         {clearContext && (
@@ -50,7 +52,7 @@ export function PlanImplementationPromptBar({
             title={clearContext.disabledReason}
             onClick={() => clearContext.userMessage && onClearContextImplement?.(clearContext.userMessage)}
           >
-            {clearContext.label}
+            {t('chat.plan.clearContextImplement')}
           </Button>
         )}
         {stay && (
@@ -62,11 +64,10 @@ export function PlanImplementationPromptBar({
             onClick={onStay}
           >
             <X size={13} />
-            {stay.label}
+            {t('chat.plan.stay')}
           </Button>
         )}
       </div>
     </div>
   );
 }
-

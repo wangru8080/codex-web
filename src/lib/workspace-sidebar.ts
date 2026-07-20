@@ -1,7 +1,7 @@
 /**
  * Workspace Sidebar — pure state model.
  *
- * The sidebar always carries two fixed Tabs (`git`, `widget`) plus zero
+ * The sidebar always carries one fixed Tab (`git`) plus zero
  * or more dynamic Tabs (markdown/artifact/file/files-pinned). Dynamic
  * Tabs are deduped by a `key` so the same `.md` file opened twice
  * surfaces the existing Tab instead of creating a second.
@@ -17,7 +17,7 @@ import type { PreviewSource } from '@/hooks/usePanel';
 import type { PreviewTrust } from '@/lib/preview-source';
 import type { MarkdownPresentationStyle } from '@/lib/markdown/presentation-templates';
 
-export type FixedTabId = 'git' | 'widget';
+export type FixedTabId = 'git';
 
 export type DynamicTabKind = 'markdown' | 'artifact' | 'file' | 'files-pinned';
 
@@ -95,7 +95,6 @@ export const SIDEBAR_DEFAULT_WIDTH = 480;
 
 const FIXED_TABS: ReadonlyArray<FixedTab> = [
   { id: 'git', kind: 'fixed' },
-  { id: 'widget', kind: 'fixed' },
 ];
 
 export function isFixedTab(tab: Tab): tab is FixedTab {
@@ -382,7 +381,7 @@ export function djb2Hex(input: string): string {
  * Inverse of `tabFromPreviewSource`: given an active dynamic Tab,
  * return the PreviewSource that PreviewPanel should render.
  *
- * Returns `null` for fixed Tabs (`git`, `widget`) and the Files Pinned
+ * Returns `null` for the fixed Git Tab and the Files Pinned
  * Tab — those don't render the preview surface, so callers should
  * leave `previewSource` untouched (the previously-shown file stays
  * loaded but invisible until the user re-activates a preview Tab).

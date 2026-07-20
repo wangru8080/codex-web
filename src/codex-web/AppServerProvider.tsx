@@ -48,6 +48,10 @@ import type { ReviewStartResponse } from "@/codex/protocol/generated/v2/ReviewSt
 import type { FuzzyFileSearchParams } from "@/codex/protocol/generated/FuzzyFileSearchParams";
 import type { FuzzyFileSearchResponse } from "@/codex/protocol/generated/FuzzyFileSearchResponse";
 import type { GetAccountRateLimitsResponse } from "@/codex/protocol/generated/v2/GetAccountRateLimitsResponse";
+import type { LoginAccountParams } from "@/codex/protocol/generated/v2/LoginAccountParams";
+import type { LoginAccountResponse } from "@/codex/protocol/generated/v2/LoginAccountResponse";
+import type { CancelLoginAccountResponse } from "@/codex/protocol/generated/v2/CancelLoginAccountResponse";
+import type { LogoutAccountResponse } from "@/codex/protocol/generated/v2/LogoutAccountResponse";
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
 import type { FileAttachment, PermissionProfile, SkillInputReference } from "@/types";
 import type { MCPServer } from "@/types";
@@ -201,6 +205,10 @@ export type AppServerActions = {
   fuzzyFileSearch: (params: FuzzyFileSearchParams) => Promise<FuzzyFileSearchResponse>;
   updateMemorySettings: (params: { threadId?: string; useMemories: boolean; generateMemories: boolean }) => Promise<void>;
   readAccountRateLimits: () => Promise<GetAccountRateLimitsResponse>;
+  refreshAccount: () => Promise<GetAccountResponse>;
+  startAccountLogin: (params: LoginAccountParams) => Promise<LoginAccountResponse>;
+  cancelAccountLogin: (loginId: string) => Promise<CancelLoginAccountResponse>;
+  logoutAccount: () => Promise<LogoutAccountResponse>;
   publishCrossClientUserMessage: (event: CrossClientUserMessage) => void;
 };
 
@@ -325,6 +333,22 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
             threadSettingsWaitersRef.current.delete(threadId);
           }
         }
+      }
+      if (
+        notification.method === "account/updated" ||
+        notification.method === "account/login/completed"
+      ) {
+        void client.request("account/read", { refreshToken: true })
+          .then((account) => {
+            setState((current) => ({
+              ...current,
+              account: {
+                source: "app-server.account/read",
+                data: account as GetAccountResponse,
+              },
+            }));
+          })
+          .catch(() => { /* notification diagnostics below retain the failure context */ });
       }
       setState((current) => {
         const threadSettingsByThreadId = reduceThreadSettingsNotification(
@@ -831,6 +855,42 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return await client.request("account/rateLimits/read") as GetAccountRateLimitsResponse;
   }, []);
 
+  const refreshAccount = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    const account = await client.request("account/read", { refreshToken: true }) as GetAccountResponse;
+    setState((current) => ({
+      ...current,
+      account: { source: "app-server.account/read", data: account },
+    }));
+    return account;
+  }, []);
+
+  const startAccountLogin = useCallback(async (params: LoginAccountParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return await client.request("account/login/start", params) as LoginAccountResponse;
+  }, []);
+
+  const cancelAccountLogin = useCallback(async (loginId: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return await client.request("account/login/cancel", { loginId }) as CancelLoginAccountResponse;
+  }, []);
+
+  const logoutAccount = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    const response = await client.request("account/logout") as LogoutAccountResponse;
+    setState((current) => ({
+      ...current,
+      account: current.account
+        ? { source: "app-server.account/read", data: { account: null, requiresOpenaiAuth: true } }
+        : null,
+    }));
+    return response;
+  }, []);
+
   const getThreadGoal = useCallback(async (threadId: string) => {
     const client = clientRef.current;
     if (!client) {
@@ -1126,9 +1186,13 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       fuzzyFileSearch,
       updateMemorySettings,
       readAccountRateLimits,
+      refreshAccount,
+      startAccountLogin,
+      cancelAccountLogin,
+      logoutAccount,
       publishCrossClientUserMessage,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, publishCrossClientUserMessage],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
   );
 
   return (

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -15,12 +15,12 @@ describe("app-server permission profile 唯一管理", () => {
       "src/components/layout/NavRail.tsx",
       "src/i18n/zh.ts",
       "src/i18n/en.ts",
-      "src/lib/claude-client.ts",
     ].map(source).join("\n");
 
     expect(legacySources).not.toContain("dangerously_skip_permissions");
     expect(legacySources).not.toContain("settings.autoApprove");
     expect(legacySources).not.toContain("nav.autoApproveOn");
+    expect(existsSync(resolve(process.cwd(), "src/lib/claude-client.ts"))).toBe(false);
   });
 
   it("Web 不会根据本地 full_access 状态自动响应审批", () => {

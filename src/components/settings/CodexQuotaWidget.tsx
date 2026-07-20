@@ -20,11 +20,12 @@
  *   └─────────────────────────────────┘
  */
 
-import type { CodexRateLimitSnapshot, CodexRateLimitWindow } from "@/lib/codex/types";
+import type { RateLimitSnapshot } from '@/codex/protocol/generated/v2/RateLimitSnapshot';
+import type { RateLimitWindow } from '@/codex/protocol/generated/v2/RateLimitWindow';
 import { cn } from "@/lib/utils";
 import { Warning } from "@/components/ui/icon";
 
-function formatWindowLabel(mins: number | undefined, isZh: boolean): string {
+function formatWindowLabel(mins: number | null | undefined, isZh: boolean): string {
   if (!mins || mins <= 0) return isZh ? "窗口" : "Window";
   if (mins < 120) return isZh ? `${mins} 分钟窗口` : `${mins}min window`;
   if (mins < 60 * 24) {
@@ -35,7 +36,7 @@ function formatWindowLabel(mins: number | undefined, isZh: boolean): string {
   return isZh ? `${days} 天窗口` : `${days}d window`;
 }
 
-function formatResetsAt(epochSec: number | undefined, isZh: boolean): string {
+function formatResetsAt(epochSec: number | null | undefined, isZh: boolean): string {
   if (!epochSec) return "";
   const nowMs = Date.now();
   const diffMs = epochSec * 1000 - nowMs;
@@ -68,7 +69,7 @@ function tone(usedPercent: number): { bar: string; pct: string } {
   };
 }
 
-function WindowRow({ label, window, isZh }: { label: string; window: CodexRateLimitWindow; isZh: boolean }) {
+function WindowRow({ label, window, isZh }: { label: string; window: RateLimitWindow; isZh: boolean }) {
   const pct = Math.max(0, Math.min(100, window.usedPercent));
   const t = tone(pct);
   return (
@@ -92,7 +93,7 @@ function WindowRow({ label, window, isZh }: { label: string; window: CodexRateLi
 }
 
 interface CodexQuotaWidgetProps {
-  snapshot: CodexRateLimitSnapshot;
+  snapshot: RateLimitSnapshot;
   isZh: boolean;
 }
 

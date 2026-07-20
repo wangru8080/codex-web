@@ -1,13 +1,18 @@
-"use client";
+'use client';
 
-import { useEffect, useState, useCallback } from "react";
-import { X } from "@/components/ui/icon";
-import type { Message, MessagesResponse, ChatSession } from "@/types";
-import { ChatView } from "@/components/chat/ChatView";
-import { Button } from "@/components/ui/button";
-import { usePanel } from "@/hooks/usePanel";
-import { cn } from "@/lib/utils";
-import { useTranslation } from "@/hooks/useTranslation";
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { X } from '@/components/ui/icon';
+import type { Message, PermissionProfile } from '@/types';
+import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
+import type { Thread } from '@/codex/protocol/generated/v2/Thread';
+import { ChatView } from '@/components/chat/ChatView';
+import { Button } from '@/components/ui/button';
+import { usePanel } from '@/hooks/usePanel';
+import { cn } from '@/lib/utils';
+import { useTranslation } from '@/hooks/useTranslation';
+import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { firstApproval, approvalRequestMatchesThread } from '@/codex-web/approval-queue-adapter';
+import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 
 interface SplitColumnProps {
   sessionId: string;
@@ -18,181 +23,169 @@ interface SplitColumnProps {
 
 export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColumnProps) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [hasMore, setHasMore] = useState(false);
+  const [thread, setThread] = useState<Thread | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sessionTitle, setSessionTitle] = useState("");
-  const [sessionModel, setSessionModel] = useState("");
-  const [sessionProviderId, setSessionProviderId] = useState("");
-  const [sessionInfoLoaded, setSessionInfoLoaded] = useState(false);
-  const [projectName, setProjectName] = useState("");
-  const [sessionWorkingDir, setSessionWorkingDir] = useState("");
+  const [sessionTitle, setSessionTitle] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [workingDirectory, setColumnWorkingDirectory] = useState('');
+  const [model, setModel] = useState('');
+  const [effort, setEffort] = useState<ReasoningEffort | null>(null);
+  const [permissionProfile, setPermissionProfile] = useState<PermissionProfile>('request_approval');
+  const [mode, setMode] = useState<'code' | 'plan'>('code');
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle } = usePanel();
   const { t } = useTranslation();
+  const appServerState = useAppServerState();
+  const {
+    readThread,
+    resumeThread,
+    sendTurnInThread,
+    interruptTurn,
+    respondToServerRequest,
+    updateThreadPermissions,
+    updateThreadModelSettings,
+  } = useAppServerActions();
 
-  // Load session metadata
   useEffect(() => {
-    let cancelled = false;
-    setSessionInfoLoaded(false);
-    setSessionModel("");
-    setSessionProviderId("");
-    async function loadSession() {
-      try {
-        const res = await fetch(`/api/chat/sessions/${sessionId}`);
-        if (cancelled) return;
-        if (res.ok) {
-          const data: { session: ChatSession } = await res.json();
-          if (cancelled) return;
-          setSessionTitle(data.session.title || t("chat.newConversation"));
-          setProjectName(data.session.project_name || "");
-          setSessionWorkingDir(data.session.working_directory || "");
-
-          // Resolve model: session → global default → provider's first → localStorage
-          const { resolveSessionModel } = await import("@/lib/resolve-session-model");
-          if (cancelled) return;
-          const resolved = await resolveSessionModel(data.session.model || "", data.session.provider_id || "");
-          if (cancelled) return;
-          setSessionModel(resolved.model);
-          setSessionProviderId(resolved.providerId);
-        }
-      } catch {
-        // ignore
-      } finally {
-        if (!cancelled) setSessionInfoLoaded(true);
+    if (appServerState.connection.data !== 'connected') {
+      if (appServerState.connection.data === 'failed') {
+        setError('Codex app-server connection failed');
+        setLoading(false);
       }
+      return;
     }
-    loadSession();
-    return () => { cancelled = true; };
-  }, [sessionId, t]);
 
-  // Load messages
-  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setMessages([]);
-    setHasMore(false);
+    void readThread(sessionId, { includeTurns: true })
+      .then(async (response) => {
+        if (cancelled) return;
+        setThread(response.thread);
+        const session = threadToChatSession(response.thread);
+        const history = threadToMessages(response.thread);
+        setMessages(history.messages);
+        setSessionTitle(session.title || t('chat.newConversation'));
+        setProjectName(session.project_name || '');
+        setColumnWorkingDirectory(session.working_directory || '');
+        setPermissionProfile(session.permission_profile || 'request_approval');
+        setMode((session.mode as 'code' | 'plan') || 'code');
 
-    async function loadMessages() {
-      try {
-        const res = await fetch(`/api/chat/sessions/${sessionId}/messages?limit=30`);
+        const resumed = await resumeThread({ threadId: sessionId });
         if (cancelled) return;
-        if (!res.ok) {
-          if (res.status === 404) {
-            setError("Session not found");
-            return;
-          }
-          throw new Error("Failed to load messages");
-        }
-        const data: MessagesResponse = await res.json();
-        if (cancelled) return;
-        setMessages(data.messages);
-        setHasMore(data.hasMore ?? false);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load messages");
-      } finally {
+        setModel(resumed.model || '');
+        setColumnWorkingDirectory(resumed.cwd || session.working_directory || '');
+      })
+      .catch((loadError) => {
+        if (!cancelled) setError(loadError instanceof Error ? loadError.message : String(loadError));
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    }
-    loadMessages();
-    return () => { cancelled = true; };
-  }, [sessionId]);
+      });
 
-  // When this column becomes active, sync PanelContext
+    return () => { cancelled = true; };
+  }, [appServerState.connection.data, readThread, resumeThread, sessionId, t]);
+
   useEffect(() => {
     if (!isActive) return;
-    if (sessionWorkingDir) {
-      setWorkingDirectory(sessionWorkingDir);
-      localStorage.setItem("codepilot:last-working-directory", sessionWorkingDir);
-      window.dispatchEvent(new Event("refresh-file-tree"));
-    } else {
-      // Clear stale directory from previous column so FileTree doesn't show old project
-      setWorkingDirectory('');
-    }
+    setWorkingDirectory(workingDirectory);
     setSessionId(sessionId);
-    if (sessionTitle) {
-      setPanelSessionTitle(sessionTitle);
-    }
-  }, [isActive, sessionId, sessionWorkingDir, sessionTitle, setWorkingDirectory, setSessionId, setPanelSessionTitle]);
+    if (sessionTitle) setPanelSessionTitle(sessionTitle);
+  }, [isActive, sessionId, sessionTitle, setPanelSessionTitle, setSessionId, setWorkingDirectory, workingDirectory]);
 
-  const handleClose = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleClose = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
     onClose();
   }, [onClose]);
 
-  if (loading || !sessionInfoLoaded) {
-    return (
-      <div
-        className={cn(
-          "flex flex-1 min-w-0 flex-col overflow-hidden rounded-md border-2 transition-colors",
-          isActive ? "border-primary" : "border-transparent"
-        )}
-        onClick={onFocus}
-      >
-        <div className="flex h-full items-center justify-center">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-        </div>
-      </div>
-    );
-  }
+  const activeTurn = appServerState.activeTurnsByThreadId[sessionId]?.data ?? null;
+  const pendingRequest = firstApproval(appServerState.pendingApprovals, (approval) =>
+    approvalRequestMatchesThread(approval, [sessionId]),
+  );
+  const goal = appServerState.goalsByThreadId[sessionId] ?? null;
+  const tokenUsage = appServerState.threadTokenUsageByThreadId[sessionId]?.data ?? null;
+  const defaultModel = useMemo(() =>
+    appServerState.models?.data.data.find((item) => !item.hidden && item.isDefault)?.id
+      || appServerState.models?.data.data.find((item) => !item.hidden)?.id
+      || '',
+  [appServerState.models]);
 
-  if (error) {
-    return (
-      <div
-        className={cn(
-          "flex flex-1 min-w-0 flex-col overflow-hidden rounded-md border-2 transition-colors",
-          isActive ? "border-primary" : "border-transparent"
-        )}
-        onClick={onFocus}
-      >
-        <div className="flex h-full items-center justify-center">
-          <p className="text-sm text-destructive">{error}</p>
-        </div>
-      </div>
-    );
+  if (loading) {
+    return <SplitColumnFrame isActive={isActive} onFocus={onFocus}><div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" /></SplitColumnFrame>;
+  }
+  if (error || !thread) {
+    return <SplitColumnFrame isActive={isActive} onFocus={onFocus}><p className="text-sm text-destructive">{error || 'Session not found'}</p></SplitColumnFrame>;
   }
 
   return (
     <div
-      className={cn(
-        "flex flex-1 min-w-0 flex-col overflow-hidden rounded-md border-2 transition-colors",
-        isActive ? "border-primary" : "border-transparent"
-      )}
+      className={cn('flex flex-1 min-w-0 flex-col overflow-hidden rounded-md border-2 transition-colors', isActive ? 'border-primary' : 'border-transparent')}
       onClick={onFocus}
     >
-      {/* Compact title bar */}
       <div className="flex h-9 shrink-0 items-center justify-between px-3 border-b bg-muted/30">
         <div className="flex items-center gap-1.5 min-w-0">
-          {projectName && (
-            <>
-              <span className="text-[11px] text-muted-foreground shrink-0">{projectName}</span>
-              <span className="text-[11px] text-muted-foreground shrink-0">/</span>
-            </>
-          )}
+          {projectName && <><span className="text-[11px] text-muted-foreground shrink-0">{projectName}</span><span className="text-[11px] text-muted-foreground shrink-0">/</span></>}
           <span className="text-[11px] font-medium truncate">{sessionTitle}</span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={handleClose}
-        >
+        <Button variant="ghost" size="icon-xs" className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground" onClick={handleClose}>
           <X className="h-3 w-3" />
-          <span className="sr-only">{t("split.closeSplit")}</span>
+          <span className="sr-only">{t('split.closeSplit')}</span>
         </Button>
       </div>
-      {/* ChatView */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <ChatView
           key={sessionId}
           sessionId={sessionId}
           initialMessages={messages}
-          initialHasMore={hasMore}
-          modelName={sessionModel}
-          providerId={sessionProviderId}
+          modelName={model || defaultModel}
+          providerId="codex_account"
+          initialEffort={effort}
+          initialPermissionProfile={permissionProfile}
+          initialMode={mode}
+          workingDirectory={workingDirectory}
+          projectName={projectName}
+          appServerThreadId={sessionId}
+          appServerTurn={activeTurn}
+          appServerRequest={pendingRequest}
+          appServerGoal={goal}
+          appServerTokenUsage={tokenUsage}
+          onAppServerRequestResponse={(input) => respondToServerRequest(input, pendingRequest?.requestId)}
+          onAppServerPermissionChange={async (next) => {
+            await updateThreadPermissions({ threadId: sessionId, cwd: workingDirectory, permissionProfile: next });
+            setPermissionProfile(next);
+          }}
+          onAppServerModelChange={async (next) => {
+            await updateThreadModelSettings({ threadId: sessionId, model: next });
+            setModel(next);
+          }}
+          onAppServerEffortChange={async (next) => {
+            await updateThreadModelSettings({ threadId: sessionId, effort: next });
+            setEffort(next);
+          }}
+          appServerInterrupt={activeTurn ? () => interruptTurn({ threadId: sessionId, turnId: activeTurn.turnId }) : undefined}
+          appServerSend={({ content, files, cwd, model: nextModel, effort: nextEffort, mode: nextMode, permissionProfile: nextPermission, onAccepted }) =>
+            sendTurnInThread({
+              threadId: sessionId,
+              content,
+              files,
+              cwd: cwd || workingDirectory,
+              model: nextModel || model || defaultModel,
+              effort: nextEffort,
+              mode: nextMode,
+              permissionProfile: nextPermission,
+              onAccepted,
+            })
+          }
         />
       </div>
+    </div>
+  );
+}
+
+function SplitColumnFrame({ isActive, onFocus, children }: { isActive: boolean; onFocus: () => void; children: React.ReactNode }) {
+  return (
+    <div className={cn('flex flex-1 min-w-0 items-center justify-center overflow-hidden rounded-md border-2', isActive ? 'border-primary' : 'border-transparent')} onClick={onFocus}>
+      {children}
     </div>
   );
 }

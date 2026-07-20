@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { translate } from "@/i18n";
 
 import {
   PLAN_IMPLEMENTATION_CODING_MESSAGE,
@@ -8,6 +11,25 @@ import {
 } from "./plan-implementation-adapter";
 
 describe("plan-implementation-adapter", () => {
+  it("Plan UI 在中文界面使用中文文案", () => {
+    const promptBar = readFileSync(
+      resolve(process.cwd(), "src/components/chat/PlanImplementationPromptBar.tsx"),
+      "utf8",
+    );
+    const planBlock = readFileSync(
+      resolve(process.cwd(), "src/components/chat/PlanMessageBlock.tsx"),
+      "utf8",
+    );
+
+    expect(translate("zh", "chat.plan.implementationTitle")).toBe("是否执行此计划？");
+    expect(translate("zh", "chat.plan.implement")).toBe("执行此计划");
+    expect(translate("zh", "chat.plan.clearContextImplement")).toBe("清空上下文并执行");
+    expect(translate("zh", "chat.plan.stay")).toBe("暂不执行，继续规划");
+    expect(promptBar).toContain("chat.plan.implementationTitle");
+    expect(planBlock).toContain("chat.plan.proposedTitle");
+    expect(planBlock).not.toContain(">Proposed Plan<");
+  });
+
   it("非 Plan mode 不显示 prompt", () => {
     expect(prompt({ mode: "code" })).toBeNull();
   });

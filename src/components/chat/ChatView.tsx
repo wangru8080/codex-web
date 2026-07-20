@@ -2,17 +2,13 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Message, MessagesResponse, FileAttachment, SessionStreamSnapshot, MentionRef, TaskRunSummary, PermissionProfile, SkillInputReference } from '@/types';
+import type { Message, MessagesResponse, FileAttachment, SessionStreamSnapshot, MentionRef, PermissionProfile, SkillInputReference } from '@/types';
 import { MessageList } from './MessageList';
 import { NewChatWelcome } from './NewChatWelcome';
 import { TerminalReasonChip } from './TerminalReasonChip';
 import { RateLimitBanner } from './RateLimitBanner';
 import { MessageInput } from './MessageInput';
-import { ChatComposerActionBar } from './ChatComposerActionBar';
-import { RuntimeSelector } from './RuntimeSelector';
-import type { ChatRuntime } from '@/lib/chat-runtime-shared';
 import { RunCheckpoint } from './RunCheckpoint';
-import { TaskCheckpoint } from './TaskCheckpoint';
 import { buildCheckpoints } from '@/lib/run-checkpoint';
 // Chat first-paint memory contract (2026-05-09): ChatView must NOT
 // statically reach `useOverviewData` (full Settings overview snapshot,
@@ -21,7 +17,6 @@ import { buildCheckpoints } from '@/lib/run-checkpoint';
 // reasons; global health belongs to /settings/health. The previous
 // `computeEffectiveRuntime` + `useClaudeStatus` imports existed solely
 // for the removed external run-status popover.
-import { useGlobalAgentRuntime } from '@/hooks/useGlobalAgentRuntime';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { usePanel } from '@/hooks/usePanel';
@@ -40,8 +35,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Clock, X } from '@/components/ui/icon';
-import { BatchExecutionDashboard, BatchContextSync } from './batch-image-gen';
-import { setLastGeneratedImages, loadLastGenerated } from '@/lib/image-ref-store';
 import { useChatCommands } from '@/hooks/useChatCommands';
 import { useAssistantTrigger } from '@/hooks/useAssistantTrigger';
 import { useStreamSubscription } from '@/hooks/useStreamSubscription';
@@ -54,7 +47,6 @@ import { findModelOption } from '@/lib/model-option-match';
 // 'async_hooks'". `chat-runtime-shared` only ships the pure helpers /
 // types and is safe for client components. See
 // `src/lib/chat-runtime-shared.ts` doc-block for the full rationale.
-import { agentRuntimeToChatRuntime, effectiveChatRuntime } from '@/lib/chat-runtime-shared';
 import { useContextUsage } from '@/hooks/useContextUsage';
 import {
   startStream,
@@ -167,7 +159,6 @@ export function ChatView({
   modelName,
   initialEffort,
   providerId,
-  runtimePin: initialRuntimePin,
   initialPermissionProfile,
   initialMode,
   initialHasSummary,
@@ -211,12 +202,6 @@ export function ChatView({
       ? `/api/chat/sessions/${encodeURIComponent(activeSessionId)}`
       : messageApiBase ?? `/api/chat/sessions/${encodeURIComponent(activeSessionId)}`;
   const [messages, setMessages] = useState<Message[]>(initialMessages);
-  // Phase 3 Step 4 — inline-joined task_run_logs metadata for messages
-  // tagged via `messages.task_run_id`. Populated from
-  // `MessagesResponse.taskRuns` whenever we (re)fetch messages.
-  // Used by `<MessageList />` to render `<TaskRunMarker />` without
-  // per-marker fetches.
-  const [taskRuns, setTaskRuns] = useState<Record<string, TaskRunSummary>>({});
   const [permissionProfile, setPermissionProfile] = useState<PermissionProfile>(initialPermissionProfile || 'request_approval');
   const handlePermissionProfileChange = useCallback(async (next: PermissionProfile) => {
     try {
@@ -266,12 +251,6 @@ export function ChatView({
       .then((data: MessagesResponse | null) => {
         if (!data?.messages) return;
         setHasMore(data.hasMore ?? true);
-        // Phase 3 Step 4 — capture inline-joined task_run summaries.
-        // Merge into existing map (don't replace) so older marker
-        // entries from earlier pages are preserved when paging.
-        if (data.taskRuns) {
-          setTaskRuns(prev => ({ ...prev, ...data.taskRuns }));
-        }
         const dbMessages: Message[] = data.messages;
         setMessages(current => {
           const localCommands = current.filter(m => m.id.startsWith('cmd-'));
@@ -323,33 +302,7 @@ export function ChatView({
   useEffect(() => { setSelectedEffort(initialEffort ?? undefined); }, [initialEffort]);
   useEffect(() => { if (providerId !== undefined) setCurrentProviderId(providerId); }, [providerId]);
 
-  // Phase 2 Step 4c — `runtime_pin` becomes local state so the composer
-  // toolbar's RuntimeSelector can write through to it without waiting
-  // for a parent reload. Initialised from the prop the page passed in
-  // (loaded server-side from chat_sessions); the sync effect catches
-  // session swaps. handleRuntimePinChange (declared with the other
-  // handlers below) PATCHes the row and updates this state.
-  const [runtimePin, setRuntimePin] = useState<string>(initialRuntimePin || '');
-  useEffect(() => {
-    if (initialRuntimePin !== undefined) setRuntimePin(initialRuntimePin);
-  }, [initialRuntimePin]);
-
-  // Phase 2 Step 3b — picker filter follows the SESSION's runtime pin,
-  // not the global `agent_runtime`. When the user has explicitly pinned
-  // this chat to Claude Code or CodexWeb Runtime, that pin survives
-  // global flips; when the session has no pin (legacy / unpinned new
-  // chat), we resolve to the global runtime concretely.
-  //
-  // Phase 6 P0 (2026-05-15): hoisted `useGlobalAgentRuntime()` so we
-  // can pass the resolved concrete RuntimeId to `useProviderModels`
-  // instead of the old `'auto'` sentinel. With `'auto'` the hook
-  // skipped per-row compat gating and the picker rendered every model
-  // as enabled even under Codex Runtime — the bug the user caught.
-  const globalRuntime = useGlobalAgentRuntime();
-  const sessionRuntimeParam = effectiveChatRuntime(runtimePin, globalRuntime.agentRuntime);
-  const isCodexOnlySession =
-    currentProviderId === 'codex_account'
-    || sessionRuntimeParam === 'codex_runtime';
+  const isCodexOnlySession = true;
   const {
     noCompatibleProvider,
     fetchState: providerFetchState,
@@ -357,9 +310,7 @@ export function ChatView({
     resolvedModel,
     providerWasFilteredOut,
     providerGroups,
-  } = useProviderModels(currentProviderId, currentModel, sessionRuntimeParam, {
-    codexOnly: isCodexOnlySession,
-  });
+  } = useProviderModels(currentProviderId, currentModel);
 
   // Phase 2 Step 3b — was: silently set state + PATCH the session row
   // when the runtime filter excluded the saved provider. That made an
@@ -492,60 +443,18 @@ export function ChatView({
     }
   }, []);
 
-  // Fetch provider-specific options (with abort to prevent stale responses on fast switch)
+  // Codex app-server owns reasoning options; legacy provider options are not consulted.
   useEffect(() => {
-    if (isCodexOnlySession) {
-      setThinkingMode('adaptive');
-      setContext1m(false);
-      return;
-    }
-
-    const pid = currentProviderId || 'env';
-    const controller = new AbortController();
-    fetch(`/api/providers/options?providerId=${encodeURIComponent(pid)}`, { signal: controller.signal })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!controller.signal.aborted) {
-          setThinkingMode(data?.options?.thinking_mode || 'adaptive');
-          setContext1m(!!data?.options?.context_1m);
-        }
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [currentProviderId, isCodexOnlySession]);
+    setThinkingMode('adaptive');
+    setContext1m(false);
+  }, []);
 
   // Provider groups already carry upstreamModelId per model.
   useEffect(() => {
-    if (isCodexOnlySession) {
-      const models = (
-        providerGroups.find((g) => g.provider_id === currentProviderId)?.models ?? []
-      ) as Array<{ value: string; upstreamModelId?: string }>;
-      const model = findModelOption(models, currentModel);
-      setCurrentModelUpstream(model?.upstreamModelId);
-      return;
-    }
-
-    const pid = currentProviderId || 'env';
-    const controller = new AbortController();
-    fetch('/api/providers/models', { signal: controller.signal })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (controller.signal.aborted) return;
-        const group = data?.groups?.find((g: { provider_id: string }) => g.provider_id === pid);
-        // Canonical-aware (tech-debt #37): currentModel may be a canonical id
-        // (`claude-opus-4-7`) while the rows are aliases (`opus`) — match by
-        // either so the context-window indicator gets the right upstream.
-        const models = (group?.models ?? []) as Array<{ value: string; upstreamModelId?: string }>;
-        const model = findModelOption(models, currentModel);
-        setCurrentModelUpstream(model?.upstreamModelId);
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [currentProviderId, currentModel, isCodexOnlySession, providerGroups]);
+    const models = (providerGroups[0]?.models ?? []) as Array<{ value: string; upstreamModelId?: string }>;
+    setCurrentModelUpstream(findModelOption(models, currentModel)?.upstreamModelId);
+  }, [currentModel, providerGroups]);
   useEffect(() => { if (initialPermissionProfile) setPermissionProfile(initialPermissionProfile); }, [initialPermissionProfile]);
-
-  // Restore session-scoped last-generated images from sessionStorage
-  useEffect(() => { loadLastGenerated(activeSessionId); }, [activeSessionId]);
 
   // Stream snapshot from the manager — drives all streaming UI
   const [streamSnapshot, setStreamSnapshot] = useState<SessionStreamSnapshot | null>(
@@ -672,8 +581,6 @@ export function ChatView({
   // optimistic message stays in `messages` until the next reload).
   const pendingOptimisticUserIdRef = useRef<string | null>(null);
 
-  // Pending image generation notices
-  const pendingImageNoticesRef = useRef<string[]>([]);
   const sendMessageRef = useRef<(content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly SkillInputReference[], modeOverride?: string) => Promise<boolean | void>>(undefined);
   const initMetaRef = useRef<{ tools?: unknown; slash_commands?: unknown; skills?: unknown } | null>(null);
 
@@ -739,56 +646,6 @@ export function ChatView({
       });
     });
   }, [appServerThreadId, onAppServerEffortChange]);
-
-  // Phase 2 Step 4c — RuntimeSelector callback. Optimistic local update
-  // (so the picker filter and other consumers see the new pin
-  // immediately) then PATCH to persist. Errors are swallowed for parity
-  // with handleProviderModelChange — the next page load would surface
-  // any drift via the existing 409 banner path. The PATCH route's
-  // sdk_session_id cleanup logic (Step 4c track 1) handles the
-  // SDK-session-can't-survive-runtime-swap case server-side.
-  //
-  // Step 4c R6 — when the switch happens **mid-conversation** (i.e.
-  // there's already at least one user message in the transcript),
-  // also append a `[__RUNTIME_SWITCH__ from=X to=Y]` marker message
-  // so future scroll-back can answer "where did we change engines?".
-  // We persist via the same `/api/chat/messages` POST that the
-  // image-gen notice path already uses (line ~1191), and append
-  // optimistically so the marker shows up before the round-trip.
-  const handleRuntimePinChange = useCallback((pin: ChatRuntime) => {
-    if (settingsLocked) return;
-    const previousPin = runtimePin;
-    setRuntimePin(pin);
-    fetch(`/api/chat/sessions/${activeSessionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ runtime_pin: pin }),
-    }).catch(() => {});
-    // Mid-conversation marker — only when there's prior content. A
-    // brand-new session pre-first-message doesn't need a "switched
-    // FROM something" marker.
-    const hasUserTurn = messages.some((m) => m.role === 'user' && !m.id.startsWith('temp-'));
-    if (!hasUserTurn) return;
-    const fromPart =
-      previousPin === 'claude_code' || previousPin === 'codepilot_runtime'
-        ? ` from=${previousPin}`
-        : '';
-    const markerContent = `[__RUNTIME_SWITCH__${fromPart} to=${pin}]`;
-    const markerMessage: Message = {
-      id: 'temp-' + Date.now(),
-      session_id: activeSessionId,
-      role: 'user',
-      content: markerContent,
-      created_at: new Date().toISOString(),
-      token_usage: null,
-    };
-    cappedSetMessages((prev) => [...prev, markerMessage]);
-    fetch('/api/chat/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: activeSessionId, role: 'user', content: markerContent }),
-    }).catch(() => {});
-  }, [settingsLocked, activeSessionId, runtimePin, messages, cappedSetMessages]);
 
   // ── Extracted hooks ──
 
@@ -986,14 +843,6 @@ export function ChatView({
       case 'enable_1m_and_retry':
         if (!lastUserMessage) return;
         setContext1m(true);
-        // Persist per-provider so future sessions keep 1M until user opts out.
-        if (!isCodexOnlySession) {
-          fetch(`/api/providers/options?providerId=${encodeURIComponent(currentProviderId || 'env')}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ options: { context_1m: true } }),
-          }).catch(() => {});
-        }
         setTimeout(() => sendMessageRef.current?.(lastUserMessage), 50);
         break;
       case 'switch_to_sonnet':
@@ -1020,7 +869,7 @@ export function ChatView({
         }).catch(() => {});
         break;
     }
-  }, [currentProviderId, router, t]);
+  }, [router, t]);
 
   // Entry point from the chip. Destructive actions route through confirm
   // dialog; non-destructive ones run immediately. (CONFIRM_REQUIRED hoisted
@@ -1297,11 +1146,6 @@ export function ChatView({
         console.warn('[ChatView] startStream suppressed: session provider runtime-incompatible — user must pick another in the composer');
         return;
       }
-      const notices = pendingImageNoticesRef.current.length > 0
-        ? [...pendingImageNoticesRef.current]
-        : undefined;
-      if (notices) pendingImageNoticesRef.current = [];
-
       // Wire decision:
       //   - loaded → use resolved pair (runtime-filtered truth).
       //   - failed → fall back to raw currentModel/currentProviderId.
@@ -1321,7 +1165,6 @@ export function ChatView({
         files,
         workingDirectory,
         systemPromptAppend,
-        pendingImageNotices: notices,
         // 'auto' sentinel means "no explicit effort" — filter it here so
         // the CLI applies its per-model default (Opus 4.7 → xhigh, etc.)
         effort: selectedEffort && selectedEffort !== 'auto' ? selectedEffort : undefined,
@@ -1593,73 +1436,6 @@ export function ChatView({
     }
   }, [isStreaming, messageQueue, appServerSend, doStartStream, cappedSetMessages, activeSessionId, noCompatibleProvider, providerFetchState, sessionProviderRuntimeIncompatible]);
 
-  // Expose widget drill-down bridge: widgets can call window.__widgetSendMessage(text)
-  // to trigger follow-up questions (e.g. clicking a node to get deeper explanation)
-  // Hardened: type-checked, length-limited, rate-limited, sanitized.
-  useEffect(() => {
-    let lastCallTime = 0;
-    const RATE_LIMIT_MS = 2000;
-    const MAX_LENGTH = 500;
-
-    const bridge = (text: unknown) => {
-      if (typeof text !== 'string') return;
-      const trimmed = text.trim();
-      if (!trimmed || trimmed.length > MAX_LENGTH) return;
-
-      // Rate limit: max one message per 2 seconds
-      const now = Date.now();
-      if (now - lastCallTime < RATE_LIMIT_MS) return;
-      lastCallTime = now;
-
-      sendMessageRef.current?.(trimmed);
-    };
-    (window as unknown as Record<string, unknown>).__widgetSendMessage = bridge;
-    return () => {
-      delete (window as unknown as Record<string, unknown>).__widgetSendMessage;
-    };
-  }, []);
-
-  // Listen for widget pin requests from PinnableWidget buttons.
-  // The AI model receives the widget code + instructions and calls the
-  // codepilot_dashboard_pin MCP tool to complete the pin operation.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const { widgetCode, title } = (e as CustomEvent).detail || {};
-      if (!widgetCode || !sendMessageRef.current) return;
-
-      const instruction = `请将下面的可视化组件固定到项目看板。\n\n标题建议：${title || 'Untitled'}\n\n组件代码：\n${widgetCode}`;
-      sendMessageRef.current(instruction, undefined, undefined, `📌 固定「${title || 'Widget'}」到看板`);
-    };
-    window.addEventListener('widget-pin-request', handler);
-    return () => window.removeEventListener('widget-pin-request', handler);
-  }, []);
-
-  // Listen for dashboard widget drilldown (click title → conversation)
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const { title, dataContract } = (e as CustomEvent).detail || {};
-      if (!title || !sendMessageRef.current) return;
-      sendMessageRef.current(
-        `请深入分析看板组件「${title}」的数据。\n数据契约：${dataContract || '无'}`,
-        undefined, undefined,
-        `🔍 分析「${title}」`,
-      );
-    };
-    window.addEventListener('dashboard-widget-drilldown', handler);
-    return () => window.removeEventListener('dashboard-widget-drilldown', handler);
-  }, []);
-
-  // Listen for dashboard command input
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const { text } = (e as CustomEvent).detail || {};
-      if (!text || !sendMessageRef.current) return;
-      sendMessageRef.current(text, undefined, undefined, text);
-    };
-    window.addEventListener('dashboard-command', handler);
-    return () => window.removeEventListener('dashboard-command', handler);
-  }, []);
-
   const appendCommandMessage = useCallback((content: string) => {
     const message: Message = {
       id: 'cmd-' + Date.now(),
@@ -1746,34 +1522,6 @@ export function ChatView({
     );
   }, [appServerClearContextAndSend, appServerFinalTurnKey, handleModeChange, selectedEffort]);
 
-  // Listen for image generation completion
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (!detail) return;
-      const paths = (detail.images || [])
-        .map((img: { localPath?: string }) => img.localPath)
-        .filter(Boolean);
-      const pathInfo = paths.length > 0 ? `\nGenerated image file paths:\n${paths.map((p: string) => `- ${p}`).join('\n')}` : '';
-      const notice = `[Image generation completed]\n- Prompt: "${detail.prompt}"\n- Aspect ratio: ${detail.aspectRatio}\n- Resolution: ${detail.resolution}${pathInfo}`;
-
-      if (paths.length > 0) {
-        setLastGeneratedImages(activeSessionId, paths);
-      }
-
-      pendingImageNoticesRef.current.push(notice);
-
-      const dbNotice = `[__IMAGE_GEN_NOTICE__ prompt: "${detail.prompt}", aspect ratio: ${detail.aspectRatio}, resolution: ${detail.resolution}${paths.length > 0 ? `, file path: ${paths.join(', ')}` : ''}]`;
-      fetch('/api/chat/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: activeSessionId, role: 'user', content: dbNotice }),
-      }).catch(() => {});
-    };
-    window.addEventListener('image-gen-completed', handler);
-    return () => window.removeEventListener('image-gen-completed', handler);
-  }, [activeSessionId]);
-
   // New-chat layout (2026-05-21): when a session exists but has no
   // messages yet and is NOT actively streaming, render the same
   // centered logo + welcome + composer hero as /chat (the
@@ -1855,7 +1603,6 @@ export function ChatView({
               providerId={currentProviderId}
               permissionProfile={permissionProfile}
               onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}
-              runtime={sessionRuntimeParam}
               onProviderModelChange={settingsLocked ? undefined : handleProviderModelChange}
               workingDirectory={workingDirectory}
               onAssistantTrigger={checkAssistantTrigger}
@@ -1869,18 +1616,6 @@ export function ChatView({
               onModeChange={settingsLocked ? undefined : handleModeChange}
               modeChangeDisabled={settingsLocked || isStreaming}
               blockingReasonIds={blockingReasonIds}
-            />
-            <ChatComposerActionBar
-              left={
-                <>
-                  <RuntimeSelector
-                    runtimePin={runtimePin}
-                    effectiveRuntime={agentRuntimeToChatRuntime(globalRuntime.agentRuntime)}
-                    onRuntimePinChange={handleRuntimePinChange}
-                    disabled={settingsLocked || isStreaming}
-                  />
-                </>
-              }
             />
           </div>
         </div>
@@ -1907,13 +1642,6 @@ export function ChatView({
         startedAt={appServerPanelStartedAt}
         isAssistantProject={isAssistantProject}
         assistantName={assistantName}
-        taskRuns={taskRuns}
-        // Codex P2 — wire the WaitingForPermissionPanel's
-        // post-action callback into our existing message reconcile
-        // so abandoning / re-running a paused run actually causes
-        // the panel to disappear (or update to the new run state)
-        // instead of staying frozen on the cancelled row.
-        onTaskRunAction={reconcileWithDb}
       />
       {/* End-of-turn terminal reason chip (only shown when stream is not active) */}
       {!isStreaming && (
@@ -1994,10 +1722,6 @@ export function ChatView({
           </div>
         </div>
       )}
-      {/* Batch image generation panels */}
-      <BatchExecutionDashboard />
-      <BatchContextSync />
-
       {/* Queued message banner — shown above input when messages are
           waiting. Same Luma-light pill aesthetic as the chat composer:
           24px radius, soft muted bg, no border, ghost X button. */}
@@ -2088,12 +1812,6 @@ export function ChatView({
           onDismiss={appServerErrorBanner ? () => setAppServerErrorBanner(null) : undefined}
         />
       )}
-      {/* Task checklist — moved out of the FileTree sidebar. Default
-          expanded; minimize via top-right toggle; auto-hides when 0
-          tasks or all completed. Same /api/tasks data source the
-          previous sidebar TaskList used; SDK TodoWrite syncs via the
-          `tasks-updated` window event. */}
-      <TaskCheckpoint sessionId={activeSessionId} className="mb-2" />
       {invalidSessionProvider && (
         // Phase 2 Step 4b — server returned 409 INVALID_SESSION_PROVIDER:
         // the session's saved provider was deleted between when this
@@ -2160,7 +1878,6 @@ export function ChatView({
         providerId={currentProviderId}
         permissionProfile={permissionProfile}
         onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}
-        runtime={sessionRuntimeParam}
         codexOnly={isCodexOnlySession}
         onProviderModelChange={settingsLocked ? undefined : handleProviderModelChange}
         workingDirectory={workingDirectory}
@@ -2175,18 +1892,6 @@ export function ChatView({
         onModeChange={settingsLocked ? undefined : handleModeChange}
         modeChangeDisabled={settingsLocked || isStreaming}
         blockingReasonIds={blockingReasonIds}
-      />
-      <ChatComposerActionBar
-        left={
-          <>
-            <RuntimeSelector
-              runtimePin={runtimePin}
-              effectiveRuntime={agentRuntimeToChatRuntime(globalRuntime.agentRuntime)}
-              onRuntimePinChange={handleRuntimePinChange}
-              disabled={settingsLocked || isStreaming}
-            />
-          </>
-        }
       />
         </>
       )}

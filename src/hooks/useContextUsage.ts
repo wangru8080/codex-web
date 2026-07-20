@@ -6,7 +6,7 @@ import {
   buildContextUsageBreakdown,
   type ContextUsageBreakdown,
 } from '@/lib/context-breakdown';
-import { snapshotToCompilerInputs } from '@/lib/harness/context-accounting';
+import { snapshotToCompilerInputs } from '@/lib/context-accounting';
 
 export interface ContextUsageData {
   modelName: string;

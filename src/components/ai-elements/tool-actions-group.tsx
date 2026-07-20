@@ -17,10 +17,6 @@ import { mermaid } from '@streamdown/mermaid';
 
 const thinkingPlugins = { cjk, math, mermaid };
 import type { MediaBlock } from '@/types';
-import {
-  isToolUnsupportedError,
-  buildToolUnsupportedHint,
-} from '@/lib/harness/capability-display-text';
 
 const TOOL_OUTPUT_MAX_LINES = 5;
 const TOOL_COMMAND_CONTINUATION_MAX_LINES = 2;
@@ -531,22 +527,6 @@ function ToolActionRow({ tool, streamingToolOutput }: { tool: ToolAction; stream
   const outputText = running ? streamingToolOutput : tool.result;
   const outputLines = outputText ? truncatedOutputLines(outputText, running) : [];
 
-  // Phase 5e round 8 (2026-05-18) — small inline hint when the model
-  // tried to call a `codepilot_*` built-in tool that isn't supported
-  // on the active Runtime. Narrowed by `isToolUnsupportedError`:
-  // fires only when the error content matches "tool not found /
-  // unknown tool / not registered" + the tool is in our catalog,
-  // so legitimate runtime errors (API key, network) DON'T show a
-  // "switch runtime" hint.
-  const unsupportedHint = (() => {
-    if (!isToolUnsupportedError({
-      toolName: tool.name,
-      errorContent: tool.result,
-      isError: tool.isError,
-    })) return null;
-    return buildToolUnsupportedHint(tool.name);
-  })();
-
   return (
     <div className="px-2 py-1 text-xs hover:bg-muted/20 rounded-sm transition-colors">
       <div className="flex min-h-[24px] items-baseline gap-2">
@@ -606,14 +586,6 @@ function ToolActionRow({ tool, streamingToolOutput }: { tool: ToolAction; stream
         </div>
       )}
 
-      {unsupportedHint && (
-        <p
-          data-testid={`tool-unsupported-hint-${tool.id ?? tool.name}`}
-          className="ml-[21px] px-0 py-1 text-[11px] text-muted-foreground/80 leading-snug italic"
-        >
-          {unsupportedHint.hint.zh}
-        </p>
-      )}
     </div>
   );
 }

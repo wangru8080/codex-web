@@ -24,6 +24,14 @@ describe("关于页面精简", () => {
     expect(chinese).not.toMatch(/["']about\.(support|docs)\./);
   });
 
+  it("关于副标题只描述版本和平台信息", () => {
+    const english = source("src/i18n/en.ts");
+    const chinese = source("src/i18n/zh.ts");
+
+    expect(english).toContain("'settings.aboutDesc': 'CodexWeb version and platform info'");
+    expect(chinese).toContain("'settings.aboutDesc': 'CodexWeb 版本、平台信息'");
+  });
+
   it("保留版本和平台信息作为反例", () => {
     const about = source("src/components/settings/AboutSection.tsx");
 

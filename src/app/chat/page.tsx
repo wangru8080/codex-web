@@ -5,7 +5,6 @@ import { useSearchParams } from 'next/navigation';
 import type { Message, PermissionRequestEvent, FileAttachment, MentionRef, PermissionProfile, SkillInputReference } from '@/types';
 import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput, composerDraftKey } from '@/components/chat/MessageInput';
-import type { ChatRuntime } from '@/lib/chat-runtime-shared';
 import { PermissionPrompt } from '@/components/chat/PermissionPrompt';
 import { AppServerRequestPrompt } from '@/components/chat/AppServerRequestPrompt';
 import type { AppServerRequestResponseInput } from '@/codex-web/approval-adapter';
@@ -47,7 +46,6 @@ import { mergeCrossClientUserMessages } from '@/codex-web/cross-client-sync';
 
 const DEFAULT_CODEX_PROVIDER_ID = 'codex_account';
 const DEFAULT_CODEX_MODEL = 'gpt-5.5';
-const DEFAULT_CODEX_RUNTIME = 'codex_runtime' satisfies ChatRuntime;
 
 export default function NewChatPage() {
   // useSearchParams in App Router needs a Suspense boundary. The body of
@@ -173,8 +171,6 @@ function NewChatPageInner() {
     return canSendWithCurrentProvider;
   }, [modelReady, canSendWithCurrentProvider]);
 
-  const runtimePin: ChatRuntime = DEFAULT_CODEX_RUNTIME;
-  const sessionRuntimeParam: ChatRuntime = DEFAULT_CODEX_RUNTIME;
 
   // Run Checkpoint signals — session-scoped only, no global health.
   //
@@ -1093,7 +1089,6 @@ function NewChatPageInner() {
         providerId={currentProviderId}
         permissionProfile={permissionProfile}
         onPermissionChange={handlePermissionProfileChange}
-        runtime={sessionRuntimeParam}
         codexOnly
         onProviderModelChange={(pid, model, opts) => {
           setCurrentProviderId(pid);

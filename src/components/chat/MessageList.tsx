@@ -13,10 +13,6 @@ import {
   ConversationEmptyState,
 } from '@/components/ai-elements/conversation';
 import { MessageItem } from './MessageItem';
-import { RuntimeSwitchMarker, parseRuntimeSwitchMarker } from './RuntimeSwitchMarker';
-import { TaskRunMarker } from './TaskRunMarker';
-import { TaskWaitingForPermissionPanel } from './TaskWaitingForPermissionPanel';
-import type { TaskRunSummary } from '@/types';
 import { StreamingMessage } from './StreamingMessage';
 import { MonolithIcon } from '@/components/brand/MonolithIcon';
 import { SPECIES_IMAGE_URL, EGG_IMAGE_URL, RARITY_BG_GRADIENT, type Species, type Rarity } from '@/lib/buddy';
@@ -184,25 +180,6 @@ interface MessageListProps {
   isAssistantProject?: boolean;
   /** Assistant name for avatar display */
   assistantName?: string;
-  /**
-   * Phase 3 Step 4 — inline-joined task_run_logs metadata, keyed by
-   * run id, delivered by `/api/chat/sessions/[id]/messages`. When a
-   * message has `task_run_id` and that run is the FIRST occurrence
-   * for this run id in the visible list, MessageList renders a
-   * `<TaskRunMarker />` before that message. Empty / undefined when
-   * no message in the page came from a scheduled task or heartbeat.
-   */
-  taskRuns?: Record<string, TaskRunSummary>;
-  /**
-   * Codex P2 — invoked after the WaitingForPermissionPanel finishes a
-   * Re-run / Abandon action. The panel itself only knows the new run
-   * exists in the DB; only the parent ChatView holds the message +
-   * taskRuns state, so we bubble up here for it to call
-   * `reconcileWithDb` (or any equivalent refresh). Without this hop,
-   * `taskRuns[run.id].status` stays stuck on `'waiting_for_permission'`
-   * and the panel never disappears even after the abandon PATCH lands.
-   */
-  onTaskRunAction?: () => void;
 }
 
 export function MessageList({
@@ -222,8 +199,6 @@ export function MessageList({
   loadingMore,
   onLoadMore,
   rewindPoints = [],
-  taskRuns,
-  onTaskRunAction,
   sessionId,
   startedAt,
   isAssistantProject,
@@ -330,46 +305,7 @@ export function MessageList({
             </Button>
           </div>
         )}
-        {messages.map((message, idx) => {
-          // Step 4c R6 — runtime-switch transcript marker. ChatView
-          // appends a marker message (`role='user'` carrying a
-          // `[__RUNTIME_SWITCH__ from=X to=Y]` sentinel) whenever the
-          // user flips RuntimeSelector mid-conversation. Detect and
-          // render as an inline checkpoint instead of a normal user
-          // bubble — same idea as `[__IMAGE_GEN_NOTICE__ ...]` already
-          // does for image-gen events.
-          if (message.role === 'user') {
-            const switchPayload = parseRuntimeSwitchMarker(message.content);
-            if (switchPayload) {
-              return (
-                <div key={message.id} id={`msg-${message.id}`}>
-                  <RuntimeSwitchMarker payload={switchPayload} />
-                </div>
-              );
-            }
-          }
-
-          // Phase 3 Step 4 — TaskRunMarker. Render before the FIRST
-          // message that belongs to a given task_run_id (vs. the
-          // previous message in the list). Subsequent messages in the
-          // same run don't repeat the marker.
-          //
-          // Critically the marker is built from the inline-joined
-          // `taskRuns` map (delivered by `/api/chat/sessions/[id]/
-          // messages`) — no per-marker fetch. Marker is React-only;
-          // `task_run_id` is never in `message.content` and never
-          // reaches the LLM prompt builder.
-          let leadingMarker: React.ReactNode = null;
-          if (message.task_run_id) {
-            const prev = idx > 0 ? messages[idx - 1] : null;
-            const prevRunId = prev?.task_run_id ?? null;
-            if (prevRunId !== message.task_run_id) {
-              leadingMarker = (
-                <TaskRunMarker run={taskRuns?.[message.task_run_id]} />
-              );
-            }
-          }
-
+        {messages.map((message) => {
           // Map rewind points to visible user messages by position:
           // Backend only emits rewind_point for prompt-level user messages
           // (not tool results, not auto-trigger), so they're 1:1 with visible user messages.
@@ -383,7 +319,6 @@ export function MessageList({
 
           return (
             <div key={message.id} id={`msg-${message.id}`} className="group">
-              {leadingMarker}
               <MessageItem message={message} sessionId={sessionId} isAssistantProject={isAssistantProject} assistantName={assistantName} />
               {rewindSdkUuid && sessionId && !isStreaming && (
                 <RewindButton sessionId={sessionId} userMessageId={rewindSdkUuid} />
@@ -391,23 +326,6 @@ export function MessageList({
             </div>
           );
         })}
-
-        {/* Phase 3 Step 4b — when the LAST message in this session
-            belongs to a waiting_for_permission run, render the
-            TaskWaitingForPermissionPanel inline at the bottom of the
-            transcript. The user sees the partial assistant message
-            (which the runner persisted before aborting) above, then
-            this panel offers Re-run / Abandon. No durable resume —
-            re-run starts a fresh runId, abandon cancels the old run. */}
-        {(() => {
-          if (isStreaming) return null;
-          if (!messages.length || !taskRuns) return null;
-          const lastMsg = messages[messages.length - 1];
-          if (!lastMsg.task_run_id) return null;
-          const run = taskRuns[lastMsg.task_run_id];
-          if (!run || run.status !== 'waiting_for_permission') return null;
-          return <TaskWaitingForPermissionPanel run={run} onAction={onTaskRunAction} />;
-        })()}
 
         {showStreamingMessage && (
           <StreamingMessage

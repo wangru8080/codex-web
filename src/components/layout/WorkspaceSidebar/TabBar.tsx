@@ -4,7 +4,7 @@
  * Top Tab strip for the right-side Workspace Sidebar.
  *
  * Visual order:
- *   [git] [widget] · [dynamic 1] [dynamic 2] ... · [collapse]
+ *   [git] · [dynamic 1] [dynamic 2] ... · [collapse]
  *
  * Fixed Tabs are never closable. Dynamic Tabs render an `X` close
  * button on hover/focus. The shell collapse button sits at the very
@@ -37,8 +37,7 @@ interface TabBarProps {
 
 function tabLabel(tab: Tab, t: (key: TranslationKey, vars?: Record<string, string | number>) => string): string {
   if (tab.kind === 'fixed') {
-    if (tab.id === 'git') return t('workspaceSidebar.tab.git' as TranslationKey);
-    return t('workspaceSidebar.tab.widget' as TranslationKey);
+    return t('workspaceSidebar.tab.git' as TranslationKey);
   }
   if (tab.kind === 'files-pinned') return t('workspaceSidebar.tab.files' as TranslationKey);
   return tab.title;
@@ -57,9 +56,7 @@ function tabIcon(tab: Tab): React.ReactNode {
   // light even when its tab is active, breaking the "selected → dark"
   // half of the color rule.
   if (tab.kind === 'fixed') {
-    return tab.id === 'git'
-      ? <CodexWebIcon name="git" size="md" className="text-inherit" aria-hidden />
-      : <CodexWebIcon name="chart" size="md" className="text-inherit" aria-hidden />;
+    return <CodexWebIcon name="git" size="md" className="text-inherit" aria-hidden />;
   }
   if (tab.kind === 'files-pinned') return <CodexWebIcon name="pin" size="md" className="text-inherit" aria-hidden />;
   if (tab.kind === 'markdown' || tab.kind === 'file') {
@@ -117,7 +114,7 @@ export function TabBar({ className }: TabBarProps) {
   //    row in PreviewPanel, so Tab strip + file info read as one
   //    contiguous header zone separated only by spacing.
   //  - No `overflow-x-auto`: dynamic tabs shrink browser-style when
-  //    the strip gets crowded. Fixed Tabs (git, widget) keep a fixed
+  //    the strip gets crowded. The fixed Git Tab keeps a fixed
   //    width so they're always reachable.
   //  - Close is folded INTO the leading icon: hovering the tab swaps
   //    the file icon for an X; clicking the icon while hovered closes
@@ -184,7 +181,7 @@ export function TabBar({ className }: TabBarProps) {
  * fixed vs dynamic width) stays readable.
  *
  * Width rules:
- *  - Fixed tabs (git / widget): `shrink-0` + content-width so they
+ *  - Fixed Git tab: `shrink-0` + content-width so it
  *    always show their full label and are first-priority to click.
  *  - Dynamic tabs: `flex-1 min-w-[40px] max-w-[160px]` so they
  *    share remaining width browser-style. Each tab can shrink down

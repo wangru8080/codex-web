@@ -14,19 +14,16 @@ import { WorkspaceSidebarProvider, useWorkspaceSidebar, useWorkspaceSidebarOptio
 import { PanelContext, usePanel, type PreviewViewMode, type PreviewSource } from "@/hooks/usePanel";
 import { UpdateContext } from "@/hooks/useUpdate";
 import { useUpdateChecker } from "@/hooks/useUpdateChecker";
-import { BatchImageGenContext, useBatchImageGenState } from "@/hooks/useBatchImageGen";
 import { SplitContext, type SplitSession } from "@/hooks/useSplit";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SentryInit } from "./SentryInit";
-import { getActiveSessionIds, getSnapshot } from "@/lib/stream-session-manager";
 import { useGitStatus } from "@/hooks/useGitStatus";
 import { Toaster } from '@/components/ui/toast';
-import { useNotificationPoll } from '@/hooks/useNotificationPoll';
-import { useNotificationClickRoute } from '@/hooks/useNotificationClickRoute';
 import { useGlobalSearchShortcut } from '@/hooks/useGlobalSearchShortcut';
 import { GlobalSearchDialog } from './GlobalSearchDialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useCompactViewport } from '@/hooks/useCompactViewport';
+import { useAppServerState } from '@/codex-web/AppServerProvider';
 
 // AppShell 静态导入约束（Phase A 内存优化，2026-05-08）：以下四个组件
 // 仅在对应路由、状态或弹窗触发时渲染。使用 next/dynamic + ssr:false 可避免
@@ -215,6 +212,7 @@ function ChatContentRow({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const appServerState = useAppServerState();
 
   const [chatListOpenRaw, setChatListOpenRaw] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -235,12 +233,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem('codepilot:last-non-settings-path', fullPath);
     }
   }, [pathname]);
-
-  // Poll server-side notification queue and display as toasts
-  useNotificationPoll();
-  // Phase 3 Step 3: route Electron notification clicks (carrying
-  // taskId / sessionId payload) to the right page.
-  useNotificationClickRoute();
 
   // Hash 桥接：旧错误消息或外部深链仍可能带着 #providers。
   // 在 Codex-only UI 中，它会进入 Codex 设置页。/settings 页面自身
@@ -335,42 +327,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const currentBranch = gitStatusFromHook?.branch ?? "";
   const gitDirtyCount = gitStatusFromHook?.changedFiles.filter(f => f.status !== 'untracked').length ?? 0;
 
-  // --- Multi-session stream tracking (driven by stream-session-manager) ---
-  const [activeStreamingSessions, setActiveStreamingSessions] = useState<Set<string>>(EMPTY_SET);
-  const [pendingApprovalSessionIds, setPendingApprovalSessionIds] = useState<Set<string>>(EMPTY_SET);
-
-  // Listen for global stream events from stream-session-manager
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const activeIds = getActiveSessionIds();
-      setActiveStreamingSessions(activeIds.length > 0 ? new Set(activeIds) : EMPTY_SET);
-
-      const approvals = new Set<string>();
-      for (const sid of activeIds) {
-        const snap = getSnapshot(sid);
-        if (snap?.pendingPermission && !snap.permissionResolved) {
-          approvals.add(sid);
-        }
-      }
-      setPendingApprovalSessionIds(approvals.size > 0 ? approvals : EMPTY_SET);
-
-      // A5 Step 2 follow-up #2 — also clear the single-value global badge when
-      // THIS event's session no longer needs approval (resolved / timed out).
-      // Runs at the app-shell level for every stream event, so it covers the
-      // "user navigated away, THEN the request timed out" case: the session's
-      // useStreamSubscription is unmounted then and can't clear it, but the
-      // pendingApprovalSessionIds Set above (which DOES re-derive) leaves the
-      // single global stuck until stream end. Functional + guarded
-      // (prev === sid && not in approvals) so it never clears a still-pending
-      // peer or the /chat inline new-session value.
-      const sid = (e as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
-      if (sid) {
-        setPendingApprovalSessionId((prev) => (prev === sid && !approvals.has(sid) ? '' : prev));
-      }
-    };
-    window.addEventListener('stream-session-event', handler);
-    return () => window.removeEventListener('stream-session-event', handler);
-  }, []);
+  const activeStreamingSessions = useMemo(() => {
+    const ids = Object.values(appServerState.activeTurnsByThreadId)
+      .filter(({ data }) => data.status === 'starting' || data.status === 'running')
+      .map(({ data }) => data.threadId)
+      .filter(Boolean);
+    return ids.length > 0 ? new Set(ids) : EMPTY_SET;
+  }, [appServerState.activeTurnsByThreadId]);
+  const pendingApprovalSessionIds = useMemo(() => {
+    const ids = appServerState.pendingApprovals
+      .map((approval) => approval.threadId)
+      .filter((threadId): threadId is string => !!threadId);
+    return ids.length > 0 ? new Set(ids) : EMPTY_SET;
+  }, [appServerState.pendingApprovals]);
 
   // --- Split-screen state ---
   const [splitSessions, setSplitSessions] = useState<SplitSession[]>(() => loadSplitSessions());
@@ -637,15 +606,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     [chatListOpen, setChatListOpen, fileTreeOpen, terminalOpen, assistantPanelOpen, isAssistantWorkspace, currentBranch, gitDirtyCount, currentWorktreeLabel, workingDirectory, sessionId, sessionTitle, streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, previewSource, setPreviewSource, previewFile, setPreviewFile, previewViewMode]
   );
 
-  const batchImageGenValue = useBatchImageGenState();
-
   return (
     <UpdateContext.Provider value={updateContextValue}>
       <SentryInit />
       <PanelContext.Provider value={panelContextValue}>
         <WorkspaceSidebarProvider workingDirectory={workingDirectory} sessionId={sessionId}>
         <SplitContext.Provider value={splitContextValue}>
-        <BatchImageGenContext.Provider value={batchImageGenValue}>
         <TooltipProvider delayDuration={300}>
           {/* Round 20 — layout reorganized so the four floating cards
               (left sidebar, main content, workspace sidebar, file
@@ -764,7 +730,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Toaster />
           <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
         </TooltipProvider>
-        </BatchImageGenContext.Provider>
         </SplitContext.Provider>
         </WorkspaceSidebarProvider>
       </PanelContext.Provider>

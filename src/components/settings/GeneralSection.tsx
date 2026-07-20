@@ -3,7 +3,7 @@
 /**
  * Settings → General — application behavior only.
  *
- * Strictly: language, default panel and generative UI. The Settings IA Phase 2
+ * Strictly: language and default panel. The Settings IA Phase 2
  * cleanup moved everything else out:
  *
  *   - UpdateCard / version + update check  → Settings → About
@@ -19,7 +19,6 @@
  */
 
 import { useState, useCallback, useEffect } from "react";
-import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/hooks/useTranslation";
 import { SUPPORTED_LOCALES, type Locale } from "@/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,8 +26,6 @@ import { SettingsCard } from "@/components/patterns/SettingsCard";
 import { FieldRow } from "@/components/patterns/FieldRow";
 
 export function GeneralSection() {
-  const [generativeUI, setGenerativeUI] = useState(true);
-  const [generativeUISaving, setGenerativeUISaving] = useState(false);
   const [defaultPanel, setDefaultPanel] = useState('file_tree');
   const { t, locale, setLocale } = useTranslation();
 
@@ -38,10 +35,9 @@ export function GeneralSection() {
       if (res.ok) {
         const data = await res.json();
         const appSettings = data.settings || {};
-        // generative_ui_enabled defaults to true when not set
-        setGenerativeUI(appSettings.generative_ui_enabled !== "false");
         // default_panel defaults to 'file_tree' when not set
-        setDefaultPanel(appSettings.default_panel || 'file_tree');
+        const savedPanel = appSettings.default_panel;
+        setDefaultPanel(savedPanel === 'none' || savedPanel === 'git' ? savedPanel : 'file_tree');
       }
     } catch {
       // ignore
@@ -65,26 +61,6 @@ export function GeneralSection() {
     }
   };
 
-  const handleGenerativeUIToggle = async (checked: boolean) => {
-    setGenerativeUISaving(true);
-    try {
-      const res = await fetch("/api/settings/app", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          settings: { generative_ui_enabled: checked ? "" : "false" },
-        }),
-      });
-      if (res.ok) {
-        setGenerativeUI(checked);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setGenerativeUISaving(false);
-    }
-  };
-
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Page title — matches other Settings sub-pages. */}
@@ -93,19 +69,6 @@ export function GeneralSection() {
       </div>
       {/* General settings card */}
       <SettingsCard>
-        {/* Generative UI toggle */}
-        <FieldRow
-          label={t('settings.generativeUITitle')}
-          description={t('settings.generativeUIDesc')}
-          separator
-        >
-          <Switch
-            checked={generativeUI}
-            onCheckedChange={handleGenerativeUIToggle}
-            disabled={generativeUISaving}
-          />
-        </FieldRow>
-
         {/* Default panel */}
         <FieldRow
           label={t('settings.defaultPanelTitle')}
@@ -119,7 +82,6 @@ export function GeneralSection() {
             <SelectContent>
               <SelectItem value="none">{t('settings.defaultPanelNone')}</SelectItem>
               <SelectItem value="file_tree">{t('settings.defaultPanelFileTree')}</SelectItem>
-              <SelectItem value="dashboard">{t('settings.defaultPanelDashboard')}</SelectItem>
               <SelectItem value="git">{t('settings.defaultPanelGit')}</SelectItem>
             </SelectContent>
           </Select>

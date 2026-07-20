@@ -184,7 +184,7 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
                 </span>
               ) : (
                 <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                  {t('provider.configured')}
+                  {t('mcp.configured')}
                 </span>
               )}
               {toolCount > 0 && (

@@ -25,10 +25,6 @@ const GitTabContent = dynamic(
   () => import('@/components/layout/panels/GitPanel').then((m) => ({ default: m.GitTabContent })),
   { ssr: false },
 );
-const WidgetTabContent = dynamic(
-  () => import('@/components/layout/panels/DashboardPanel').then((m) => ({ default: m.WidgetTabContent })),
-  { ssr: false },
-);
 const PreviewPanel = dynamic(
   () => import('@/components/layout/panels/PreviewPanel').then((m) => ({ default: m.PreviewPanel })),
   { ssr: false },
@@ -40,7 +36,7 @@ const FileTreePanel = dynamic(
 
 function ActiveContent({ tab }: { tab: Tab }) {
   if (tab.kind === 'fixed') {
-    return tab.id === 'git' ? <GitTabContent /> : <WidgetTabContent />;
+    return <GitTabContent />;
   }
   if (tab.kind === 'files-pinned') {
     // sidebar variant strips the legacy panel chrome (Pin / Close /

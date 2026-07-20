@@ -288,7 +288,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         if (!res.ok) return;
         const data = await res.json();
         const panel = data.settings?.default_panel || 'file_tree';
-        // Phase 2 (2026-04-30) migration: 'git' and 'dashboard'
+        // Phase 2 (2026-04-30) migration: 'git'
         // defaults used to flip dedicated PanelZone panels — those
         // panels were folded into the Workspace Sidebar as fixed Tabs.
         // Translate the legacy setting into "open the sidebar with
@@ -305,9 +305,6 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         } else if (panel === 'git' && ws) {
           setFileTreeOpen(false);
           ws.setActiveTab('git');  // setActiveTab also flips open=true
-        } else if (panel === 'dashboard' && ws) {
-          setFileTreeOpen(false);
-          ws.setActiveTab('widget');
         } else {
           // Unknown setting or sidebar provider missing → safe default.
           setFileTreeOpen(true);

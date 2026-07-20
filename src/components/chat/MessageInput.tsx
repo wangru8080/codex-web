@@ -52,7 +52,6 @@ import { resolveComposerModelAutoCorrect } from '@/lib/model-option-match';
 // imports from `chat-runtime.ts` are risky if the build leans on
 // runtime resolution paths; the shared module is the future-proof
 // choice for any client bundle.
-import type { ChatRuntimeParam } from '@/lib/chat-runtime-shared';
 import { useCommandBadge } from '@/hooks/useCommandBadge';
 import { useSlashCommands } from '@/hooks/useSlashCommands';
 import {
@@ -185,7 +184,7 @@ interface MessageInputProps {
    * Required (no default) so a new caller can't silently inherit the
    * old "auto = follow global, drift on flip" behavior.
    */
-  runtime: ChatRuntimeParam;
+  runtime?: unknown;
   /** Codex-only Web 收缩：新建聊天只读取 Codex 账户模型。 */
   codexOnly?: boolean;
   /** 可选文件选择器 accept；空字符串允许任意文件。 */

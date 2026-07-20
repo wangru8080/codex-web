@@ -11,89 +11,13 @@ import { ProcessCollapseGroup, ToolActionsGroup } from '@/components/ai-elements
 import { MediaPreview } from './MediaPreview';
 import { Button } from '@/components/ui/button';
 import { Shimmer } from '@/components/ai-elements/shimmer';
-import { ImageGenConfirmation } from './ImageGenConfirmation';
-import { BatchPlanInlinePreview } from './batch-image-gen/BatchPlanInlinePreview';
 import { ProposedPlanMessageBlock, UpdatedPlanMessageBlock } from './PlanMessageBlock';
 import { ContextCompactionRow } from './ContextCompactionRow';
-import { WidgetRenderer } from './WidgetRenderer';
-import { parseAllShowWidgets, computePartialWidgetKey, MalformedWidgetNotice } from './MessageItem';
 import {
   groupConsecutiveToolBlocks,
   type StreamingProcessBlock,
 } from './streaming-process-groups';
-import { PENDING_KEY, buildReferenceImages } from '@/lib/image-ref-store';
-import type { PlannerOutput, MediaBlock, MessageContentBlock } from '@/types';
-
-interface ImageGenRequest {
-  prompt: string;
-  aspectRatio: string;
-  resolution: string;
-  referenceImages?: string[];
-  useLastGenerated?: boolean;
-}
-
-function parseImageGenRequest(text: string): { beforeText: string; request: ImageGenRequest; afterText: string; rawBlock: string } | null {
-  const regex = /```image-gen-request\s*\n?([\s\S]*?)\n?\s*```/;
-  const match = text.match(regex);
-  if (!match) return null;
-  try {
-    let raw = match[1].trim();
-    let json: Record<string, unknown>;
-    try {
-      json = JSON.parse(raw);
-    } catch {
-      // Attempt to fix common model output issues: unescaped quotes in values
-      raw = raw.replace(/"prompt"\s*:\s*"([\s\S]*?)"\s*([,}])/g, (_m, val, tail) => {
-        const escaped = val.replace(/(?<!\\)"/g, '\\"');
-        return `"prompt": "${escaped}"${tail}`;
-      });
-      json = JSON.parse(raw);
-    }
-    const beforeText = text.slice(0, match.index).trim();
-    const afterText = text.slice((match.index || 0) + match[0].length).trim();
-    return {
-      beforeText,
-      request: {
-        prompt: String(json.prompt || ''),
-        aspectRatio: String(json.aspectRatio || '1:1'),
-        resolution: String(json.resolution || '1K'),
-        referenceImages: Array.isArray(json.referenceImages) ? json.referenceImages : undefined,
-        useLastGenerated: json.useLastGenerated === true,
-      },
-      afterText,
-      rawBlock: match[0], // full ```image-gen-request...``` block for exact matching
-    };
-  } catch {
-    return null;
-  }
-}
-
-function parseBatchPlan(text: string): { beforeText: string; plan: PlannerOutput; afterText: string } | null {
-  const regex = /```batch-plan\s*\n?([\s\S]*?)\n?\s*```/;
-  const match = text.match(regex);
-  if (!match) return null;
-  try {
-    const json = JSON.parse(match[1]);
-    const beforeText = text.slice(0, match.index).trim();
-    const afterText = text.slice((match.index || 0) + match[0].length).trim();
-    return {
-      beforeText,
-      plan: {
-        summary: json.summary || '',
-        items: Array.isArray(json.items) ? json.items.map((item: Record<string, unknown>) => ({
-          prompt: String(item.prompt || ''),
-          aspectRatio: String(item.aspectRatio || '1:1'),
-          resolution: String(item.resolution || '1K'),
-          tags: Array.isArray(item.tags) ? item.tags : [],
-          sourceRefs: Array.isArray(item.sourceRefs) ? item.sourceRefs : [],
-        })) : [],
-      },
-      afterText,
-    };
-  } catch {
-    return null;
-  }
-}
+import type { MediaBlock, MessageContentBlock } from '@/types';
 
 interface ToolUseInfo {
   id: string;
@@ -124,12 +48,10 @@ interface StreamingMessageProps {
 }
 
 /**
- * Smart content buffering — holds initial text until meaningful, but bypasses
- * for structured blocks (show-widget, batch-plan, image-gen-request).
+ * Smart content buffering — holds initial text until meaningful.
  */
 const BUFFER_WORD_THRESHOLD = 40;
 const BUFFER_MAX_MS = 2500;
-const STRUCTURED_BLOCK_RE = /```(show-widget|batch-plan|image-gen-request)/;
 
 function useBufferedContent(rawContent: string, isStreaming: boolean): string {
   const [bypassed, setBypassed] = useState(false);
@@ -138,7 +60,6 @@ function useBufferedContent(rawContent: string, isStreaming: boolean): string {
   // Derive whether bypass conditions are met (pure computation, no side effects)
   const shouldBypass = !isStreaming
     || bypassed
-    || (!!rawContent && STRUCTURED_BLOCK_RE.test(rawContent))
     || (!!rawContent && rawContent.split(/\s+/).filter(Boolean).length >= BUFFER_WORD_THRESHOLD);
 
   // Effect: sync bypass state when conditions are met (one-way latch, safe)
@@ -481,218 +402,17 @@ export function StreamingMessage({
         })}
 
         {/* Streaming text content rendered via Streamdown */}
-        {content && <div
-          className="contents"
-          data-assistant-final-answer
-          data-answer-complete={isStreaming ? "false" : "true"}
-        >{(() => {
-          // ── Show-widget handling ──
-          // During streaming: detect partial fences FIRST to avoid premature script execution.
-          // After streaming: use parseAllShowWidgets for completed fences only.
-          const hasWidgetFence = /`{1,3}show-widget/.test(content);
-
-          if (hasWidgetFence && isStreaming) {
-            // Fence-agnostic: find the last show-widget marker
-            const lastMarkerMatch = [...content.matchAll(/`{1,3}show-widget/g)].pop();
-            if (!lastMarkerMatch) return <MessageResponse>{content}</MessageResponse>;
-
-            const lastFenceStart = lastMarkerMatch.index!;
-            const afterLastFence = content.slice(lastFenceStart);
-            // Check if JSON is complete (has matching closing brace)
-            const jsonStart = afterLastFence.indexOf('{');
-            let lastFenceClosed = false;
-            if (jsonStart !== -1) {
-              let depth = 0, inStr = false, esc = false;
-              for (let i = jsonStart; i < afterLastFence.length; i++) {
-                const ch = afterLastFence[i];
-                if (esc) { esc = false; continue; }
-                if (ch === '\\' && inStr) { esc = true; continue; }
-                if (ch === '"') { inStr = !inStr; continue; }
-                if (inStr) continue;
-                if (ch === '{') depth++;
-                else if (ch === '}') { depth--; if (depth === 0) { lastFenceClosed = true; break; } }
-              }
-            }
-
-            if (lastFenceClosed) {
-              // All fences complete — parse and render the full content
-              const allSegments = parseAllShowWidgets(content);
-              return (
-                <>
-                  {allSegments.map((seg, i) => {
-                    if (seg.type === 'text') {
-                      return <MessageResponse key={`t-${i}`}>{seg.content}</MessageResponse>;
-                    }
-                    if (seg.type === 'malformed_widget') {
-                      return <MalformedWidgetNotice key={`mw-${i}`} reason={seg.reason} raw={seg.raw} />;
-                    }
-                    return <WidgetRenderer key={`w-${i}`} widgetCode={seg.data.widget_code} isStreaming={false} title={seg.data.title} />;
-                  })}
-                </>
-              );
-            }
-
-            // Last fence is still being streamed.
-            // Parse everything BEFORE it (completed fences + interleaved text).
-            const beforePart = content.slice(0, lastFenceStart).trim();
-            const hasCompletedFences = beforePart && /`{1,3}show-widget/.test(beforePart);
-            const completedSegments = hasCompletedFences ? parseAllShowWidgets(beforePart) : [];
-
-            // Extract partial widget_code from the open fence (skip marker)
-            const markerEnd = afterLastFence.match(/^`{1,3}show-widget`{0,3}\s*(?:\n\s*`{3}(?:json)?\s*)?\n?/);
-            const fenceBody = markerEnd ? afterLastFence.slice(markerEnd[0].length).trim() : afterLastFence.trim();
-            let partialCode: string | null = null;
-            const keyIdx = fenceBody.indexOf('"widget_code"');
-            if (keyIdx !== -1) {
-              const colonIdx = fenceBody.indexOf(':', keyIdx + 13);
-              if (colonIdx !== -1) {
-                const quoteIdx = fenceBody.indexOf('"', colonIdx + 1);
-                if (quoteIdx !== -1) {
-                  let raw = fenceBody.slice(quoteIdx + 1);
-                  raw = raw.replace(/"\s*\}\s*$/, '');
-                  if (raw.endsWith('\\')) raw = raw.slice(0, -1);
-                  try {
-                    partialCode = raw
-                      .replace(/\\\\/g, '\x00BACKSLASH\x00')
-                      .replace(/\\n/g, '\n')
-                      .replace(/\\t/g, '\t')
-                      .replace(/\\r/g, '\r')
-                      .replace(/\\"/g, '"')
-                      .replace(/\\u([0-9a-fA-F]{4})/g, (_: string, hex: string) => String.fromCharCode(parseInt(hex, 16)))
-                      .replace(/\x00BACKSLASH\x00/g, '\\');
-                  } catch { partialCode = null; }
-                }
-              }
-            }
-
-            // Truncate at any unclosed <script> to prevent script content
-            // from showing as visible text during streaming preview.
-            // Scripts always come last per guidelines, so truncating is safe.
-            let scriptsTruncated = false;
-            if (partialCode) {
-              const lastScript = partialCode.lastIndexOf('<script');
-              if (lastScript !== -1) {
-                const afterScript = partialCode.slice(lastScript);
-                if (!/<script[\s\S]*?<\/script>/i.test(afterScript)) {
-                  partialCode = partialCode.slice(0, lastScript).trim() || null;
-                  scriptsTruncated = true;
-                }
-              }
-            }
-
-            let partialTitle: string | undefined;
-            const titleMatch = fenceBody.match(/"title"\s*:\s*"([^"]*?)"/);
-            if (titleMatch) partialTitle = titleMatch[1];
-
-            // Key must match the map-index key that parseAllShowWidgets will produce
-            // once the fence closes, so React preserves the WidgetRenderer instance.
-            // See computePartialWidgetKey() for the invariant explanation.
-            const partialWidgetKey = computePartialWidgetKey(content);
-
-            return (
-              <>
-                {/* Plain text before the first widget fence (no completed fences yet) */}
-                {!hasCompletedFences && beforePart && (
-                  <MessageResponse key="pre-text">{beforePart}</MessageResponse>
-                )}
-                {/* Completed widget fences + interleaved text */}
-                {completedSegments.map((seg, i) => {
-                  if (seg.type === 'text') {
-                    return <MessageResponse key={`t-${i}`}>{seg.content}</MessageResponse>;
-                  }
-                  if (seg.type === 'malformed_widget') {
-                    return <MalformedWidgetNotice key={`mw-${i}`} reason={seg.reason} raw={seg.raw} />;
-                  }
-                  return <WidgetRenderer key={`w-${i}`} widgetCode={seg.data.widget_code} isStreaming={false} title={seg.data.title} />;
-                })}
-                {partialCode && partialCode.length > 10 ? (
-                  <WidgetRenderer key={partialWidgetKey} widgetCode={partialCode} isStreaming={true} title={partialTitle} showOverlay={scriptsTruncated} />
-                ) : (
-                  <Shimmer>{t('widget.loading')}</Shimmer>
-                )}
-              </>
-            );
-          }
-
-          if (hasWidgetFence && !isStreaming) {
-            // Non-streaming: all fences should be complete
-            const widgetSegments = parseAllShowWidgets(content);
-            if (widgetSegments.length > 0) {
-              return (
-                <>
-                  {widgetSegments.map((seg, i) => {
-                    if (seg.type === 'text') {
-                      return <MessageResponse key={`t-${i}`}>{seg.content}</MessageResponse>;
-                    }
-                    if (seg.type === 'malformed_widget') {
-                      return <MalformedWidgetNotice key={`mw-${i}`} reason={seg.reason} raw={seg.raw} />;
-                    }
-                    return <WidgetRenderer key={`w-${i}`} widgetCode={seg.data.widget_code} isStreaming={false} title={seg.data.title} />;
-                  })}
-                </>
-              );
-            }
-          }
-
-          // Try batch-plan (Image Agent batch mode)
-          const batchPlanResult = parseBatchPlan(content);
-          if (batchPlanResult) {
-            return (
-              <>
-                {batchPlanResult.beforeText && <MessageResponse>{batchPlanResult.beforeText}</MessageResponse>}
-                <BatchPlanInlinePreview plan={batchPlanResult.plan} messageId="streaming-preview" />
-                {batchPlanResult.afterText && <MessageResponse>{batchPlanResult.afterText}</MessageResponse>}
-              </>
-            );
-          }
-
-          // Try image-gen-request
-          const parsed = parseImageGenRequest(content);
-          if (parsed) {
-            const refs = buildReferenceImages(
-              PENDING_KEY,
-              sessionId || '',
-              parsed.request.useLastGenerated || false,
-              parsed.request.referenceImages,
-            );
-            return (
-              <>
-                {parsed.beforeText && <MessageResponse>{parsed.beforeText}</MessageResponse>}
-                <ImageGenConfirmation
-                  sessionId={sessionId}
-                  initialPrompt={parsed.request.prompt}
-                  initialAspectRatio={parsed.request.aspectRatio}
-                  initialResolution={parsed.request.resolution}
-                  rawRequestBlock={parsed.rawBlock}
-                  referenceImages={refs.length > 0 ? refs : undefined}
-                />
-                {parsed.afterText && <MessageResponse>{parsed.afterText}</MessageResponse>}
-              </>
-            );
-          }
-          // Strip partial or unparseable code fence blocks to avoid Shiki errors
-          if (isStreaming) {
-            const hasImageGenBlock = /```image-gen-request/.test(content);
-            const hasBatchPlanBlock = /```batch-plan/.test(content);
-            // Use bufferedContent for plain text to avoid initial character flicker
-            const textToRender = bufferedContent || '';
-            const stripped = textToRender
-              .replace(/```image-gen-request[\s\S]*$/, '')
-              .replace(/```batch-plan[\s\S]*$/, '')
-              .replace(/```show-widget[\s\S]*$/, '')
-              .trim();
-            if (stripped) return <MessageResponse key="pre-text">{stripped}</MessageResponse>;
-            // Show shimmer while the structured block is being streamed
-            if (hasImageGenBlock || hasBatchPlanBlock) return <Shimmer>{t('streaming.thinking')}</Shimmer>;
-            return null;
-          }
-          const stripped = content
-            .replace(/```image-gen-request[\s\S]*?```/g, '')
-            .replace(/```batch-plan[\s\S]*?```/g, '')
-            .replace(/```show-widget[\s\S]*?(```|$)/g, '')
-            .trim();
-          return stripped ? <MessageResponse>{stripped}</MessageResponse> : null;
-        })()}</div>}
+        {content && (
+          <div
+            className="contents"
+            data-assistant-final-answer
+            data-answer-complete={isStreaming ? "false" : "true"}
+          >
+            {(isStreaming ? bufferedContent : content) && (
+              <MessageResponse>{isStreaming ? bufferedContent : content}</MessageResponse>
+            )}
+          </div>
+        )}
 
         {/* Loading indicator when no content yet and no thinking content — evolves over time */}
         {isStreaming && !content && toolUses.length === 0 && !thinkingContent && (
@@ -701,22 +421,10 @@ export function StreamingMessage({
           </div>
         )}
 
-        {/* Status bar during streaming — priority: tool status > widget > generating > thinking */}
+        {/* Status bar during streaming — priority: tool status > generating > waiting */}
         {isStreaming && !hasProcessActivity && statusText !== '已处理' && <StreamingStatusBar statusText={
           statusText
           || getRunningCommandSummary()
-          || (content && /```show-widget/.test(content) ? (() => {
-            // Detect if scripts are being streamed (unclosed <script> in the last open fence)
-            const lastFence = content.lastIndexOf('```show-widget');
-            if (lastFence !== -1) {
-              const after = content.slice(lastFence);
-              const fenceClosed = /```show-widget\s*\n?[\s\S]*?\n?\s*```/.test(after);
-              if (!fenceClosed && /<script\b/i.test(after)) {
-                return t('widget.addingInteractivity');
-              }
-            }
-            return t('widget.streaming');
-          })() : undefined)
           || (content && content.length > 0 ? t('streaming.generating') : undefined)
         } onForceStop={onForceStop} startedAt={startedAt} />}
       </MessageContent>

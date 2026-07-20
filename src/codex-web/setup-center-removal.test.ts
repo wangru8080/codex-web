@@ -20,7 +20,6 @@ describe("首次设置弹窗移除", () => {
     const emptyState = source("src/components/chat/ChatEmptyState.tsx");
     const streamManager = source("src/lib/stream-session-manager.ts");
     const about = source("src/components/settings/AboutSection.tsx");
-    const connectionStatus = source("src/components/layout/ConnectionStatus.tsx");
 
     expect(emptyState).toContain("window.location.assign('/settings/codex')");
     expect(streamManager).toContain("window.location.assign('/settings/codex')");
@@ -28,7 +27,7 @@ describe("首次设置弹窗移除", () => {
     expect(streamManager).not.toContain("open-setup-center");
     expect(about).not.toContain("about.support.runSetupWizard");
     expect(about).not.toContain("open-setup-center");
-    expect(connectionStatus).not.toContain("open-setup-center");
+    expect(existsSync(resolve(process.cwd(), "src/components/layout/ConnectionStatus.tsx"))).toBe(false);
   });
 
   it("移除弹窗专用组件、类型和翻译键", () => {
