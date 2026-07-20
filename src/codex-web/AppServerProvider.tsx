@@ -69,7 +69,9 @@ import {
   sourcedApproval,
 } from "./approval-queue-adapter";
 import {
+  isRunningActiveTurn,
   rememberActiveTurnByThread,
+  removeActiveTurnByThread,
   removeStartingActiveTurnByThread,
   sourcedActiveTurn,
 } from "./active-turns-adapter";
@@ -90,10 +92,12 @@ import type {
   TurnStartParamsWithCollaborationMode,
 } from "./app-server-request-overrides";
 import {
+  requestTurnInterrupt,
   selectTurnInterruptParams,
   type InterruptTurnParams,
 } from "./interrupt-adapter";
 import { buildThreadResumeParams } from "./resume-adapter";
+import { activeTurnFromResume } from "./resumed-turn-hydration";
 import {
   appServerTurnSnapshotKey,
   createAcceptedTurnState,
@@ -121,6 +125,7 @@ import {
   reduceCrossClientUserMessage,
   type CrossClientUserMessage,
 } from "./cross-client-sync";
+import { reconnectDelayMs } from "./reconnect-policy";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -272,8 +277,26 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     }
 
     let disposed = false;
+    let reconnectAttempt = 0;
+    let reconnectTimer: number | null = null;
+    let bootstrapping = false;
     const client = new AppServerBrowserClient(bridgeUrl);
     clientRef.current = client;
+    client.onClose((error) => {
+      if (disposed) return;
+      const message = error.message;
+      setState((current) => ({
+        ...current,
+        connection: { source: "web-bridge", data: "reconnecting" },
+        pendingApprovals: [],
+        pendingApproval: null,
+        diagnostics: appendDiagnostic(current.diagnostics, {
+          source: "web-bridge",
+          data: { message },
+        }),
+      }));
+      scheduleReconnect();
+    });
     client.onServerRequest((request) => {
       const approval = mapServerRequestToPendingRequest(request);
       if (!approval) {
@@ -408,8 +431,27 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       });
     });
 
-    async function bootstrap() {
-      setState((current) => ({ ...current, connection: { source: "web-bridge", data: "connecting" } }));
+    function scheduleReconnect() {
+      if (disposed || reconnectTimer !== null) {
+        return;
+      }
+      const delay = reconnectDelayMs(reconnectAttempt);
+      reconnectAttempt += 1;
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        void bootstrap(true);
+      }, delay);
+    }
+
+    async function bootstrap(isReconnect = false) {
+      if (disposed || bootstrapping) {
+        return;
+      }
+      bootstrapping = true;
+      setState((current) => ({
+        ...current,
+        connection: { source: "web-bridge", data: isReconnect ? "reconnecting" : "connecting" },
+      }));
       try {
         await client.connect();
         const initialize = (await client.request("initialize", {
@@ -428,6 +470,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        reconnectAttempt = 0;
         setState((current) => ({
           ...current,
           connection: { source: "web-bridge", data: "connected" },
@@ -443,12 +486,15 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         }
         setState((current) => ({
           ...current,
-          connection: { source: "web-bridge", data: "failed" },
+          connection: { source: "web-bridge", data: "reconnecting" },
           diagnostics: appendDiagnostic(current.diagnostics, {
             source: "web-bridge",
             data: { message: error instanceof Error ? error.message : String(error) },
           }),
         }));
+        scheduleReconnect();
+      } finally {
+        bootstrapping = false;
       }
     }
 
@@ -456,6 +502,9 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       disposed = true;
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
       clientRef.current = null;
       approvalResponseStateRef.current = {};
       client.close();
@@ -981,11 +1030,38 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         runtimeOptions,
       }),
     )) as ThreadResumeResponse;
-    setState((current) => ({
-      ...current,
-      resumedThread: { source: "app-server.thread/resume", data: response },
-      selectedThread: { source: "app-server.thread/resume", data: { thread: response.thread } },
-    }));
+    const resumedActiveTurn = activeTurnFromResume(response);
+    setState((current) => {
+      const currentActiveTurn = current.activeTurn?.data;
+      const shouldClearCurrent =
+        !resumedActiveTurn &&
+        currentActiveTurn?.threadId === response.thread.id &&
+        isRunningActiveTurn(currentActiveTurn);
+      return {
+        ...current,
+        resumedThread: { source: "app-server.thread/resume", data: response },
+        selectedThread: { source: "app-server.thread/resume", data: { thread: response.thread } },
+        activeTurn: resumedActiveTurn
+          ? sourcedActiveTurn(resumedActiveTurn, "app-server.thread/resume")
+          : shouldClearCurrent
+            ? null
+            : current.activeTurn,
+        activeTurnsByThreadId: resumedActiveTurn
+          ? rememberActiveTurnByThread(
+              current.activeTurnsByThreadId,
+              resumedActiveTurn,
+              "app-server.thread/resume",
+            )
+          : removeActiveTurnByThread(current.activeTurnsByThreadId, response.thread.id),
+        turnSnapshots: resumedActiveTurn
+          ? rememberTurnSnapshot(
+              current.turnSnapshots,
+              resumedActiveTurn,
+              "app-server.thread/resume",
+            )
+          : current.turnSnapshots,
+      };
+    });
     return response;
   }, []);
 
@@ -1122,10 +1198,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    await client.request(
-      "turn/interrupt",
+    await requestTurnInterrupt(
+      (requestParams) => client.request("turn/interrupt", requestParams) as Promise<TurnInterruptResponse>,
       interruptParams,
-    ) as TurnInterruptResponse;
+    );
   }, [state.activeTurn, state.activeTurnsByThreadId]);
 
   const publishCrossClientUserMessage = useCallback((event: CrossClientUserMessage) => {
@@ -1261,6 +1337,7 @@ function selectNotificationBaseTurn(
 function rememberTurnSnapshot(
   snapshots: CodexWebAppServerState["turnSnapshots"],
   turn: AppServerTurnState,
+  source: "app-server.notification" | "app-server.thread/resume" = "app-server.notification",
 ): CodexWebAppServerState["turnSnapshots"] {
   if (!turn.threadId || !turn.turnId) {
     return snapshots;
@@ -1269,7 +1346,7 @@ function rememberTurnSnapshot(
   return {
     ...snapshots,
     [appServerTurnSnapshotKey(turn.threadId, turn.turnId)]: {
-      source: "app-server.notification",
+      source,
       data: turn,
     },
   };

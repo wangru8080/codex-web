@@ -33,6 +33,7 @@ const bridgePort =
     : 0;
 const bridgeUrl = `ws://${publicHost}:${bridgePort}?token=${bridge.token}`;
 console.log(`Codex Web bridge: ${bridgeUrl}`);
+console.log(`Codex app-server PID: ${bridge.appServerPid ?? "未知"}`);
 
 const next = spawn("next", ["dev"], {
   stdio: "inherit",

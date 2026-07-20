@@ -78,6 +78,7 @@ if (!address || typeof address === "string") throw new Error("生产 Server 未�
 const actualPort = address.port;
 console.log(`Codex Web: http://${publicHost}:${actualPort}`);
 console.log(`Codex Web bridge: ws://${publicHost}:${actualPort}${bridgePath}?token=${bridge.token}`);
+console.log(`Codex app-server PID: ${bridge.appServerPid ?? "未知"}`);
 console.log(`Codex Web CODEX_HOME: ${process.env.CODEX_HOME}`);
 
 let closing = false;

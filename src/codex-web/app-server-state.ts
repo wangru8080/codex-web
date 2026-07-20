@@ -42,7 +42,7 @@ export type Sourced<T> = {
   data: T;
 };
 
-export type ConnectionStatus = "idle" | "connecting" | "connected" | "failed";
+export type ConnectionStatus = "idle" | "connecting" | "reconnecting" | "connected" | "failed";
 
 export type CodexWebAppServerState = {
   connection: Sourced<ConnectionStatus>;

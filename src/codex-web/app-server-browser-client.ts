@@ -11,6 +11,7 @@ export class AppServerBrowserClient {
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
   private readonly notificationListeners = new Set<(notification: JsonRpcNotification) => void>();
   private readonly serverRequestListeners = new Set<(request: JsonRpcRequest) => void>();
+  private readonly closeListeners = new Set<(error: Error) => void>();
 
   constructor(private readonly url: string) {}
 
@@ -19,18 +20,15 @@ export class AppServerBrowserClient {
       return;
     }
 
-    this.socket = new WebSocket(this.url);
-    this.socket.addEventListener("message", (event) => this.handleMessage(event.data));
-    this.socket.addEventListener("close", () => this.rejectAll(new Error("Web bridge 连接已关闭")));
-    this.socket.addEventListener("error", () => this.rejectAll(new Error("Web bridge 连接失败")));
+    const socket = new WebSocket(this.url);
+    this.socket = socket;
+    socket.addEventListener("message", (event) => this.handleMessage(event.data));
+    socket.addEventListener("close", () => this.reportClose(socket, new Error("Web bridge 连接已关闭")));
+    socket.addEventListener("error", () => this.reportClose(socket, new Error("Web bridge 连接失败")));
 
     await new Promise<void>((resolve, reject) => {
-      if (!this.socket) {
-        reject(new Error("Web bridge socket 未创建"));
-        return;
-      }
-      this.socket.addEventListener("open", () => resolve(), { once: true });
-      this.socket.addEventListener("error", () => reject(new Error("Web bridge 连接失败")), { once: true });
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("Web bridge 连接失败")), { once: true });
     });
   }
 
@@ -63,6 +61,11 @@ export class AppServerBrowserClient {
     return () => this.serverRequestListeners.delete(listener);
   }
 
+  onClose(listener: (error: Error) => void): () => void {
+    this.closeListeners.add(listener);
+    return () => this.closeListeners.delete(listener);
+  }
+
   respond(id: JsonRpcId, result: unknown): void {
     this.send({ id, result });
   }
@@ -72,8 +75,10 @@ export class AppServerBrowserClient {
   }
 
   close(): void {
-    this.socket?.close();
+    const socket = this.socket;
     this.socket = null;
+    socket?.close();
+    this.rejectAll(new Error("Web bridge 连接已关闭"));
   }
 
   private send(message: unknown): void {
@@ -128,5 +133,16 @@ export class AppServerBrowserClient {
       pending.reject(error);
     }
     this.pending.clear();
+  }
+
+  private reportClose(socket: WebSocket, error: Error): void {
+    if (this.socket !== socket) {
+      return;
+    }
+    this.socket = null;
+    this.rejectAll(error);
+    for (const listener of this.closeListeners) {
+      listener(error);
+    }
   }
 }

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  failRunningTurnOnTransportClose,
+  failRunningTurnsOnTransportClose,
   rememberActiveTurnByThread,
+  removeActiveTurnByThread,
   removeStartingActiveTurnByThread,
   selectActiveTurnByThreadIds,
   selectOtherRunningActiveTurns,
@@ -43,6 +46,17 @@ describe("active-turns-adapter", () => {
     expect(selectActiveTurnByThreadIds(next, ["thread-b"])).toBe(running);
   });
 
+  it("resume 确认没有运行 Turn 时只移除对应 thread", () => {
+    const turnA = createAcceptedTurnState("thread-a", "turn-a");
+    const turnB = createAcceptedTurnState("thread-b", "turn-b");
+    const activeTurns = rememberActiveTurnByThread(rememberActiveTurnByThread({}, turnA), turnB);
+
+    const next = removeActiveTurnByThread(activeTurns, "thread-a");
+
+    expect(next["thread-a"]).toBeUndefined();
+    expect(next["thread-b"]?.data).toBe(turnB);
+  });
+
   it("列出当前 thread 之外的 running turn", () => {
     const runningA = createAcceptedTurnState("thread-a", "turn-a");
     const runningB = createAcceptedTurnState("thread-b", "turn-b");
@@ -77,5 +91,37 @@ describe("active-turns-adapter", () => {
     expect(selectActiveTurnByThreadIds(activeTurns, ["thread-a"])).toBe(failedA);
     expect(selectActiveTurnByThreadIds(activeTurns, ["thread-b"])).toBe(completedB);
     expect(selectOtherRunningActiveTurns(activeTurns, ["thread-a"])).toEqual([]);
+  });
+
+  it("transport close 将 starting 和 running 标为 web-bridge 失败终态", () => {
+    const starting = { ...createStartingTurnState(), threadId: "thread-a" };
+    const running = createAcceptedTurnState("thread-b", "turn-b");
+    const activeTurns = [starting, running].reduce(
+      (map, turn) => rememberActiveTurnByThread(map, turn),
+      {},
+    );
+
+    const next = failRunningTurnsOnTransportClose(activeTurns, "Web bridge 连接已关闭");
+
+    expect(next["thread-a"]).toMatchObject({
+      source: "web-bridge",
+      data: { status: "failed", errorMessage: "Web bridge 连接已关闭" },
+    });
+    expect(next["thread-b"]).toMatchObject({
+      source: "web-bridge",
+      data: { status: "failed", errorMessage: "Web bridge 连接已关闭" },
+    });
+  });
+
+  it("transport close 保持已完成 Turn 不变", () => {
+    const completed = {
+      source: "app-server.notification" as const,
+      data: {
+        ...createAcceptedTurnState("thread-a", "turn-a"),
+        status: "completed" as const,
+      },
+    };
+
+    expect(failRunningTurnOnTransportClose(completed, "Web bridge 连接已关闭")).toBe(completed);
   });
 });

@@ -13,6 +13,7 @@ vi.mock("./codex-process", async () => {
   return {
     startCodexAppServer: () => {
       const child = Object.assign(new EventEmitter(), {
+        pid: 43210,
         stdin: new PassThrough(),
         stdout: new PassThrough(),
         stderr: new PassThrough(),
@@ -61,6 +62,7 @@ describe("createWebSocketBridge 共享 Server", () => {
     await listen(server);
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("共享 Server 未返回端口");
+    expect(bridge.appServerPid).toBe(43210);
 
     await expect(rawUpgrade(address.port, "/wrong?token=secret")).resolves.toContain("426 Upgrade Required");
     await expect(rawUpgrade(address.port, "/codex-bridge?token=wrong")).resolves.toContain("401 bridge token 无效");
@@ -85,45 +87,90 @@ describe("createWebSocketBridge 共享 Server", () => {
     clientA.on("message", (data) => messagesA.push(JSON.parse(data.toString())));
     clientB.on("message", (data) => messagesB.push(JSON.parse(data.toString())));
 
-    const appServerA = fakeAppServers[0] as FakeAppServer;
-    const appServerB = fakeAppServers[1] as FakeAppServer;
-    appServerA.child.stdout.write(`${JSON.stringify({ method: "turn/started", params: { threadId: "thread-1" } })}\n`);
+    expect(fakeAppServers).toHaveLength(1);
+    const appServer = fakeAppServers[0] as FakeAppServer;
+    appServer.child.stdout.write(`${JSON.stringify({ method: "turn/started", params: { threadId: "thread-1" } })}\n`);
     await waitFor(() => messagesA.length === 1 && messagesB.length === 1);
     expect(messagesA[0]).toEqual(messagesB[0]);
 
-    appServerA.child.stdout.write(`${JSON.stringify({ id: 7, result: { ok: true } })}\n`);
-    await waitFor(() => messagesA.length === 2);
-    expect(messagesA[1]).toEqual({ id: 7, result: { ok: true } });
-    expect(messagesB).toHaveLength(1);
+    const writes: Array<Record<string, unknown>> = [];
+    appServer.child.stdin.on("data", (data) => writes.push(JSON.parse(data.toString())));
+    clientA.send(JSON.stringify({ id: 7, method: "thread/read", params: { threadId: "thread-a" } }));
+    clientB.send(JSON.stringify({ id: 7, method: "thread/read", params: { threadId: "thread-b" } }));
+    await waitFor(() => writes.length === 2);
+    expect(writes[0]?.id).not.toBe(writes[1]?.id);
+
+    appServer.child.stdout.write(`${JSON.stringify({ id: writes[1]?.id, result: { thread: "thread-b" } })}\n`);
+    await waitFor(() => messagesB.length === 2);
+    expect(messagesB[1]).toEqual({ id: 7, result: { thread: "thread-b" } });
+    expect(messagesA).toHaveLength(1);
 
     clientA.send(JSON.stringify({ method: "bridge/sync/userMessage", params: { threadId: "thread-1" } }));
-    await waitFor(() => messagesB.length === 2);
-    expect(messagesB[1]).toMatchObject({ method: "bridge/sync/userMessage" });
-    expect(messagesA).toHaveLength(2);
+    await waitFor(() => messagesB.length === 3);
+    expect(messagesB[2]).toMatchObject({ method: "bridge/sync/userMessage" });
+    expect(messagesA).toHaveLength(1);
 
-    const writesA: Array<Record<string, unknown>> = [];
-    const writesB: Array<Record<string, unknown>> = [];
-    appServerA.child.stdin.on("data", (data) => writesA.push(JSON.parse(data.toString())));
-    appServerB.child.stdin.on("data", (data) => writesB.push(JSON.parse(data.toString())));
-    appServerA.child.stdout.write(`${JSON.stringify({
+    appServer.child.stdout.write(`${JSON.stringify({
       id: 99,
       method: "item/commandExecution/requestApproval",
       params: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1" },
     })}\n`);
-    await waitFor(() => messagesA.length === 3 && messagesB.length === 3);
-    const publicId = messagesB[2].id;
+    await waitFor(() => messagesA.length === 2 && messagesB.length === 4);
+    const publicId = messagesB[3].id;
     expect(publicId).toMatch(/^bridge-server-request:/);
 
     clientB.send(JSON.stringify({ id: publicId, result: { decision: "accept" } }));
-    await waitFor(() => writesA.length === 1 && messagesA.length === 4 && messagesB.length === 4);
-    expect(writesA[0]).toEqual({ id: 99, result: { decision: "accept" } });
-    expect(writesB).toHaveLength(0);
-    expect(messagesA[3]).toEqual({ method: "serverRequest/resolved", params: { requestId: publicId } });
+    await waitFor(() => writes.length === 3 && messagesA.length === 3 && messagesB.length === 5);
+    expect(writes[2]).toEqual({ id: 99, result: { decision: "accept" } });
+    expect(messagesA[2]).toEqual({ method: "serverRequest/resolved", params: { requestId: publicId } });
 
     clientA.send(JSON.stringify({ id: publicId, result: { decision: "decline" } }));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(writesA).toHaveLength(1);
-    expect(writesB).toHaveLength(0);
+    expect(writes).toHaveLength(3);
+
+    clientA.close();
+    clientB.close();
+    await waitFor(() => clientA.readyState === WebSocket.CLOSED && clientB.readyState === WebSocket.CLOSED);
+    expect(appServer.stop).not.toHaveBeenCalled();
+
+    await bridge.close();
+    expect(appServer.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("缓存 initialize 响应，并向重连客户端重放未决 server request", async () => {
+    const bridge = createWebSocketBridge({ host: "127.0.0.1", token: "secret", allowRemoteConnections: true });
+    await waitUntilListening(bridge.server);
+    const socketUrl = `${bridge.url()}?token=secret`;
+    const appServer = fakeAppServers[0] as FakeAppServer;
+    const writes: Array<Record<string, unknown>> = [];
+    appServer.child.stdin.on("data", (data) => writes.push(JSON.parse(data.toString())));
+
+    const first = await openWebSocket(socketUrl);
+    const firstMessages: Array<Record<string, unknown>> = [];
+    first.on("message", (data) => firstMessages.push(JSON.parse(data.toString())));
+    first.send(JSON.stringify({ id: 1, method: "initialize", params: { clientInfo: { name: "test" } } }));
+    await waitFor(() => writes.length === 1);
+    appServer.child.stdout.write(`${JSON.stringify({ id: writes[0]?.id, result: { userAgent: "codex-test" } })}\n`);
+    await waitFor(() => firstMessages.length === 1);
+    first.close();
+    await waitFor(() => first.readyState === WebSocket.CLOSED);
+
+    appServer.child.stdout.write(`${JSON.stringify({
+      id: 77,
+      method: "item/commandExecution/requestApproval",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1" },
+    })}\n`);
+
+    const secondMessages: Array<Record<string, unknown>> = [];
+    const second = await openWebSocket(socketUrl, secondMessages);
+    await waitFor(() => secondMessages.some((message) => message.method === "item/commandExecution/requestApproval"));
+    second.send(JSON.stringify({ id: 9, method: "initialize", params: { clientInfo: { name: "test" } } }));
+    await waitFor(() => secondMessages.some((message) => message.id === 9));
+    expect(writes).toHaveLength(1);
+    expect(secondMessages.find((message) => message.id === 9)).toEqual({
+      id: 9,
+      result: { userAgent: "codex-test" },
+    });
 
     await bridge.close();
   });
@@ -134,6 +181,7 @@ type FakeAppServer = {
     stdin: PassThrough;
     stdout: PassThrough;
   };
+  stop: ReturnType<typeof vi.fn>;
 };
 
 function waitUntilListening(server: Server): Promise<void> {
@@ -141,9 +189,12 @@ function waitUntilListening(server: Server): Promise<void> {
   return new Promise((resolve) => server.once("listening", resolve));
 }
 
-function openWebSocket(url: string): Promise<WebSocket> {
+function openWebSocket(url: string, messages?: Array<Record<string, unknown>>): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(url, { origin: "http://127.0.0.1:3000" });
+    if (messages) {
+      socket.on("message", (data) => messages.push(JSON.parse(data.toString())));
+    }
     socket.once("open", () => resolve(socket));
     socket.once("error", reject);
   });

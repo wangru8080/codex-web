@@ -1,15 +1,19 @@
-import type { Sourced } from "./app-server-state";
+import type { SourceBreadcrumb, Sourced } from "./app-server-state";
 import type { AppServerTurnState } from "./turn-reducer";
 
 export type ActiveTurnsByThreadId = Record<string, Sourced<AppServerTurnState>>;
 
-export function sourcedActiveTurn(turn: AppServerTurnState): Sourced<AppServerTurnState> {
-  return { source: "app-server.notification", data: turn };
+export function sourcedActiveTurn(
+  turn: AppServerTurnState,
+  source: SourceBreadcrumb = "app-server.notification",
+): Sourced<AppServerTurnState> {
+  return { source, data: turn };
 }
 
 export function rememberActiveTurnByThread(
   activeTurns: ActiveTurnsByThreadId,
   turn: AppServerTurnState,
+  source: SourceBreadcrumb = "app-server.notification",
 ): ActiveTurnsByThreadId {
   if (!turn.threadId) {
     return activeTurns;
@@ -17,8 +21,51 @@ export function rememberActiveTurnByThread(
 
   return {
     ...activeTurns,
-    [turn.threadId]: sourcedActiveTurn(turn),
+    [turn.threadId]: sourcedActiveTurn(turn, source),
   };
+}
+
+export function removeActiveTurnByThread(
+  activeTurns: ActiveTurnsByThreadId,
+  threadId: string,
+): ActiveTurnsByThreadId {
+  if (!activeTurns[threadId]) {
+    return activeTurns;
+  }
+  const next = { ...activeTurns };
+  delete next[threadId];
+  return next;
+}
+
+export function failRunningTurnOnTransportClose(
+  turn: Sourced<AppServerTurnState> | null,
+  message: string,
+): Sourced<AppServerTurnState> | null {
+  if (!turn || !isRunningActiveTurn(turn.data)) {
+    return turn;
+  }
+
+  return {
+    source: "web-bridge",
+    data: {
+      ...turn.data,
+      status: "failed",
+      errorMessage: message,
+    },
+  };
+}
+
+export function failRunningTurnsOnTransportClose(
+  turns: ActiveTurnsByThreadId,
+  message: string,
+): ActiveTurnsByThreadId {
+  let changed = false;
+  const next = Object.fromEntries(Object.entries(turns).map(([key, turn]) => {
+    const failed = failRunningTurnOnTransportClose(turn, message);
+    changed ||= failed !== turn;
+    return [key, failed];
+  })) as ActiveTurnsByThreadId;
+  return changed ? next : turns;
 }
 
 export function removeStartingActiveTurnByThread(

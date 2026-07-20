@@ -2,13 +2,9 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import WebSocket, { WebSocketServer } from "ws";
 
-import { startCodexAppServer, type CodexProcessOptions } from "./codex-process";
-import {
-  appServerMessageDelivery,
-  BridgeServerRequestRouter,
-  isBridgeSyncNotification,
-} from "./bridge-message-routing";
-import { JsonRpcClient } from "./json-rpc-client";
+import type { CodexProcessOptions } from "./codex-process";
+import { isBridgeSyncNotification } from "./bridge-message-routing";
+import { PersistentAppServer } from "./persistent-app-server";
 import { validateBridgeRequest } from "./security";
 import type { JsonRpcMessage, JsonRpcResponse } from "../src/codex/protocol/json-rpc";
 
@@ -29,6 +25,7 @@ export type WebSocketBridgeOptions = CodexProcessOptions & {
 export type WebSocketBridge = {
   server: Server;
   token: string;
+  appServerPid: number | undefined;
   url: () => string;
   close: () => Promise<void>;
 };
@@ -42,7 +39,6 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
   });
   const bridgePath = options.path ?? "/";
   const sockets = new Set<WebSocket>();
-  const serverRequestRouter = new BridgeServerRequestRouter<JsonRpcClient>();
   const wsServer = new WebSocketServer({ noServer: true });
   const broadcast = (message: JsonRpcMessage, excludedSocket?: WebSocket) => {
     const serialized = JSON.stringify(message);
@@ -52,6 +48,7 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
       }
     }
   };
+  const appServer = new PersistentAppServer(options);
 
   const handleUpgrade = (request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -77,8 +74,12 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
 
   wsServer.on("connection", (webSocket, request) => {
     sockets.add(webSocket);
-    attachAppServer(webSocket, request, options, serverRequestRouter, broadcast);
-    webSocket.on("close", () => sockets.delete(webSocket));
+    appServer.attach(webSocket);
+    attachClient(webSocket, request, options, appServer, broadcast);
+    webSocket.on("close", () => {
+      sockets.delete(webSocket);
+      appServer.detach(webSocket);
+    });
   });
 
   const host = options.host ?? "127.0.0.1";
@@ -88,6 +89,7 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
   return {
     server,
     token,
+    appServerPid: appServer.pid,
     url: () => {
       const address = server.address();
       if (typeof address !== "object" || address === null) {
@@ -97,6 +99,7 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
     },
     close: () => new Promise((resolve, reject) => {
       const finish = () => {
+        appServer.close();
         wsServer.removeAllListeners();
         if (!ownsServer || !server.listening) {
           resolve();
@@ -129,41 +132,13 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
   };
 }
 
-function attachAppServer(
+function attachClient(
   webSocket: WebSocket,
   _request: IncomingMessage,
   options: WebSocketBridgeOptions,
-  serverRequestRouter: BridgeServerRequestRouter<JsonRpcClient>,
+  appServer: PersistentAppServer,
   broadcast: (message: JsonRpcMessage, excludedSocket?: WebSocket) => void,
 ): void {
-  const process = startCodexAppServer(options);
-  const rpc = new JsonRpcClient({
-    input: process.child.stdout,
-    output: process.child.stdin,
-    closeEmitter: process.child,
-  });
-
-  rpc.on("message", (message) => {
-    const delivery = appServerMessageDelivery(message);
-    if (delivery === "broadcast") {
-      broadcast(message);
-      return;
-    }
-    if (delivery === "server-request" && "method" in message && message.id !== undefined) {
-      const publicId = serverRequestRouter.register(rpc, message.id);
-      broadcast({ ...message, id: publicId });
-      return;
-    }
-    if (webSocket.readyState === WebSocket.OPEN) {
-      webSocket.send(JSON.stringify(message));
-    }
-  });
-  rpc.on("error", (error) => sendBridgeError(webSocket, error.message));
-  rpc.on("close", (error) => {
-    serverRequestRouter.deleteOwner(rpc);
-    sendBridgeError(webSocket, error?.message ?? "app-server 已关闭");
-  });
-
   webSocket.on("message", (data) => {
     try {
       const text = data.toString("utf8");
@@ -172,29 +147,15 @@ function attachAppServer(
         broadcast(message, webSocket);
         return;
       }
-      if (!("method" in message) && serverRequestRouter.isPublicId(message.id)) {
-        const route = serverRequestRouter.take(message.id);
-        if (route) {
-          broadcast({ method: "serverRequest/resolved", params: { requestId: message.id } });
-          route.owner.sendRaw({ ...message, id: route.originalId });
-        }
-        return;
-      }
       const intercepted = options.clientMessageInterceptor?.(message);
       if (intercepted) {
         webSocket.send(JSON.stringify(intercepted));
         return;
       }
-      rpc.sendRaw(message);
+      appServer.handleClientMessage(webSocket, message);
     } catch (error) {
       sendBridgeError(webSocket, error instanceof Error ? error.message : String(error));
     }
-  });
-
-  webSocket.on("close", () => {
-    serverRequestRouter.deleteOwner(rpc);
-    rpc.close(new Error("浏览器连接已关闭"));
-    process.stop();
   });
 }
 

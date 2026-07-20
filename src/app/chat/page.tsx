@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { Message, PermissionRequestEvent, FileAttachment, MentionRef, PermissionProfile, SkillInputReference } from '@/types';
 import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput, composerDraftKey } from '@/components/chat/MessageInput';
@@ -65,6 +65,7 @@ export default function NewChatPage() {
 }
 
 function NewChatPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const prefillText = searchParams.get('prefill') || '';
   const initialSkill = useMemo(() => {
@@ -820,6 +821,9 @@ function NewChatPageInner() {
         }
         if (acceptedTurn.threadId) {
           setCreatedSessionId(acceptedTurn.threadId);
+          if (!existingThreadId) {
+            router.push(`/chat/${encodeURIComponent(acceptedTurn.threadId)}`);
+          }
         }
         handoffToAppServerTurn = true;
       } catch (error) {
@@ -852,7 +856,7 @@ function NewChatPageInner() {
         }
       }
     },
-    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, selectedEffort, mode, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread, publishCrossClientUserMessage]
+    [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, selectedEffort, mode, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread, publishCrossClientUserMessage, router]
   );
 
   const appServerGoal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId] ?? null : null;
