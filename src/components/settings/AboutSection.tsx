@@ -6,14 +6,11 @@
  * Pulls together pieces that used to be scattered through General:
  *   - Version + check-for-updates  (was UpdateCard at top of General)
  *   - Account info                  (was Account card at bottom of General)
- *   - Chat history import           (recently moved to General; lands here)
  *   - Platform info                 (new — install channel + OS)
- *   - Diagnostic / log export       (new — entry to Setup Center diagnose flow)
- *   - Documentation / GitHub / Feedback (new — external links)
  *
  * Goal: General is now strictly "application behavior"; About is
- * "what version am I running, where do I go for help, how do I see
- * my account." The two surfaces stay clean separately.
+ * "what version am I running and how do I see my account."
+ * The two surfaces stay clean separately.
  */
 
 import { useState, useEffect } from "react";
@@ -21,12 +18,10 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useUpdate } from "@/hooks/useUpdate";
 import { useAccountInfo } from "@/hooks/useAccountInfo";
 import { Button } from "@/components/ui/button";
-import { ArrowSquareOut, SpinnerGap } from "@/components/ui/icon";
+import { SpinnerGap } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { MonolithIcon } from "@/components/brand/MonolithIcon";
 import { SettingsCard } from "@/components/patterns/SettingsCard";
-import { ImportSessionDialog } from "@/components/layout/ImportSessionDialog";
-import { showToast } from "@/hooks/useToast";
 import type { TranslationKey } from "@/i18n";
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.1.0";
@@ -60,109 +55,19 @@ export function AboutSection() {
     setShowDialog,
   } = useUpdate();
   const { accountInfo } = useAccountInfo();
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [platform, setPlatform] = useState<{ os: string; channel: string }>({
     os: "—",
     channel: "—",
   });
-  const [exportingDiagnostics, setExportingDiagnostics] = useState(false);
-  const [logPath, setLogPath] = useState<string | null>(null);
 
   useEffect(() => {
     setPlatform(detectPlatform());
   }, []);
 
-  // Resolve the persistent log path lazily on mount. Browser / dev
-  // contexts (no Electron preload) leave this null and we hide the
-  // "Open log folder" button; the diagnostic-bundle export is the
-  // fallback action there.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const api = window.electronAPI?.app?.getLogPath;
-    if (!api) return;
-    api()
-      .then((p) => setLogPath(p))
-      .catch(() => setLogPath(null));
-  }, []);
-
-  const isElectron = typeof window !== "undefined" && !!window.electronAPI;
-  const canOpenLogFolder = isElectron && !!logPath;
-
-  const handleOpenLogFolder = async () => {
-    if (!logPath) return;
-    try {
-      // Electron's `shell.openPath` resolves with a *string* — empty
-      // means success, non-empty is the OS-level error message
-      // ("no such file", permission denied, etc). It rarely throws.
-      // Without checking the returned string the user's last escape
-      // hatch silently does nothing on failure; the OS error is more
-      // useful to surface in the toast than a generic failure message.
-      const error = await window.electronAPI?.shell?.openPath(logPath);
-      if (error) {
-        showToast({
-          message: t("about.support.openLogsFailedWith", { error }),
-          type: "error",
-        });
-      }
-    } catch {
-      // Truly thrown (rare). Generic toast is the best we can do —
-      // the OS-level reason is in the rejected error but we don't
-      // surface raw exception copy to end users.
-      showToast({
-        message: t("about.support.openLogsFailed"),
-        type: "error",
-      });
-    }
-  };
-
   const isDownloading =
     updateInfo?.isNativeUpdate &&
     !updateInfo.readyToInstall &&
     updateInfo.downloadProgress != null;
-
-  /**
-   * Phase 2C.6: download a sanitized diagnostic bundle. The /api/doctor/export
-   * endpoint already exists and includes the cached diagnosis + recent runtime
-   * logs + provider resolution chain, with API keys / URLs / paths sanitized.
-   * UI just fetches it and triggers a JSON download — no new backend.
-   *
-   * This replaces the previous "导出运行日志" copy that didn't have a real
-   * action behind it; everything the user wants for issue-filing or local
-   * inspection is in the bundle.
-   */
-  const handleExportDiagnostics = async () => {
-    if (exportingDiagnostics) return;
-    setExportingDiagnostics(true);
-    try {
-      const res = await fetch("/api/doctor/export");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      a.download = `codepilot-diagnostics-${stamp}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch {
-      // Support is the user's last escape hatch — silent failure here is
-      // worse than the noise. Surface a toast that points at the
-      // alternative action ("打开日志文件夹") so the user has a way out.
-      showToast({
-        message: canOpenLogFolder
-          ? t("about.support.exportFailedWithLogFolder")
-          : t("about.support.exportFailed"),
-        type: "error",
-      });
-    } finally {
-      setExportingDiagnostics(false);
-    }
-  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -336,93 +241,6 @@ export function AboutSection() {
         </SettingsCard>
       )}
 
-      {/* Support & logs (Phase 2C.6 rename).
-          The previous wording was "诊断与维护 — 运行连接诊断、导出运行日志…"
-          which over-promised: the existing diagnostic flow doesn't always
-          identify root causes and the auto-repair path can mislead. The
-          honest framing is: Health gives you status; if status doesn't
-          explain it, grab a diagnostic bundle and inspect / share. Setup
-          Center stays as the install / wizard entry, not a "fix anything"
-          button. */}
-      <SettingsCard
-        title={t("about.support.title")}
-        description={t("about.support.desc")}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          {canOpenLogFolder && (
-            <Button
-              variant="default"
-              size="sm"
-              className="text-xs gap-1.5"
-              onClick={handleOpenLogFolder}
-              title={logPath ?? undefined}
-            >
-              <CodexWebIcon name="folder" size="sm" aria-hidden />
-              {t("about.support.openLogs")}
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs gap-1.5"
-            onClick={handleExportDiagnostics}
-            disabled={exportingDiagnostics}
-          >
-            {exportingDiagnostics ? (
-              <SpinnerGap size={14} className="animate-spin" />
-            ) : (
-              <CodexWebIcon name="download" size="sm" aria-hidden />
-            )}
-            {t("about.support.exportDiagnostics")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs gap-1.5"
-            onClick={() => setImportDialogOpen(true)}
-          >
-            <CodexWebIcon name="download" size="sm" aria-hidden />
-            {t("cli.importButton" as TranslationKey)}
-          </Button>
-        </div>
-        <ImportSessionDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
-      </SettingsCard>
-
-      {/* External links. Fixed URLs, opened in new tab. */}
-      <SettingsCard
-        title={t("about.docs.title")}
-        description={t("about.docs.desc")}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs gap-1.5"
-            onClick={() => window.open("https://github.com/op7418/CodexWeb", "_blank")}
-          >
-            <ArrowSquareOut size={14} />
-            GitHub
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs gap-1.5"
-            onClick={() => window.open("https://github.com/op7418/CodexWeb/issues", "_blank")}
-          >
-            <ArrowSquareOut size={14} />
-            {t("about.docs.submitFeedback")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs gap-1.5"
-            onClick={() => window.open("https://github.com/op7418/CodexWeb/releases", "_blank")}
-          >
-            <ArrowSquareOut size={14} />
-            {t("about.docs.releaseNotes")}
-          </Button>
-        </div>
-      </SettingsCard>
     </div>
   );
 }

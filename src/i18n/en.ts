@@ -1815,19 +1815,6 @@ const en = {
   'about.platform.os': 'OS',
   'about.platform.channel': 'Release channel',
   'about.platform.appVersion': 'App version',
-  'about.support.title': 'Support & logs',
-  'about.support.desc': 'Open the logs folder, export diagnostics, or import chat history',
-  'about.support.openLogs': 'Open logs folder',
-  'about.support.openLogsFailed': 'Could not open the logs folder',
-  'about.support.openLogsFailedWith': 'Could not open the logs folder: {error}',
-  'about.support.exportDiagnostics': 'Export diagnostics',
-  'about.support.exportFailed': 'Failed to export diagnostics',
-  'about.support.exportFailedWithLogFolder': 'Failed to export diagnostics. Try the open-logs button instead.',
-  'about.docs.title': 'Help & links',
-  'about.docs.desc': 'GitHub repo, feedback, and release notes',
-  'about.docs.submitFeedback': 'Submit feedback',
-  'about.docs.releaseNotes': 'Release notes',
-
   // bridge.*
   'bridge.enabledNotRunningHint': 'Bridge is enabled but not running yet — start the service to allow external channels to reach Claude.',
 

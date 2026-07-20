@@ -1791,19 +1791,6 @@ const zh: Record<TranslationKey, string> = {
   'about.platform.os': '操作系统',
   'about.platform.channel': '发布渠道',
   'about.platform.appVersion': '应用版本',
-  'about.support.title': '支持与日志',
-  'about.support.desc': '打开日志文件夹、导出诊断包或导入历史会话',
-  'about.support.openLogs': '打开日志文件夹',
-  'about.support.openLogsFailed': '无法打开日志文件夹',
-  'about.support.openLogsFailedWith': '打开日志文件夹失败：{error}',
-  'about.support.exportDiagnostics': '导出诊断包',
-  'about.support.exportFailed': '诊断包导出失败',
-  'about.support.exportFailedWithLogFolder': '诊断包导出失败，可改用「打开日志文件夹」',
-  'about.docs.title': '帮助与链接',
-  'about.docs.desc': 'GitHub 仓库、反馈入口与发布说明',
-  'about.docs.submitFeedback': '提交反馈',
-  'about.docs.releaseNotes': '发布说明',
-
   // bridge.*
   'bridge.enabledNotRunningHint': '桥接已启用但服务尚未运行，启动后才能让外部渠道访问 Claude。',
 
