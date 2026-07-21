@@ -67,6 +67,7 @@ import {
   appServerTurnPresentationKey,
   shouldPresentAppServerTurnAsStreaming,
 } from '@/codex-web/live-turn-presentation';
+import { resolveAppServerPanelStartedAt } from '@/codex-web/app-server-panel-clock';
 import { deriveCodexWebToolState } from '@/codex-web/tool-adapter';
 import type { AppServerTurnState } from '@/codex-web/turn-reducer';
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
@@ -510,12 +511,9 @@ export function ChatView({
     !!appServerSend &&
     !!appServerTurn &&
     presentAppServerTurnAsStreaming;
-  const appServerPanelStartedAt =
-    appServerTurnIsTerminal && typeof appServerTurn?.durationMs === 'number'
-      ? Date.now() - appServerTurn.durationMs
-      : appServerSend
-        ? appServerPanelClock.startedAt
-        : streamSnapshot?.startedAt;
+  const appServerPanelStartedAt = appServerSend
+    ? resolveAppServerPanelStartedAt(appServerTurn ?? null, appServerPanelClock.startedAt)
+    : streamSnapshot?.startedAt;
   const rewindPoints = getRewindPoints(activeSessionId);
   const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
   const [dismissedPlanPromptKey, setDismissedPlanPromptKey] = useState('');

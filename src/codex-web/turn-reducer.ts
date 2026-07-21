@@ -21,6 +21,7 @@ export type AppServerTurnState = {
   latestProposedPlanMarkdown: string | null;
   planBlocks: MessageContentBlock[];
   taskProgress: { completed: number; total: number } | null;
+  startedAtMs?: number;
   durationMs?: number;
   items: ThreadItem[];
   toolOutputs: Record<string, string>;
@@ -40,6 +41,7 @@ export const initialAppServerTurnState: AppServerTurnState = {
   latestProposedPlanMarkdown: null,
   planBlocks: [],
   taskProgress: null,
+  startedAtMs: undefined,
   durationMs: undefined,
   items: [],
   toolOutputs: {},
@@ -60,12 +62,17 @@ export function createStartingTurnState(): AppServerTurnState {
   };
 }
 
-export function createAcceptedTurnState(threadId: string, turnId: string): AppServerTurnState {
+export function createAcceptedTurnState(
+  threadId: string,
+  turnId: string,
+  startedAtMs?: number,
+): AppServerTurnState {
   return {
     ...initialAppServerTurnState,
     status: "running",
     threadId,
     turnId,
+    startedAtMs,
   };
 }
 
@@ -87,7 +94,13 @@ export function mergeAcceptedTurnState(
     threadId: accepted.threadId,
     turnId: accepted.turnId,
     status: "running",
+    startedAtMs: current?.startedAtMs ?? accepted.startedAtMs,
   };
+}
+
+export function turnStartedAtMs(startedAt: unknown): number | undefined {
+  const seconds = readFiniteNumber(startedAt);
+  return seconds === undefined ? undefined : seconds * 1000;
 }
 
 export function reduceAppServerTurnNotification(
@@ -113,9 +126,15 @@ export function reduceAppServerTurnNotification(
       const turnId = turn.id;
       const threadId = data.threadId;
       if (typeof turnId !== "string") return state;
+      const resolvedThreadId = typeof threadId === "string" ? threadId : state.threadId;
+      const existingStartedAtMs =
+        state.threadId === resolvedThreadId && state.turnId === turnId
+          ? state.startedAtMs
+          : undefined;
       return createAcceptedTurnState(
-        typeof threadId === "string" ? threadId : state.threadId,
+        resolvedThreadId,
         turnId,
+        turnStartedAtMs(turn.startedAt) ?? existingStartedAtMs,
       );
     }
 
@@ -260,6 +279,7 @@ export function reduceAppServerTurnNotification(
         status,
         threadId: typeof data.threadId === "string" ? data.threadId : state.threadId,
         turnId: typeof turn.id === "string" ? turn.id : state.turnId,
+        startedAtMs: turnStartedAtMs(turn.startedAt) ?? state.startedAtMs,
         durationMs: readFiniteNumber(turn.durationMs) ?? state.durationMs,
         errorMessage: readTurnErrorMessage(turn.error),
       };

@@ -11,6 +11,7 @@ describe("activeTurnFromResume", () => {
       status: "running",
       threadId: "thread-1",
       turnId: "turn-1",
+      startedAtMs: 1000,
       assistantText: "处理中",
       toolOutputs: { "command-1": "partial output" },
     });

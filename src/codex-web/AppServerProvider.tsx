@@ -106,6 +106,7 @@ import {
   initialAppServerTurnState,
   mergeAcceptedTurnState,
   reduceAppServerTurnNotification,
+  turnStartedAtMs,
   type AppServerTurnState,
 } from "./turn-reducer";
 import type {
@@ -1084,7 +1085,11 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw error;
     }
     onAccepted?.(threadId, turnResponse.turn.id);
-    const acceptedTurn = createAcceptedTurnState(threadId, turnResponse.turn.id);
+    const acceptedTurn = createAcceptedTurnState(
+      threadId,
+      turnResponse.turn.id,
+      turnStartedAtMs(turnResponse.turn.startedAt),
+    );
     setState((current) => ({
       ...current,
       ...setActiveTurnState(

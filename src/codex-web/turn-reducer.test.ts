@@ -50,6 +50,43 @@ describe("reduceAppServerTurnNotification", () => {
     expect(next).toEqual(createAcceptedTurnState("thread-1", "turn-2"));
   });
 
+  it("turn/started 保存 app-server 的 Unix 秒开始时间", () => {
+    const next = reduceAppServerTurnNotification(createStartingTurnState(), {
+      method: "turn/started",
+      params: {
+        threadId: "thread-1",
+        turn: { id: "turn-1", status: "inProgress", startedAt: 1_785_000_000 },
+      },
+    });
+
+    expect(next.startedAtMs).toBe(1_785_000_000_000);
+  });
+
+  it("turn/started 缺少有效开始时间时保持兼容回退", () => {
+    const next = reduceAppServerTurnNotification(createStartingTurnState(), {
+      method: "turn/started",
+      params: {
+        threadId: "thread-1",
+        turn: { id: "turn-1", status: "inProgress", startedAt: null },
+      },
+    });
+
+    expect(next.startedAtMs).toBeUndefined();
+  });
+
+  it("turn/start 响应先到时，后续同 Turn notification 不清空已有起点", () => {
+    const accepted = createAcceptedTurnState("thread-1", "turn-1", 1_785_000_000_000);
+    const next = reduceAppServerTurnNotification(accepted, {
+      method: "turn/started",
+      params: {
+        threadId: "thread-1",
+        turn: { id: "turn-1", status: "inProgress", startedAt: null },
+      },
+    });
+
+    expect(next.startedAtMs).toBe(1_785_000_000_000);
+  });
+
   it("按 app-server 事件构建 one-turn 流式状态", () => {
     let state = createStartingTurnState();
 
@@ -269,5 +306,15 @@ describe("reduceAppServerTurnNotification", () => {
     const merged = mergeAcceptedTurnState(completed, createAcceptedTurnState("thread-1", "turn-1"));
 
     expect(merged.status).toBe("completed");
+  });
+
+  it("turn/started notification 先到时，accepted 状态保留已有起点", () => {
+    const notified = createAcceptedTurnState("thread-1", "turn-1", 1_785_000_000_000);
+    const merged = mergeAcceptedTurnState(
+      notified,
+      createAcceptedTurnState("thread-1", "turn-1", 1_785_000_001_000),
+    );
+
+    expect(merged.startedAtMs).toBe(1_785_000_000_000);
   });
 });

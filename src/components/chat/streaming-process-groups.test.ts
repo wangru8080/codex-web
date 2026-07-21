@@ -130,7 +130,9 @@ describe("连续工具分组展示接线", () => {
     expect(source).toContain("const [appServerPanelClock, setAppServerPanelClock]");
     expect(source).toContain("? '已处理'");
     expect(source).toContain("setAppServerPanelClock({ turnKey: 'pending', startedAt: Date.now() })");
-    expect(source).toContain("? appServerPanelClock.startedAt");
+    expect(source).toContain(
+      "resolveAppServerPanelStartedAt(appServerTurn ?? null, appServerPanelClock.startedAt)",
+    );
     expect(source).not.toContain("appServerTurn.threadId !== activeSessionId) return");
   });
 

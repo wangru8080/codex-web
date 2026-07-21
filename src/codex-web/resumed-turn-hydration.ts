@@ -4,6 +4,7 @@ import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadR
 import {
   createAcceptedTurnState,
   reduceAppServerTurnNotification,
+  turnStartedAtMs,
   type AppServerTurnState,
 } from "./turn-reducer";
 
@@ -13,7 +14,11 @@ export function activeTurnFromResume(response: ThreadResumeResponse): AppServerT
     return null;
   }
 
-  let state = createAcceptedTurnState(response.thread.id, turn.id);
+  let state = createAcceptedTurnState(
+    response.thread.id,
+    turn.id,
+    turnStartedAtMs(turn.startedAt),
+  );
   for (const item of turn.items) {
     state = reduceAppServerTurnNotification(state, {
       method: itemIsInProgress(item) ? "item/started" : "item/completed",
