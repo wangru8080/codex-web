@@ -222,67 +222,17 @@ export type AppServerActions = {
 export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<CodexWebAppServerState>(initialAppServerState);
   const publicBridgeUrl = useMemo(() => process.env.NEXT_PUBLIC_CODEX_BRIDGE_URL ?? "", []);
-  const [bridgeUrl, setBridgeUrl] = useState(publicBridgeUrl);
-  const [bridgeUrlResolved, setBridgeUrlResolved] = useState(() => !!publicBridgeUrl);
   const clientRef = useRef<AppServerBrowserClient | null>(null);
   const fsWatchSequenceRef = useRef(0);
   const threadSettingsWaitersRef = useRef(new Map<string, Set<() => void>>());
   const approvalResponseStateRef = useRef<ApprovalResponseGuardState>({});
 
   useEffect(() => {
-    if (publicBridgeUrl) {
-      return;
-    }
-
-    let disposed = false;
-    setState((current) => ({ ...current, connection: { source: "web-bridge", data: "connecting" } }));
-
-    resolveCodexBridgeUrl("")
-      .then((url) => {
-        if (disposed) return;
-        setBridgeUrl(url);
-        setBridgeUrlResolved(true);
-      })
-      .catch((error) => {
-        if (disposed) return;
-        setBridgeUrlResolved(true);
-        setState((current) => ({
-          ...current,
-          connection: { source: "web-bridge", data: "failed" },
-          diagnostics: appendDiagnostic(current.diagnostics, {
-            source: "web-bridge",
-            data: { message: error instanceof Error ? error.message : String(error) },
-          }),
-        }));
-      });
-
-    return () => {
-      disposed = true;
-    };
-  }, [publicBridgeUrl]);
-
-  useEffect(() => {
-    if (!bridgeUrlResolved) {
-      return;
-    }
-
-    if (!bridgeUrl) {
-      setState((current) => ({
-        ...current,
-        connection: { source: "web-bridge", data: "failed" },
-        diagnostics: appendDiagnostic(current.diagnostics, {
-          source: "web-bridge",
-          data: { message: "CODEX_WEB_BRIDGE_URL 未设置" },
-        }),
-      }));
-      return;
-    }
-
     let disposed = false;
     let reconnectAttempt = 0;
     let reconnectTimer: number | null = null;
     let bootstrapping = false;
-    const client = new AppServerBrowserClient(bridgeUrl);
+    const client = new AppServerBrowserClient();
     clientRef.current = client;
     client.onClose((error) => {
       if (disposed) return;
@@ -472,7 +422,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         connection: { source: "web-bridge", data: isReconnect ? "reconnecting" : "connecting" },
       }));
       try {
-        await client.connect();
+        const latestBridgeUrl = await resolveCodexBridgeUrl(publicBridgeUrl);
+        await client.connect(latestBridgeUrl);
         const initialize = (await client.request("initialize", {
           clientInfo: { name: "codex_web", title: "Codex Web", version: "0.1.0" },
           capabilities: appServerInitializeCapabilities(),
@@ -528,7 +479,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       approvalResponseStateRef.current = {};
       client.close();
     };
-  }, [bridgeUrl]);
+  }, [publicBridgeUrl]);
 
   const resetTurn = useCallback(() => {
     setState((current) => ({

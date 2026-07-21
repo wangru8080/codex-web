@@ -94,6 +94,19 @@ describe("连续工具分组展示接线", () => {
     expect(source).toContain("defaultExpanded={hasRunningTool}");
   });
 
+  it("app-server 最终回答直接使用增量内容，不经过延迟缓冲", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/components/chat/StreamingMessage.tsx"),
+      "utf8",
+    );
+
+    expect(source).not.toContain("BUFFER_WORD_THRESHOLD");
+    expect(source).not.toContain("BUFFER_MAX_MS");
+    expect(source).not.toContain("useBufferedContent");
+    expect(source).toContain("<MessageResponse>{content}</MessageResponse>");
+    expect(source).toContain("StreamingMessageResponse as MessageResponse");
+  });
+
   it("历史消息默认折叠整轮过程，并保留连续工具子分组", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/components/chat/MessageItem.tsx"),

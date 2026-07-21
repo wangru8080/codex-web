@@ -14,6 +14,14 @@ describe("app-server 断线重连接线", () => {
     expect(provider).not.toContain("failRunningTurnOnTransportClose(current.activeTurn");
   });
 
+  it("每次 bootstrap 先解析最新 bridge URL，再复用同一个 client 连接", () => {
+    expect(provider.match(/new AppServerBrowserClient/g)).toHaveLength(1);
+    expect(provider).toContain("const latestBridgeUrl = await resolveCodexBridgeUrl(publicBridgeUrl)");
+    expect(provider).toContain("await client.connect(latestBridgeUrl)");
+    expect(provider.indexOf("const latestBridgeUrl = await resolveCodexBridgeUrl(publicBridgeUrl)"))
+      .toBeLessThan(provider.indexOf("await client.connect(latestBridgeUrl)"));
+  });
+
   it("重连 bootstrap 完成后历史页重新执行 thread/resume", () => {
     expect(provider).toContain('client.request("initialize"');
     expect(provider).toContain('client.request(\n      "thread/resume"');

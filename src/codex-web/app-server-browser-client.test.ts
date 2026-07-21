@@ -36,9 +36,9 @@ class FakeWebSocket {
     this.emit("open");
   }
 
-  emit(type: string): void {
+  emit(type: string, event: { data?: unknown } = {}): void {
     for (const listener of this.listeners.get(type) ?? []) {
-      listener({});
+      listener(event);
     }
   }
 }
@@ -87,6 +87,46 @@ describe("AppServerBrowserClient connection close", () => {
     second?.open();
     await secondConnect;
     expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it("断线后使用最新 URL 创建 socket，并保留原 notification listener", async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    const client = new AppServerBrowserClient("ws://127.0.0.1/bridge?token=old");
+    const listener = vi.fn();
+    client.onNotification(listener);
+
+    const firstConnect = client.connect();
+    FakeWebSocket.latest?.open();
+    await firstConnect;
+    FakeWebSocket.latest?.emit("error");
+
+    const secondConnect = client.connect("ws://127.0.0.1/bridge?token=new");
+    const second = FakeWebSocket.latest;
+    expect(second?.url).toBe("ws://127.0.0.1/bridge?token=new");
+    second?.open();
+    await secondConnect;
+    second?.emit("message", {
+      data: JSON.stringify({ method: "thread/started", params: { thread: { id: "thread-1" } } }),
+    });
+
+    expect(listener).toHaveBeenCalledWith({
+      method: "thread/started",
+      params: { thread: { id: "thread-1" } },
+    });
+  });
+
+  it("活动 socket 已连接时拒绝切换到不同 URL", async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    const client = new AppServerBrowserClient("ws://127.0.0.1/bridge?token=old");
+
+    const connecting = client.connect();
+    FakeWebSocket.latest?.open();
+    await connecting;
+
+    await expect(
+      client.connect("ws://127.0.0.1/bridge?token=new"),
+    ).rejects.toThrow("Web bridge 已连接，不能切换地址");
+    expect(FakeWebSocket.instances).toHaveLength(1);
   });
 
   it("主动关闭不会上报需要重连的断线", async () => {

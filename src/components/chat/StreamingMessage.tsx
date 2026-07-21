@@ -48,60 +48,6 @@ interface StreamingMessageProps {
 }
 
 /**
- * Smart content buffering — holds initial text until meaningful.
- */
-const BUFFER_WORD_THRESHOLD = 40;
-const BUFFER_MAX_MS = 2500;
-
-function useBufferedContent(rawContent: string, isStreaming: boolean): string {
-  const [bypassed, setBypassed] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Derive whether bypass conditions are met (pure computation, no side effects)
-  const shouldBypass = !isStreaming
-    || bypassed
-    || (!!rawContent && rawContent.split(/\s+/).filter(Boolean).length >= BUFFER_WORD_THRESHOLD);
-
-  // Effect: sync bypass state when conditions are met (one-way latch, safe)
-  useEffect(() => {
-    if (shouldBypass && !bypassed && isStreaming && rawContent) {
-      setBypassed(true); // eslint-disable-line react-hooks/set-state-in-effect
-    }
-  }, [shouldBypass, bypassed, isStreaming, rawContent]);
-
-  // Effect: reset on new turn (content emptied)
-  useEffect(() => {
-    if (!rawContent && !isStreaming) {
-      setBypassed(false); // eslint-disable-line react-hooks/set-state-in-effect
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-  }, [rawContent, isStreaming]);
-
-  // Effect: max timeout — starts once when content first arrives during streaming.
-  // Uses a boolean gate (hasContent) so the timer is created exactly once, not on every delta.
-  const hasContent = !!rawContent;
-  useEffect(() => {
-    if (!isStreaming || bypassed || !hasContent) return;
-    // Only start the timer if one isn't already running
-    if (timerRef.current) return;
-    timerRef.current = setTimeout(() => {
-      setBypassed(true);
-      timerRef.current = null;
-    }, BUFFER_MAX_MS);
-    // No cleanup — timer must survive rawContent changes.
-    // It is cleaned up by the reset effect (when content empties) or when bypassed is set.
-  }, [isStreaming, bypassed, hasContent]);
-
-  // Pure render: no side effects
-  if (!isStreaming) return rawContent;
-  if (shouldBypass) return rawContent;
-  return '';
-}
-
-/**
  * Wait-phase label shown while waiting for the first content token.
  * Pure UX-comfort progression — NOT tied to model thinking/reasoning state.
  * Real reasoning content is rendered separately by ToolActionsGroup's ThinkingRow.
@@ -227,7 +173,6 @@ export function StreamingMessage({
   onForceStop,
 }: StreamingMessageProps) {
   const { t } = useTranslation();
-  const bufferedContent = useBufferedContent(content, isStreaming);
   // A2 (audit 2026-06): index toolResults by id once, then reuse for both the
   // running-tools filter and the per-tool lookup in the render below. Both
   // previously did an O(n) scan inside an O(n) loop → O(n²) every render.
@@ -408,8 +353,8 @@ export function StreamingMessage({
             data-assistant-final-answer
             data-answer-complete={isStreaming ? "false" : "true"}
           >
-            {(isStreaming ? bufferedContent : content) && (
-              <MessageResponse>{isStreaming ? bufferedContent : content}</MessageResponse>
+            {content && (
+              <MessageResponse>{content}</MessageResponse>
             )}
           </div>
         )}

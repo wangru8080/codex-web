@@ -13,14 +13,23 @@ export class AppServerBrowserClient {
   private readonly serverRequestListeners = new Set<(request: JsonRpcRequest) => void>();
   private readonly closeListeners = new Set<(error: Error) => void>();
 
-  constructor(private readonly url: string) {}
+  constructor(private url = "") {}
 
-  async connect(): Promise<void> {
+  async connect(url?: string): Promise<void> {
+    const nextUrl = url?.trim() || this.url;
+    if (!nextUrl) {
+      throw new Error("Web bridge URL 未设置");
+    }
+
     if (this.socket?.readyState === WebSocket.OPEN) {
+      if (nextUrl !== this.url) {
+        throw new Error("Web bridge 已连接，不能切换地址");
+      }
       return;
     }
 
-    const socket = new WebSocket(this.url);
+    this.url = nextUrl;
+    const socket = new WebSocket(nextUrl);
     this.socket = socket;
     socket.addEventListener("message", (event) => this.handleMessage(event.data));
     socket.addEventListener("close", () => this.reportClose(socket, new Error("Web bridge 连接已关闭")));
