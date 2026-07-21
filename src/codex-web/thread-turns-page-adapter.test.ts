@@ -34,6 +34,27 @@ describe("thread-turns-page-adapter", () => {
     expect(messages.map((message) => message.content)).toEqual(["first", "second"]);
   });
 
+  it("分页历史为实时 Turn 省略 assistant，但保留同 Turn 用户消息", () => {
+    const turn = createTurnWithAssistant(
+      "turn-live",
+      "user-live",
+      "agent-live",
+      "正在处理",
+      10,
+    );
+    const messages = threadTurnsPageToMessages(
+      createThread(),
+      [turn],
+      "asc",
+      {},
+      { omitAssistantTurnId: "turn-live" },
+    );
+
+    expect(messages).toEqual([
+      expect.objectContaining({ id: "user-live", role: "user", content: "user prompt" }),
+    ]);
+  });
+
   it("prepend 合并时不重复已有消息", () => {
     const thread = createThread();
     const existing = threadTurnsPageToMessages(thread, [

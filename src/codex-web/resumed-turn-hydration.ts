@@ -1,5 +1,6 @@
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
+import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 
 import {
   createAcceptedTurnState,
@@ -10,7 +11,7 @@ import {
 
 export function activeTurnFromResume(response: ThreadResumeResponse): AppServerTurnState | null {
   const turn = response.thread.turns.at(-1);
-  if (!turn || turn.status !== "inProgress") {
+  if (!turn || latestInProgressTurnId(response.thread.turns) !== turn.id) {
     return null;
   }
 
@@ -32,6 +33,11 @@ export function activeTurnFromResume(response: ThreadResumeResponse): AppServerT
     durationMs: turn.durationMs ?? undefined,
     toolOutputs: collectToolOutputs(turn.items),
   };
+}
+
+export function latestInProgressTurnId(turns: Turn[]): string | null {
+  const latest = turns.at(-1);
+  return latest?.status === "inProgress" ? latest.id : null;
 }
 
 function itemIsInProgress(item: ThreadItem): boolean {

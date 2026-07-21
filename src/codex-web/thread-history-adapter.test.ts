@@ -138,6 +138,25 @@ describe("thread-history-adapter", () => {
     ]);
   });
 
+  it("实时恢复同一 Turn 时保留用户消息并省略 assistant 历史副本", () => {
+    const result = threadToMessages(createThread(), {
+      omitAssistantTurnId: "turn-1",
+    });
+
+    expect(result.messages).toEqual([
+      expect.objectContaining({ id: "user-1", role: "user", content: "你好" }),
+    ]);
+    expect(result.unsupportedItemCount).toBe(0);
+  });
+
+  it("省略目标不匹配时保留已完成 assistant 历史", () => {
+    const result = threadToMessages(createThread(), {
+      omitAssistantTurnId: "turn-other",
+    });
+
+    expect(result.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
   it("保留只有图片而没有文本的历史用户消息", () => {
     const thread = createThread();
     thread.turns[0]!.items = [{

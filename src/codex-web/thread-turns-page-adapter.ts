@@ -10,7 +10,10 @@ import type {
 } from "./active-turn-visibility-adapter";
 import { appServerTurnToMessageContent } from "./app-server-message-blocks";
 import type { Sourced } from "./app-server-state";
-import { threadToMessages } from "./thread-history-adapter";
+import {
+  threadToMessages,
+  type ThreadMessagesOptions,
+} from "./thread-history-adapter";
 import { appServerTurnSnapshotKey, type AppServerTurnState } from "./turn-reducer";
 
 export type ThreadTurnsListParams = {
@@ -34,12 +37,13 @@ export function threadTurnsPageToMessages(
   turns: Turn[],
   sortDirection: SortDirection = "desc",
   turnSnapshots: Record<string, Sourced<AppServerTurnState>> = {},
+  options: ThreadMessagesOptions = {},
 ): Message[] {
   const chronologicalTurns = sortDirection === "desc" ? [...turns].reverse() : turns;
   const pageThread = { ...thread, turns: chronologicalTurns };
   return applyTurnSnapshotsToMessages(
     pageThread,
-    threadToMessages(pageThread).messages,
+    threadToMessages(pageThread, options).messages,
     turnSnapshots,
   );
 }

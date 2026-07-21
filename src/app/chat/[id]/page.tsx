@@ -35,6 +35,7 @@ import {
 import type { Thread } from '@/codex/protocol/generated/v2/Thread';
 import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
 import { modelSettingsFromResume } from '@/codex-web/thread-model-settings';
+import { latestInProgressTurnId } from '@/codex-web/resumed-turn-hydration';
 import { readDefaultPanelPreference } from '@/lib/app-preferences';
 
 function safeDecodeSessionId(id: string): string {
@@ -155,6 +156,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         applySession(session);
         const resume = await resumeThread({ threadId: id });
         if (cancelled) return;
+        const resumedLiveTurnId = latestInProgressTurnId(resume.thread.turns);
         const resumedSettings = modelSettingsFromResume(resume);
         setResumedThreadId(resume.thread.id);
         setResumedCwd(resume.cwd);
@@ -171,7 +173,13 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           });
           if (cancelled) return;
           setMessages(
-            threadTurnsPageToMessages(response.thread, turnsPage.data, "desc", turnSnapshotsRef.current),
+            threadTurnsPageToMessages(
+              response.thread,
+              turnsPage.data,
+              "desc",
+              turnSnapshotsRef.current,
+              { omitAssistantTurnId: resumedLiveTurnId },
+            ),
           );
           setLatestHistoryTurn(
             latestHistoryTurnFromPage(
@@ -193,7 +201,9 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           } catch {
             // 保留 metadata-only thread；错误 banner 会说明分页失败。
           }
-          const result = threadToMessages(fallbackThread);
+          const result = threadToMessages(fallbackThread, {
+            omitAssistantTurnId: resumedLiveTurnId,
+          });
           const snapshotMessages = applyTurnSnapshotsToMessages(
             fallbackThread,
             result.messages,

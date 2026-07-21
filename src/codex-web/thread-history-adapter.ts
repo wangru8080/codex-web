@@ -17,6 +17,10 @@ export type ThreadMessagesResult = {
   unsupportedItemCount: number;
 };
 
+export type ThreadMessagesOptions = {
+  omitAssistantTurnId?: string | null;
+};
+
 export function threadToChatSession(thread: Thread): ChatSession {
   const title = thread.name || thread.preview || "Codex 会话";
   const createdAt = secondsToIso(thread.createdAt);
@@ -53,7 +57,10 @@ export function threadToChatSession(thread: Thread): ChatSession {
   };
 }
 
-export function threadToMessages(thread: Thread): ThreadMessagesResult {
+export function threadToMessages(
+  thread: Thread,
+  options: ThreadMessagesOptions = {},
+): ThreadMessagesResult {
   const messages: Message[] = [];
   let unsupportedItemCount = 0;
 
@@ -74,7 +81,7 @@ export function threadToMessages(thread: Thread): ThreadMessagesResult {
       }
     }
 
-    if (assistantMessageId) {
+    if (assistantMessageId && turn.id !== options.omitAssistantTurnId) {
       messages.push(
         createMessage(
           thread,
