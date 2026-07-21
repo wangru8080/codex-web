@@ -11,6 +11,7 @@ import type { GetAccountResponse } from '@/codex/protocol/generated/v2/GetAccoun
 import type { GetAccountRateLimitsResponse } from '@/codex/protocol/generated/v2/GetAccountRateLimitsResponse';
 import type { LoginAccountResponse } from '@/codex/protocol/generated/v2/LoginAccountResponse';
 import { isAccountLoginCompletionFor } from '@/codex-web/account-login-adapter';
+import { DiagnosticsBridgePanel } from '@/codex-web/DiagnosticsBridgePanel';
 
 type BusyAction = 'refresh' | 'openai' | 'apiKey' | 'logout' | 'cancel' | null;
 
@@ -216,6 +217,10 @@ export function CodexSection() {
             <Button variant="ghost" size="sm" disabled={busy === 'cancel'} onClick={() => void cancelLogin()}>{isZh ? '取消' : 'Cancel'}</Button>
           </div>
         )}
+      </section>
+
+      <section className="rounded-lg border border-border/50 bg-card p-5">
+        <DiagnosticsBridgePanel />
       </section>
     </div>
   );
