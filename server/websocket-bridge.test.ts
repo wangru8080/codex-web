@@ -13,7 +13,7 @@ vi.mock("./codex-process", async () => {
   return {
     startCodexAppServer: () => {
       const child = Object.assign(new EventEmitter(), {
-        pid: 43210,
+        pid: 43210 + fakeAppServers.length,
         stdin: new PassThrough(),
         stdout: new PassThrough(),
         stderr: new PassThrough(),
@@ -174,10 +174,94 @@ describe("createWebSocketBridge 共享 Server", () => {
 
     await bridge.close();
   });
+
+  it("app-server fatal exit 后拉起新进程并要求客户端重新 initialize", async () => {
+    const bridge = createWebSocketBridge({
+      host: "127.0.0.1",
+      token: "secret",
+      allowRemoteConnections: true,
+    });
+    await waitUntilListening(bridge.server);
+    const socketUrl = `${bridge.url()}?token=secret`;
+    const first = await openWebSocket(socketUrl);
+    const firstMessages: Array<Record<string, unknown>> = [];
+    first.on("message", (data) => firstMessages.push(JSON.parse(data.toString())));
+    const firstAppServer = fakeAppServers[0] as FakeAppServer;
+    const firstWrites: Array<Record<string, unknown>> = [];
+    firstAppServer.child.stdin.on("data", (data) => firstWrites.push(JSON.parse(data.toString())));
+
+    first.send(JSON.stringify({ id: 1, method: "initialize", params: { clientInfo: { name: "test" } } }));
+    await waitFor(() => firstWrites.length === 1);
+    firstAppServer.child.stdout.write(
+      `${JSON.stringify({ id: firstWrites[0]?.id, result: { userAgent: "codex-first" } })}\n`,
+    );
+    await waitFor(() => firstMessages.some((message) => message.id === 1));
+
+    firstAppServer.child.emit("exit", 1, null);
+
+    await waitFor(() => first.readyState === WebSocket.CLOSED);
+    await waitFor(() => fakeAppServers.length === 2);
+    expect(firstMessages).toContainEqual(expect.objectContaining({ method: "bridge/error" }));
+    expect(bridge.appServerPid).toBe(43211);
+
+    const secondAppServer = fakeAppServers[1] as FakeAppServer;
+    const secondWrites: Array<Record<string, unknown>> = [];
+    secondAppServer.child.stdin.on("data", (data) => secondWrites.push(JSON.parse(data.toString())));
+    const secondMessages: Array<Record<string, unknown>> = [];
+    const second = await openWebSocket(socketUrl, secondMessages);
+    second.send(JSON.stringify({ id: 2, method: "initialize", params: { clientInfo: { name: "test" } } }));
+    await waitFor(() => secondWrites.length === 1);
+    expect(secondWrites[0]).toMatchObject({ method: "initialize" });
+    secondAppServer.child.stdout.write(
+      `${JSON.stringify({ id: secondWrites[0]?.id, result: { userAgent: "codex-second" } })}\n`,
+    );
+    await waitFor(() => secondMessages.some((message) => message.id === 2));
+    expect(secondMessages.find((message) => message.id === 2)).toEqual({
+      id: 2,
+      result: { userAgent: "codex-second" },
+    });
+
+    await bridge.close();
+  });
+
+  it("bridge 主动关闭后不重新拉起 app-server", async () => {
+    const bridge = createWebSocketBridge({
+      host: "127.0.0.1",
+      token: "secret",
+      allowRemoteConnections: true,
+    });
+    await waitUntilListening(bridge.server);
+
+    await bridge.close();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(fakeAppServers).toHaveLength(1);
+  });
+
+  it("bridge 主动关闭会取消等待中的 app-server 重启", async () => {
+    const bridge = createWebSocketBridge({
+      host: "127.0.0.1",
+      token: "secret",
+      allowRemoteConnections: true,
+    });
+    await waitUntilListening(bridge.server);
+    const firstAppServer = fakeAppServers[0] as FakeAppServer;
+
+    firstAppServer.child.emit("exit", 1, null);
+    await waitFor(() => fakeAppServers.length === 2);
+    const secondAppServer = fakeAppServers[1] as FakeAppServer;
+    secondAppServer.child.emit("exit", 1, null);
+
+    await bridge.close();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(fakeAppServers).toHaveLength(2);
+  });
 });
 
 type FakeAppServer = {
   child: {
+    emit: (event: string, ...args: unknown[]) => boolean;
     stdin: PassThrough;
     stdout: PassThrough;
   };

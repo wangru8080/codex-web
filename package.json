@@ -14,6 +14,7 @@
     "test:smoke": "tsx scripts/smoke.ts",
     "test:smoke:interrupt": "tsx scripts/interrupt-smoke.ts",
     "test:smoke:reconnect": "tsx scripts/reconnect-smoke.ts",
+    "test:smoke:app-server-recovery": "tsx scripts/app-server-recovery-smoke.ts",
     "test:smoke:user-input": "tsx scripts/user-input-server-request-smoke.ts",
     "test:smoke:permissions": "tsx scripts/permission-policy-smoke.ts",
     "test:e2e:permissions": "tsx scripts/permission-policy-tool-e2e.ts",

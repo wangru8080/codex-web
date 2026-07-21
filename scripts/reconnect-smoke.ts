@@ -5,6 +5,10 @@ import { createWebSocketBridge } from "../server/websocket-bridge";
 import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
 
 const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
+const commandStartTimeoutMs = 90_000;
+const reconnectTimeoutMs = 10_000;
+const turnCompleteTimeoutMs = 120_000;
+const recentNotificationLimit = 20;
 
 type JsonRpcMessage = {
   id?: number | string;
@@ -25,7 +29,7 @@ async function main(): Promise<void> {
   try {
     await waitForListening(bridge.server);
     const url = `${bridge.url()}?token=${bridge.token}`;
-    const first = await RpcClient.connect(url);
+    const first = await RpcClient.connect(url, reconnectTimeoutMs);
     const initialize = await initializeClient(first);
     if (initialize.codexHome !== requiredCodexHome) {
       throw new Error(`app-server 使用了错误 CODEX_HOME：${initialize.codexHome ?? "缺失"}`);
@@ -51,35 +55,39 @@ async function main(): Promise<void> {
     const threadId = startedThread.thread?.id;
     if (!threadId) throw new Error("thread/start 未返回 thread.id");
 
+    const turnStarted = first.waitForNotification((notification) => {
+      const params = notification.params as { threadId?: string; turn?: { id?: string } } | undefined;
+      return notification.method === "turn/started"
+        && params?.threadId === threadId
+        && typeof params.turn?.id === "string";
+    }, commandStartTimeoutMs, "等待 shell Turn 开始");
     const commandStarted = first.waitForNotification((notification) => {
       const params = notification.params as { threadId?: string; item?: { type?: string } } | undefined;
       return notification.method === "item/started"
         && params?.threadId === threadId
         && params.item?.type === "commandExecution";
-    }, 30_000, "等待长命令开始");
-    const startedTurn = await first.request("turn/start", {
-      threadId,
-      cwd,
-      model,
-      input: [{
-        type: "text",
-        text: "请使用 shell 执行 sleep 12，命令结束后只回复 reconnect-ok。",
-        text_elements: [],
-      }],
-    }) as { turn?: { id?: string } };
-    const turnId = startedTurn.turn?.id;
-    if (!turnId) throw new Error("turn/start 未返回 turn.id");
-    await commandStarted;
+    }, commandStartTimeoutMs, "等待长命令开始");
+    await first.request("thread/shellCommand", { threadId, command: "sleep 8" });
+    const startedTurnNotification = await turnStarted;
+    const turnId = (
+      startedTurnNotification.params as { turn?: { id?: string } } | undefined
+    )?.turn?.id;
+    if (!turnId) throw new Error("turn/started notification 未返回 turn.id");
+    try {
+      await commandStarted;
+    } catch (error) {
+      throw await timeoutWithDiagnostics(first, threadId, turnId, error);
+    }
     await first.close();
 
-    const second = await RpcClient.connect(url);
+    const second = await RpcClient.connect(url, reconnectTimeoutMs);
     await initializeClient(second);
     const completed = second.waitForNotification((notification) => {
       const params = notification.params as { threadId?: string; turn?: { id?: string } } | undefined;
       return notification.method === "turn/completed"
         && params?.threadId === threadId
         && params.turn?.id === turnId;
-    }, 30_000, "等待重连后的 turn/completed");
+    }, turnCompleteTimeoutMs, "等待重连后的 turn/completed");
     const resumed = await second.request("thread/resume", { threadId }) as {
       thread?: { id?: string; turns?: Array<{ id?: string; status?: string }> };
     };
@@ -90,7 +98,12 @@ async function main(): Promise<void> {
       );
     }
 
-    const completedNotification = await completed;
+    let completedNotification: Notification;
+    try {
+      completedNotification = await completed;
+    } catch (error) {
+      throw await timeoutWithDiagnostics(second, threadId, turnId, error);
+    }
     const completedStatus = (
       completedNotification.params as { turn?: { status?: string } } | undefined
     )?.turn?.status;
@@ -128,6 +141,34 @@ function waitForListening(server: Server): Promise<void> {
   return server.listening ? Promise.resolve() : new Promise((resolve) => server.once("listening", resolve));
 }
 
+async function timeoutWithDiagnostics(
+  client: RpcClient,
+  threadId: string,
+  turnId: string,
+  error: unknown,
+): Promise<Error> {
+  const message = error instanceof Error ? error.message : String(error);
+  let resumeSummary: string;
+  try {
+    const response = await client.request("thread/resume", { threadId }) as {
+      thread?: {
+        id?: string;
+        turns?: Array<{ id?: string; status?: string; items?: Array<{ type?: string }> }>;
+      };
+    };
+    const turn = response.thread?.turns?.find((item) => item.id === turnId);
+    resumeSummary = JSON.stringify({
+      threadId: response.thread?.id ?? "缺失",
+      turnId,
+      turnStatus: turn?.status ?? "缺失",
+      itemTypes: turn?.items?.map((item) => item.type ?? "unknown") ?? [],
+    });
+  } catch (resumeError) {
+    resumeSummary = `thread/resume 失败：${resumeError instanceof Error ? resumeError.message : String(resumeError)}`;
+  }
+  return new Error(`${message}；恢复快照=${resumeSummary}；最近事件=${client.notificationSummary()}`);
+}
+
 class RpcClient {
   private nextId = 1;
   private readonly pending = new Map<number, {
@@ -136,11 +177,23 @@ class RpcClient {
   }>();
   private readonly listeners = new Set<(notification: Notification) => void>();
 
-  static async connect(url: string): Promise<RpcClient> {
+  private readonly recentNotifications: Notification[] = [];
+
+  static async connect(url: string, timeoutMs: number): Promise<RpcClient> {
     const socket = new WebSocket(url);
     await new Promise<void>((resolve, reject) => {
-      socket.once("open", resolve);
-      socket.once("error", reject);
+      const timeout = setTimeout(() => {
+        socket.terminate();
+        reject(new Error(`WebSocket 连接超时：${timeoutMs}ms`));
+      }, timeoutMs);
+      socket.once("open", () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      socket.once("error", (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
     });
     return new RpcClient(socket);
   }
@@ -192,6 +245,11 @@ class RpcClient {
     });
   }
 
+  notificationSummary(): string {
+    if (this.recentNotifications.length === 0) return "无";
+    return this.recentNotifications.map(describeNotification).join(" -> ");
+  }
+
   private handleMessage(text: string): void {
     const message = JSON.parse(text) as JsonRpcMessage;
     if (message.method && message.id !== undefined) {
@@ -211,6 +269,10 @@ class RpcClient {
     }
     if (message.method) {
       const notification = { method: message.method, params: message.params };
+      this.recentNotifications.push(notification);
+      if (this.recentNotifications.length > recentNotificationLimit) {
+        this.recentNotifications.splice(0, this.recentNotifications.length - recentNotificationLimit);
+      }
       this.listeners.forEach((listener) => listener(notification));
     }
   }
@@ -219,6 +281,27 @@ class RpcClient {
     this.pending.forEach((pending) => pending.reject(error));
     this.pending.clear();
   }
+}
+
+function describeNotification(notification: Notification): string {
+  const params = notification.params as {
+    threadId?: string;
+    turnId?: string;
+    itemId?: string;
+    turn?: { id?: string; status?: string };
+    item?: { id?: string; type?: string; status?: string };
+    message?: string;
+  } | undefined;
+  const details = [
+    params?.threadId ? `thread=${params.threadId}` : null,
+    params?.turnId ?? params?.turn?.id ? `turn=${params?.turnId ?? params?.turn?.id}` : null,
+    params?.turn?.status ? `turnStatus=${params.turn.status}` : null,
+    params?.itemId ?? params?.item?.id ? `item=${params?.itemId ?? params?.item?.id}` : null,
+    params?.item?.type ? `itemType=${params.item.type}` : null,
+    params?.item?.status ? `itemStatus=${params.item.status}` : null,
+    params?.message ? `message=${params.message}` : null,
+  ].filter((value): value is string => value !== null);
+  return details.length > 0 ? `${notification.method}(${details.join(",")})` : notification.method;
 }
 
 await main();

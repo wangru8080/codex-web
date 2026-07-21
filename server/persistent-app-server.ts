@@ -18,11 +18,11 @@ type ClientRequestRoute = {
 type InitializeWaiter = ClientRequestRoute;
 
 export class PersistentAppServer {
-  private readonly process: CodexProcess;
-  private readonly rpc: JsonRpcClient;
+  private process: CodexProcess | null = null;
+  private rpc: JsonRpcClient | null = null;
   private readonly sockets = new Set<WebSocket>();
   private readonly requestRoutes = new Map<string, ClientRequestRoute>();
-  private readonly serverRequestRouter = new BridgeServerRequestRouter<JsonRpcClient>();
+  private serverRequestRouter = new BridgeServerRequestRouter<JsonRpcClient>();
   private readonly pendingServerRequests = new Map<string, JsonRpcRequest>();
   private readonly initializeWaiters: InitializeWaiter[] = [];
   private nextRequestId = 1;
@@ -30,27 +30,24 @@ export class PersistentAppServer {
   private initializeResponse: Omit<JsonRpcResponse, "id"> | null = null;
   private initializedSent = false;
   private closed = false;
+  private restartAttempt = 0;
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(options: CodexProcessOptions = {}) {
-    this.process = startCodexAppServer(options);
-    this.rpc = new JsonRpcClient({
-      input: this.process.child.stdout,
-      output: this.process.child.stdin,
-      closeEmitter: this.process.child,
-    });
-    this.rpc.on("message", (message) => this.handleAppServerMessage(message));
-    this.rpc.on("error", (error) => this.broadcastBridgeError(error.message));
-    this.rpc.on("close", (error) => {
-      this.broadcastBridgeError(error?.message ?? "app-server 已关闭");
-    });
+  constructor(private readonly options: CodexProcessOptions = {}) {
+    this.startRuntime();
   }
 
   get pid(): number | undefined {
-    return this.process.child.pid;
+    return this.process?.child.pid;
   }
 
   attach(socket: WebSocket): void {
     this.sockets.add(socket);
+    if (!this.rpc) {
+      this.sendBridgeError(socket, "app-server 正在恢复");
+      socket.close(1013, "app-server 正在恢复");
+      return;
+    }
     for (const request of this.pendingServerRequests.values()) {
       this.send(socket, request);
     }
@@ -71,19 +68,26 @@ export class PersistentAppServer {
   }
 
   handleClientMessage(socket: WebSocket, message: JsonRpcMessage): void {
+    const rpc = this.rpc;
+    if (!rpc) {
+      this.sendBridgeError(socket, "app-server 正在恢复");
+      socket.close(1013, "app-server 正在恢复");
+      return;
+    }
+
     if ("method" in message) {
       if (message.id !== undefined) {
-        this.handleClientRequest(socket, message);
+        this.handleClientRequest(socket, message, rpc);
         return;
       }
       if (message.method === "initialized") {
         if (!this.initializedSent) {
           this.initializedSent = true;
-          this.rpc.sendRaw(message);
+          rpc.sendRaw(message);
         }
         return;
       }
-      this.rpc.sendRaw(message);
+      rpc.sendRaw(message);
       return;
     }
 
@@ -112,22 +116,103 @@ export class PersistentAppServer {
       return;
     }
     this.closed = true;
-    this.rpc.close(new Error("Web bridge 已关闭"));
-    this.process.stop();
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    const rpc = this.rpc;
+    const process = this.process;
+    this.rpc = null;
+    this.process = null;
+    rpc?.close(new Error("Web bridge 已关闭"));
+    process?.stop();
   }
 
-  private handleClientRequest(socket: WebSocket, request: JsonRpcRequest): void {
+  private startRuntime(): void {
+    if (this.closed || this.rpc) {
+      return;
+    }
+
+    const process = startCodexAppServer(this.options);
+    const rpc = new JsonRpcClient({
+      input: process.child.stdout,
+      output: process.child.stdin,
+      closeEmitter: process.child,
+    });
+    this.process = process;
+    this.rpc = rpc;
+    rpc.on("message", (message) => {
+      if (this.rpc === rpc) this.handleAppServerMessage(message, rpc);
+    });
+    rpc.on("error", (error) => {
+      if (this.rpc === rpc) this.broadcastBridgeError(error.message);
+    });
+    rpc.on("close", (error) => this.handleRuntimeClose(rpc, process, error));
+  }
+
+  private handleRuntimeClose(rpc: JsonRpcClient, process: CodexProcess, error?: Error): void {
+    if (this.closed || this.rpc !== rpc) {
+      return;
+    }
+
+    this.rpc = null;
+    this.process = null;
+    process.stop();
+    this.resetProtocolState();
+
+    const diagnostics = process.diagnostics.slice(-5);
+    const detail = diagnostics.length > 0 ? `\n${diagnostics.join("\n")}` : "";
+    this.broadcastBridgeError(`${error?.message ?? "app-server 已关闭"}${detail}`);
+    for (const socket of this.sockets) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.close(1011, "app-server 已退出");
+      }
+    }
+    this.scheduleRestart();
+  }
+
+  private scheduleRestart(): void {
+    if (this.closed || this.restartTimer) {
+      return;
+    }
+    const delay = restartDelayMs(this.restartAttempt);
+    this.restartAttempt += 1;
+    if (delay === 0) {
+      this.startRuntime();
+      return;
+    }
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+      this.startRuntime();
+    }, delay);
+  }
+
+  private resetProtocolState(): void {
+    this.requestRoutes.clear();
+    this.serverRequestRouter = new BridgeServerRequestRouter<JsonRpcClient>();
+    this.pendingServerRequests.clear();
+    this.initializeWaiters.splice(0);
+    this.initializeUpstreamId = null;
+    this.initializeResponse = null;
+    this.initializedSent = false;
+  }
+
+  private handleClientRequest(
+    socket: WebSocket,
+    request: JsonRpcRequest,
+    rpc: JsonRpcClient,
+  ): void {
     if (request.method === "initialize") {
-      this.handleInitialize(socket, request);
+      this.handleInitialize(socket, request, rpc);
       return;
     }
 
     const upstreamId = this.createUpstreamId();
     this.requestRoutes.set(upstreamId, { socket, clientId: request.id });
-    this.rpc.sendRaw({ ...request, id: upstreamId });
+    rpc.sendRaw({ ...request, id: upstreamId });
   }
 
-  private handleInitialize(socket: WebSocket, request: JsonRpcRequest): void {
+  private handleInitialize(socket: WebSocket, request: JsonRpcRequest, rpc: JsonRpcClient): void {
     if (this.initializeResponse) {
       this.send(socket, { id: request.id, ...this.initializeResponse });
       return;
@@ -139,16 +224,16 @@ export class PersistentAppServer {
     }
 
     this.initializeUpstreamId = this.createUpstreamId();
-    this.rpc.sendRaw({ ...request, id: this.initializeUpstreamId });
+    rpc.sendRaw({ ...request, id: this.initializeUpstreamId });
   }
 
-  private handleAppServerMessage(message: JsonRpcMessage): void {
+  private handleAppServerMessage(message: JsonRpcMessage, rpc: JsonRpcClient): void {
     if ("method" in message) {
       if (message.id === undefined) {
         this.broadcast(message);
         return;
       }
-      const publicId = this.serverRequestRouter.register(this.rpc, message.id);
+      const publicId = this.serverRequestRouter.register(rpc, message.id);
       const publicRequest = { ...message, id: publicId };
       this.pendingServerRequests.set(publicId, publicRequest);
       this.broadcast(publicRequest);
@@ -176,6 +261,7 @@ export class PersistentAppServer {
       : { result: response.result };
     if (!response.error) {
       this.initializeResponse = responseBody;
+      this.restartAttempt = 0;
     }
     const waiters = this.initializeWaiters.splice(0);
     for (const waiter of waiters) {
@@ -194,9 +280,21 @@ export class PersistentAppServer {
     });
   }
 
+  private sendBridgeError(socket: WebSocket, message: string): void {
+    this.send(socket, {
+      method: "bridge/error",
+      params: { message, source: "codex-web-bridge" },
+    });
+  }
+
   private send(socket: WebSocket, message: JsonRpcMessage): void {
     if (socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(message));
     }
   }
+}
+
+function restartDelayMs(attempt: number): number {
+  if (attempt === 0) return 0;
+  return Math.min(250 * 2 ** (attempt - 1), 5_000);
 }

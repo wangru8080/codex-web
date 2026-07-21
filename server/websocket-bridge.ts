@@ -89,7 +89,9 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
   return {
     server,
     token,
-    appServerPid: appServer.pid,
+    get appServerPid() {
+      return appServer.pid;
+    },
     url: () => {
       const address = server.address();
       if (typeof address !== "object" || address === null) {
