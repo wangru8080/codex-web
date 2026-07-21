@@ -12,6 +12,7 @@ import type { FsWriteFileResponse } from "@/codex/protocol/generated/v2/FsWriteF
 import type { FsRemoveResponse } from "@/codex/protocol/generated/v2/FsRemoveResponse";
 import type { FsWatchResponse } from "@/codex/protocol/generated/v2/FsWatchResponse";
 import type { GetAccountResponse } from "@/codex/protocol/generated/v2/GetAccountResponse";
+import type { AccountLoginCompletedNotification } from "@/codex/protocol/generated/v2/AccountLoginCompletedNotification";
 import type { ModelListResponse } from "@/codex/protocol/generated/v2/ModelListResponse";
 import type { SkillsListParams } from "@/codex/protocol/generated/v2/SkillsListParams";
 import type { SkillsListResponse } from "@/codex/protocol/generated/v2/SkillsListResponse";
@@ -126,6 +127,7 @@ import {
   type CrossClientUserMessage,
 } from "./cross-client-sync";
 import { reconnectDelayMs } from "./reconnect-policy";
+import { readAccountLoginCompletion } from "./account-login-adapter";
 
 const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -326,6 +328,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     });
 
     client.onNotification((notification) => {
+      const accountLoginCompletion = readAccountLoginCompletion(notification);
       if (notification.method === CROSS_CLIENT_USER_MESSAGE_METHOD) {
         setState((current) => {
           const crossClientState = reduceCrossClientUserMessage({
@@ -359,10 +362,11 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }
       if (
         notification.method === "account/updated" ||
-        notification.method === "account/login/completed"
+        accountLoginCompletion?.success
       ) {
         void client.request("account/read", { refreshToken: true })
           .then((account) => {
+            if (disposed) return;
             setState((current) => ({
               ...current,
               account: {
@@ -371,7 +375,16 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
               },
             }));
           })
-          .catch(() => { /* notification diagnostics below retain the failure context */ });
+          .catch((error) => {
+            if (disposed) return;
+            setState((current) => ({
+              ...current,
+              diagnostics: appendDiagnostic(current.diagnostics, {
+                source: "app-server.account/read",
+                data: { message: error instanceof Error ? error.message : String(error) },
+              }),
+            }));
+          });
       }
       setState((current) => {
         const threadSettingsByThreadId = reduceThreadSettingsNotification(
@@ -406,12 +419,18 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           notificationTurnIds,
         );
         const pendingApprovals = resolvePendingApprovals(current.pendingApprovals, notification);
-        const next = {
+        const next: CodexWebAppServerState = {
           ...current,
           ...goalStatePatch,
           threadSettingsByThreadId,
           threadTokenUsageByThreadId,
           mcpStartupByName,
+          accountLoginCompletion: accountLoginCompletion
+            ? {
+                source: "app-server.account/login/completed",
+                data: accountLoginCompletion as AccountLoginCompletedNotification,
+              }
+            : current.accountLoginCompletion,
           skillsRevision:
             notification.method === "skills/changed"
               ? current.skillsRevision + 1
@@ -918,6 +937,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const startAccountLogin = useCallback(async (params: LoginAccountParams) => {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
+    setState((current) => ({ ...current, accountLoginCompletion: null }));
     return await client.request("account/login/start", params) as LoginAccountResponse;
   }, []);
 
@@ -931,14 +951,9 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
     const response = await client.request("account/logout") as LogoutAccountResponse;
-    setState((current) => ({
-      ...current,
-      account: current.account
-        ? { source: "app-server.account/read", data: { account: null, requiresOpenaiAuth: true } }
-        : null,
-    }));
+    await refreshAccount();
     return response;
-  }, []);
+  }, [refreshAccount]);
 
   const getThreadGoal = useCallback(async (threadId: string) => {
     const client = clientRef.current;

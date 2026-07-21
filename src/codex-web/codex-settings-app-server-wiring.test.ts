@@ -10,6 +10,10 @@ describe('Codex 设置页 app-server 接线', () => {
     const section = read('src/components/settings/CodexSection.tsx');
     expect(section).toContain('useAppServerState');
     expect(section).toContain('useAppServerActions');
+    expect(section).toContain('accountChecked');
+    expect(section).toContain('state.accountLoginCompletion');
+    expect(section).toContain('正在检查登录状态');
+    expect(section).toContain('isAccountLoginCompletionFor');
     for (const url of [
       '/api/codex/account',
       '/api/codex/status',
@@ -31,5 +35,9 @@ describe('Codex 设置页 app-server 接线', () => {
     ]) {
       expect(provider).toContain(`client.request("${method}"`);
     }
+    expect(provider).toContain('AccountLoginCompletedNotification');
+    expect(provider).toContain('accountLoginCompletion');
+    expect(provider).toContain('app-server.account/login/completed');
+    expect(provider).not.toContain('data: { account: null, requiresOpenaiAuth: true }');
   });
 });

@@ -7,14 +7,21 @@ import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import { CodexQuotaWidget } from '@/components/settings/CodexQuotaWidget';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
-import type { Account } from '@/codex/protocol/generated/v2/Account';
+import type { GetAccountResponse } from '@/codex/protocol/generated/v2/GetAccountResponse';
 import type { GetAccountRateLimitsResponse } from '@/codex/protocol/generated/v2/GetAccountRateLimitsResponse';
 import type { LoginAccountResponse } from '@/codex/protocol/generated/v2/LoginAccountResponse';
+import { isAccountLoginCompletionFor } from '@/codex-web/account-login-adapter';
 
 type BusyAction = 'refresh' | 'openai' | 'apiKey' | 'logout' | 'cancel' | null;
 
-function accountLabel(account: Account | null | undefined, isZh: boolean): string {
-  if (!account) return isZh ? '未登录' : 'Signed out';
+function accountLabel(accountState: GetAccountResponse | null, isZh: boolean): string {
+  if (!accountState) return isZh ? '正在检查登录状态' : 'Checking sign-in status';
+  const account = accountState.account;
+  if (!account) {
+    return accountState.requiresOpenaiAuth
+      ? (isZh ? '未登录' : 'Signed out')
+      : (isZh ? '当前运行配置无需登录' : 'The current runtime does not require sign-in');
+  }
   if (account.type === 'chatgpt') {
     return account.email
       ? `${account.email}${account.planType ? ` · ${account.planType}` : ''}`
@@ -45,8 +52,12 @@ export function CodexSection() {
     setBusy((current) => current ?? 'refresh');
     setError(null);
     try {
-      await refreshAccount();
-      setQuota(await readAccountRateLimits());
+      const accountResponse = await refreshAccount();
+      if (accountResponse.account?.type === 'chatgpt') {
+        setQuota(await readAccountRateLimits());
+      } else {
+        setQuota(null);
+      }
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
     } finally {
@@ -57,6 +68,19 @@ export function CodexSection() {
   useEffect(() => {
     if (state.connection.data === 'connected') void refresh();
   }, [refresh, state.connection.data]);
+
+  useEffect(() => {
+    const completion = state.accountLoginCompletion?.data;
+    if (!completion || !isAccountLoginCompletionFor(loginStart, completion)) return;
+    setLoginStart(null);
+    if (!completion.success) {
+      if (busy !== 'cancel') {
+        setError(completion.error || (isZh ? 'OpenAI 授权未完成' : 'OpenAI authorization did not complete'));
+      }
+      return;
+    }
+    void refresh();
+  }, [busy, isZh, loginStart, refresh, state.accountLoginCompletion]);
 
   const startOpenAIAuth = useCallback(async () => {
     setBusy('openai');
@@ -96,8 +120,11 @@ export function CodexSection() {
       return;
     }
     setBusy('cancel');
+    setError(null);
     try {
       await cancelAccountLogin(loginStart.loginId);
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : String(cancelError));
     } finally {
       setLoginStart(null);
       setBusy(null);
@@ -117,7 +144,9 @@ export function CodexSection() {
     }
   }, [logoutAccount]);
 
-  const account = state.account?.data.account;
+  const accountState = state.account?.data ?? null;
+  const account = accountState?.account;
+  const accountChecked = accountState !== null;
   const signedIn = !!account;
   const connected = state.connection.data === 'connected';
 
@@ -153,14 +182,14 @@ export function CodexSection() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold">{isZh ? 'Codex 账户' : 'Codex Account'}</h3>
-            <p className="mt-1 text-xs text-muted-foreground">{accountLabel(account, isZh)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{accountLabel(accountState, isZh)}</p>
           </div>
-          {signedIn && <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void logout()}>{isZh ? '退出登录' : 'Sign out'}</Button>}
+          {signedIn && <Button variant="outline" size="sm" disabled={!connected || busy !== null} onClick={() => void logout()}>{isZh ? '退出登录' : 'Sign out'}</Button>}
         </div>
 
         {signedIn && quota?.rateLimits && <CodexQuotaWidget snapshot={quota.rateLimits} isZh={isZh} />}
 
-        {!signedIn && (
+        {accountChecked && !signedIn && !loginStart && (
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-3 rounded-md bg-muted/30 p-4">
               <div className="text-sm font-medium">{isZh ? 'OpenAI 账户授权' : 'OpenAI account authorization'}</div>
@@ -169,7 +198,7 @@ export function CodexSection() {
             <div className="space-y-3 rounded-md bg-muted/30 p-4">
               <div className="text-sm font-medium">{isZh ? 'API Key 登录' : 'API key login'}</div>
               <div className="flex gap-2">
-                <Input type="password" value={apiKey} placeholder={isZh ? '输入 API Key' : 'Enter API key'} onChange={(event) => setApiKey(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void loginWithApiKey(); }} />
+                <Input type="password" value={apiKey} disabled={!connected || busy !== null} placeholder={isZh ? '输入 API Key' : 'Enter API key'} onChange={(event) => setApiKey(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void loginWithApiKey(); }} />
                 <Button size="sm" disabled={!connected || busy !== null} onClick={() => void loginWithApiKey()}>{isZh ? '登录' : 'Sign in'}</Button>
               </div>
             </div>
@@ -177,13 +206,14 @@ export function CodexSection() {
         )}
 
         {loginStart?.type === 'chatgpt' && (
-          <LoginContinuation url={loginStart.authUrl} isZh={isZh} busy={busy} onRefresh={refresh} onCancel={cancelLogin} />
+          <LoginContinuation url={loginStart.authUrl} isZh={isZh} busy={busy} onCancel={cancelLogin} />
         )}
         {loginStart?.type === 'chatgptDeviceCode' && (
           <div className="space-y-3 rounded-md border border-border/50 bg-background p-4">
             <a className="block break-all text-xs text-primary underline" href={loginStart.verificationUrl} target="_blank" rel="noreferrer">{loginStart.verificationUrl}</a>
             <div className="font-mono text-sm font-semibold tracking-wider">{loginStart.userCode}</div>
-            <div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => void refresh()}>{isZh ? '我已完成登录' : 'I completed login'}</Button><Button variant="ghost" size="sm" disabled={busy === 'cancel'} onClick={() => void cancelLogin()}>{isZh ? '取消' : 'Cancel'}</Button></div>
+            <p className="text-xs text-muted-foreground">{isZh ? '等待 app-server 确认授权结果...' : 'Waiting for the app-server to confirm authorization...'}</p>
+            <Button variant="ghost" size="sm" disabled={busy === 'cancel'} onClick={() => void cancelLogin()}>{isZh ? '取消' : 'Cancel'}</Button>
           </div>
         )}
       </section>
@@ -191,13 +221,13 @@ export function CodexSection() {
   );
 }
 
-function LoginContinuation({ url, isZh, busy, onRefresh, onCancel }: { url: string; isZh: boolean; busy: BusyAction; onRefresh: () => Promise<void>; onCancel: () => Promise<void> }) {
+function LoginContinuation({ url, isZh, busy, onCancel }: { url: string; isZh: boolean; busy: BusyAction; onCancel: () => Promise<void> }) {
   return (
     <div className="space-y-3 rounded-md border border-border/50 bg-background p-4">
       <a className="block break-all text-xs text-primary underline" href={url} target="_blank" rel="noreferrer">{url}</a>
+      <p className="text-xs text-muted-foreground">{isZh ? '等待 app-server 确认授权结果...' : 'Waiting for the app-server to confirm authorization...'}</p>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" asChild><a href={url} target="_blank" rel="noreferrer">{isZh ? '打开授权页面' : 'Open authorization page'}</a></Button>
-        <Button variant="outline" size="sm" onClick={() => void onRefresh()}>{isZh ? '我已完成登录' : 'I completed login'}</Button>
         <Button variant="ghost" size="sm" disabled={busy === 'cancel'} onClick={() => void onCancel()}>{isZh ? '取消' : 'Cancel'}</Button>
       </div>
     </div>

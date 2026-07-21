@@ -3,11 +3,9 @@
 /**
  * Codex Account quota widget — Phase 5 Phase 6 IA correction (2026-05-14).
  *
- * Renders the rate-limit snapshot from /api/codex/rate-limits inside the
- * Providers' virtual Codex Account card. Codex's `account/rateLimits/read`
- * gives `usedPercent + resetsAt` per window (no absolute remaining tokens),
- * so the widget text must read "已用 X%" / "rolls over in Y", never
- * "remaining N tokens" — the latter doesn't exist upstream.
+ * 在 Codex 账户卡片内展示 `account/rateLimits/read` 返回的限额快照。
+ * app-server 只提供各窗口的 `usedPercent + resetsAt`，没有绝对剩余
+ * token 数，因此界面只能显示“已用 X%”和重置时间。
  *
  * Layout:
  *   ┌─────────────────────────────────┐
