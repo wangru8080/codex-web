@@ -35,6 +35,7 @@ import {
 import type { Thread } from '@/codex/protocol/generated/v2/Thread';
 import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
 import { modelSettingsFromResume } from '@/codex-web/thread-model-settings';
+import { readDefaultPanelPreference } from '@/lib/app-preferences';
 
 function safeDecodeSessionId(id: string): string {
   try {
@@ -255,9 +256,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     }
   }, [targetFilePath, setFileTreeOpen]);
 
-  // Auto-open default panel the first time a session is ever opened.
-  // Uses sessionStorage to track which sessions have already been initialized,
-  // so re-opening an untouched (zero-message) session won't override the layout.
+  // 会话首次打开时应用当前浏览器的默认面板偏好。
+  // sessionStorage 防止重复进入空会话时覆盖用户刚调整的布局。
   useEffect(() => {
     if (compactViewport === null) return;
     if (defaultPanelAppliedRef.current) return;
@@ -270,53 +270,30 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
       sessionStorage.setItem(storageKey, '1');
     }
 
-    (async () => {
-      try {
-        if (targetFilePath) {
-          // Preserve explicit deep-link intent from global search —
-          // file tree opens lightweight; sidebar stays as the user
-          // last left it (they're independent inputs per Phase 2).
-          setFileTreeOpen(true);
-          return;
-        }
-        if (compactViewport && !targetFilePath) {
-          setFileTreeOpen(false);
-          if (ws) ws.setOpen(false);
-          return;
-        }
-        const res = await fetch('/api/settings/app');
-        if (!res.ok) return;
-        const data = await res.json();
-        const panel = data.settings?.default_panel || 'file_tree';
-        // Phase 2 (2026-04-30) migration: 'git'
-        // defaults used to flip dedicated PanelZone panels — those
-        // panels were folded into the Workspace Sidebar as fixed Tabs.
-        // Translate the legacy setting into "open the sidebar with
-        // that Tab active". 'file_tree' still opens the lightweight
-        // panel; 'none' opens nothing. Mutual exclusion (sidebar vs
-        // file tree) is enforced as side-effect: opening one path
-        // means we don't open the other.
-        if (panel === 'none') {
-          setFileTreeOpen(false);
-          if (ws) ws.setOpen(false);
-        } else if (panel === 'file_tree') {
-          setFileTreeOpen(true);
-          if (ws) ws.setOpen(false);
-        } else if (panel === 'git' && ws) {
-          setFileTreeOpen(false);
-          ws.setActiveTab('git');  // setActiveTab also flips open=true
-        } else {
-          // Unknown setting or sidebar provider missing → safe default.
-          setFileTreeOpen(true);
-        }
-      } catch {
-        setFileTreeOpen(true);
-      }
-    })();
-    // ws.setActiveTab / ws.setOpen are stable callbacks from the
-    // provider; intentionally tracked via the `ws` reference identity
-    // rather than the inner functions to avoid noisy re-runs on every
-    // sidebar state change. (deps are complete — no suppression needed.)
+    if (targetFilePath) {
+      setFileTreeOpen(true);
+      return;
+    }
+    if (compactViewport && !targetFilePath) {
+      setFileTreeOpen(false);
+      if (ws) ws.setOpen(false);
+      return;
+    }
+
+    const panel = readDefaultPanelPreference();
+    if (panel === 'none') {
+      setFileTreeOpen(false);
+      if (ws) ws.setOpen(false);
+    } else if (panel === 'file_tree') {
+      setFileTreeOpen(true);
+      if (ws) ws.setOpen(false);
+    } else if (ws) {
+      setFileTreeOpen(false);
+      ws.setActiveTab('git');
+    } else {
+      setFileTreeOpen(true);
+    }
+    // Workspace Sidebar 的回调稳定，通过 ws 引用跟踪依赖即可。
   }, [compactViewport, id, targetFilePath, setFileTreeOpen, ws]);
 
   useEffect(() => {

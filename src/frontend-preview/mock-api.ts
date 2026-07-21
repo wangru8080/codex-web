@@ -414,10 +414,6 @@ export function mockApiResponse(request: Request): Response | null {
     return json({ messages, hasMore: false, taskRuns: {} });
   }
 
-  if (pathname === "/api/settings/app") {
-    return json({ settings });
-  }
-
   if (pathname === "/api/settings/workspace") {
     return json({
       enabled: false,

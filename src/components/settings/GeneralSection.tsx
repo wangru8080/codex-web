@@ -18,47 +18,30 @@
  * it belongs on Overview / About / its dedicated section.
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { SUPPORTED_LOCALES, type Locale } from "@/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SettingsCard } from "@/components/patterns/SettingsCard";
 import { FieldRow } from "@/components/patterns/FieldRow";
+import {
+  readDefaultPanelPreference,
+  writeDefaultPanelPreference,
+  type DefaultPanelPreference,
+} from "@/lib/app-preferences";
 
 export function GeneralSection() {
   const [defaultPanel, setDefaultPanel] = useState('file_tree');
   const { t, locale, setLocale } = useTranslation();
 
-  const fetchAppSettings = useCallback(async () => {
-    try {
-      const res = await fetch("/api/settings/app");
-      if (res.ok) {
-        const data = await res.json();
-        const appSettings = data.settings || {};
-        // default_panel defaults to 'file_tree' when not set
-        const savedPanel = appSettings.default_panel;
-        setDefaultPanel(savedPanel === 'none' || savedPanel === 'git' ? savedPanel : 'file_tree');
-      }
-    } catch {
-      // ignore
-    }
+  useEffect(() => {
+    setDefaultPanel(readDefaultPanelPreference());
   }, []);
 
-  useEffect(() => {
-    fetchAppSettings();
-  }, [fetchAppSettings]);
-
-  const handleDefaultPanelChange = async (value: string) => {
+  const handleDefaultPanelChange = (value: string) => {
+    const panel = value as DefaultPanelPreference;
     setDefaultPanel(value);
-    try {
-      await fetch("/api/settings/app", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: { default_panel: value } }),
-      });
-    } catch {
-      // ignore
-    }
+    writeDefaultPanelPreference(panel);
   };
 
   return (

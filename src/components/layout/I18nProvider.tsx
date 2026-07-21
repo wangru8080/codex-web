@@ -2,6 +2,7 @@
 
 import { createContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { type Locale, type TranslationKey, translate } from '@/i18n';
+import { readLocalePreference, writeLocalePreference } from '@/lib/app-preferences';
 
 interface I18nContextValue {
   locale: Locale;
@@ -18,50 +19,26 @@ export const I18nContext = createContext<I18nContextValue>({
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('en');
 
-  // Load persisted locale on mount; auto-detect system language if never set
+  // 优先读取当前浏览器偏好；首次使用时按浏览器语言初始化。
   useEffect(() => {
-    async function loadLocale() {
-      try {
-        const res = await fetch('/api/settings/app');
-        if (res.ok) {
-          const data = await res.json();
-          const saved = data.settings?.locale;
-          if (saved === 'en' || saved === 'zh') {
-            setLocaleState(saved);
-            return;
-          }
-        }
-      } catch { /* ignore */ }
-
-      // No persisted locale — detect system language
-      // Works across: Electron (Chromium OS locale), browser, SSR (skipped)
-      if (typeof navigator !== 'undefined') {
-        const candidates = [
-          ...(navigator.languages || []),  // user's preferred language list
-          navigator.language,               // primary browser/OS language
-        ].filter(Boolean);
-        const isZh = candidates.some(lang => lang.startsWith('zh'));
-        if (isZh) {
-          setLocaleState('zh');
-          fetch('/api/settings/app', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ settings: { locale: 'zh' } }),
-          }).catch(() => {});
-        }
-      }
+    const saved = readLocalePreference();
+    if (saved) {
+      setLocaleState(saved);
+      return;
     }
-    loadLocale();
+
+    const candidates = [
+      ...(navigator.languages || []),
+      navigator.language,
+    ].filter(Boolean);
+    const detected: Locale = candidates.some((language) => language.startsWith('zh')) ? 'zh' : 'en';
+    setLocaleState(detected);
+    writeLocalePreference(detected);
   }, []);
 
   const setLocale = useCallback((newLocale: Locale) => {
     setLocaleState(newLocale);
-    // Persist to app settings
-    fetch('/api/settings/app', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ settings: { locale: newLocale } }),
-    }).catch(() => {});
+    writeLocalePreference(newLocale);
   }, []);
 
   const t = useCallback(
