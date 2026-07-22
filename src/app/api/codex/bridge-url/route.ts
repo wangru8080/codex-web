@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { homedir } from "node:os";
+import type { NextRequest } from "next/server";
+import { isAuthenticatedRequest } from "../../../../../server/web-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export function GET() {
+export function GET(request: NextRequest) {
+  if (!isAuthenticatedRequest(request)) {
+    return NextResponse.json({ error: "登录已失效" }, { status: 401 });
+  }
   const bridgeUrl = process.env.CODEX_WEB_BRIDGE_URL;
   const homeDirectory = process.env.CODEX_WEB_HOME_DIRECTORY?.trim() || homedir();
 

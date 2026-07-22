@@ -7,11 +7,13 @@ import next from "next";
 
 import { readProductionPort } from "../server/production-server-options";
 import { createWebSocketBridge } from "../server/websocket-bridge";
+import { readWebAuthConfig } from "../server/web-auth";
 
 if (!process.env.CODEX_HOME) {
   console.error("start 必须显式设置 CODEX_HOME；可在当前 shell 或 .bashrc 中 export CODEX_HOME。");
   process.exit(1);
 }
+readWebAuthConfig(process.env);
 
 const buildIdPath = resolve(process.cwd(), ".next", "BUILD_ID");
 if (!existsSync(buildIdPath)) {

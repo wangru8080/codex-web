@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 
 const { nextResponseNext, mockApiResponse } = vi.hoisted(() => ({
   nextResponseNext: vi.fn(() => ({ kind: "next" })),
@@ -16,12 +16,22 @@ vi.mock("@/frontend-preview/mock-api", () => ({
 }));
 
 import { proxy } from "../proxy";
+import { createSessionToken, readWebAuthConfig, WEB_AUTH_COOKIE } from "../../server/web-auth";
 
 function makeRequest(pathname: string) {
+  const token = createSessionToken(readWebAuthConfig(process.env));
   return {
-    nextUrl: { pathname },
+    url: `http://localhost:3000${pathname}`,
+    headers: new Headers({ cookie: `${WEB_AUTH_COOKIE}=${token}` }),
+    nextUrl: { pathname, search: "" },
   } as unknown as Parameters<typeof proxy>[0];
 }
+
+beforeEach(() => {
+  process.env.CODEX_WEB_LOGIN_EMAIL = "test@admin.com";
+  process.env.CODEX_WEB_LOGIN_PASSWORD = "123456";
+  process.env.CODEX_WEB_SESSION_SECRET = "0123456789abcdef0123456789abcdef";
+});
 
 afterEach(() => {
   vi.clearAllMocks();

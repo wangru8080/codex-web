@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 
 import { createThreadTurnsListFailureInterceptorFromEnv } from "../server/thread-turns-list-failure-interceptor";
 import { createWebSocketBridge } from "../server/websocket-bridge";
+import { readWebAuthConfig } from "../server/web-auth";
 
 const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
 
@@ -11,6 +12,7 @@ if (process.env.CODEX_HOME !== requiredCodexHome) {
   );
   process.exit(1);
 }
+readWebAuthConfig(process.env);
 
 const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "192.168.3.12";
 const devOrigins = [3000, 3001].flatMap((port) => [

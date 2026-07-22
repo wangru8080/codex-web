@@ -4,8 +4,7 @@ import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { ThemeFamilyProvider } from "@/components/layout/ThemeFamilyProvider";
 import { I18nProvider } from "@/components/layout/I18nProvider";
 import { IconProvider } from "@/components/layout/IconProvider";
-import { AppShell } from "@/components/layout/AppShell";
-import { AppServerProvider } from "@/codex-web/AppServerProvider";
+import { RootAppContent } from "@/components/layout/RootAppContent";
 import { getAllThemeFamilies, getThemeFamilyMetas } from "@/lib/theme/loader";
 import { renderThemeFamilyCSS } from "@/lib/theme/render-css";
 
@@ -62,9 +61,7 @@ export default function RootLayout({
           <ThemeFamilyProvider families={familiesMeta}>
             <I18nProvider>
               <IconProvider>
-                <AppServerProvider>
-                  <AppShell>{children}</AppShell>
-                </AppServerProvider>
+                <RootAppContent>{children}</RootAppContent>
               </IconProvider>
             </I18nProvider>
           </ThemeFamilyProvider>

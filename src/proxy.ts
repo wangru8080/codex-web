@@ -1,9 +1,26 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { mockApiResponse } from "@/frontend-preview/mock-api";
+import { isAuthenticatedRequest } from "../server/web-auth";
 
 export function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname === "/api/codex/bridge-url") {
+  const pathname = request.nextUrl.pathname;
+  const publicPath = isPublicWebAuthPath(pathname);
+  const authenticated = isAuthenticatedRequest(request);
+
+  if (pathname === "/login" && authenticated) {
+    return NextResponse.redirect(new URL("/chat", request.url));
+  }
+  if (!publicPath && !authenticated) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "登录已失效" }, { status: 401 });
+    }
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  if (pathname === "/api/codex/bridge-url" || pathname.startsWith("/api/auth/")) {
     return NextResponse.next();
   }
 
@@ -14,6 +31,10 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
+export function isPublicWebAuthPath(pathname: string): boolean {
+  return pathname === "/login" || pathname === "/api/auth/config" || pathname === "/api/auth/login";
+}
+
 export const config = {
-  matcher: ["/api/:path*"]
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
