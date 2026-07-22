@@ -4,7 +4,8 @@ import type { AppServerTurnState } from "./turn-reducer";
 
 export type HistoryTurnStatusSource =
   | "app-server.thread/turns/list"
-  | "app-server.thread/read";
+  | "app-server.thread/read"
+  | "app-server.thread/rollback";
 
 export type LatestHistoryTurn = {
   status: TurnStatus;

@@ -1797,6 +1797,10 @@ const en = {
   'chat.contextCompaction.completed': 'Context automatically compacted',
   'media.outputLoading': 'Loading media output',
   'media.outputLoadFailed': 'Failed to load media output',
+  'message.edit': 'Edit',
+  'message.edit.input': 'Edit your message',
+  'message.edit.cancel': 'Cancel',
+  'message.edit.send': 'Send',
 } as const;
 
 export type TranslationKey = keyof typeof en;

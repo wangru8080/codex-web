@@ -5,7 +5,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { useStickToBottomContext } from 'use-stick-to-bottom';
 import { Button } from '@/components/ui/button';
-import type { Message, MessageContentBlock } from '@/types';
+import type { FileAttachment, Message, MessageContentBlock } from '@/types';
 import type { AppServerRetryStatus } from '@/codex-web/turn-reducer';
 import {
   Conversation,
@@ -182,6 +182,8 @@ interface MessageListProps {
   isAssistantProject?: boolean;
   /** Assistant name for avatar display */
   assistantName?: string;
+  editableUserMessageId?: string | null;
+  onEditUserMessage?: (content: string, files: FileAttachment[]) => Promise<boolean>;
 }
 
 export function MessageList({
@@ -206,6 +208,8 @@ export function MessageList({
   startedAt,
   isAssistantProject,
   assistantName,
+  editableUserMessageId,
+  onEditUserMessage,
 }: MessageListProps) {
   const { t } = useTranslation();
   // Scroll anchor: preserve position when older messages are prepended
@@ -322,7 +326,14 @@ export function MessageList({
 
           return (
             <div key={message.id} id={`msg-${message.id}`} className="group">
-              <MessageItem message={message} sessionId={sessionId} isAssistantProject={isAssistantProject} assistantName={assistantName} />
+              <MessageItem
+                message={message}
+                sessionId={sessionId}
+                canEdit={message.id === editableUserMessageId}
+                onEdit={message.id === editableUserMessageId ? onEditUserMessage : undefined}
+                isAssistantProject={isAssistantProject}
+                assistantName={assistantName}
+              />
               {rewindSdkUuid && sessionId && !isStreaming && (
                 <RewindButton sessionId={sessionId} userMessageId={rewindSdkUuid} />
               )}

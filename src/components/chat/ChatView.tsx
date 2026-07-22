@@ -40,6 +40,7 @@ import { useAssistantTrigger } from '@/hooks/useAssistantTrigger';
 import { useStreamSubscription } from '@/hooks/useStreamSubscription';
 import { useProviderModels } from '@/hooks/useProviderModels';
 import { findModelOption } from '@/lib/model-option-match';
+import { dropLastUserTurns, latestEditableUserMessageId } from '@/codex-web/latest-user-message-edit';
 // Import from `chat-runtime-shared`, NOT `chat-runtime`. The latter
 // transitively imports the runtime registry → claude-client → Node-only
 // deps (async_hooks, Sentry, OpenTelemetry). Pulling that into a client
@@ -80,6 +81,7 @@ import { GoalProgressRow } from './GoalProgressRow';
 import { PlanImplementationPromptBar } from './PlanImplementationPromptBar';
 import {
   mergeCrossClientUserMessages,
+  type CrossClientThreadRollback,
   type CrossClientUserMessage,
 } from '@/codex-web/cross-client-sync';
 
@@ -138,6 +140,8 @@ interface ChatViewProps {
   appServerClearContextAndSend?: (content: string, effort?: ReasoningEffort) => Promise<void>;
   appServerInterrupt?: () => Promise<void>;
   appServerLoadEarlier?: () => Promise<MessagesResponse>;
+  appServerRollbackLastTurn?: () => Promise<Message[]>;
+  appServerRemoteRollback?: CrossClientThreadRollback | null;
 }
 
 /** Maximum messages kept in React state. Older messages are trimmed and reloaded on scroll. */
@@ -189,6 +193,8 @@ export function ChatView({
   appServerClearContextAndSend,
   appServerInterrupt,
   appServerLoadEarlier,
+  appServerRollbackLastTurn,
+  appServerRemoteRollback,
 }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory: panelWorkingDirectory, setPendingApprovalSessionId, setFileTreeOpen, setIsAssistantWorkspace } = usePanel();
   const workingDirectory = sessionWorkingDirectory ?? panelWorkingDirectory;
@@ -275,6 +281,12 @@ export function ChatView({
       return next;
     });
   }, []);
+  const remoteRollbackEventRef = useRef(appServerRemoteRollback?.eventId);
+  useEffect(() => {
+    if (!appServerRemoteRollback || remoteRollbackEventRef.current === appServerRemoteRollback.eventId) return;
+    remoteRollbackEventRef.current = appServerRemoteRollback.eventId;
+    cappedSetMessages((current) => dropLastUserTurns(current, appServerRemoteRollback.numTurns));
+  }, [appServerRemoteRollback, cappedSetMessages]);
   useEffect(() => {
     if (appServerSyncedUserMessages.length === 0) return;
     cappedSetMessages((current) => mergeCrossClientUserMessages(current, appServerSyncedUserMessages));
@@ -1228,7 +1240,7 @@ export function ChatView({
                 session_id: threadId || activeSessionId,
                 role: 'user',
                 content: files && files.length > 0
-                  ? `<!--files:${JSON.stringify(files.map((file) => ({ id: file.id, name: file.name, type: file.type, size: file.size, data: file.data })))}-->${displayOverride || content}`
+                  ? `<!--files:${JSON.stringify(files.map((file) => ({ id: file.id, name: file.name, type: file.type, size: file.size, data: file.data, filePath: file.filePath })))}-->${displayOverride || content}`
                   : displayOverride || content,
                 created_at: new Date().toISOString(),
                 token_usage: null,
@@ -1360,6 +1372,30 @@ export function ChatView({
   );
 
   sendMessageRef.current = sendMessage;
+
+  const editableUserMessageId = useMemo(
+    () => appServerRollbackLastTurn
+      ? latestEditableUserMessageId(messages, isStreaming)
+      : null,
+    [appServerRollbackLastTurn, isStreaming, messages],
+  );
+
+  const handleEditUserMessage = useCallback(async (content: string, files: FileAttachment[]) => {
+    if (!appServerRollbackLastTurn || isStreaming || appServerRequest) return false;
+    setAppServerErrorBanner(null);
+    try {
+      const rolledBackMessages = await appServerRollbackLastTurn();
+      cappedSetMessages(rolledBackMessages);
+      const delivered = await sendMessage(content, files);
+      return delivered !== false;
+    } catch (error) {
+      setAppServerErrorBanner({
+        message: 'Codex 编辑发送失败',
+        description: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }, [appServerRequest, appServerRollbackLastTurn, cappedSetMessages, isStreaming, sendMessage]);
 
   // ── Dequeue: when streaming finishes and queue is non-empty, send next ──
   useEffect(() => {
@@ -1641,6 +1677,8 @@ export function ChatView({
         startedAt={appServerPanelStartedAt}
         isAssistantProject={isAssistantProject}
         assistantName={assistantName}
+        editableUserMessageId={editableUserMessageId}
+        onEditUserMessage={handleEditUserMessage}
       />
       {/* End-of-turn terminal reason chip (only shown when stream is not active) */}
       {!isStreaming && (

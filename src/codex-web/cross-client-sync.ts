@@ -2,6 +2,13 @@ import type { JsonRpcNotification } from "@/codex/protocol/json-rpc";
 import type { Message } from "@/types";
 
 export const CROSS_CLIENT_USER_MESSAGE_METHOD = "bridge/sync/userMessage";
+export const CROSS_CLIENT_THREAD_ROLLBACK_METHOD = "bridge/sync/threadRollback";
+
+export type CrossClientThreadRollback = {
+  eventId: string;
+  threadId: string;
+  numTurns: number;
+};
 
 export type CrossClientUserMessage = {
   threadId: string;
@@ -39,6 +46,23 @@ export function readCrossClientUserMessage(
   }
 
   return { threadId, turnId, isNewThread, message };
+}
+
+export function readCrossClientThreadRollback(
+  notification: JsonRpcNotification,
+): CrossClientThreadRollback | null {
+  if (notification.method !== CROSS_CLIENT_THREAD_ROLLBACK_METHOD || !isRecord(notification.params)) {
+    return null;
+  }
+  const { eventId, threadId, numTurns } = notification.params;
+  if (
+    typeof eventId !== "string" || !eventId ||
+    typeof threadId !== "string" || !threadId ||
+    typeof numTurns !== "number" || !Number.isInteger(numTurns) || numTurns < 1
+  ) {
+    return null;
+  }
+  return { eventId, threadId, numTurns };
 }
 
 export function reduceCrossClientUserMessage(

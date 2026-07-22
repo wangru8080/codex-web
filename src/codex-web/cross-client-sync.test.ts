@@ -2,12 +2,27 @@ import { describe, expect, it } from "vitest";
 
 import type { Message } from "@/types";
 import {
+  CROSS_CLIENT_THREAD_ROLLBACK_METHOD,
   CROSS_CLIENT_USER_MESSAGE_METHOD,
   initialCrossClientUserMessageState,
   mergeCrossClientUserMessages,
   readCrossClientUserMessage,
+  readCrossClientThreadRollback,
   reduceCrossClientUserMessage,
 } from "./cross-client-sync";
+
+describe("readCrossClientThreadRollback", () => {
+  it("只接受正整数轮数和完整 thread/event id", () => {
+    expect(readCrossClientThreadRollback({
+      method: CROSS_CLIENT_THREAD_ROLLBACK_METHOD,
+      params: { eventId: "rollback-1", threadId: "thread-1", numTurns: 1 },
+    })).toEqual({ eventId: "rollback-1", threadId: "thread-1", numTurns: 1 });
+    expect(readCrossClientThreadRollback({
+      method: CROSS_CLIENT_THREAD_ROLLBACK_METHOD,
+      params: { eventId: "rollback-2", threadId: "thread-1", numTurns: 0 },
+    })).toBeNull();
+  });
+});
 
 function message(id: string, threadId = "thread-1"): Message {
   return {

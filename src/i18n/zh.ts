@@ -1772,6 +1772,10 @@ const zh: Record<TranslationKey, string> = {
   'chat.contextCompaction.completed': '上下文已压缩',
   'media.outputLoading': '正在加载媒体输出',
   'media.outputLoadFailed': '媒体输出加载失败',
+  'message.edit': '编辑',
+  'message.edit.input': '编辑你的问题',
+  'message.edit.cancel': '取消',
+  'message.edit.send': '发送',
 };
 
 export default zh;

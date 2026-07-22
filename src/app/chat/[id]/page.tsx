@@ -37,6 +37,7 @@ import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort
 import { modelSettingsFromResume } from '@/codex-web/thread-model-settings';
 import { latestInProgressTurnId } from '@/codex-web/resumed-turn-hydration';
 import { readDefaultPanelPreference } from '@/lib/app-preferences';
+import { threadRollbackToMessages } from '@/codex-web/thread-rollback';
 
 function safeDecodeSessionId(id: string): string {
   try {
@@ -89,6 +90,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     resumeThread,
     sendOneTurn,
     sendTurnInThread,
+    rollbackThread,
     interruptTurn,
     respondToServerRequest,
     setThreadGoal,
@@ -365,6 +367,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     currentThreadIds
       .map((threadId) => (threadId ? appServerState.threadTokenUsageByThreadId[threadId]?.data : null))
       .find((usage): usage is NonNullable<typeof usage> => !!usage) ?? null;
+  const appServerRemoteRollback =
+    appServerState.latestCrossClientThreadRollback &&
+    currentThreadIds.includes(appServerState.latestCrossClientThreadRollback.threadId)
+      ? appServerState.latestCrossClientThreadRollback
+      : null;
   const defaultAppServerModel =
     appServerState.models?.data.data.find((model) => !model.hidden && model.isDefault)?.id ||
     appServerState.models?.data.data.find((model) => !model.hidden)?.id ||
@@ -397,6 +404,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         appServerGoal={appServerGoal}
         appServerNotice={appServerNotice}
         appServerSyncedUserMessages={appServerSyncedUserMessages}
+        appServerRemoteRollback={appServerRemoteRollback}
         onAppServerUserMessageAccepted={publishCrossClientUserMessage}
         onAppServerRequestResponse={(input) =>
           appServerRequest
@@ -463,6 +471,27 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             threadId: appServerTurn.threadId || resumedThreadId || id,
             turnId: appServerTurn.turnId,
           });
+        } : undefined}
+        appServerRollbackLastTurn={canResumeAppServerThread ? async () => {
+          const threadId = resumedThreadId || id;
+          const response = await rollbackThread({ threadId, numTurns: 1 });
+          const rolledBackMessages = applyTurnSnapshotsToMessages(
+            response.thread,
+            threadRollbackToMessages(response.thread),
+            turnSnapshotsRef.current,
+          );
+          setAppServerThread(response.thread);
+          setMessages(rolledBackMessages);
+          setLatestHistoryTurn(
+            latestHistoryTurnFromPage(
+              response.thread.turns,
+              'asc',
+              'app-server.thread/rollback',
+            ),
+          );
+          setHasMore(false);
+          setTurnsNextCursor(null);
+          return rolledBackMessages;
         } : undefined}
         appServerSend={canResumeAppServerThread ? async ({ content, files, cwd, model, effort, mode, permissionProfile, onAccepted }) => {
           const target = resolveHistoryTurnTarget({

@@ -1,5 +1,8 @@
 import type { JsonRpcId, JsonRpcMessage } from "../src/codex/protocol/json-rpc";
-import { CROSS_CLIENT_USER_MESSAGE_METHOD } from "../src/codex-web/cross-client-sync";
+import {
+  CROSS_CLIENT_THREAD_ROLLBACK_METHOD,
+  CROSS_CLIENT_USER_MESSAGE_METHOD,
+} from "../src/codex-web/cross-client-sync";
 
 const SERVER_REQUEST_ID_PREFIX = "bridge-server-request:";
 
@@ -17,7 +20,8 @@ export function isBridgeSyncNotification(message: JsonRpcMessage): boolean {
   return (
     "method" in message &&
     message.id === undefined &&
-    message.method === CROSS_CLIENT_USER_MESSAGE_METHOD
+    (message.method === CROSS_CLIENT_USER_MESSAGE_METHOD ||
+      message.method === CROSS_CLIENT_THREAD_ROLLBACK_METHOD)
   );
 }
 

@@ -14,7 +14,7 @@ import type { JsonRpcNotification, JsonRpcRequest } from "@/codex/protocol/json-
 import type { AppServerPendingRequest } from "./approval-adapter";
 import type { PlanImplementationPrompt } from "./plan-implementation-adapter";
 import type { AppServerTurnState } from "./turn-reducer";
-import type { CrossClientUserMessage } from "./cross-client-sync";
+import type { CrossClientThreadRollback, CrossClientUserMessage } from "./cross-client-sync";
 
 export type SourceBreadcrumb =
   | "app-server.initialize"
@@ -69,6 +69,7 @@ export type CodexWebAppServerState = {
   pendingApproval: Sourced<AppServerPendingRequest> | null;
   crossClientUserMessagesByThreadId: Record<string, CrossClientUserMessage[]>;
   latestCrossClientUserMessage: CrossClientUserMessage | null;
+  latestCrossClientThreadRollback: CrossClientThreadRollback | null;
   diagnostics: Array<Sourced<JsonRpcNotification | JsonRpcRequest | { message: string }>>;
 };
 
@@ -95,5 +96,6 @@ export const initialAppServerState: CodexWebAppServerState = {
   pendingApproval: null,
   crossClientUserMessagesByThreadId: {},
   latestCrossClientUserMessage: null,
+  latestCrossClientThreadRollback: null,
   diagnostics: [],
 };

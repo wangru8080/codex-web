@@ -13,7 +13,8 @@ import { ProcessCollapseGroup, ToolActionsGroup } from '@/components/ai-elements
 import { MediaPreview } from './MediaPreview';
 import { DiffSummary } from './DiffSummary';
 import { Button } from "@/components/ui/button";
-import { Check, CaretDown, CaretUp, CaretRight } from "@/components/ui/icon";
+import { Textarea } from "@/components/ui/textarea";
+import { Check, CaretDown, CaretUp, CaretRight, NotePencil } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { FileAttachmentDisplay } from './FileAttachmentDisplay';
 import { FileExcerptDisplay } from './FileExcerptDisplay';
@@ -25,6 +26,8 @@ import { ContextCompactionRow } from './ContextCompactionRow';
 // out to avoid stale references.
 import { parseDBDate } from '@/lib/utils';
 import { usePanel } from '@/hooks/usePanel';
+import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/i18n';
 import { classifyPath } from '@/lib/preview-source';
 import { isWriteTool, isCreateTool, extractWritePath, resolveToolPath } from '@/lib/file-write-tools';
 import { DevOutputSegment } from './DevOutputChips';
@@ -34,6 +37,8 @@ import { writeTextToClipboard } from '@/lib/clipboard';
 interface MessageItemProps {
   message: Message;
   sessionId?: string;
+  canEdit?: boolean;
+  onEdit?: (content: string, files: FileAttachment[]) => Promise<boolean>;
   /** Whether this is an assistant workspace project */
   isAssistantProject?: boolean;
   /** Assistant name for avatar */
@@ -341,12 +346,16 @@ function TokenUsageDisplay({ usage }: { usage: TokenUsage }) {
 
 const COLLAPSE_HEIGHT = 300;
 
-export const MessageItem = memo(function MessageItem({ message, sessionId, isAssistantProject, assistantName }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({ message, sessionId, canEdit = false, onEdit, isAssistantProject, assistantName }: MessageItemProps) {
   const isUser = message.role === 'user';
+  const { t } = useTranslation();
 
   // Collapse/expand state for long user messages (hooks must be called unconditionally)
   const [isExpanded, setIsExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Preview wiring for DiffSummary (Phase 2.3). Clicking a previewable row
@@ -402,6 +411,64 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
     hour: '2-digit',
     minute: '2-digit',
   });
+
+  const submitEdit = useCallback(async () => {
+    const content = editValue.trim();
+    if ((!content && files.length === 0) || !onEdit || isSubmittingEdit) return;
+    setIsSubmittingEdit(true);
+    try {
+      if (await onEdit(content, files)) {
+        setIsEditing(false);
+      }
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  }, [editValue, files, isSubmittingEdit, onEdit]);
+
+  if (isUser && isEditing) {
+    return (
+      <AIMessage from="user" className="max-w-full" data-user-message-editor>
+        <MessageContent className="w-full gap-3 rounded-2xl px-4 py-4">
+          {files.length > 0 && <FileAttachmentDisplay files={files} />}
+          <Textarea
+            autoFocus
+            value={editValue}
+            onChange={(event) => setEditValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && !isSubmittingEdit) {
+                setIsEditing(false);
+              } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                void submitEdit();
+              }
+            }}
+            disabled={isSubmittingEdit}
+            aria-label={t('message.edit.input' as TranslationKey)}
+            className="min-h-28 resize-y border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isSubmittingEdit}
+              onClick={() => setIsEditing(false)}
+            >
+              {t('message.edit.cancel' as TranslationKey)}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={isSubmittingEdit || (!editValue.trim() && files.length === 0)}
+              onClick={() => void submitEdit()}
+            >
+              {t('message.edit.send' as TranslationKey)}
+            </Button>
+          </div>
+        </MessageContent>
+      </AIMessage>
+    );
+  }
 
   const hasAssistantProcess =
     !isUser && (!!thinking || renderParts.some((part) =>
@@ -658,6 +725,21 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, isAss
         {!isUser && <span className="text-xs text-muted-foreground/50">{timestamp}</span>}
         {!isUser && tokenUsage && <TokenUsageDisplay usage={tokenUsage} />}
         {displayText && <CopyButton text={displayText} />}
+        {isUser && canEdit && fileExcerpts.length === 0 && onEdit && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => {
+              setEditValue(displayText);
+              setIsEditing(true);
+            }}
+            aria-label={t('message.edit' as TranslationKey)}
+            title={t('message.edit' as TranslationKey)}
+          >
+            <NotePencil size={13} />
+          </Button>
+        )}
       </div>
     </AIMessage>
       </div>

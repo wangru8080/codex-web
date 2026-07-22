@@ -22,10 +22,14 @@ describe("appServerMessageDelivery", () => {
 });
 
 describe("isBridgeSyncNotification", () => {
-  it("只识别无 id 的用户消息同步事件", () => {
+  it("只识别白名单内无 id 的同步事件", () => {
     expect(isBridgeSyncNotification({
       method: "bridge/sync/userMessage",
       params: { threadId: "thread-1" },
+    })).toBe(true);
+    expect(isBridgeSyncNotification({
+      method: "bridge/sync/threadRollback",
+      params: { threadId: "thread-1", numTurns: 1, eventId: "rollback-1" },
     })).toBe(true);
     expect(isBridgeSyncNotification({ id: 1, method: "bridge/sync/userMessage" })).toBe(false);
     expect(isBridgeSyncNotification({ method: "turn/started" })).toBe(false);

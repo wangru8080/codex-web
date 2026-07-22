@@ -28,6 +28,8 @@ import type { ThreadArchiveResponse } from "@/codex/protocol/generated/v2/Thread
 import type { ThreadDeleteResponse } from "@/codex/protocol/generated/v2/ThreadDeleteResponse";
 import type { ThreadReadParams } from "@/codex/protocol/generated/v2/ThreadReadParams";
 import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadReadResponse";
+import type { ThreadRollbackParams } from "@/codex/protocol/generated/v2/ThreadRollbackParams";
+import type { ThreadRollbackResponse } from "@/codex/protocol/generated/v2/ThreadRollbackResponse";
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
 import type { ThreadSetNameParams } from "@/codex/protocol/generated/v2/ThreadSetNameParams";
 import type { ThreadSetNameResponse } from "@/codex/protocol/generated/v2/ThreadSetNameResponse";
@@ -123,7 +125,9 @@ import { buildAppServerTurnInput } from "./turn-input";
 import { persistAttachments } from "./attachment-persistence";
 import { readMatchingFsChangedPaths } from "./app-server-file-watch";
 import {
+  CROSS_CLIENT_THREAD_ROLLBACK_METHOD,
   CROSS_CLIENT_USER_MESSAGE_METHOD,
+  readCrossClientThreadRollback,
   reduceCrossClientUserMessage,
   type CrossClientUserMessage,
 } from "./cross-client-sync";
@@ -176,6 +180,7 @@ export type AppServerActions = {
   sendOneTurn: (params: SendOneTurnParams) => Promise<AppServerTurnState>;
   resumeThread: (params: ResumeThreadParams) => Promise<ThreadResumeResponse>;
   sendTurnInThread: (params: SendTurnInThreadParams) => Promise<AppServerTurnState>;
+  rollbackThread: (params: ThreadRollbackParams) => Promise<ThreadRollbackResponse>;
   interruptTurn: (params?: InterruptTurnParams) => Promise<void>;
   refreshThreads: () => Promise<ThreadListResponse>;
   listThreads: (params: ThreadListParams) => Promise<ThreadListResponse>;
@@ -280,6 +285,25 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     client.onNotification((notification) => {
       const accountLoginCompletion = readAccountLoginCompletion(notification);
+      if (notification.method === CROSS_CLIENT_THREAD_ROLLBACK_METHOD) {
+        const rollback = readCrossClientThreadRollback(notification);
+        if (rollback) {
+          setState((current) => ({
+            ...current,
+            crossClientUserMessagesByThreadId: {
+              ...current.crossClientUserMessagesByThreadId,
+              [rollback.threadId]: (current.crossClientUserMessagesByThreadId[rollback.threadId] ?? [])
+                .slice(0, -rollback.numTurns),
+            },
+            latestCrossClientUserMessage:
+              current.latestCrossClientUserMessage?.threadId === rollback.threadId
+                ? null
+                : current.latestCrossClientUserMessage,
+            latestCrossClientThreadRollback: rollback,
+          }));
+        }
+        return;
+      }
       if (notification.method === CROSS_CLIENT_USER_MESSAGE_METHOD) {
         setState((current) => {
           const crossClientState = reduceCrossClientUserMessage({
@@ -1193,12 +1217,40 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const rollbackThread = useCallback(async (params: ThreadRollbackParams): Promise<ThreadRollbackResponse> => {
+    const client = clientRef.current;
+    if (!client) {
+      throw new Error("Web bridge 尚未连接");
+    }
+    const response = await client.request("thread/rollback", params) as ThreadRollbackResponse;
+    const rollback = {
+      eventId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      threadId: params.threadId,
+      numTurns: params.numTurns,
+    };
+    setState((current) => ({
+      ...current,
+      crossClientUserMessagesByThreadId: {
+        ...current.crossClientUserMessagesByThreadId,
+        [params.threadId]: (current.crossClientUserMessagesByThreadId[params.threadId] ?? [])
+          .slice(0, -params.numTurns),
+      },
+      latestCrossClientUserMessage:
+        current.latestCrossClientUserMessage?.threadId === params.threadId
+          ? null
+          : current.latestCrossClientUserMessage,
+    }));
+    client.notify(CROSS_CLIENT_THREAD_ROLLBACK_METHOD, rollback);
+    return response;
+  }, []);
+
   const actions = useMemo<AppServerActions>(
     () => ({
       startThread,
       sendOneTurn,
       resumeThread,
       sendTurnInThread,
+      rollbackThread,
       interruptTurn,
       refreshThreads,
       listThreads,
@@ -1239,7 +1291,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       logoutAccount,
       publishCrossClientUserMessage,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
   );
 
   return (
