@@ -107,6 +107,32 @@ describe("连续工具分组展示接线", () => {
     expect(source).toContain("StreamingMessageResponse as MessageResponse");
   });
 
+  it("app-server 可重试错误在流式消息中展示真实标题和可展开详情", () => {
+    const streamingSource = readFileSync(
+      resolve(process.cwd(), "src/components/chat/StreamingMessage.tsx"),
+      "utf8",
+    );
+    const pageSource = readFileSync(
+      resolve(process.cwd(), "src/app/chat/page.tsx"),
+      "utf8",
+    );
+
+    expect(streamingSource).toContain("data-app-server-retry-status");
+    expect(streamingSource).toContain("status.additionalDetails");
+    expect(streamingSource).toContain("/^Reconnecting\\.\\.\\. (\\d+)\\/(\\d+)$/");
+    expect(streamingSource).toContain("t('streaming.reconnecting', { current: reconnectMatch[1], total: reconnectMatch[2] })");
+    expect(streamingSource).toContain(": status.message");
+    expect(streamingSource).toContain("aria-expanded={expanded}");
+    expect(streamingSource).toContain("<WifiHigh");
+    expect(pageSource).toContain("retryStatus={appServerTurn?.retryStatus}");
+
+    const chatViewSource = readFileSync(
+      resolve(process.cwd(), "src/components/chat/ChatView.tsx"),
+      "utf8",
+    );
+    expect(chatViewSource).toContain("retryStatus={appServerTurn?.retryStatus}");
+  });
+
   it("历史消息默认折叠整轮过程，并保留连续工具子分组", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/components/chat/MessageItem.tsx"),

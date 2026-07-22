@@ -1145,6 +1145,7 @@ function NewChatPageInner() {
             processBlocks={appServerProcessBlocks}
             planBlocks={appServerTurn?.planBlocks}
             statusText={statusText}
+            retryStatus={appServerTurn?.retryStatus}
             startedAt={streamingStartedAtRef.current}
           />
           {composerStack}

@@ -146,14 +146,66 @@ describe("reduceAppServerTurnNotification", () => {
     expect(state.items).toHaveLength(1);
   });
 
-  it("把 app-server error 映射为失败态", () => {
-    const state = reduceAppServerTurnNotification(initialAppServerTurnState, {
+  it("可重试的 app-server error 保持运行并保存真实错误详情", () => {
+    const state = reduceAppServerTurnNotification(
+      createAcceptedTurnState("thread-1", "turn-1"),
+      {
+        method: "error",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          willRetry: true,
+          error: {
+            message: "正在重新连接 3/5",
+            additionalDetails: "unexpected status 503 Service Unavailable",
+            codexErrorInfo: "serverOverloaded",
+          },
+        },
+      },
+    );
+
+    expect(state.status).toBe("running");
+    expect(state.errorMessage).toBe("");
+    expect(state.retryStatus).toEqual({
+      message: "正在重新连接 3/5",
+      additionalDetails: "unexpected status 503 Service Unavailable",
+    });
+  });
+
+  it("非重试 app-server error 映射为失败态", () => {
+    const state = reduceAppServerTurnNotification(createAcceptedTurnState("thread-1", "turn-1"), {
       method: "error",
-      params: { message: "模型不可用" },
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        willRetry: false,
+        error: { message: "模型不可用", additionalDetails: null, codexErrorInfo: "other" },
+      },
     });
 
     expect(state.status).toBe("failed");
     expect(state.errorMessage).toBe("模型不可用");
+    expect(state.retryStatus).toBeNull();
+  });
+
+  it("可重试错误后的普通 notification 清除重试状态", () => {
+    const retrying = reduceAppServerTurnNotification(createAcceptedTurnState("thread-1", "turn-1"), {
+      method: "error",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        willRetry: true,
+        error: { message: "正在重新连接 1/5", additionalDetails: null, codexErrorInfo: "other" },
+      },
+    });
+
+    const recovered = reduceAppServerTurnNotification(retrying, {
+      method: "item/agentMessage/delta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: "已恢复" },
+    });
+
+    expect(recovered.status).toBe("running");
+    expect(recovered.retryStatus).toBeNull();
   });
 
   it("按 itemId 分别累积 commentary 与 final answer", () => {

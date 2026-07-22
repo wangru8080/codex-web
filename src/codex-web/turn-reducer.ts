@@ -11,6 +11,11 @@ import {
 
 export type AppServerTurnStatus = "idle" | "starting" | "running" | "completed" | "failed" | "interrupted";
 
+export type AppServerRetryStatus = {
+  message: string;
+  additionalDetails: string | null;
+};
+
 export type AppServerTurnState = {
   status: AppServerTurnStatus;
   threadId: string;
@@ -29,6 +34,7 @@ export type AppServerTurnState = {
   mcpProgress: Record<string, string>;
   contextCompactionStatusById: Record<string, "inProgress" | "completed">;
   errorMessage: string;
+  retryStatus: AppServerRetryStatus | null;
 };
 
 export const initialAppServerTurnState: AppServerTurnState = {
@@ -49,6 +55,7 @@ export const initialAppServerTurnState: AppServerTurnState = {
   mcpProgress: {},
   contextCompactionStatusById: {},
   errorMessage: "",
+  retryStatus: null,
 };
 
 export function appServerTurnSnapshotKey(threadId: string, turnId: string): string {
@@ -107,6 +114,9 @@ export function reduceAppServerTurnNotification(
   state: AppServerTurnState,
   notification: JsonRpcNotification,
 ): AppServerTurnState {
+  if (notification.method !== "error" && state.retryStatus) {
+    state = { ...state, retryStatus: null };
+  }
   const params = notification.params;
 
   switch (notification.method) {
@@ -287,11 +297,30 @@ export function reduceAppServerTurnNotification(
 
     case "error": {
       const data = readRecord(params);
-      const message = data.message;
+      const error = readRecord(data.error);
+      const message = typeof error.message === "string"
+        ? error.message
+        : typeof data.message === "string"
+          ? data.message
+          : "app-server 返回错误";
+      if (data.willRetry === true) {
+        return {
+          ...state,
+          status: "running",
+          errorMessage: "",
+          retryStatus: {
+            message,
+            additionalDetails: typeof error.additionalDetails === "string"
+              ? error.additionalDetails
+              : null,
+          },
+        };
+      }
       return {
         ...state,
         status: "failed",
-        errorMessage: typeof message === "string" ? message : "app-server 返回错误",
+        errorMessage: message,
+        retryStatus: null,
       };
     }
 

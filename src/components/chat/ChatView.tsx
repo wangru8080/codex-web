@@ -1631,6 +1631,7 @@ export function ChatView({
         processBlocks={appServerProcessBlocks}
         planBlocks={appServerTurn?.planBlocks}
         statusText={statusText}
+        retryStatus={appServerTurn?.retryStatus}
         onForceStop={stopStreaming}
         hasMore={hasMore}
         loadingMore={loadingMore}

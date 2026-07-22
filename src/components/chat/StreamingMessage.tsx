@@ -13,11 +13,13 @@ import { Button } from '@/components/ui/button';
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { ProposedPlanMessageBlock, UpdatedPlanMessageBlock } from './PlanMessageBlock';
 import { ContextCompactionRow } from './ContextCompactionRow';
+import { CaretDown, WifiHigh } from '@/components/ui/icon';
 import {
   groupConsecutiveToolBlocks,
   type StreamingProcessBlock,
 } from './streaming-process-groups';
 import type { MediaBlock, MessageContentBlock } from '@/types';
+import type { AppServerRetryStatus } from '@/codex-web/turn-reducer';
 
 interface ToolUseInfo {
   id: string;
@@ -44,6 +46,7 @@ interface StreamingMessageProps {
   processBlocks?: MessageContentBlock[];
   planBlocks?: MessageContentBlock[];
   statusText?: string;
+  retryStatus?: AppServerRetryStatus | null;
   onForceStop?: () => void;
 }
 
@@ -158,6 +161,49 @@ function StreamingStatusBar({ statusText, onForceStop, startedAt }: { statusText
   );
 }
 
+function StreamingRetryStatus({ status }: { status: AppServerRetryStatus }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(true);
+  const hasDetails = !!status.additionalDetails;
+  const reconnectMatch = /^Reconnecting\.\.\. (\d+)\/(\d+)$/.exec(status.message);
+  const displayMessage = reconnectMatch
+    ? t('streaming.reconnecting', { current: reconnectMatch[1], total: reconnectMatch[2] })
+    : status.message;
+  const toggleLabel = expanded
+    ? t('streaming.collapseRetryDetails')
+    : t('streaming.expandRetryDetails');
+
+  return (
+    <div className="py-2 text-sm text-muted-foreground" data-app-server-retry-status>
+      <div className="flex min-h-6 items-center gap-2">
+        <WifiHigh size={18} className="shrink-0" aria-hidden />
+        <Shimmer duration={1.5}>{displayMessage}</Shimmer>
+        {hasDetails && (
+          <button
+            type="button"
+            onClick={() => setExpanded((current) => !current)}
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-expanded={expanded}
+            aria-label={toggleLabel}
+            title={toggleLabel}
+          >
+            <CaretDown
+              size={14}
+              className={expanded ? 'transition-transform' : '-rotate-90 transition-transform'}
+              aria-hidden
+            />
+          </button>
+        )}
+      </div>
+      {hasDetails && expanded && (
+        <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground/90">
+          {status.additionalDetails}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function StreamingMessage({
   content,
   isStreaming,
@@ -170,6 +216,7 @@ export function StreamingMessage({
   processBlocks = [],
   planBlocks = [],
   statusText,
+  retryStatus,
   onForceStop,
 }: StreamingMessageProps) {
   const { t } = useTranslation();
@@ -345,6 +392,13 @@ export function StreamingMessage({
           }
           return null;
         })}
+
+        {isStreaming && retryStatus && (
+          <StreamingRetryStatus
+            key={`${retryStatus.message}:${retryStatus.additionalDetails ?? ''}`}
+            status={retryStatus}
+          />
+        )}
 
         {/* Streaming text content rendered via Streamdown */}
         {content && (

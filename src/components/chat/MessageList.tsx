@@ -6,6 +6,7 @@ import type { TranslationKey } from '@/i18n';
 import { useStickToBottomContext } from 'use-stick-to-bottom';
 import { Button } from '@/components/ui/button';
 import type { Message, MessageContentBlock } from '@/types';
+import type { AppServerRetryStatus } from '@/codex-web/turn-reducer';
 import {
   Conversation,
   ConversationContent,
@@ -168,6 +169,7 @@ interface MessageListProps {
   processBlocks?: MessageContentBlock[];
   planBlocks?: MessageContentBlock[];
   statusText?: string;
+  retryStatus?: AppServerRetryStatus | null;
   onForceStop?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -194,6 +196,7 @@ export function MessageList({
   processBlocks,
   planBlocks,
   statusText,
+  retryStatus,
   onForceStop,
   hasMore,
   loadingMore,
@@ -340,6 +343,7 @@ export function MessageList({
             processBlocks={processBlocks}
             planBlocks={planBlocks}
             statusText={statusText}
+            retryStatus={retryStatus}
             onForceStop={onForceStop}
           />
         )}
