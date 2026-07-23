@@ -21,7 +21,7 @@ const createdAt = new Date("2026-07-11T15:30:00.000Z");
 const dayDir = path.join(codexHome, "sessions", "2026", "07", "11");
 const fileTimestamp = createdAt.toISOString().replace(/:/g, "-").replace(/\.\d{3}Z$/, "");
 const rolloutPath = path.join(dayDir, `rollout-${fileTimestamp}-${threadId}.jsonl`);
-const cwd = "/home/rrssnas/code/codex/web";
+const cwd = process.cwd();
 
 function iso(offsetSeconds: number): string {
   return new Date(createdAt.getTime() + offsetSeconds * 1000).toISOString();
