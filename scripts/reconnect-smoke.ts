@@ -2,9 +2,11 @@ import type { Server } from "node:http";
 import WebSocket from "ws";
 
 import { createWebSocketBridge } from "../server/websocket-bridge";
+import { resolveTestCodexHome } from "../server/test-codex-home";
 import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
 
-const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
+const codexHome = resolveTestCodexHome();
+process.env.CODEX_HOME = codexHome;
 const commandStartTimeoutMs = 90_000;
 const reconnectTimeoutMs = 10_000;
 const turnCompleteTimeoutMs = 120_000;
@@ -21,17 +23,13 @@ type JsonRpcMessage = {
 type Notification = { method: string; params?: unknown };
 
 async function main(): Promise<void> {
-  if (process.env.CODEX_HOME !== requiredCodexHome) {
-    throw new Error(`重连 smoke 必须使用隔离 CODEX_HOME：${requiredCodexHome}`);
-  }
-
   const bridge = createWebSocketBridge({ token: "reconnect-smoke-token" });
   try {
     await waitForListening(bridge.server);
     const url = `${bridge.url()}?token=${bridge.token}`;
     const first = await RpcClient.connect(url, reconnectTimeoutMs);
     const initialize = await initializeClient(first);
-    if (initialize.codexHome !== requiredCodexHome) {
+    if (initialize.codexHome !== codexHome) {
       throw new Error(`app-server 使用了错误 CODEX_HOME：${initialize.codexHome ?? "缺失"}`);
     }
 

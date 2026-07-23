@@ -4,12 +4,14 @@ import path from "node:path";
 
 import WebSocket from "ws";
 
+import { resolveTestCodexHome } from "../server/test-codex-home";
 import { createWebSocketBridge } from "../server/websocket-bridge";
 import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
 import { threadPermissionUpdateOptions } from "../src/codex-web/app-server-runtime-options";
 import type { ConfigReadResponse } from "../src/codex/protocol/generated/v2/ConfigReadResponse";
 
-const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
+const codexHome = resolveTestCodexHome();
+process.env.CODEX_HOME = codexHome;
 const testRoot = "/volume2/SSD/codex/Temp/codex-permission-e2e-20260714-142802";
 const workspace = path.join(testRoot, "workspace");
 const outside = path.join(testRoot, "outside");
@@ -40,9 +42,6 @@ type Scenario = {
 };
 
 async function main(): Promise<void> {
-  if (process.env.CODEX_HOME !== requiredCodexHome) {
-    throw new Error(`真实权限 E2E 必须使用隔离 CODEX_HOME：${requiredCodexHome}`);
-  }
   await assertMissing(testRoot);
   await mkdir(workspace, { recursive: true });
   await mkdir(outside, { recursive: true });
@@ -60,7 +59,7 @@ async function main(): Promise<void> {
       capabilities: appServerInitializeCapabilities(),
     }) as { codexHome?: string };
     await client.notify("initialized");
-    if (initialize.codexHome !== requiredCodexHome) {
+    if (initialize.codexHome !== codexHome) {
       throw new Error(`app-server 使用了错误 CODEX_HOME：${initialize.codexHome ?? "未返回"}`);
     }
 

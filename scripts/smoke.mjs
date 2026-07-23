@@ -2,14 +2,9 @@ import WebSocket from "ws";
 
 import { createWebSocketBridge } from "../dist/server/websocket-bridge.js";
 
-const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
-
-if (process.env.CODEX_HOME !== requiredCodexHome) {
-  console.error(
-    `smoke 必须使用隔离 CODEX_HOME：${requiredCodexHome}，当前为 ${process.env.CODEX_HOME ?? "未设置"}`,
-  );
-  process.exit(1);
-}
+const defaultTestCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
+const codexHome = process.env.CODEX_HOME?.trim() || defaultTestCodexHome;
+process.env.CODEX_HOME = codexHome;
 
 const bridge = createWebSocketBridge({ token: "smoke-token" });
 
@@ -18,7 +13,7 @@ try {
   const socket = new WebSocket(`${bridge.url()}?token=${bridge.token}`);
   const response = await roundTripInitialize(socket);
 
-  if (response.result?.codexHome !== requiredCodexHome) {
+  if (response.result?.codexHome !== codexHome) {
     throw new Error(`app-server 使用了错误 CODEX_HOME：${response.result?.codexHome}`);
   }
 

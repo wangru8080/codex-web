@@ -3,21 +3,17 @@ import WebSocket from "ws";
 
 import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
 import type { JsonRpcMessage } from "../src/codex/protocol/json-rpc";
-import { isolatedCodexHome } from "../server/codex-process";
+import { resolveTestCodexHome } from "../server/test-codex-home";
 import { createWebSocketBridge } from "../server/websocket-bridge";
 
-if (process.env.CODEX_HOME !== isolatedCodexHome) {
-  console.error(
-    `app-server recovery smoke 必须使用隔离 CODEX_HOME：${isolatedCodexHome}，当前为 ${process.env.CODEX_HOME ?? "未设置"}`,
-  );
-  process.exit(1);
-}
+const codexHome = resolveTestCodexHome();
+process.env.CODEX_HOME = codexHome;
 
 async function main(): Promise<void> {
   const bridge = createWebSocketBridge({
     host: "127.0.0.1",
     allowRemoteConnections: true,
-    codexHome: isolatedCodexHome,
+    codexHome,
   });
   try {
     await waitForListening(bridge.server);
@@ -25,7 +21,7 @@ async function main(): Promise<void> {
     const firstPid = requiredPid(bridge.appServerPid, "第一代");
     const first = await RpcClient.connect(url);
     const firstInitialize = await initializeClient(first);
-    assertIsolatedHome(firstInitialize.codexHome);
+    assertCodexHome(firstInitialize.codexHome);
     const firstModels = await listModels(first);
     const firstClosed = first.waitForClose();
 
@@ -40,7 +36,7 @@ async function main(): Promise<void> {
 
     const second = await RpcClient.connect(url);
     const secondInitialize = await initializeClient(second);
-    assertIsolatedHome(secondInitialize.codexHome);
+    assertCodexHome(secondInitialize.codexHome);
     const secondModels = await listModels(second);
 
     await second.close();
@@ -80,9 +76,9 @@ async function listModels(client: RpcClient): Promise<number> {
   return response.data.length;
 }
 
-function assertIsolatedHome(codexHome: string | undefined): void {
-  if (codexHome !== isolatedCodexHome) {
-    throw new Error(`app-server 使用了错误 CODEX_HOME：${codexHome ?? "缺失"}`);
+function assertCodexHome(actualCodexHome: string | undefined): void {
+  if (actualCodexHome !== codexHome) {
+    throw new Error(`app-server 使用了错误 CODEX_HOME：${actualCodexHome ?? "缺失"}`);
   }
 }
 

@@ -13,8 +13,8 @@ Codex Web 是基于官方 `openai/codex` 的浏览器 Web 版本。开发主线�
 - 第一版采用 Web bridge 连接已安装的 `codex app-server --stdio`，不改 `codex-core`。
 - 浏览器不能直接连接本地进程；必须经过 Web bridge。
 - `CodexBrowser` 和 `CodePilot` 只能用于借鉴 Codex app-server 相关逻辑、开发流程和测试经验；禁止直接移植、复制或复用两者代码。
-- 开发、单元测试、smoke 测试和手动调试默认不得使用本地真实 `CODEX_HOME`。必须使用隔离环境：`CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`。
-- 只有最终验收阶段，且用户明确同意后，才允许切回本地真实 `CODEX_HOME` 做验收。
+- 开发、单元测试、smoke 测试和手动调试的默认测试隔离环境为 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`。
+- 用户显式设置 `CODEX_HOME` 时必须完整保留该选择，不得因路径不同而拒绝或改写；该值可以是其他隔离目录，也可以是真实 `CODEX_HOME`。使用真实环境会读取或修改其中的账号、配置、会话、MCP、skills 和 approval 状态，执行者必须自行确认影响范围。
 
 ## 架构
 
@@ -153,17 +153,19 @@ Codex Web 只有一个 runtime：Codex app-server。
 - 禁止把 Ratatui 组件改造成 HTML。
 - 禁止让浏览器直接连接 unsupported app-server websocket transport 作为第一版方案。
 - 禁止在浏览器端保存 OAuth access token、refresh token、API key 或复制来的 `CODEX_HOME` 凭据。
-- 禁止在开发、测试、smoke 或普通调试中隐式读取本地真实 `CODEX_HOME`。
+- 禁止在未显式设置 `CODEX_HOME` 时隐式回退到本地真实环境；未设置或只设置空白值时必须使用默认测试隔离目录。
 - 禁止显示没有真实 app-server 来源的假状态、假数字或 placeholder。
 - 禁止绕过 app-server approval 流程。
 
 ## CODEX_HOME 隔离
 
-默认开发环境必须显式设置：
+默认测试隔离环境为：
 
 ```bash
 export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 ```
+
+未设置或只设置空白 `CODEX_HOME` 时，开发入口、测试 fixture、smoke 和回归脚本使用上述默认值。用户显式设置任意非空 `CODEX_HOME` 时，所有入口必须使用该值，包括真实 `CODEX_HOME`，不得做默认路径精确相等限制。
 
 适用范围：
 
@@ -174,10 +176,10 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 
 要求：
 
-- 测试 fixture、脚本和 smoke runner 必须把 `CODEX_HOME` 作为显式环境变量传入子进程。
+- 测试 fixture、脚本和 smoke runner 必须把解析后的 `CODEX_HOME` 显式传入子进程：优先使用用户设置，未设置时使用默认测试隔离目录。
 - UI diagnostics 必须能显示当前 app-server 使用的是隔离 `CODEX_HOME` 还是本地真实 `CODEX_HOME`。
 - 隔离环境可以参考 `CodexBrowser` 的隔离环境要求和经验，但不得复用其实现代码。
-- 最终验收使用本地真实 `CODEX_HOME` 前，必须先记录隔离环境测试结果，并得到用户明确同意。
+- 使用真实 `CODEX_HOME` 运行验证时必须在结果中明确记录，避免把真实账号、配置或会话变化误认为隔离测试数据。
 
 ## 语义验收
 
@@ -203,7 +205,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 
 ## 测试
 
-第一版建议脚本：
+使用默认测试隔离环境时的建议脚本：
 
 ```bash
 export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home

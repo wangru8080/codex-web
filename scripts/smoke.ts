@@ -2,18 +2,13 @@ import type { Server } from "node:http";
 import WebSocket from "ws";
 
 import { AppServerSession } from "../server/app-server-session";
+import { resolveTestCodexHome } from "../server/test-codex-home";
 import { createWebSocketBridge } from "../server/websocket-bridge";
 
-const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
+const codexHome = resolveTestCodexHome();
+process.env.CODEX_HOME = codexHome;
 
 async function main(): Promise<void> {
-  if (process.env.CODEX_HOME !== requiredCodexHome) {
-    console.error(
-      `smoke 必须使用隔离 CODEX_HOME：${requiredCodexHome}，当前为 ${process.env.CODEX_HOME ?? "未设置"}`,
-    );
-    process.exit(1);
-  }
-
   const bridge = createWebSocketBridge({ token: "smoke-token" });
 
   try {
@@ -22,7 +17,7 @@ async function main(): Promise<void> {
     const session = new AppServerSession(new WebSocketRpcClient(socket));
     const response = await session.bootstrap();
 
-    if (response.initialize.data.codexHome !== requiredCodexHome) {
+    if (response.initialize.data.codexHome !== codexHome) {
       throw new Error(`app-server 使用了错误 CODEX_HOME：${response.initialize.data.codexHome}`);
     }
 

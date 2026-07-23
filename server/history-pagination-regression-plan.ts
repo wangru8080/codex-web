@@ -1,9 +1,11 @@
-export const historyPaginationRegressionCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
+import { defaultTestCodexHome } from "./test-codex-home";
+
 export const historyPaginationRegressionNodeHome = "/volume2/SSD/node-v24.14.0";
 
 export type HistoryPaginationRegressionPlanOptions = {
   threadId?: string;
   markerPrefix?: string;
+  codexHome?: string;
 };
 
 export type HistoryPaginationRegressionStep = {
@@ -17,7 +19,8 @@ export function buildHistoryPaginationRegressionPlan(
 ): HistoryPaginationRegressionStep[] {
   const markerPrefix = options.markerPrefix ?? "phase6t";
   const threadId = options.threadId ?? "<thread-id-from-fixture-output>";
-  const envPrefix = `env NODE_HOME=${historyPaginationRegressionNodeHome} PATH=${historyPaginationRegressionNodeHome}/bin:$PATH CODEX_HOME=${historyPaginationRegressionCodexHome}`;
+  const codexHome = options.codexHome ?? defaultTestCodexHome;
+  const envPrefix = `env NODE_HOME=${historyPaginationRegressionNodeHome} PATH=${historyPaginationRegressionNodeHome}/bin:$PATH CODEX_HOME=${codexHome}`;
 
   return [
     {
@@ -49,12 +52,4 @@ export function buildHistoryPaginationRegressionPlan(
       expected: "test、build、smoke 均通过；若 build 或 smoke 在受限沙箱出现 listen/bind EPERM，按权限流程提权重跑并记录。",
     },
   ];
-}
-
-export function assertHistoryPaginationRegressionEnv(env: Partial<NodeJS.ProcessEnv>): void {
-  if (env.CODEX_HOME !== historyPaginationRegressionCodexHome) {
-    throw new Error(
-      `历史分页回归必须使用隔离 CODEX_HOME：${historyPaginationRegressionCodexHome}，当前为 ${env.CODEX_HOME ?? "未设置"}`,
-    );
-  }
 }

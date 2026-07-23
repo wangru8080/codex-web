@@ -1,6 +1,6 @@
 # Codex Web
 
-Codex Web 是基于 `codex app-server` 的浏览器工作台。浏览器通过本地 Web bridge 与 app-server 通信；开发和测试必须使用隔离的 `CODEX_HOME`。
+Codex Web 是基于 `codex app-server` 的浏览器工作台。浏览器通过本地 Web bridge 与 app-server 通信；开发和测试默认使用隔离的 `CODEX_HOME`，也可以显式指定其他环境。
 
 ## CLI 安装与启动
 
@@ -53,7 +53,7 @@ npm run dev
 
 开发模式未设置 `CODEX_HOME` 时，默认使用
 `/volume2/SSD/codex/Temp/codex-dev-home`；显式设置时使用指定目录，不再强制写死默认值。
-测试和 smoke 仍必须显式使用隔离 `CODEX_HOME`。
+测试和 smoke 未设置 `CODEX_HOME` 时使用上述默认目录；显式设置时使用指定目录，不要求与默认路径相同。指定真实 `CODEX_HOME` 会让验证读取或修改其中的账号、配置、会话、MCP、skills 和 approval 状态。
 
 ## 路径边界
 
@@ -89,4 +89,4 @@ npm run build
 npm run test:smoke
 ```
 
-所有可能触发 app-server 的验证都必须显式设置隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`。
+所有可能触发 app-server 的验证都会优先使用当前 `CODEX_HOME`；未设置或只设置空白值时，使用默认测试目录 `/volume2/SSD/codex/Temp/codex-dev-home`。

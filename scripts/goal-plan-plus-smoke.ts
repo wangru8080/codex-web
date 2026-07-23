@@ -2,10 +2,12 @@ import type { Server } from "node:http";
 import WebSocket from "ws";
 
 import { createWebSocketBridge } from "../server/websocket-bridge";
+import { resolveTestCodexHome } from "../server/test-codex-home";
 import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
 import { withPlanCollaborationMode } from "../src/codex-web/app-server-collaboration-mode";
 
-const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
+const codexHome = resolveTestCodexHome();
+process.env.CODEX_HOME = codexHome;
 const verifier = `goal-plan-plus-smoke-${Date.now()}`;
 
 type JsonRpcMessage = {
@@ -22,13 +24,6 @@ type Notification = {
 };
 
 async function main(): Promise<void> {
-  if (process.env.CODEX_HOME !== requiredCodexHome) {
-    console.error(
-      `goal/plan smoke 必须使用隔离 CODEX_HOME：${requiredCodexHome}，当前为 ${process.env.CODEX_HOME ?? "未设置"}`,
-    );
-    process.exit(1);
-  }
-
   const bridge = createWebSocketBridge({ token: "goal-plan-smoke-token" });
 
   try {
@@ -42,7 +37,7 @@ async function main(): Promise<void> {
     }) as { codexHome?: string };
     await client.notify("initialized");
 
-    if (initialize.codexHome !== requiredCodexHome) {
+    if (initialize.codexHome !== codexHome) {
       throw new Error(`app-server 使用了错误 CODEX_HOME：${initialize.codexHome}`);
     }
 

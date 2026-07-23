@@ -2,9 +2,11 @@ import type { Server } from "node:http";
 import WebSocket from "ws";
 
 import { createWebSocketBridge } from "../server/websocket-bridge";
+import { resolveTestCodexHome } from "../server/test-codex-home";
 import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
 
-const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
+const codexHome = resolveTestCodexHome();
+process.env.CODEX_HOME = codexHome;
 
 type Message = { id?: number; method?: string; params?: unknown; result?: unknown; error?: { message?: string } };
 type Notification = { method: string; params?: unknown };
@@ -16,10 +18,6 @@ type Settings = {
 };
 
 async function main(): Promise<void> {
-  if (process.env.CODEX_HOME !== requiredCodexHome) {
-    throw new Error(`权限 smoke 必须使用隔离 CODEX_HOME：${requiredCodexHome}`);
-  }
-
   const bridge = createWebSocketBridge({ token: "permission-policy-smoke-token" });
   try {
     await waitForListening(bridge.server);
@@ -29,7 +27,7 @@ async function main(): Promise<void> {
       capabilities: appServerInitializeCapabilities(),
     }) as { codexHome?: string };
     await client.notify("initialized");
-    if (initialize.codexHome !== requiredCodexHome) throw new Error("app-server 使用了错误 CODEX_HOME");
+    if (initialize.codexHome !== codexHome) throw new Error("app-server 使用了错误 CODEX_HOME");
 
     const models = await client.request("model/list", { includeHidden: false }) as {
       data?: Array<{ id: string; hidden?: boolean; isDefault?: boolean }>;

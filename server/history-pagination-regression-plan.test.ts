@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  assertHistoryPaginationRegressionEnv,
   buildHistoryPaginationRegressionPlan,
-  historyPaginationRegressionCodexHome,
 } from "./history-pagination-regression-plan";
+import { defaultTestCodexHome } from "./test-codex-home";
 
 describe("history-pagination-regression-plan", () => {
   it("生成长历史分页和失败注入回归清单", () => {
@@ -23,7 +22,7 @@ describe("history-pagination-regression-plan", () => {
       "真实浏览器验证 Load Earlier 失败",
       "标准提交前验证",
     ]);
-    expect(commands).toContain(`CODEX_HOME=${historyPaginationRegressionCodexHome}`);
+    expect(commands).toContain(`CODEX_HOME=${defaultTestCodexHome}`);
     expect(commands).toContain("scripts/create-long-history-fixture.ts 35 phase6t");
     expect(commands).toContain("scripts/inspect-thread-pagination.ts thread-123 30");
     expect(commands).toContain("CODEX_WEB_FAIL_THREAD_TURNS_LIST_ON_CALL=2 npm run dev");
@@ -38,18 +37,11 @@ describe("history-pagination-regression-plan", () => {
     expect(steps.map((step) => step.command ?? "").join("\n")).toContain("<thread-id-from-fixture-output>");
   });
 
-  it("拒绝非隔离 CODEX_HOME", () => {
-    expect(() => assertHistoryPaginationRegressionEnv({})).toThrow(
-      `历史分页回归必须使用隔离 CODEX_HOME：${historyPaginationRegressionCodexHome}`,
-    );
-    expect(() =>
-      assertHistoryPaginationRegressionEnv({ CODEX_HOME: "/home/user/.codex" }),
-    ).toThrow(historyPaginationRegressionCodexHome);
-  });
+  it("生成命令时接受自定义或真实 CODEX_HOME", () => {
+    const custom = buildHistoryPaginationRegressionPlan({ codexHome: "/tmp/codex-smoke-b" });
+    const real = buildHistoryPaginationRegressionPlan({ codexHome: "/home/user/.codex" });
 
-  it("接受隔离 CODEX_HOME", () => {
-    expect(() =>
-      assertHistoryPaginationRegressionEnv({ CODEX_HOME: historyPaginationRegressionCodexHome }),
-    ).not.toThrow();
+    expect(custom.map((step) => step.command ?? "").join("\n")).toContain("CODEX_HOME=/tmp/codex-smoke-b");
+    expect(real.map((step) => step.command ?? "").join("\n")).toContain("CODEX_HOME=/home/user/.codex");
   });
 });

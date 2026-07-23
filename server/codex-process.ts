@@ -1,7 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-export const isolatedCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
-
 export type CodexProcessOptions = {
   command?: string;
   codexHome?: string;

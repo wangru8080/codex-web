@@ -4,12 +4,11 @@ import { resolve } from "node:path";
 
 import { WebSocketServer, type WebSocket } from "ws";
 
-const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
-const threadId = "user-input-smoke-thread";
+import { resolveTestCodexHome } from "../server/test-codex-home";
 
-if (process.env.CODEX_HOME !== requiredCodexHome) {
-  throw new Error(`用户输入 smoke 必须使用隔离 CODEX_HOME：${requiredCodexHome}`);
-}
+const codexHome = resolveTestCodexHome();
+process.env.CODEX_HOME = codexHome;
+const threadId = "user-input-smoke-thread";
 
 async function main(): Promise<void> {
   const cdpBaseUrl = process.env.CODEX_WEB_CDP_URL ?? "http://192.168.3.12:45737";
@@ -185,7 +184,7 @@ function responseForMethod(method: string): unknown {
   const thread = smokeThread();
   switch (method) {
     case "initialize":
-      return { codexHome: requiredCodexHome, platformFamily: "unix" };
+      return { codexHome, platformFamily: "unix" };
     case "model/list":
       return { data: [], nextCursor: null };
     case "account/read":
