@@ -1,7 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 export const WEB_AUTH_COOKIE = "codex_web_session";
-export const WEB_AUTH_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+export const WEB_AUTH_MAX_AGE_SECONDS = 3 * 24 * 60 * 60;
+const WEB_AUTH_SESSION_VERSION = 2;
 
 export type WebAuthConfig = {
   email: string;
@@ -10,6 +11,7 @@ export type WebAuthConfig = {
 };
 
 type SessionPayload = {
+  version: number;
   email: string;
   credentialVersion: string;
   expiresAt: number;
@@ -31,6 +33,7 @@ export function verifyCredentials(email: string, password: string, config: WebAu
 
 export function createSessionToken(config: WebAuthConfig, now = Date.now()): string {
   const payload: SessionPayload = {
+    version: WEB_AUTH_SESSION_VERSION,
     email: config.email,
     credentialVersion: credentialVersion(config),
     expiresAt: now + WEB_AUTH_MAX_AGE_SECONDS * 1_000,
@@ -53,7 +56,8 @@ export function verifySessionToken(
   try {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as Partial<SessionPayload>;
     if (
-      payload.email !== config.email
+      payload.version !== WEB_AUTH_SESSION_VERSION
+      || payload.email !== config.email
       || payload.credentialVersion !== credentialVersion(config)
       || typeof payload.expiresAt !== "number"
       || payload.expiresAt <= now

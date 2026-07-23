@@ -1,7 +1,10 @@
+import { createHmac } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import {
   createSessionToken,
+  WEB_AUTH_MAX_AGE_SECONDS,
   readWebAuthConfig,
   verifyCredentials,
   verifySessionToken,
@@ -29,17 +32,36 @@ describe("Web 登录认证", () => {
     );
   });
 
-  it("验证签名会话并拒绝篡改、过期和凭据变更", () => {
+  it("验证签名会话并拒绝篡改、三天过期和凭据变更", () => {
     const config = readWebAuthConfig(env);
     const now = 1_800_000_000_000;
     const token = createSessionToken(config, now);
 
     expect(verifySessionToken(token, config, now + 1_000)?.email).toBe("test@admin.com");
+    expect(verifySessionToken(token, config, now + WEB_AUTH_MAX_AGE_SECONDS * 1_000 - 1)).not.toBeNull();
     expect(verifySessionToken(`${token}x`, config, now + 1_000)).toBeNull();
-    expect(verifySessionToken(token, config, now + 8 * 24 * 60 * 60 * 1_000)).toBeNull();
+    expect(verifySessionToken(token, config, now + WEB_AUTH_MAX_AGE_SECONDS * 1_000)).toBeNull();
 
     const changed = readWebAuthConfig({ ...env, CODEX_WEB_LOGIN_PASSWORD: "654321" });
     expect(verifySessionToken(token, changed, now + 1_000)).toBeNull();
+  });
+
+  it("拒绝版本升级前签发的会话", () => {
+    const config = readWebAuthConfig(env);
+    const now = 1_800_000_000_000;
+    const legacyPayload = Buffer.from(JSON.stringify({
+      email: config.email,
+      credentialVersion: createHmac("sha256", config.sessionSecret)
+        .update(`${config.email}\0${config.password}`)
+        .digest("base64url")
+        .slice(0, 22),
+      expiresAt: now + 7 * 24 * 60 * 60 * 1_000,
+    })).toString("base64url");
+    const legacyToken = `${legacyPayload}.${createHmac("sha256", config.sessionSecret)
+      .update(legacyPayload)
+      .digest("base64url")}`;
+
+    expect(verifySessionToken(legacyToken, config, now + 1_000)).toBeNull();
   });
 
   it("自托管时按 Host 头校验 Origin", () => {
