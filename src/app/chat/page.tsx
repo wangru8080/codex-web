@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import type { Message, PermissionRequestEvent, FileAttachment, MentionRef, PermissionProfile, SkillInputReference } from '@/types';
 import { MessageList } from '@/components/chat/MessageList';
 import { MessageInput, composerDraftKey } from '@/components/chat/MessageInput';
+import { PerformanceProfiler } from '@/components/performance/PerformanceProfiler';
 import { PermissionPrompt } from '@/components/chat/PermissionPrompt';
 import { AppServerRequestPrompt } from '@/components/chat/AppServerRequestPrompt';
 import type { AppServerRequestResponseInput } from '@/codex-web/approval-adapter';
@@ -1080,7 +1081,8 @@ function NewChatPageInner() {
           onCreateProject={handleSelectFolder}
         />
       )}
-      <MessageInput
+      <PerformanceProfiler id="MessageInput">
+        <MessageInput
         key="composer-message-input"
         sessionId={createdSessionId}
         onSend={sendFirstMessage}
@@ -1114,7 +1116,8 @@ function NewChatPageInner() {
         onModeChange={setMode}
         modeChangeDisabled={isStreaming}
         blockingReasonIds={blockingReasonIds}
-      />
+        />
+      </PerformanceProfiler>
     </>
   );
 
@@ -1133,21 +1136,23 @@ function NewChatPageInner() {
         </div>
       ) : (
         <>
-          <MessageList
-            messages={messages}
-            streamingContent={streamingContent}
-            streamingThinkingContent={streamingThinkingContent}
-            isStreaming={isStreaming}
-            sessionId={createdSessionId}
-            toolUses={toolUses}
-            toolResults={toolResults}
-            streamingToolOutput={streamingToolOutput}
-            processBlocks={appServerProcessBlocks}
-            planBlocks={appServerTurn?.planBlocks}
-            statusText={statusText}
-            retryStatus={appServerTurn?.retryStatus}
-            startedAt={streamingStartedAtRef.current}
-          />
+          <PerformanceProfiler id="MessageList">
+            <MessageList
+              messages={messages}
+              streamingContent={streamingContent}
+              streamingThinkingContent={streamingThinkingContent}
+              isStreaming={isStreaming}
+              sessionId={createdSessionId}
+              toolUses={toolUses}
+              toolResults={toolResults}
+              streamingToolOutput={streamingToolOutput}
+              processBlocks={appServerProcessBlocks}
+              planBlocks={appServerTurn?.planBlocks}
+              statusText={statusText}
+              retryStatus={appServerTurn?.retryStatus}
+              startedAt={streamingStartedAtRef.current}
+            />
+          </PerformanceProfiler>
           {composerStack}
         </>
       )}

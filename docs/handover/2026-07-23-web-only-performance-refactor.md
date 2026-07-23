@@ -1,5 +1,7 @@
 # Codex Web Web-only 化与性能重构技术交接
 
+> 阶段 0 执行计划：[2026-07-23-web-performance-baseline.md](../exec-plans/completed/2026-07-23-web-performance-baseline.md)
+
 ## 文档目的
 
 本文交接 Codex Web 从“兼容桌面应用形态的 Web 前端”收敛为“以浏览器为唯一 UI 载体的本地 Web 工作台”的背景、边界、现状判断和后续实施建议。
@@ -426,6 +428,50 @@ npm pack --dry-run --json --ignore-scripts
 
 ## 下一步
 
-建议下一项工作只执行“阶段 0：性能基线”，不要直接开始框架迁移或删除依赖。阶段 0 完成后，根据数据分别创建状态订阅、聊天虚拟化、重模块懒加载和桌面遗留清理执行计划。
+阶段 0 已于 2026-07-23 完成，执行记录见 [Web 性能基线执行计划](../exec-plans/completed/2026-07-23-web-performance-baseline.md)。下一项工作应单独创建“阶段 1：拆分 App-server 状态订阅”执行计划，不要同时混入虚拟化、依赖删除或桌面遗留清理。
 
 在没有生产性能对照之前，不应把 `npm run dev` 的首次路由编译慢等同于产品生产环境慢；在没有 React Profiler 和浏览器 Performance 数据之前，也不应把 799 个 npm 包直接认定为点击卡顿的原因。
+
+## 阶段 0 实施结果（2026-07-23）
+
+### 已建立的入口
+
+- `npm run performance:baseline:dev -- default`
+- `npm run performance:baseline:production -- default`
+- `npm run performance:baseline:production -- no-mcp`
+- `npm run performance:baseline:production -- mcp-heavy`
+
+采集仅在 URL 带 `codexPerformance=1` 时启用。结果使用排他文件创建并保存到 `/volume2/SSD/codex/Temp/codex-web-performance-baseline/`；React 生产构建不提供 Profiler commit，因此生产结果使用 Navigation Timing、User Timing、Long Task 和 DOM 状态，开发结果额外记录 React Profiler。
+
+### 默认配置前置指标
+
+| 指标 | 开发 | 生产 |
+|---|---:|---:|
+| 成功场景 | 7/7 | 7/7 |
+| 可交互时间 P95 | 3724 ms | 2967 ms |
+| 路由完成 P95 | 1943 ms | 1780 ms |
+| 输入到绘制 P95 | 257 ms | 75 ms |
+| 长任务总数 | 74 | 34 |
+| 最长长任务 | 696 ms | 361 ms |
+| 设置首次/二次路由 | 1164/407 ms | 220/121 ms |
+
+这些数值是同一机器上的前置基线，不代表优化完成。开发与生产均未全面满足本文建议预算，开发结果明显受 React 开发行为和路由编译影响。
+
+### React 提交反例
+
+- 长历史在 500 ms 空闲窗口内新增 207 次 commit；一次输入动作再新增 142 次。
+- 普通历史在相同空闲窗口内新增 54 次 commit；一次输入动作再新增 42 次。
+- 长历史 `MessageList` 单次最慢约 199 ms，`ChatView` 约 213 ms，`AppShell` 约 434 ms。
+- 设置页空闲窗口新增 0 次 commit，说明采集器本身不会无条件制造提交。
+- 真实流式 Turn 已通过唯一标记完成回显；开发模式记录到 `StreamingMessage` 4 次 commit。
+
+“输入后应该变化”与“空闲时不应该变化”的反例表明，下一阶段应优先收窄 app-server Context 的订阅范围，而不是先迁移框架或删除依赖。
+
+### MCP 对照
+
+生产空聊天冷启动各运行三次：
+
+- 无 MCP 可交互时间：1249、1378、1611 ms，中位数 1378 ms。
+- 8 个本地快速 MCP 可交互时间：1219、1332、1356 ms，中位数 1332 ms。
+
+两组差异落在当前运行噪声内，不能据此认定本地快速 MCP 是主要瓶颈，也不能外推到网络型或启动缓慢的真实 MCP。

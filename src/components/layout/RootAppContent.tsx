@@ -4,13 +4,18 @@ import { usePathname } from "next/navigation";
 
 import { AppServerProvider } from "@/codex-web/AppServerProvider";
 import { AppShell } from "@/components/layout/AppShell";
+import { PerformanceProfiler } from "@/components/performance/PerformanceProfiler";
+import { WebPerformanceObserver } from "@/components/performance/WebPerformanceObserver";
 
 export function RootAppContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   if (pathname === "/login") return children;
   return (
     <AppServerProvider>
-      <AppShell>{children}</AppShell>
+      <WebPerformanceObserver />
+      <PerformanceProfiler id="AppShell">
+        <AppShell>{children}</AppShell>
+      </PerformanceProfiler>
     </AppServerProvider>
   );
 }

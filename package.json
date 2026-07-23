@@ -38,7 +38,9 @@
     "test:smoke:permissions": "tsx scripts/permission-policy-smoke.ts",
     "test:e2e:permissions": "tsx scripts/permission-policy-tool-e2e.ts",
     "test:smoke:goal-plan": "tsx scripts/goal-plan-plus-smoke.ts",
-    "regression:history-pagination": "tsx scripts/history-pagination-regression.ts"
+    "regression:history-pagination": "tsx scripts/history-pagination-regression.ts",
+    "performance:baseline:dev": "tsx scripts/web-performance-baseline.ts dev",
+    "performance:baseline:production": "tsx scripts/web-performance-baseline.ts production"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",

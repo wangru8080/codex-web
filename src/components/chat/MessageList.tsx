@@ -15,6 +15,7 @@ import {
 } from '@/components/ai-elements/conversation';
 import { MessageItem } from './MessageItem';
 import { StreamingMessage } from './StreamingMessage';
+import { PerformanceProfiler } from '@/components/performance/PerformanceProfiler';
 import { MonolithIcon } from '@/components/brand/MonolithIcon';
 import { SPECIES_IMAGE_URL, EGG_IMAGE_URL, RARITY_BG_GRADIENT, type Species, type Rarity } from '@/lib/buddy';
 
@@ -326,14 +327,16 @@ export function MessageList({
 
           return (
             <div key={message.id} id={`msg-${message.id}`} className="group">
-              <MessageItem
-                message={message}
-                sessionId={sessionId}
-                canEdit={message.id === editableUserMessageId}
-                onEdit={message.id === editableUserMessageId ? onEditUserMessage : undefined}
-                isAssistantProject={isAssistantProject}
-                assistantName={assistantName}
-              />
+              <PerformanceProfiler id="MessageItem">
+                <MessageItem
+                  message={message}
+                  sessionId={sessionId}
+                  canEdit={message.id === editableUserMessageId}
+                  onEdit={message.id === editableUserMessageId ? onEditUserMessage : undefined}
+                  isAssistantProject={isAssistantProject}
+                  assistantName={assistantName}
+                />
+              </PerformanceProfiler>
               {rewindSdkUuid && sessionId && !isStreaming && (
                 <RewindButton sessionId={sessionId} userMessageId={rewindSdkUuid} />
               )}
@@ -342,21 +345,23 @@ export function MessageList({
         })}
 
         {showStreamingMessage && (
-          <StreamingMessage
-            content={streamingContent}
-            isStreaming={isStreaming}
-            sessionId={sessionId}
-            startedAt={startedAt ?? 0}
-            toolUses={toolUses}
-            toolResults={toolResults}
-            streamingToolOutput={streamingToolOutput}
-            thinkingContent={streamingThinkingContent}
-            processBlocks={processBlocks}
-            planBlocks={planBlocks}
-            statusText={statusText}
-            retryStatus={retryStatus}
-            onForceStop={onForceStop}
-          />
+          <PerformanceProfiler id="StreamingMessage">
+            <StreamingMessage
+              content={streamingContent}
+              isStreaming={isStreaming}
+              sessionId={sessionId}
+              startedAt={startedAt ?? 0}
+              toolUses={toolUses}
+              toolResults={toolResults}
+              streamingToolOutput={streamingToolOutput}
+              thinkingContent={streamingThinkingContent}
+              processBlocks={processBlocks}
+              planBlocks={planBlocks}
+              statusText={statusText}
+              retryStatus={retryStatus}
+              onForceStop={onForceStop}
+            />
+          </PerformanceProfiler>
         )}
       </ConversationContent>
       <ConversationScrollButton />

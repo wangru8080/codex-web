@@ -8,6 +8,7 @@ import { NewChatWelcome } from './NewChatWelcome';
 import { TerminalReasonChip } from './TerminalReasonChip';
 import { RateLimitBanner } from './RateLimitBanner';
 import { MessageInput } from './MessageInput';
+import { PerformanceProfiler } from '@/components/performance/PerformanceProfiler';
 import { RunCheckpoint } from './RunCheckpoint';
 import { buildCheckpoints } from '@/lib/run-checkpoint';
 // Chat first-paint memory contract (2026-05-09): ChatView must NOT
@@ -1566,7 +1567,8 @@ export function ChatView({
   const appServerBanner = appServerErrorBanner ?? appServerNotice ?? null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <PerformanceProfiler id="ChatView">
+      <div className="flex h-full min-h-0 flex-col">
       {/* Workspace mismatch banner */}
       {workspaceMismatchPath && (
         <div className="flex items-center justify-between gap-3 border-b border-status-warning/30 bg-status-warning-muted px-4 py-2">
@@ -1616,7 +1618,8 @@ export function ChatView({
               request={appServerRequest}
               onRespond={handleAppServerRequestResponse}
             />
-            <MessageInput
+            <PerformanceProfiler id="MessageInput">
+              <MessageInput
               key={activeSessionId}
               onSend={sendMessage}
               onCommand={handleCommand}
@@ -1650,36 +1653,39 @@ export function ChatView({
               onModeChange={settingsLocked ? undefined : handleModeChange}
               modeChangeDisabled={settingsLocked || isStreaming}
               blockingReasonIds={blockingReasonIds}
-            />
+              />
+            </PerformanceProfiler>
           </div>
         </div>
       ) : (
         <>
-        <MessageList
-        messages={messages}
-        streamingContent={streamingContent}
-        isStreaming={isStreaming}
-        showStreamingMessage={showAppServerTurnPanel || isStreaming}
-        toolUses={toolUses}
-        toolResults={toolResults}
-        streamingToolOutput={streamingToolOutput}
-        streamingThinkingContent={streamingThinkingContent}
-        processBlocks={appServerProcessBlocks}
-        planBlocks={appServerTurn?.planBlocks}
-        statusText={statusText}
-        retryStatus={appServerTurn?.retryStatus}
-        onForceStop={stopStreaming}
-        hasMore={hasMore}
-        loadingMore={loadingMore}
-        onLoadMore={loadEarlierMessages}
-        rewindPoints={rewindPoints}
-        sessionId={activeSessionId}
-        startedAt={appServerPanelStartedAt}
-        isAssistantProject={isAssistantProject}
-        assistantName={assistantName}
-        editableUserMessageId={editableUserMessageId}
-        onEditUserMessage={handleEditUserMessage}
-      />
+          <PerformanceProfiler id="MessageList">
+            <MessageList
+              messages={messages}
+              streamingContent={streamingContent}
+              isStreaming={isStreaming}
+              showStreamingMessage={showAppServerTurnPanel || isStreaming}
+              toolUses={toolUses}
+              toolResults={toolResults}
+              streamingToolOutput={streamingToolOutput}
+              streamingThinkingContent={streamingThinkingContent}
+              processBlocks={appServerProcessBlocks}
+              planBlocks={appServerTurn?.planBlocks}
+              statusText={statusText}
+              retryStatus={appServerTurn?.retryStatus}
+              onForceStop={stopStreaming}
+              hasMore={hasMore}
+              loadingMore={loadingMore}
+              onLoadMore={loadEarlierMessages}
+              rewindPoints={rewindPoints}
+              sessionId={activeSessionId}
+              startedAt={appServerPanelStartedAt}
+              isAssistantProject={isAssistantProject}
+              assistantName={assistantName}
+              editableUserMessageId={editableUserMessageId}
+              onEditUserMessage={handleEditUserMessage}
+            />
+          </PerformanceProfiler>
       {/* End-of-turn terminal reason chip (only shown when stream is not active) */}
       {!isStreaming && (
         <TerminalReasonChip
@@ -1886,7 +1892,8 @@ export function ChatView({
           })}
         </div>
       )}
-      <MessageInput
+      <PerformanceProfiler id="MessageInput">
+        <MessageInput
         key={activeSessionId}
         onSend={sendMessage}
         onCommand={handleCommand}
@@ -1929,9 +1936,11 @@ export function ChatView({
         onModeChange={settingsLocked ? undefined : handleModeChange}
         modeChangeDisabled={settingsLocked || isStreaming}
         blockingReasonIds={blockingReasonIds}
-      />
+        />
+      </PerformanceProfiler>
         </>
       )}
-    </div>
+      </div>
+    </PerformanceProfiler>
   );
 }
