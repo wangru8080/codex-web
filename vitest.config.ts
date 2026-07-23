@@ -18,6 +18,7 @@ export default defineConfig({
       "src/components/ui/semantic-icon.test.tsx",
       "src/codex-web/new-chat-project-selector.test.tsx",
       "server/**/*.test.ts",
+      "scripts/**/*.test.ts",
     ],
     exclude: ["src/__tests__/**", "node_modules/**", ".next/**", "dist/**"],
   },

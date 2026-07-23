@@ -17,7 +17,11 @@ if (!process.env.CODEX_HOME) {
 }
 readWebAuthConfig(process.env);
 
-const paths = resolveProductionServerPaths(import.meta.url, process.cwd());
+const paths = resolveProductionServerPaths(
+  import.meta.url,
+  process.cwd(),
+  process.env.CODEX_WEB_APP_ROOT,
+);
 process.env.CODEX_WEB_APP_ROOT = paths.applicationRoot;
 
 const buildIdPath = paths.buildIdPath;

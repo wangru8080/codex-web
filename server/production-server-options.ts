@@ -10,8 +10,11 @@ export type ProductionServerPaths = {
 export function resolveProductionServerPaths(
   entryModuleUrl: string,
   workingDirectory = process.cwd(),
+  applicationRootOverride?: string,
 ): ProductionServerPaths {
-  const applicationRoot = resolve(fileURLToPath(new URL("../", entryModuleUrl)));
+  const applicationRoot = resolve(
+    applicationRootOverride ?? fileURLToPath(new URL("../", entryModuleUrl)),
+  );
   return {
     applicationRoot,
     workingDirectory,

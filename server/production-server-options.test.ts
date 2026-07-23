@@ -16,6 +16,18 @@ describe("resolveProductionServerPaths", () => {
     expect(paths.workingDirectory).toBe("/tmp/codex-user-project");
     expect(paths.buildIdPath).toBe(resolve(expectedRoot, ".next", "BUILD_ID"));
   });
+
+  it("CLI 可以显式指定安装包应用根目录", () => {
+    const paths = resolveProductionServerPaths(
+      new URL("../dist/cli/codex-web.mjs", import.meta.url).toString(),
+      "/tmp/codex-user-project",
+      "/opt/codex-web",
+    );
+
+    expect(paths.applicationRoot).toBe("/opt/codex-web");
+    expect(paths.workingDirectory).toBe("/tmp/codex-user-project");
+    expect(paths.buildIdPath).toBe(resolve("/opt/codex-web", ".next", "BUILD_ID"));
+  });
 });
 
 describe("readProductionPort", () => {

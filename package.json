@@ -3,12 +3,31 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "codex-web": "dist/cli/codex-web.mjs"
+  },
+  "files": [
+    ".next/BUILD_ID",
+    ".next/*.json",
+    ".next/*.js",
+    ".next/server/",
+    ".next/static/",
+    "dist/cli/",
+    "next.config.mjs",
+    "public/",
+    "themes/"
+  ],
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "tsx scripts/dev-next-with-bridge.ts",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && vitest run",
     "build": "next build",
     "postbuild": "tsx scripts/restore-next-env.ts",
+    "build:cli": "npm run build && tsx scripts/build-cli.ts",
+    "prepack": "npm run build:cli",
     "start": "tsx scripts/start-next-with-bridge.ts",
     "build:server": "tsc -p tsconfig.build.json",
     "test:smoke": "tsx scripts/smoke.ts",
@@ -32,6 +51,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^10.0.0",
+    "esbuild": "^0.28.1",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.10",
     "tailwindcss": "^4.3.2",
