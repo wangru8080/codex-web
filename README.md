@@ -121,8 +121,6 @@ npm install --global "github:wangru8080/codex-web#master"
 npm install --global "https://github.com/wangru8080/codex-web/releases/download/v0.1.0/codex-web-0.1.0.tgz"
 ```
 
-当前尚未创建 `v0.1.0` GitHub Release，上述 Release 安装命令暂不可用。
-
 当前 npm registry 尚无该软件包，因此 `npm install --global codex-web` 需要等正式发布后才能使用。
 
 ## 快速开始
