@@ -38,7 +38,7 @@ import type { FileAttachment, MentionRef, PermissionProfile, SkillInputReference
 import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadTokenUsage';
 import type { McpServerStatus } from '@/codex/protocol/generated/v2/McpServerStatus';
 import type { GetAccountRateLimitsResponse } from '@/codex/protocol/generated/v2/GetAccountRateLimitsResponse';
-import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { ContextWindowIndicator } from './ContextWindowIndicator';
 import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, FileExcerptCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
@@ -659,7 +659,7 @@ export function MessageInput({
 }: MessageInputProps) {
   const { t } = useTranslation();
   const appServer = useAppServerActions();
-  const appServerState = useAppServerState();
+  const config = useAppServerSelector((state) => state.config);
   const resolvedAttachmentsAccept = attachmentsAccept ?? '';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Run Checkpoint bypass — Round 2 (2026-04-30). When the banner's
@@ -681,7 +681,7 @@ export function MessageInput({
   const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]);
   const [reviewBranch, setReviewBranch] = useState('main');
   const [rateLimits, setRateLimits] = useState<GetAccountRateLimitsResponse | null>(null);
-  const memoriesConfig = appServerState.config?.data.config.memories as Record<string, unknown> | undefined;
+  const memoriesConfig = config?.data.config.memories as Record<string, unknown> | undefined;
   const [useMemories, setUseMemories] = useState(() => memoriesConfig?.use_memories !== false);
   const [generateMemories, setGenerateMemories] = useState(() => memoriesConfig?.generate_memories !== false);
 

@@ -32,7 +32,7 @@ import type { TranslationKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { SkillItem, SkillSource } from "./SkillListItem";
 import type { SkillMetadata } from "@/codex/protocol/generated/v2/SkillMetadata";
-import { useAppServerActions, useAppServerState } from "@/codex-web/AppServerProvider";
+import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 import { useRouter } from "next/navigation";
 
 interface SkillsManagerProps {
@@ -77,7 +77,8 @@ export const SkillsManager = forwardRef<SkillsManagerHandle, SkillsManagerProps>
   const { t } = useTranslation();
   const router = useRouter();
   const { listSkills, setSkillEnabled, readFile, removeFileTree } = useAppServerActions();
-  const { skillsRevision, connection } = useAppServerState();
+  const skillsRevision = useAppServerSelector((state) => state.skillsRevision);
+  const connection = useAppServerSelector((state) => state.connection);
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [openSkill, setOpenSkill] = useState<SkillItem | null>(null);
   const [loading, setLoading] = useState(true);

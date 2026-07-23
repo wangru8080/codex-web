@@ -69,10 +69,21 @@ async function main(): Promise<void> {
       const streamingResult = await runStreamingScenario(
         client,
         `http://${publicHost}:${port}`,
+        { name: "streaming-turn" },
       );
       rawResults.push(streamingResult);
       await writeJsonExclusive(path.join(runDirectory, "streaming-turn.json"), streamingResult);
       console.log(`streaming-turn: ${streamingResult.ok ? "ok" : `failed (${streamingResult.error})`}`);
+
+      const skillPath = await writePerformanceSkill(runDirectory);
+      const skillStreamingResult = await runStreamingScenario(
+        client,
+        `http://${publicHost}:${port}`,
+        { name: "skill-streaming-turn", skillPath },
+      );
+      rawResults.push(skillStreamingResult);
+      await writeJsonExclusive(path.join(runDirectory, "skill-streaming-turn.json"), skillStreamingResult);
+      console.log(`skill-streaming-turn: ${skillStreamingResult.ok ? "ok" : `failed (${skillStreamingResult.error})`}`);
     }
 
     const results = rawResults.map(({ raw: _raw, ...result }) => result);
@@ -342,21 +353,32 @@ async function runScenario(
 async function runStreamingScenario(
   client: CdpClient,
   baseUrl: string,
+  options: { name: "streaming-turn" | "skill-streaming-turn"; skillPath?: string },
 ): Promise<WebPerformanceScenarioResult & { raw?: ScenarioSnapshot }> {
   const scenario: WebPerformanceScenario = {
-    name: "streaming-turn",
+    name: options.name,
     path: "/chat",
     resetStorage: false,
   };
   try {
     const streamMarker = `BASELINE_STREAM_${Date.now()}`;
-    await client.navigate(`${baseUrl}${scenario.path}?new=performance-${Date.now()}&codexPerformance=1`);
+    const query = new URLSearchParams({
+      new: `performance-${Date.now()}`,
+      codexPerformance: "1",
+    });
+    if (options.skillPath) {
+      query.set("skill", "performance-selector-check");
+      query.set("skillPath", options.skillPath);
+      query.set("skillLabel", "Performance selector check");
+      query.set("skillDescription", "验证 Skill 消息仍通过 app-server turn input");
+    }
+    await client.navigate(`${baseUrl}${scenario.path}?${query.toString()}`);
     await client.waitFor(`Boolean(window.__CODEX_WEB_PERFORMANCE__ && document.querySelector('textarea'))`, 120_000);
     await client.evaluate(`window.dispatchEvent(new CustomEvent('project-directory-changed', {
       detail: { path: ${JSON.stringify(process.cwd())} },
     }))`);
     await client.evaluate(`(() => {
-      window.__CODEX_WEB_PERFORMANCE__.reset('streaming-turn');
+      window.__CODEX_WEB_PERFORMANCE__.reset(${JSON.stringify(options.name)});
       const input = document.querySelector('textarea');
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
       setter?.call(input, ${JSON.stringify(`只回复 ${streamMarker}`)});
@@ -405,6 +427,20 @@ async function runStreamingScenario(
       raw,
     };
   }
+}
+
+async function writePerformanceSkill(runDirectory: string): Promise<string> {
+  const skillDirectory = path.join(runDirectory, "performance-selector-check");
+  await mkdir(skillDirectory);
+  const skillPath = path.join(skillDirectory, "SKILL.md");
+  await writeFile(skillPath, `---
+name: performance-selector-check
+description: 验证 selector 重构后 Skill 输入仍可发送
+---
+
+收到请求后严格按用户要求回复标记，不执行其他操作。
+`, { flag: "wx" });
+  return skillPath;
 }
 
 async function captureScenarioSnapshot(client: CdpClient): Promise<ScenarioSnapshot> {

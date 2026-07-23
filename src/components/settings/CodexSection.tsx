@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import { CodexQuotaWidget } from '@/components/settings/CodexQuotaWidget';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import type { GetAccountResponse } from '@/codex/protocol/generated/v2/GetAccountResponse';
 import type { GetAccountRateLimitsResponse } from '@/codex/protocol/generated/v2/GetAccountRateLimitsResponse';
 import type { LoginAccountResponse } from '@/codex/protocol/generated/v2/LoginAccountResponse';
@@ -35,7 +35,9 @@ function accountLabel(accountState: GetAccountResponse | null, isZh: boolean): s
 export function CodexSection() {
   const { t } = useTranslation();
   const isZh = t('nav.chats') === '对话';
-  const state = useAppServerState();
+  const connectionData = useAppServerSelector((state) => state.connection.data);
+  const accountResponse = useAppServerSelector((state) => state.account);
+  const accountLoginCompletion = useAppServerSelector((state) => state.accountLoginCompletion);
   const {
     refreshAccount,
     readAccountRateLimits,
@@ -67,11 +69,11 @@ export function CodexSection() {
   }, [readAccountRateLimits, refreshAccount]);
 
   useEffect(() => {
-    if (state.connection.data === 'connected') void refresh();
-  }, [refresh, state.connection.data]);
+    if (connectionData === 'connected') void refresh();
+  }, [refresh, connectionData]);
 
   useEffect(() => {
-    const completion = state.accountLoginCompletion?.data;
+    const completion = accountLoginCompletion?.data;
     if (!completion || !isAccountLoginCompletionFor(loginStart, completion)) return;
     setLoginStart(null);
     if (!completion.success) {
@@ -81,7 +83,7 @@ export function CodexSection() {
       return;
     }
     void refresh();
-  }, [busy, isZh, loginStart, refresh, state.accountLoginCompletion]);
+  }, [busy, isZh, loginStart, refresh, accountLoginCompletion]);
 
   const startOpenAIAuth = useCallback(async () => {
     setBusy('openai');
@@ -145,11 +147,11 @@ export function CodexSection() {
     }
   }, [logoutAccount]);
 
-  const accountState = state.account?.data ?? null;
+  const accountState = accountResponse?.data ?? null;
   const account = accountState?.account;
   const accountChecked = accountState !== null;
   const signedIn = !!account;
-  const connected = state.connection.data === 'connected';
+  const connected = connectionData === 'connected';
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">

@@ -13,7 +13,7 @@ import { ConfigEditor } from "@/components/plugins/ConfigEditor";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
 import type { MCPServer } from "@/types";
-import { useAppServerActions, useAppServerState } from "@/codex-web/AppServerProvider";
+import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 import { mcpServersFromConfig, mcpServersFromConfigValue, mcpServersToConfigValue } from "@/codex-web/mcp-config-adapter";
 import type { McpServerStatus } from "@/codex/protocol/generated/v2/McpServerStatus";
 
@@ -59,7 +59,8 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
 ) {
   const { t } = useTranslation();
   const { refreshConfig, writeMcpServers, listMcpServerStatus, reloadMcpServers } = useAppServerActions();
-  const appServerState = useAppServerState();
+  const connectionData = useAppServerSelector((state) => state.connection.data);
+  const mcpStartupByName = useAppServerSelector((state) => state.mcpStartupByName);
   const [servers, setServers] = useState<Record<string, MCPServerWithSource>>({});
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -111,10 +112,10 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   }, [listMcpServerStatus]);
 
   useEffect(() => {
-    if (appServerState.connection.data !== "connected") return;
+    if (connectionData !== "connected") return;
     void fetchServers();
     void fetchRuntimeStatus();
-  }, [appServerState.connection.data, fetchServers, fetchRuntimeStatus]);
+  }, [connectionData, fetchServers, fetchRuntimeStatus]);
 
   const handleReload = useCallback(async () => {
     await reloadMcpServers();
@@ -125,7 +126,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
     const inventory = new Map(runtimeStatus.map((status) => [status.name, status]));
     return Object.entries(servers).map(([name, server]) => {
       const current = inventory.get(name);
-      const startup = appServerState.mcpStartupByName[name]?.data;
+      const startup = mcpStartupByName[name]?.data;
       if (server.enabled === false) return { name, status: "disabled" as const };
       if (startup?.status === "failed" || startup?.status === "cancelled") {
         return { ...current, name, status: "failed" as const, error: startup.error || startup.status };
@@ -133,7 +134,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
       if (startup?.status === "starting") return { ...current, name, status: "pending" as const };
       return current ?? { name, status: "pending" as const };
     });
-  }, [appServerState.mcpStartupByName, runtimeStatus, servers]);
+  }, [mcpStartupByName, runtimeStatus, servers]);
 
   // Add-server flow: open the standalone editor Dialog. Edit flow no
   // longer routes through here — clicking a card opens the detail
@@ -305,7 +306,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
                 onOpenDetail={handleOpenDetail}
                 onToggleEnabled={handlePersistentToggle}
                 runtimeStatus={effectiveRuntimeStatus}
-                startupStatus={appServerState.mcpStartupByName}
+                startupStatus={mcpStartupByName}
                 onReload={handleReload}
               />
             )}
@@ -362,7 +363,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
     // Re-render whenever any of the surfaces below change. We intentionally
     // skip `t` (locale-pinned) and the handler refs (stable enough).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [error, filteredServers, loading, effectiveRuntimeStatus, runtimeLoading, serverCount, filteredServerCount, search, query, appServerState.mcpStartupByName, handleReload],
+    [error, filteredServers, loading, effectiveRuntimeStatus, runtimeLoading, serverCount, filteredServerCount, search, query, mcpStartupByName, handleReload],
   );
 
   if (isEmbedded) {
@@ -461,7 +462,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
               onOpenDetail={handleOpenDetail}
               onToggleEnabled={handlePersistentToggle}
               runtimeStatus={effectiveRuntimeStatus}
-              startupStatus={appServerState.mcpStartupByName}
+              startupStatus={mcpStartupByName}
               onReload={handleReload}
             />
           )}

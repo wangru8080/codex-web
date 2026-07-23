@@ -25,7 +25,7 @@ import { FolderPicker } from '@/components/chat/FolderPicker';
 import { useNativeFolderPicker } from '@/hooks/useNativeFolderPicker';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
-import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import {
   appServerTerminalTurnToMessageContent,
   appServerTurnToMessageBlocks,
@@ -106,7 +106,18 @@ function NewChatPageInner() {
   const prefillTextRef = useRef(prefillText);
   useEffect(() => { prefillTextRef.current = prefillText; }, [prefillText]);
   const { setPendingApprovalSessionId, setWorkingDirectory } = usePanel();
-  const appServerState = useAppServerState();
+  const latestCrossClientUserMessage = useAppServerSelector((state) => state.latestCrossClientUserMessage);
+  const crossClientUserMessagesByThreadId = useAppServerSelector((state) => state.crossClientUserMessagesByThreadId);
+  const activeTurn = useAppServerSelector((state) => state.activeTurn);
+  const activeTurnsByThreadId = useAppServerSelector((state) => state.activeTurnsByThreadId);
+  const pendingApprovals = useAppServerSelector((state) => state.pendingApprovals);
+  const threadTokenUsageByThreadId = useAppServerSelector((state) => state.threadTokenUsageByThreadId);
+  const connectionData = useAppServerSelector((state) => state.connection.data);
+  const models = useAppServerSelector((state) => state.models);
+  const config = useAppServerSelector((state) => state.config);
+  const threadSettingsByThreadId = useAppServerSelector((state) => state.threadSettingsByThreadId);
+  const threads = useAppServerSelector((state) => state.threads);
+  const goalsByThreadId = useAppServerSelector((state) => state.goalsByThreadId);
   const {
     startThread,
     sendOneTurn,
@@ -234,7 +245,7 @@ function NewChatPageInner() {
   const [createdSessionId, setCreatedSessionId] = useState<string | undefined>();
   const lastSeenCrossClientMessageIdRef = useRef('');
   useEffect(() => {
-    const latest = appServerState.latestCrossClientUserMessage;
+    const latest = latestCrossClientUserMessage;
     if (!latest || latest.message.id === lastSeenCrossClientMessageIdRef.current) return;
     lastSeenCrossClientMessageIdRef.current = latest.message.id;
 
@@ -243,7 +254,7 @@ function NewChatPageInner() {
       setCreatedSessionId(latest.threadId);
       setMessages((current) => mergeCrossClientUserMessages(
         current,
-        appServerState.crossClientUserMessagesByThreadId[latest.threadId] ?? [latest],
+        crossClientUserMessagesByThreadId[latest.threadId] ?? [latest],
       ));
       return;
     }
@@ -251,12 +262,12 @@ function NewChatPageInner() {
     if (latest.threadId === createdSessionId) {
       setMessages((current) => mergeCrossClientUserMessages(
         current,
-        appServerState.crossClientUserMessagesByThreadId[createdSessionId] ?? [],
+        crossClientUserMessagesByThreadId[createdSessionId] ?? [],
       ));
     }
   }, [
-    appServerState.crossClientUserMessagesByThreadId,
-    appServerState.latestCrossClientUserMessage,
+    crossClientUserMessagesByThreadId,
+    latestCrossClientUserMessage,
     createdSessionId,
     messages.length,
   ]);
@@ -295,19 +306,19 @@ function NewChatPageInner() {
   const [context1m, setContext1m] = useState(false);
   const lastNewChatKeyRef = useRef<string>('');
   const pendingNewChatTurn =
-    appServerState.activeTurn?.data && !appServerState.activeTurn.data.threadId
-      ? appServerState.activeTurn.data
+    activeTurn?.data && !activeTurn.data.threadId
+      ? activeTurn.data
       : null;
   const appServerTurn = createdSessionId
-    ? selectActiveTurnByThreadIds(appServerState.activeTurnsByThreadId, [createdSessionId])
+    ? selectActiveTurnByThreadIds(activeTurnsByThreadId, [createdSessionId])
     : pendingNewChatTurn;
   const appServerApproval = createdSessionId
-    ? firstApproval(appServerState.pendingApprovals, (approval) =>
+    ? firstApproval(pendingApprovals, (approval) =>
         approvalRequestMatchesThread(approval, [createdSessionId]),
       )
     : null;
   const contextWindowUsage = createdSessionId
-    ? appServerState.threadTokenUsageByThreadId[createdSessionId]?.data ?? null
+    ? threadTokenUsageByThreadId[createdSessionId]?.data ?? null
     : null;
   const appServerPermission = appServerApproval && "permission" in appServerApproval
     ? appServerApproval.permission
@@ -315,14 +326,14 @@ function NewChatPageInner() {
   const visiblePendingPermission = appServerPermission ?? pendingPermission;
 
   const applyNewChatModelDefaults = useCallback(() => {
-    if (appServerState.connection.data !== 'connected') {
+    if (connectionData !== 'connected') {
       setModelReady(false);
       return;
     }
 
     const defaults = resolveNewChatModelDefaults(
-      appServerState.models?.data,
-      appServerState.config?.data,
+      models?.data,
+      config?.data,
     );
     setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
     setCurrentModel(defaults?.model ?? '');
@@ -330,7 +341,7 @@ function NewChatPageInner() {
     setNoCompatibleProvider(!defaults);
     setInvalidDefault(null);
     setModelReady(true);
-  }, [appServerState.config, appServerState.connection.data, appServerState.models]);
+  }, [config, connectionData, models]);
 
   const resetLocalNewChatState = useCallback(() => {
     setCreatedSessionId(undefined);
@@ -436,11 +447,11 @@ function NewChatPageInner() {
 
   useEffect(() => {
     if (!createdSessionId) return;
-    const settings = appServerState.threadSettingsByThreadId[createdSessionId]?.data;
+    const settings = threadSettingsByThreadId[createdSessionId]?.data;
     if (!settings) return;
     setCurrentModel(settings.model);
     setSelectedEffort(settings.effort ?? undefined);
-  }, [appServerState.threadSettingsByThreadId, createdSessionId]);
+  }, [threadSettingsByThreadId, createdSessionId]);
 
   const handleThreadModelChange = useCallback((model: string) => {
     setCurrentModel(model);
@@ -488,7 +499,7 @@ function NewChatPageInner() {
     };
 
     const tryFallbackToDefault = async () => {
-      const defaultProject = appServerState.threads?.data.data.find((thread) => thread.cwd.trim())?.cwd;
+      const defaultProject = threads?.data.data.find((thread) => thread.cwd.trim())?.cwd;
       if (!defaultProject || !canApplyInitialization()) return;
       if (await validateDir(defaultProject) && canApplyInitialization()) {
         setWorkingDir(defaultProject);
@@ -498,7 +509,7 @@ function NewChatPageInner() {
 
     const init = async () => {
       const saved = localStorage.getItem('codepilot:last-working-directory');
-      if (!saved && !appServerState.threads) return;
+      if (!saved && !threads) return;
       workingDirectoryInitializedRef.current = true;
       if (saved) {
         if (await validateDir(saved) && canApplyInitialization()) {
@@ -518,7 +529,7 @@ function NewChatPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [appServerState.threads, readDirectory]);
+  }, [threads, readDirectory]);
 
   // 侧栏项目切换监听必须独立于只执行一次的目录初始化。
   useEffect(() => {
@@ -536,11 +547,11 @@ function NewChatPageInner() {
 
   // 最近项目来自 app-server thread/list。
   useEffect(() => {
-    const projects = appServerState.threads?.data.data
+    const projects = threads?.data.data
       .map((thread) => thread.cwd.trim())
       .filter(Boolean) ?? [];
     setRecentProjects([...new Set(projects)]);
-  }, [appServerState.threads]);
+  }, [threads]);
 
   const projectOptions = useMemo(() => {
     const projects = recentProjects.filter((path) => path !== workingDir);
@@ -658,15 +669,15 @@ function NewChatPageInner() {
   }, [appServerApproval, respondToServerRequest, setPendingApprovalSessionId]);
 
   const handleGoalStatusChange = useCallback((status: ThreadGoalStatus) => {
-    const goal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId]?.data : null;
+    const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
     if (!goal) return;
     void setThreadGoal({ threadId: goal.threadId, status }).catch((error) => {
       setErrorBanner({ message: 'Goal update failed', description: error instanceof Error ? error.message : String(error) });
     });
-  }, [appServerState.goalsByThreadId, createdSessionId, setThreadGoal]);
+  }, [goalsByThreadId, createdSessionId, setThreadGoal]);
 
   const handleGoalEdit = useCallback(() => {
-    const goal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId]?.data : null;
+    const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
     if (!goal) return;
     const objective = window.prompt('Edit goal', goal.objective);
     if (objective === null) return;
@@ -680,15 +691,15 @@ function NewChatPageInner() {
     }).catch((error) => {
       setErrorBanner({ message: 'Goal update failed', description: error instanceof Error ? error.message : String(error) });
     });
-  }, [appServerState.goalsByThreadId, createdSessionId, setThreadGoal]);
+  }, [goalsByThreadId, createdSessionId, setThreadGoal]);
 
   const handleGoalClear = useCallback(() => {
-    const goal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId]?.data : null;
+    const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
     if (!goal) return;
     void clearThreadGoal(goal.threadId).catch((error) => {
       setErrorBanner({ message: 'Goal clear failed', description: error instanceof Error ? error.message : String(error) });
     });
-  }, [appServerState.goalsByThreadId, clearThreadGoal, createdSessionId]);
+  }, [goalsByThreadId, clearThreadGoal, createdSessionId]);
 
   const sendFirstMessage = useCallback(
     async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly SkillInputReference[], modeOverride?: string, forceNewThread = false) => {
@@ -860,7 +871,7 @@ function NewChatPageInner() {
     [isStreaming, appServerApproval, workingDir, currentModel, currentProviderId, selectedEffort, mode, permissionProfile, setPendingApprovalSessionId, t, canSendWithCurrentProvider, modelReady, noCompatibleProvider, createdSessionId, sendOneTurn, sendTurnInThread, publishCrossClientUserMessage, router]
   );
 
-  const appServerGoal = createdSessionId ? appServerState.goalsByThreadId[createdSessionId] ?? null : null;
+  const appServerGoal = createdSessionId ? goalsByThreadId[createdSessionId] ?? null : null;
 
   const handleCommand = useCallback((command: string) => {
     if (command === '/plan') {

@@ -52,7 +52,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { TranslationKey } from "@/i18n";
-import { useAppServerActions, useAppServerState } from "@/codex-web/AppServerProvider";
+import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 
 const PLUGIN_FILTERS = ["skills", "mcp"] as const;
 type PluginFilter = (typeof PLUGIN_FILTERS)[number];
@@ -70,7 +70,7 @@ const FILTER_META: Record<PluginFilter, { labelKey: TranslationKey; icon: CodexW
 export default function ExtensionsPage() {
   const { t } = useTranslation();
   const { createDirectory, writeFile } = useAppServerActions();
-  const appServerState = useAppServerState();
+  const initialize = useAppServerSelector((state) => state.initialize);
   const [filter, setFilter] = useTabFromHash<PluginFilter>({
     validTabs: PLUGIN_FILTERS,
     defaultTab: "skills",
@@ -143,7 +143,7 @@ export default function ExtensionsPage() {
   ) => {
     const root = scope === "project"
       ? cwd && `${cwd.replace(/[\\/]$/, "")}/.agents/skills`
-      : appServerState.initialize?.data.codexHome && `${appServerState.initialize.data.codexHome}/skills`;
+      : initialize?.data.codexHome && `${initialize.data.codexHome}/skills`;
     if (!root) throw new Error(t("skills.createMissingRoot"));
     const directory = `${root}/${name}`;
     await createDirectory(directory);

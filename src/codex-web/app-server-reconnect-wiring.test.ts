@@ -26,7 +26,8 @@ describe("app-server 断线重连接线", () => {
     expect(provider).toContain('client.request("initialize"');
     expect(provider).toContain('client.request(\n      "thread/resume"');
     expect(historyPage).toContain("const resume = await resumeThread({ threadId: id })");
-    expect(historyPage).toContain("appServerState.connection.data");
+    expect(historyPage).toContain("useAppServerSelector((state) => state.connection.data)");
+    expect(historyPage).toContain("connectionData !== 'connected'");
   });
 
   it("新任务被接受后进入 Thread 路由，使刷新能够恢复运行态", () => {

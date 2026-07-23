@@ -8,7 +8,7 @@ const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 describe('Codex 设置页 app-server 接线', () => {
   it('设置页只使用 AppServerProvider 状态和 action', () => {
     const section = read('src/components/settings/CodexSection.tsx');
-    expect(section).toContain('useAppServerState');
+    expect(section).toContain('useAppServerSelector');
     expect(section).toContain('useAppServerActions');
     expect(section).toContain('accountChecked');
     expect(section).toContain('state.accountLoginCompletion');

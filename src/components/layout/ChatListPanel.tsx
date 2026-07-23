@@ -23,7 +23,7 @@ import type { TranslationKey } from "@/i18n";
 import { createNewChatHref } from "@/lib/new-chat-url";
 import { useNativeFolderPicker } from "@/hooks/useNativeFolderPicker";
 import { cn } from "@/lib/utils";
-import { useAppServerActions, useAppServerState } from "@/codex-web/AppServerProvider";
+import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 import { threadToChatSession } from "@/codex-web/thread-history-adapter";
 // ConnectionStatus removed from header — CLI status now lives in Settings > Claude CLI
 // ImportSessionDialog moved to Settings page
@@ -50,7 +50,8 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   const pathname = usePathname();
   const router = useRouter();
   const { streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, workingDirectory, setChatListOpen } = usePanel();
-  const appServerState = useAppServerState();
+  const threads = useAppServerSelector((state) => state.threads);
+  const connectionData = useAppServerSelector((state) => state.connection.data);
   const { refreshThreads, setThreadName, archiveThread } = useAppServerActions();
   const { removeFromSplit, isInSplit } = useSplit();
   const { t } = useTranslation();
@@ -61,8 +62,8 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   const [expandedSessionGroups, setExpandedSessionGroups] = useState<Set<string>>(new Set());
   const SESSION_TRUNCATE_LIMIT = 10;
   const appServerSessions = useMemo(
-    () => appServerState.threads?.data.data.map(threadToChatSession) ?? [],
-    [appServerState.threads],
+    () => threads?.data.data.map(threadToChatSession) ?? [],
+    [threads],
   );
   // importDialogOpen removed — Import CLI moved to Settings
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
@@ -107,7 +108,7 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchSessions = useCallback(async () => {
-    if (appServerState.connection.data === 'connected') {
+    if (connectionData === 'connected') {
       try {
         const threads = await refreshThreads();
         setSessions(threads.data.map(threadToChatSession));
@@ -118,13 +119,13 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
     }
 
     setSessions(appServerSessions);
-  }, [appServerSessions, appServerState.connection.data, refreshThreads]);
+  }, [appServerSessions, connectionData, refreshThreads]);
 
   useEffect(() => {
-    if (appServerState.connection.data === 'connected') {
+    if (connectionData === 'connected') {
       setSessions(appServerSessions);
     }
-  }, [appServerSessions, appServerState.connection.data]);
+  }, [appServerSessions, connectionData]);
 
   const debouncedFetchSessions = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);

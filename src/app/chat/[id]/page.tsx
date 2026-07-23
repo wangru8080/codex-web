@@ -10,7 +10,7 @@ import { usePanel } from '@/hooks/usePanel';
 import { useWorkspaceSidebarOptional } from '@/hooks/useWorkspaceSidebar';
 import { useTranslation } from '@/hooks/useTranslation';
 import { useCompactViewport } from '@/hooks/useCompactViewport';
-import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import {
   selectVisibleActiveTurn,
   type LatestHistoryTurn,
@@ -83,7 +83,16 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [latestHistoryTurn, setLatestHistoryTurn] = useState<LatestHistoryTurn | null>(null);
   const [paginationNotice, setPaginationNotice] = useState<{ message: string; description?: string } | null>(null);
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle, setFileTreeOpen } = usePanel();
-  const appServerState = useAppServerState();
+  const connectionData = useAppServerSelector((state) => state.connection.data);
+  const turnSnapshots = useAppServerSelector((state) => state.turnSnapshots);
+  const crossClientUserMessagesByThreadId = useAppServerSelector((state) => state.crossClientUserMessagesByThreadId);
+  const threadSettingsByThreadId = useAppServerSelector((state) => state.threadSettingsByThreadId);
+  const activeTurnsByThreadId = useAppServerSelector((state) => state.activeTurnsByThreadId);
+  const pendingApprovals = useAppServerSelector((state) => state.pendingApprovals);
+  const goalsByThreadId = useAppServerSelector((state) => state.goalsByThreadId);
+  const threadTokenUsageByThreadId = useAppServerSelector((state) => state.threadTokenUsageByThreadId);
+  const latestCrossClientThreadRollback = useAppServerSelector((state) => state.latestCrossClientThreadRollback);
+  const models = useAppServerSelector((state) => state.models);
   const {
     readThread,
     listThreadTurns,
@@ -104,15 +113,15 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const compactViewport = useCompactViewport();
   const { t } = useTranslation();
   const defaultPanelAppliedRef = useRef(false);
-  const turnSnapshotsRef = useRef(appServerState.turnSnapshots);
+  const turnSnapshotsRef = useRef(turnSnapshots);
   const appServerSyncedUserMessages = useMemo(() => {
     const threadIds = resumedThreadId && resumedThreadId !== id ? [id, resumedThreadId] : [id];
-    return threadIds.flatMap((threadId) => appServerState.crossClientUserMessagesByThreadId[threadId] ?? []);
-  }, [appServerState.crossClientUserMessagesByThreadId, id, resumedThreadId]);
+    return threadIds.flatMap((threadId) => crossClientUserMessagesByThreadId[threadId] ?? []);
+  }, [crossClientUserMessagesByThreadId, id, resumedThreadId]);
 
   useEffect(() => {
-    turnSnapshotsRef.current = appServerState.turnSnapshots;
-  }, [appServerState.turnSnapshots]);
+    turnSnapshotsRef.current = turnSnapshots;
+  }, [turnSnapshots]);
 
   useEffect(() => {
     // Reset state when switching sessions
@@ -140,8 +149,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
 
     let cancelled = false;
 
-    if (appServerState.connection.data !== 'connected') {
-      if (appServerState.connection.data === 'failed') {
+    if (connectionData !== 'connected') {
+      if (connectionData === 'failed') {
         setError('Codex app-server connection failed');
         setSessionInfoLoaded(true);
         setLoading(false);
@@ -259,7 +268,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     loadSessionAndMessages();
 
     return () => { cancelled = true; };
-  }, [appServerState.connection.data, id, readThread, listThreadTurns, resumeThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t]);
+  }, [connectionData, id, readThread, listThreadTurns, resumeThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t]);
 
   // Auto-open file tree when jumping from a file search result
   useEffect(() => {
@@ -310,11 +319,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
 
   useEffect(() => {
     const threadId = resumedThreadId || id;
-    const settings = appServerState.threadSettingsByThreadId[threadId]?.data;
+    const settings = threadSettingsByThreadId[threadId]?.data;
     if (!settings) return;
     setSessionModel(settings.model);
     setSessionEffort(settings.effort);
-  }, [appServerState.threadSettingsByThreadId, id, resumedThreadId]);
+  }, [threadSettingsByThreadId, id, resumedThreadId]);
 
   if (loading || !sessionInfoLoaded) {
     return (
@@ -337,11 +346,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     );
   }
 
-  const isAppServerThread = appServerState.connection.data === 'connected';
+  const isAppServerThread = connectionData === 'connected';
   const messageApiBase = `/api/chat/sessions/${encodeURIComponent(id)}`;
   const currentThreadIds = [id, resumedThreadId];
-  const activeAppServerTurn = selectActiveTurnByThreadIds(appServerState.activeTurnsByThreadId, currentThreadIds);
-  const otherActiveTurns = selectOtherRunningActiveTurns(appServerState.activeTurnsByThreadId, currentThreadIds);
+  const activeAppServerTurn = selectActiveTurnByThreadIds(activeTurnsByThreadId, currentThreadIds);
+  const otherActiveTurns = selectOtherRunningActiveTurns(activeTurnsByThreadId, currentThreadIds);
   const activeTurnVisibility = isAppServerThread
     ? selectVisibleActiveTurn({
         activeTurn: activeAppServerTurn,
@@ -355,26 +364,26 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const appServerTurn = activeTurnVisibility.visibleTurn;
   const appServerNotice = activeTurnVisibility.notice ?? paginationNotice;
   const appServerRequest = isAppServerThread
-    ? firstApproval(appServerState.pendingApprovals, (approval) =>
+    ? firstApproval(pendingApprovals, (approval) =>
         approvalRequestMatchesThread(approval, [id, resumedThreadId]),
       )
     : null;
   const appServerGoal =
     currentThreadIds
-      .map((threadId) => (threadId ? appServerState.goalsByThreadId[threadId] : null))
+      .map((threadId) => (threadId ? goalsByThreadId[threadId] : null))
       .find((goal): goal is NonNullable<typeof goal> => !!goal) ?? null;
   const appServerTokenUsage =
     currentThreadIds
-      .map((threadId) => (threadId ? appServerState.threadTokenUsageByThreadId[threadId]?.data : null))
+      .map((threadId) => (threadId ? threadTokenUsageByThreadId[threadId]?.data : null))
       .find((usage): usage is NonNullable<typeof usage> => !!usage) ?? null;
   const appServerRemoteRollback =
-    appServerState.latestCrossClientThreadRollback &&
-    currentThreadIds.includes(appServerState.latestCrossClientThreadRollback.threadId)
-      ? appServerState.latestCrossClientThreadRollback
+    latestCrossClientThreadRollback &&
+    currentThreadIds.includes(latestCrossClientThreadRollback.threadId)
+      ? latestCrossClientThreadRollback
       : null;
   const defaultAppServerModel =
-    appServerState.models?.data.data.find((model) => !model.hidden && model.isDefault)?.id ||
-    appServerState.models?.data.data.find((model) => !model.hidden)?.id ||
+    models?.data.data.find((model) => !model.hidden && model.isDefault)?.id ||
+    models?.data.data.find((model) => !model.hidden)?.id ||
     '';
   const canResumeAppServerThread = isAppServerThread && !!sessionWorkingDirectory;
 

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { ProviderModelGroup } from '@/types';
-import { useAppServerState } from '@/codex-web/AppServerProvider';
+import { useAppServerSelector } from '@/codex-web/AppServerProvider';
 import {
   appServerModelsToProviderGroup,
   CODEX_ACCOUNT_PROVIDER_ID,
@@ -46,15 +46,16 @@ export function useProviderModels(
   _runtime?: unknown,
   _options?: unknown,
 ): UseProviderModelsReturn {
-  const appServerState = useAppServerState();
+  const models = useAppServerSelector((state) => state.models);
+  const connection = useAppServerSelector((state) => state.connection);
   const group = useMemo(
-    () => appServerModelsToProviderGroup(appServerState.models?.data),
-    [appServerState.models],
+    () => appServerModelsToProviderGroup(models?.data),
+    [models],
   );
   const providerGroups = useMemo(() => group ? [group] : [], [group]);
   const modelOptions = group?.models ?? [];
   const currentModelOption = findModelOption(modelOptions, modelName) ?? modelOptions[0];
-  const connected = appServerState.connection.data === 'connected';
+  const connected = connection.data === 'connected';
 
   return {
     providerGroups,

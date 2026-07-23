@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import type { InitializeResponse } from "@/codex/protocol/generated/InitializeResponse";
 import type { ReasoningEffort } from "@/codex/protocol/generated/ReasoningEffort";
@@ -90,6 +90,7 @@ import { appServerInitializeCapabilities } from "./app-server-capabilities";
 import { threadPermissionUpdateOptions, threadRuntimeOptions, turnRuntimeOptions } from "./app-server-runtime-options";
 import { resolveCodexBridgeUrl } from "./bridge-url-runtime";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
+import { createAppServerStore, type AppServerStore } from "./app-server-store";
 import type {
   ThreadStartParamsWithCollaborationMode,
   TurnStartParamsWithCollaborationMode,
@@ -134,7 +135,7 @@ import {
 import { reconnectDelayMs } from "./reconnect-policy";
 import { readAccountLoginCompletion } from "./account-login-adapter";
 
-const AppServerContext = createContext<CodexWebAppServerState>(initialAppServerState);
+const AppServerStoreContext = createContext<AppServerStore | null>(null);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
 
 export type SendOneTurnParams = {
@@ -226,7 +227,10 @@ export type AppServerActions = {
 };
 
 export function AppServerProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<CodexWebAppServerState>(initialAppServerState);
+  const storeRef = useRef<AppServerStore | null>(null);
+  if (!storeRef.current) storeRef.current = createAppServerStore(initialAppServerState);
+  const store = storeRef.current;
+  const setState = store.setState;
   const publicBridgeUrl = useMemo(() => process.env.NEXT_PUBLIC_CODEX_BRIDGE_URL ?? "", []);
   const clientRef = useRef<AppServerBrowserClient | null>(null);
   const fsWatchSequenceRef = useRef(0);
@@ -573,11 +577,11 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       threadId,
       model,
       effort,
-      currentSettings: state.threadSettingsByThreadId[threadId]?.data,
+      currentSettings: store.getState().threadSettingsByThreadId[threadId]?.data,
     });
     await client.request("thread/settings/update", params) as ThreadSettingsUpdateResponse;
     await confirmation;
-  }, [state.threadSettingsByThreadId]);
+  }, [store]);
 
   const respondToServerRequest = useCallback(async (input: AppServerRequestResponseInput, requestId?: JsonRpcId) => {
     const client = clientRef.current;
@@ -585,10 +589,11 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Web bridge 尚未连接");
     }
 
+    const currentState = store.getState();
     const approval =
       requestId === undefined
-        ? state.pendingApproval?.data ?? null
-        : findApprovalByRequestId(state.pendingApprovals, requestId);
+        ? currentState.pendingApproval?.data ?? null
+        : findApprovalByRequestId(currentState.pendingApprovals, requestId);
     if (!approval) {
       throw new Error("没有待处理的 app-server request");
     }
@@ -633,7 +638,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       });
       throw error;
     }
-  }, [state.pendingApproval, state.pendingApprovals]);
+  }, [store]);
 
   const respondToApproval = useCallback(
     (decision: AppServerApprovalDecision, requestId?: JsonRpcId) =>
@@ -1066,7 +1071,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("消息内容不能为空");
     }
 
-    const persistedFiles = await persistTurnAttachments(client, state.initialize?.data, files);
+    const persistedFiles = await persistTurnAttachments(client, store.getState().initialize?.data, files);
     setState((current) => ({
       ...current,
       ...setActiveTurnState(current, {
@@ -1124,7 +1129,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     void refreshThreads().catch(() => undefined);
     return acceptedTurn;
-  }, [refreshThreads, state.initialize]);
+  }, [refreshThreads, store]);
 
   const sendOneTurn = useCallback(async ({ content, files, cwd, model, effort, mode, permissionProfile = "request_approval", skills }: SendOneTurnParams) => {
     const client = clientRef.current;
@@ -1136,7 +1141,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("消息内容不能为空");
     }
 
-    const persistedFiles = await persistTurnAttachments(client, state.initialize?.data, files);
+    const persistedFiles = await persistTurnAttachments(client, store.getState().initialize?.data, files);
     setState((current) => ({
       ...current,
       activeTurn: { source: "app-server.notification", data: createStartingTurnState() },
@@ -1177,7 +1182,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     }));
 
     return sendTurnInThread({ threadId, content: trimmed, files: persistedFiles, cwd, model, effort, mode, permissionProfile, skills });
-  }, [sendTurnInThread, state.initialize]);
+  }, [sendTurnInThread, store]);
 
   const interruptTurn = useCallback(async (params?: InterruptTurnParams) => {
     const client = clientRef.current;
@@ -1185,9 +1190,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Web bridge 尚未连接");
     }
 
+    const currentState = store.getState();
     const activeTurn = params?.threadId
-      ? state.activeTurnsByThreadId[params.threadId]?.data ?? null
-      : state.activeTurn?.data ?? null;
+      ? currentState.activeTurnsByThreadId[params.threadId]?.data ?? null
+      : currentState.activeTurn?.data ?? null;
     const interruptParams = selectTurnInterruptParams({ activeTurn, params });
     if (!interruptParams) {
       return;
@@ -1197,7 +1203,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       (requestParams) => client.request("turn/interrupt", requestParams) as Promise<TurnInterruptResponse>,
       interruptParams,
     );
-  }, [state.activeTurn, state.activeTurnsByThreadId]);
+  }, [store]);
 
   const publishCrossClientUserMessage = useCallback((event: CrossClientUserMessage) => {
     const client = clientRef.current;
@@ -1295,16 +1301,26 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <AppServerContext.Provider value={state}>
+    <AppServerStoreContext.Provider value={store}>
       <AppServerActionsContext.Provider value={actions}>
         {children}
       </AppServerActionsContext.Provider>
-    </AppServerContext.Provider>
+    </AppServerStoreContext.Provider>
   );
 }
 
-export function useAppServerState(): CodexWebAppServerState {
-  return useContext(AppServerContext);
+export function useAppServerSelector<Selected>(
+  selector: (state: CodexWebAppServerState) => Selected,
+): Selected {
+  const store = useContext(AppServerStoreContext);
+  if (!store) {
+    throw new Error("useAppServerSelector must be used within AppServerProvider");
+  }
+  return useSyncExternalStore(
+    store.subscribe,
+    () => selector(store.getState()),
+    () => selector(store.getState()),
+  );
 }
 
 export function useAppServerActions(): AppServerActions {

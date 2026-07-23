@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { usePanel } from '@/hooks/usePanel';
 import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
-import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import { firstApproval, approvalRequestMatchesThread } from '@/codex-web/approval-queue-adapter';
 import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
 
@@ -35,7 +35,12 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
   const [mode, setMode] = useState<'code' | 'plan'>('code');
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle } = usePanel();
   const { t } = useTranslation();
-  const appServerState = useAppServerState();
+  const connectionData = useAppServerSelector((state) => state.connection.data);
+  const activeTurn = useAppServerSelector((state) => state.activeTurnsByThreadId[sessionId]?.data ?? null);
+  const pendingApprovals = useAppServerSelector((state) => state.pendingApprovals);
+  const goal = useAppServerSelector((state) => state.goalsByThreadId[sessionId] ?? null);
+  const tokenUsage = useAppServerSelector((state) => state.threadTokenUsageByThreadId[sessionId]?.data ?? null);
+  const models = useAppServerSelector((state) => state.models);
   const {
     readThread,
     resumeThread,
@@ -47,8 +52,8 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
   } = useAppServerActions();
 
   useEffect(() => {
-    if (appServerState.connection.data !== 'connected') {
-      if (appServerState.connection.data === 'failed') {
+    if (connectionData !== 'connected') {
+      if (connectionData === 'failed') {
         setError('Codex app-server connection failed');
         setLoading(false);
       }
@@ -84,7 +89,7 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
       });
 
     return () => { cancelled = true; };
-  }, [appServerState.connection.data, readThread, resumeThread, sessionId, t]);
+  }, [connectionData, readThread, resumeThread, sessionId, t]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -98,17 +103,14 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
     onClose();
   }, [onClose]);
 
-  const activeTurn = appServerState.activeTurnsByThreadId[sessionId]?.data ?? null;
-  const pendingRequest = firstApproval(appServerState.pendingApprovals, (approval) =>
+  const pendingRequest = firstApproval(pendingApprovals, (approval) =>
     approvalRequestMatchesThread(approval, [sessionId]),
   );
-  const goal = appServerState.goalsByThreadId[sessionId] ?? null;
-  const tokenUsage = appServerState.threadTokenUsageByThreadId[sessionId]?.data ?? null;
   const defaultModel = useMemo(() =>
-    appServerState.models?.data.data.find((item) => !item.hidden && item.isDefault)?.id
-      || appServerState.models?.data.data.find((item) => !item.hidden)?.id
+    models?.data.data.find((item) => !item.hidden && item.isDefault)?.id
+      || models?.data.data.find((item) => !item.hidden)?.id
       || '',
-  [appServerState.models]);
+  [models]);
 
   if (loading) {
     return <SplitColumnFrame isActive={isActive} onFocus={onFocus}><div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" /></SplitColumnFrame>;

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { Thread } from "@/codex/protocol/generated/v2/Thread";
-import { useAppServerActions, useAppServerState } from "@/codex-web/AppServerProvider";
+import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
@@ -47,7 +47,7 @@ type ArchivedProjectGroup = {
 
 export function ArchivedThreadsSection() {
   const { t, locale } = useTranslation();
-  const connection = useAppServerState().connection.data;
+  const connection = useAppServerSelector((state) => state.connection.data);
   const { listThreads, unarchiveThread, deleteThread } = useAppServerActions();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);

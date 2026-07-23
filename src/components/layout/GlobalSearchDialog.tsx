@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
-import { useAppServerActions, useAppServerState } from '@/codex-web/AppServerProvider';
+import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import {
   buildGlobalFileSearchRoots,
   buildGlobalThreadSearchParams,
@@ -52,7 +52,7 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
   const { t } = useTranslation();
   const router = useRouter();
   const { workingDirectory, sessionId, sessionTitle } = usePanel();
-  const appServerState = useAppServerState();
+  const threads = useAppServerSelector((state) => state.threads);
   const { listThreads, fuzzyFileSearch } = useAppServerActions();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -88,8 +88,8 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
   const activePrefix = parsedQuery.prefix;
   const searchesMessages = activeScope === 'all' || activeScope === 'messages';
   const knownThreads = useMemo(
-    () => appServerState.threads?.data.data ?? [],
-    [appServerState.threads],
+    () => threads?.data.data ?? [],
+    [threads],
   );
   const fileSearchRoots = useMemo(
     () => buildGlobalFileSearchRoots(workingDirectory, knownThreads),

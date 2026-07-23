@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
-import { useAppServerState } from "@/codex-web/AppServerProvider";
+import { useAppServerSelector } from "@/codex-web/AppServerProvider";
 import {
   installWebPerformanceBrowserApi,
   recordBrowserPerformanceEntry,
@@ -15,7 +15,8 @@ const routeDurationMeasure = "codex.route-duration";
 
 export function WebPerformanceObserver() {
   const pathname = usePathname();
-  const appServerState = useAppServerState();
+  const connectionData = useAppServerSelector((state) => state.connection.data);
+  const initialize = useAppServerSelector((state) => state.initialize);
   const markedBridgeReady = useRef(false);
   const markedInitialized = useRef(false);
   const markedInteractive = useRef(false);
@@ -45,23 +46,23 @@ export function WebPerformanceObserver() {
     const api = window.__CODEX_WEB_PERFORMANCE__;
     if (!api) return;
 
-    if (appServerState.connection.data === "connected" && !markedBridgeReady.current) {
+    if (connectionData === "connected" && !markedBridgeReady.current) {
       markedBridgeReady.current = true;
       api.mark("codex.bridge-ready");
     }
 
-    if (appServerState.initialize && !markedInitialized.current) {
+    if (initialize && !markedInitialized.current) {
       markedInitialized.current = true;
       api.mark("codex.app-server-initialized");
     }
 
-    if (appServerState.initialize && !markedInteractive.current) {
+    if (initialize && !markedInteractive.current) {
       markedInteractive.current = true;
       requestAnimationFrame(() => {
         requestAnimationFrame(() => window.__CODEX_WEB_PERFORMANCE__?.mark("codex.first-interactive"));
       });
     }
-  }, [appServerState.connection.data, appServerState.initialize]);
+  }, [connectionData, initialize]);
 
   useEffect(() => {
     const api = window.__CODEX_WEB_PERFORMANCE__;

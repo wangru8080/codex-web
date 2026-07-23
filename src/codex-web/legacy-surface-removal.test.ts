@@ -63,6 +63,6 @@ describe("遗留产品入口移除", () => {
     expect(chatView).toContain("<GoalProgressRow");
     expect(appServerProvider).toContain("persistTurnAttachments");
     expect(newChat).toContain("useAppServerActions");
-    expect(newChat).toContain("useAppServerState");
+    expect(newChat).toContain("useAppServerSelector");
   });
 });

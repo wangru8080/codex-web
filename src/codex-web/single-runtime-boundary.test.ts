@@ -21,7 +21,7 @@ describe('Codex app-server 单 runtime 边界', () => {
     ]) {
       expect(sources).not.toMatch(legacyImport);
     }
-    expect(sources).toContain('useAppServerState');
+    expect(sources).toContain('useAppServerSelector');
     expect(sources).toContain('appServerModelsToProviderGroup');
   });
 

@@ -1,6 +1,8 @@
 # Codex Web Web-only 化与性能重构技术交接
 
 > 阶段 0 执行计划：[2026-07-23-web-performance-baseline.md](../exec-plans/completed/2026-07-23-web-performance-baseline.md)
+>
+> 阶段 1 执行计划：[2026-07-24-app-server-selector-subscriptions.md](../exec-plans/completed/2026-07-24-app-server-selector-subscriptions.md)
 
 ## 文档目的
 
@@ -25,7 +27,7 @@ Next.js 本身是 Web 框架，当前项目还需要同时提供页面、服务�
 当前较重的部分主要来自：
 
 1. 从桌面 UI 基准继承的 Electron 和多平台兼容分支。
-2. 全局 `AppServerProvider` 使用单个大 Context 发布高频 app-server 状态。
+2. 阶段 1 已将全局 `AppServerProvider` 改为 selector 订阅；聊天渲染和长历史列表本身仍是后续主要优化面。
 3. 聊天页面、输入区、工具流、Markdown 和代码高亮集中在大型客户端组件中。
 4. 重型预览能力与主工作台共享依赖图，部分能力虽已动态加载，仍缺少系统化的按需边界。
 5. `next dev` 对首次访问路由按需编译，开发模式的首次启动和首次切换不能等同于生产性能。
@@ -85,11 +87,11 @@ npm run start
 
 如果生产模式明显流畅，首次打开和首次切换的主要瓶颈是开发编译；不应为此直接重写产品架构。
 
-#### 2. App-server 状态订阅粒度过大
+#### 2. App-server 状态订阅粒度过大（阶段 1 已处理）
 
 `src/codex-web/AppServerProvider.tsx` 维护单个 `CodexWebAppServerState`，并直接作为 `AppServerContext.Provider` 的 value。连接、Thread、Turn、Item、Approval、Token Usage、MCP、账号、配置和 diagnostics 的任何更新都可能替换整个状态对象。
 
-调用 `useAppServerState()` 的组件会在 Context value 改变时重新渲染，即使组件只需要其中一个字段。当前 `AppShell`、聊天页、会话列表和多个设置模块都读取该 Context，因此高频 notification 可能放大为大范围 React 渲染。
+阶段 0 时，调用 `useAppServerState()` 的组件会在 Context value 改变时重新渲染，即使组件只需要其中一个字段；`AppShell`、聊天页、会话列表和多个设置模块因此被高频 notification 放大为大范围 React 渲染。阶段 1 已迁移为 selector 订阅，结果见本文末尾；本段保留为问题背景。
 
 这是持续交互卡顿的高优先级候选原因，优先级高于删除几个 npm 依赖。
 
@@ -428,7 +430,7 @@ npm pack --dry-run --json --ignore-scripts
 
 ## 下一步
 
-阶段 0 已于 2026-07-23 完成，执行记录见 [Web 性能基线执行计划](../exec-plans/completed/2026-07-23-web-performance-baseline.md)。下一项工作应单独创建“阶段 1：拆分 App-server 状态订阅”执行计划，不要同时混入虚拟化、依赖删除或桌面遗留清理。
+阶段 0 已于 2026-07-23 完成，阶段 1 已于 2026-07-24 完成代码、验证和计划归档。下一项工作应单独创建“阶段 2：降低聊天渲染范围并评估长历史虚拟化”执行计划，不要同时混入依赖删除或桌面遗留清理。
 
 在没有生产性能对照之前，不应把 `npm run dev` 的首次路由编译慢等同于产品生产环境慢；在没有 React Profiler 和浏览器 Performance 数据之前，也不应把 799 个 npm 包直接认定为点击卡顿的原因。
 
@@ -475,3 +477,25 @@ npm pack --dry-run --json --ignore-scripts
 - 8 个本地快速 MCP 可交互时间：1219、1332、1356 ms，中位数 1332 ms。
 
 两组差异落在当前运行噪声内，不能据此认定本地快速 MCP 是主要瓶颈，也不能外推到网络型或启动缓慢的真实 MCP。
+
+## 阶段 1 实施结果（2026-07-24）
+
+### 状态发布结构
+
+- `AppServerProvider` 保留 bridge 生命周期、现有 reducer/adapter 和 action 接口，状态改由稳定的项目内 Store 发布。
+- UI 使用 React `useSyncExternalStore` 按字段或当前 Thread 切片订阅，不再暴露完整 `useAppServerState()` Hook。
+- action 在调用时读取 Store 最新快照，避免审批、附件、模型设置和 interrupt 捕获陈旧状态。
+- generated response、notification reducer、approval queue、未知通知 diagnostics 和 source breadcrumb 均未改变。
+
+### 开发模式前后对照
+
+| 场景 | 阶段 0 空闲 commit | 阶段 1 空闲 commit | 阶段 0 输入 commit | 阶段 1 输入 commit |
+|---|---:|---:|---:|---:|
+| 普通历史 | 54 | 5 | 42 | 25 |
+| 长历史 | 207 | 18 | 142 | 17 |
+
+同一机器、同一隔离 `CODEX_HOME` 下，新的开发基准 8/8 场景成功，输入到绘制 P95 为 70 ms。普通消息和带固定测试 Skill 的消息均完成真实 app-server Turn 并回显唯一标记。结果保存在：
+
+`/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-23T17-00-14-834Z-dev-default/`
+
+空闲 commit 已显著下降，但仍未达到 0；长历史 `MessageList` 单次最慢约 205 ms，`ChatView` 约 222 ms，说明阶段 2 应继续收窄聊天内部渲染并评估虚拟化，而不是把阶段 1 结果视为性能工作完成。

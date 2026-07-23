@@ -1,10 +1,13 @@
 "use client";
 
-import { useAppServerState } from "./AppServerProvider";
+import { useAppServerSelector } from "./AppServerProvider";
 
 export function DiagnosticsBridgePanel() {
-  const state = useAppServerState();
-  const codexHome = state.initialize?.data.codexHome;
+  const connection = useAppServerSelector((state) => state.connection);
+  const initialize = useAppServerSelector((state) => state.initialize);
+  const models = useAppServerSelector((state) => state.models);
+  const diagnostics = useAppServerSelector((state) => state.diagnostics);
+  const codexHome = initialize?.data.codexHome;
 
   return (
     <section className="flex flex-col gap-4 text-sm">
@@ -13,20 +16,20 @@ export function DiagnosticsBridgePanel() {
         <p className="mt-1 text-xs text-muted-foreground">运行时连接与 bridge diagnostics（最多保留最近 100 条）</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <DiagnosticValue label="连接状态" value={state.connection.data} source={state.connection.source} />
-        <DiagnosticValue label="CODEX_HOME" value={codexHome ?? "unsupported"} source={state.initialize?.source ?? "没有真实来源"} />
+        <DiagnosticValue label="连接状态" value={connection.data} source={connection.source} />
+        <DiagnosticValue label="CODEX_HOME" value={codexHome ?? "unsupported"} source={initialize?.source ?? "没有真实来源"} />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <DiagnosticValue label="模型" value={state.models ? `${state.models.data.data.length} 个模型` : "unsupported"} source={state.models?.source ?? "没有真实来源"} />
-        <DiagnosticValue label="诊断条目" value={`${state.diagnostics.length} 条`} source="web-bridge" />
+        <DiagnosticValue label="模型" value={models ? `${models.data.data.length} 个模型` : "unsupported"} source={models?.source ?? "没有真实来源"} />
+        <DiagnosticValue label="诊断条目" value={`${diagnostics.length} 条`} source="web-bridge" />
       </div>
       <div className="rounded-md border border-border bg-background p-3">
         <div className="mb-2 text-xs font-medium text-muted-foreground">Diagnostics</div>
-        {state.diagnostics.length === 0 ? (
+        {diagnostics.length === 0 ? (
           <div className="text-xs text-muted-foreground">暂无 diagnostics</div>
         ) : (
           <div className="max-h-96 space-y-2 overflow-auto">
-            {state.diagnostics.map((entry, index) => (
+            {diagnostics.map((entry, index) => (
               <div key={`${entry.source}-${index}`} className="rounded-md border border-border/70 bg-muted/20 p-2">
                 <div className="flex items-start justify-between gap-3">
                   <span className="font-medium">{diagnosticLabel(entry.data)}</span>

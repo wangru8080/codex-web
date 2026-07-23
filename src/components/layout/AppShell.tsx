@@ -23,7 +23,7 @@ import { useGlobalSearchShortcut } from '@/hooks/useGlobalSearchShortcut';
 import { GlobalSearchDialog } from './GlobalSearchDialog';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useCompactViewport } from '@/hooks/useCompactViewport';
-import { useAppServerState } from '@/codex-web/AppServerProvider';
+import { useAppServerSelector } from '@/codex-web/AppServerProvider';
 
 // AppShell 静态导入约束（Phase A 内存优化，2026-05-08）：以下四个组件
 // 仅在对应路由、状态或弹窗触发时渲染。使用 next/dynamic + ssr:false 可避免
@@ -212,7 +212,8 @@ function ChatContentRow({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const appServerState = useAppServerState();
+  const activeTurnsByThreadId = useAppServerSelector((state) => state.activeTurnsByThreadId);
+  const pendingApprovals = useAppServerSelector((state) => state.pendingApprovals);
 
   const [chatListOpenRaw, setChatListOpenRaw] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -328,18 +329,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const gitDirtyCount = gitStatusFromHook?.changedFiles.filter(f => f.status !== 'untracked').length ?? 0;
 
   const activeStreamingSessions = useMemo(() => {
-    const ids = Object.values(appServerState.activeTurnsByThreadId)
+    const ids = Object.values(activeTurnsByThreadId)
       .filter(({ data }) => data.status === 'starting' || data.status === 'running')
       .map(({ data }) => data.threadId)
       .filter(Boolean);
     return ids.length > 0 ? new Set(ids) : EMPTY_SET;
-  }, [appServerState.activeTurnsByThreadId]);
+  }, [activeTurnsByThreadId]);
   const pendingApprovalSessionIds = useMemo(() => {
-    const ids = appServerState.pendingApprovals
+    const ids = pendingApprovals
       .map((approval) => approval.threadId)
       .filter((threadId): threadId is string => !!threadId);
     return ids.length > 0 ? new Set(ids) : EMPTY_SET;
-  }, [appServerState.pendingApprovals]);
+  }, [pendingApprovals]);
 
   // --- Split-screen state ---
   const [splitSessions, setSplitSessions] = useState<SplitSession[]>(() => loadSplitSessions());
