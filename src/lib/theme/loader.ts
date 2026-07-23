@@ -125,18 +125,28 @@ function sanitizeThemeMappings(theme: ThemeFamily): void {
   }
 }
 
-/** Resolve the themes directory. Works for both dev and Electron packaged app. */
-function resolveThemesDir(): string {
-  // In Electron packaged app, process.resourcesPath points to resources/
-  // and themes are at standalone/themes/ inside resources.
-  const electronPath = process.env.RESOURCES_PATH
-    ? path.join(process.env.RESOURCES_PATH, 'standalone', 'themes')
+export type ThemeDirectoryOptions = {
+  resourcesPath?: string;
+  applicationRoot?: string;
+  workingDirectory?: string;
+  pathExists?: (pathValue: string) => boolean;
+};
+
+/** Resolve the themes directory without treating the user's project as app resources. */
+export function resolveThemesDir(options: ThemeDirectoryOptions = {}): string {
+  const resourcesPath = options.resourcesPath ?? process.env.RESOURCES_PATH;
+  const applicationRoot = options.applicationRoot ?? process.env.CODEX_WEB_APP_ROOT;
+  const workingDirectory = options.workingDirectory ?? process.cwd();
+  const pathExists = options.pathExists ?? ((pathValue: string) => (
+    fs.existsSync(/* turbopackIgnore: true */ pathValue)
+  ));
+  const electronPath = resourcesPath
+    ? path.join(resourcesPath, 'standalone', 'themes')
     : null;
+  const applicationThemesPath = path.resolve(applicationRoot?.trim() || workingDirectory, 'themes');
 
-  const devPath = path.resolve(process.cwd(), 'themes');
-
-  if (electronPath && fs.existsSync(electronPath)) return electronPath;
-  return devPath;
+  if (electronPath && pathExists(electronPath)) return electronPath;
+  return applicationThemesPath;
 }
 
 // Module-level cache (runs once per process)
@@ -155,14 +165,17 @@ export function getAllThemeFamilies(): ThemeFamily[] {
   const families: ThemeFamily[] = [];
 
   try {
-    if (!fs.existsSync(themesDir)) {
+    if (!fs.existsSync(/* turbopackIgnore: true */ themesDir)) {
       console.warn(`[theme-loader] Themes directory not found: ${themesDir}`);
     } else {
-      const files = fs.readdirSync(themesDir).filter((f) => f.endsWith('.json'));
+      const files = fs
+        .readdirSync(/* turbopackIgnore: true */ themesDir)
+        .filter((f) => f.endsWith('.json'));
 
       for (const file of files) {
         try {
-          const raw = fs.readFileSync(path.join(themesDir, file), 'utf-8');
+          const themePath = path.join(themesDir, file);
+          const raw = fs.readFileSync(/* turbopackIgnore: true */ themePath, 'utf-8');
           const parsed = JSON.parse(raw);
 
           if (isValidThemeFamily(parsed)) {

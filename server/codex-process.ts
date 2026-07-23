@@ -15,16 +15,27 @@ export type CodexProcess = {
   stop: () => void;
 };
 
+export function buildCodexProcessEnv(
+  options: CodexProcessOptions,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...baseEnv,
+    ...options.env,
+    RUST_LOG: options.env?.RUST_LOG ?? "warn",
+  };
+  const codexHome = options.codexHome?.trim();
+  if (codexHome) {
+    env.CODEX_HOME = codexHome;
+  }
+  return env;
+}
+
 export function startCodexAppServer(options: CodexProcessOptions = {}): CodexProcess {
   const diagnostics: string[] = [];
   const child = spawn(options.command ?? "codex", ["app-server", "--stdio"], {
     cwd: options.cwd,
-    env: {
-      ...process.env,
-      ...options.env,
-      CODEX_HOME: options.codexHome ?? isolatedCodexHome,
-      RUST_LOG: options.env?.RUST_LOG ?? "warn",
-    },
+    env: buildCodexProcessEnv(options),
     stdio: ["pipe", "pipe", "pipe"],
   });
 

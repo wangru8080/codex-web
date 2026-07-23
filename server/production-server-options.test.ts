@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { readProductionPort } from "./production-server-options";
+import { readProductionPort, resolveProductionServerPaths } from "./production-server-options";
+
+describe("resolveProductionServerPaths", () => {
+  it("从入口模块位置解析应用根目录，并保留启动工作目录", () => {
+    const paths = resolveProductionServerPaths(
+      new URL("../scripts/start-next-with-bridge.ts", import.meta.url).toString(),
+      "/tmp/codex-user-project",
+    );
+
+    const expectedRoot = resolve(fileURLToPath(new URL("../", import.meta.url)));
+    expect(paths.applicationRoot).toBe(expectedRoot);
+    expect(paths.workingDirectory).toBe("/tmp/codex-user-project");
+    expect(paths.buildIdPath).toBe(resolve(expectedRoot, ".next", "BUILD_ID"));
+  });
+});
 
 describe("readProductionPort", () => {
   it("未设置 PORT 时交给系统随机选择端口", () => {

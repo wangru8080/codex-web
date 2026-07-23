@@ -4,14 +4,9 @@ import { createThreadTurnsListFailureInterceptorFromEnv } from "../server/thread
 import { createWebSocketBridge } from "../server/websocket-bridge";
 import { readWebAuthConfig } from "../server/web-auth";
 
-const requiredCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
-
-if (process.env.CODEX_HOME !== requiredCodexHome) {
-  console.error(
-    `dev 必须使用隔离 CODEX_HOME：${requiredCodexHome}，当前为 ${process.env.CODEX_HOME ?? "未设置"}`,
-  );
-  process.exit(1);
-}
+const defaultCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
+const codexHome = process.env.CODEX_HOME?.trim() || defaultCodexHome;
+process.env.CODEX_HOME = codexHome;
 readWebAuthConfig(process.env);
 
 const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "192.168.3.12";
@@ -22,6 +17,8 @@ const devOrigins = [3000, 3001].flatMap((port) => [
 ]);
 const bridge = createWebSocketBridge({
   host: "0.0.0.0",
+  cwd: process.cwd(),
+  codexHome,
   allowedOrigins: devOrigins,
   allowRemoteConnections: true,
   clientMessageInterceptor: createThreadTurnsListFailureInterceptorFromEnv(process.env),
@@ -36,6 +33,7 @@ const bridgePort =
 const bridgeUrl = `ws://${publicHost}:${bridgePort}?token=${bridge.token}`;
 console.log(`Codex Web bridge: ${bridgeUrl}`);
 console.log(`Codex app-server PID: ${bridge.appServerPid ?? "未知"}`);
+console.log(`Codex Web 开发 CODEX_HOME: ${codexHome}`);
 
 const next = spawn("next", ["dev"], {
   stdio: "inherit",

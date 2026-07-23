@@ -1,11 +1,13 @@
 import { createServer, type Server } from "node:http";
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
 
 import next from "next";
 
-import { readProductionPort } from "../server/production-server-options";
+import {
+  readProductionPort,
+  resolveProductionServerPaths,
+} from "../server/production-server-options";
 import { createWebSocketBridge } from "../server/websocket-bridge";
 import { readWebAuthConfig } from "../server/web-auth";
 
@@ -15,12 +17,15 @@ if (!process.env.CODEX_HOME) {
 }
 readWebAuthConfig(process.env);
 
-const buildIdPath = resolve(process.cwd(), ".next", "BUILD_ID");
+const paths = resolveProductionServerPaths(import.meta.url, process.cwd());
+process.env.CODEX_WEB_APP_ROOT = paths.applicationRoot;
+
+const buildIdPath = paths.buildIdPath;
 if (!existsSync(buildIdPath)) {
   console.log("未找到可用的 Next.js 生产构建，正在执行 npm run build...");
   const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
   const build = spawnSync(npmCommand, ["run", "build"], {
-    cwd: process.cwd(),
+    cwd: paths.applicationRoot,
     env: process.env,
     stdio: "inherit",
   });
@@ -41,6 +46,7 @@ const bridgePath = "/codex-bridge";
 
 const app = next({
   dev: false,
+  dir: paths.applicationRoot,
   hostname: nextHost,
   port: requestedPort,
 });
@@ -60,6 +66,7 @@ const bridge = createWebSocketBridge({
   path: bridgePath,
   allowRemoteConnections: true,
   allowSameOrigin: true,
+  cwd: paths.workingDirectory,
   codexHome: process.env.CODEX_HOME,
 });
 process.env.CODEX_WEB_BRIDGE_URL = `${bridgePath}?token=${bridge.token}`;
@@ -81,6 +88,8 @@ const actualPort = address.port;
 console.log(`Codex Web: http://${publicHost}:${actualPort}`);
 console.log(`Codex Web bridge: ws://${publicHost}:${actualPort}${bridgePath}?token=${bridge.token}`);
 console.log(`Codex app-server PID: ${bridge.appServerPid ?? "未知"}`);
+console.log(`Codex Web 应用目录: ${paths.applicationRoot}`);
+console.log(`Codex Web 工作目录: ${paths.workingDirectory}`);
 console.log(`Codex Web CODEX_HOME: ${process.env.CODEX_HOME}`);
 
 let closing = false;
