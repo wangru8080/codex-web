@@ -4,6 +4,8 @@ Codex Web 是基于官方 `codex app-server` 的浏览器工作台。它在浏�
 
 Codex Web 不替代 Codex CLI，也不在浏览器中保存 OpenAI OAuth token 或 API Key。Web bridge 负责在服务端启动 `codex app-server --stdio`，浏览器通过同源 HTTP 和 WebSocket 使用这些能力。
 
+项目地址：[https://github.com/wangru8080/codex-web](https://github.com/wangru8080/codex-web)
+
 ## 功能
 
 ### 对话与任务
@@ -85,8 +87,8 @@ codex --version
 当前项目尚未发布到 npm registry。现阶段最可靠的安装方式是在源码仓库中构建 npm tarball，再全局安装该产物：
 
 ```bash
-git clone https://github.com/<owner>/<repository>.git
-cd <repository>
+git clone https://github.com/wangru8080/codex-web.git
+cd codex-web
 npm install
 npm pack
 npm install --global ./codex-web-0.1.0.tgz
@@ -103,10 +105,10 @@ codex-web --help
 
 ### 从 GitHub 仓库安装
 
-GitHub 仓库公开后，也可以直接安装指定标签：
+GitHub 仓库已经公开，可以直接安装当前 `master` 分支：
 
 ```bash
-npm install --global "github:<owner>/<repository>#<tag>"
+npm install --global "github:wangru8080/codex-web#master"
 ```
 
 这种方式会在安装机器上下载开发依赖并执行完整构建，速度较慢。正式版本更适合使用 GitHub Release 中预先构建的 tarball。
@@ -116,8 +118,10 @@ npm install --global "github:<owner>/<repository>#<tag>"
 发布 GitHub Release 后，可以安装 Release 附件：
 
 ```bash
-npm install --global "https://github.com/<owner>/<repository>/releases/download/v0.1.0/codex-web-0.1.0.tgz"
+npm install --global "https://github.com/wangru8080/codex-web/releases/download/v0.1.0/codex-web-0.1.0.tgz"
 ```
+
+当前尚未创建 `v0.1.0` GitHub Release，上述 Release 安装命令暂不可用。
 
 当前 npm registry 尚无该软件包，因此 `npm install --global codex-web` 需要等正式发布后才能使用。
 
@@ -243,8 +247,8 @@ npm install --global ./codex-web-<新版本>.tgz
 ## 源码开发
 
 ```bash
-git clone https://github.com/<owner>/<repository>.git
-cd <repository>
+git clone https://github.com/wangru8080/codex-web.git
+cd codex-web
 npm install
 
 export CODEX_HOME="${TMPDIR:-/tmp}/codex-web-dev-home"
