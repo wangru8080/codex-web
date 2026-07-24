@@ -17,6 +17,8 @@
 > 客户端 CPU Profile 计划：[2026-07-24-client-long-task-cpu-profile.md](../exec-plans/completed/2026-07-24-client-long-task-cpu-profile.md)
 >
 > 动态聊天路由服务端追踪计划：[2026-07-24-dynamic-chat-route-server-trace.md](../exec-plans/completed/2026-07-24-dynamic-chat-route-server-trace.md)
+>
+> 生产入口预编译计划：[2026-07-24-production-entry-precompile-evaluation.md](../exec-plans/completed/2026-07-24-production-entry-precompile-evaluation.md)
 
 ## 文档目的
 
@@ -73,7 +75,7 @@ Next.js 自定义 Server + Web bridge
 codex app-server
 ```
 
-开发入口为 `scripts/dev-next-with-bridge.ts`：先创建 bridge 和 app-server，再启动 `next dev`。生产入口为 `scripts/start-next-with-bridge.ts`：加载 Next 生产构建，并让 Next 请求与 `/codex-bridge` WebSocket 共用端口。
+开发入口为 `scripts/dev-next-with-bridge.ts`：先创建 bridge 和 app-server，再启动 `next dev`。生产服务源码仍由 `scripts/start-next-with-bridge.ts` 定义，但 `npm run start` 先通过普通 JavaScript 启动器即时生成并加载 `dist/start-next-with-bridge.mjs`；安装包直接加载随包 bundle。Next 请求与 `/codex-bridge` WebSocket 继续共用端口。
 
 这套单端口结构也是 CLI 打包继续使用 Next.js 的主要原因。若迁移 Vite，需要新增独立 HTTP 服务、静态资源服务、API 路由、登录会话和 WebSocket upgrade 接线，迁移范围明显超过前端渲染优化。
 
@@ -444,11 +446,11 @@ npm pack --dry-run --json --ignore-scripts
 
 ## 下一步
 
-阶段 0、1、2、3、4 已完成并归档。阶段 4 已完成代码、测试、构建、Smoke 和本地 Headless Chrome 验证。
+阶段 0、1、2、3、4、5 已完成并归档。阶段 4 已完成代码、测试、构建、Smoke 和本地 Headless Chrome 验证。
 
 阶段 5 已完成证据复核，结论是保留 Next.js，不创建 Vite POC；长历史初始置底竞态也已修复。客户端 CPU Profile 和动态 `/chat/[id]` 服务端追踪均没有发现足以支持产品代码修改的单一热点。若继续客户端归因，应改用无扩展 Headless Chrome 和可映射源码；若继续服务端冷路径归因，应先取得系统级异步 I/O/worker 证据。
 
-若要继续降低运行成本，可独立评估将生产 TypeScript 入口预编译为 JavaScript，避免运行时 `tsx` 启动层；该工作必须保留同端口 bridge、CLI 打包和跨目录启动验证。没有新的三轮可归因证据前，不重新开启框架迁移讨论。
+生产 TypeScript 入口预编译已经完成并通过三轮正式入口、CLI 打包和跨目录安装验证；没有新的三轮可归因证据前，不重新开启框架迁移讨论。后续性能工作应优先取得无扩展客户端源码映射或系统级异步 I/O/worker 证据。
 
 ## 阶段 0 实施结果（2026-07-23）
 
@@ -639,4 +641,16 @@ npm pack --dry-run --json --ignore-scripts
 - 结论是冷路径稳定存在，但证据不足以支持修改单一服务端边界；不增加常驻埋点、预热请求或缓存改写。
 - 原始 profile 与汇总位于 `/volume2/SSD/codex/Temp/codex-web-server-trace-qZHIxW/`，未纳入 Git；生产服务和 Inspector 已停止，相关端口已释放。
 
-本轮只完成测量和文档更新，不是产品代码 `Tests pass` 或 `Smoke passed`。若继续该方向，下一步必须先取得系统级异步 I/O/worker trace；否则更直接的独立候选项是评估生产 TypeScript 入口预编译为 JavaScript。
+本轮只完成测量和文档更新，不是产品代码 `Tests pass` 或 `Smoke passed`。若继续该方向，下一步必须先取得系统级异步 I/O/worker trace；生产 TypeScript 入口预编译这一独立候选项随后已完成，结果见下文。
+
+## 生产入口预编译结果（2026-07-24）
+
+- 改动前 `npm run start` 三轮就绪时间为 2152.82、2039.22、2119.71 ms，入口进程树 RSS 为 273.45、272.42、272.78 MiB。
+- 直接 bundle POC 三轮就绪时间为 1094.79、1106.93、1042.74 ms，入口 RSS 为 103.66、100.63、101.13 MiB，达到保留门槛。
+- 正式接线后的 `npm run start` 三轮就绪时间为 1394.27、1341.02、1347.94 ms，入口 RSS 为 167.84、166.43、166.82 MiB；相对旧入口中位数分别降低 36.41% 和 105.97 MiB，三轮方向一致。
+- app-server 子树单独统计，不计入入口 RSS；新入口没有修改 HTTP、WebSocket bridge、认证、app-server 协议或 Next 页面。
+- 源码启动器即时重建以避免陈旧产物；npm 包只携带启动器和 bundle，安装后不依赖 `tsx`、esbuild、构建器或 TypeScript 源入口。
+- 全量 `npm run test` 为 128 个文件、596 项通过；`npm run build`、`npm run build:cli`、隔离 bridge smoke 和 pack dry-run 通过。
+- 实际 tgz 为 17,069,691 bytes、1634 个文件；全新安装后从仓库外 cwd 启动，应用根目录与工作目录正确分离，`/login` 返回 200，app-server 使用隔离 `CODEX_HOME`。停止后 3103 端口释放。
+
+本阶段达到 `Code complete`、`Tests pass` 和 `Smoke passed`。它证明移除生产入口常驻 `tsx` 层有稳定收益，不证明动态 `/chat/[id]`、客户端 Long Task 或 Next 运行时本身已优化。

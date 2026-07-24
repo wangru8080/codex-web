@@ -2,6 +2,8 @@
 
 关联执行计划：[2026-07-23-codex-web-cli-package.md](../exec-plans/completed/2026-07-23-codex-web-cli-package.md)
 
+生产入口预编译计划：[2026-07-24-production-entry-precompile-evaluation.md](../exec-plans/completed/2026-07-24-production-entry-precompile-evaluation.md)
+
 ## 用户能力
 
 - `npm pack` 生成可安装的 `codex-web-<version>.tgz`。
@@ -15,14 +17,20 @@
 
 `scripts/build-cli.ts` 使用 esbuild 将本地 CLI、server 和 bridge 源码打成 `dist/cli/codex-web.mjs`，npm 第三方依赖保持 external，由安装时的 package dependencies 提供。CLI 在加载 server 前设置 `CODEX_WEB_APP_ROOT`，解决打包入口位于 `dist/cli` 时的资源根目录定位问题。
 
+源码仓库的 `npm run start` 由 `scripts/start-production.mjs` 启动：存在源码构建器时先运行 `scripts/build-production-server.mjs`，再在同一 Node 进程加载 `dist/start-next-with-bridge.mjs`。安装包不携带构建器或 TypeScript 源入口，只携带启动器和预编译 bundle，因此生产启动不依赖 `tsx` 或 esbuild。`npm run build:cli` 会在 pack 前显式生成两份 bundle；普通 `npm run build` 行为不变。
+
 npm `files` 白名单只包含以下运行时资产：
 
 - `.next/BUILD_ID`、根级 manifest、`.next/server`、`.next/static`
 - `dist/cli`
+- `dist/start-next-with-bridge.mjs`
 - `next.config.mjs`
 - `public`、`themes`
+- `scripts/start-production.mjs`
 
 `.next/dev` 和 `.next/cache` 不进入 tarball。首次清单审计结果为压缩约 15.8 MiB、解包约 69.2 MiB、1553 个文件。
+
+生产入口预编译后的 2026-07-24 清单为压缩 17,069,691 bytes、解包 74,666,271 bytes、1634 个文件。实际 tgz 在全新临时目录安装成功；从仓库外 cwd 启动时应用根目录指向安装包、工作目录保持调用目录，`/login` 返回 200，app-server 使用隔离 `CODEX_HOME`。该验证同时确认包内不存在 `scripts/build-production-server.mjs` 和 `scripts/start-next-with-bridge.ts`。
 
 ## 运行时配置
 

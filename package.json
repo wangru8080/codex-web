@@ -13,8 +13,10 @@
     ".next/server/",
     ".next/static/",
     "dist/cli/",
+    "dist/start-next-with-bridge.mjs",
     "next.config.mjs",
     "public/",
+    "scripts/start-production.mjs",
     "themes/"
   ],
   "engines": {
@@ -26,9 +28,10 @@
     "test": "npm run typecheck && vitest run",
     "build": "next build",
     "postbuild": "tsx scripts/restore-next-env.ts",
-    "build:cli": "npm run build && tsx scripts/build-cli.ts",
+    "build:cli": "npm run build && npm run build:production-server && tsx scripts/build-cli.ts",
+    "build:production-server": "node scripts/build-production-server.mjs",
     "prepack": "npm run build:cli",
-    "start": "tsx scripts/start-next-with-bridge.ts",
+    "start": "node scripts/start-production.mjs",
     "build:server": "tsc -p tsconfig.build.json",
     "test:smoke": "tsx scripts/smoke.ts",
     "test:smoke:interrupt": "tsx scripts/interrupt-smoke.ts",

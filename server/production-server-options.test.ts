@@ -28,6 +28,18 @@ describe("resolveProductionServerPaths", () => {
     expect(paths.workingDirectory).toBe("/tmp/codex-user-project");
     expect(paths.buildIdPath).toBe(resolve("/opt/codex-web", ".next", "BUILD_ID"));
   });
+
+  it("预编译服务入口仍从 dist 的上一级解析应用根目录", () => {
+    const paths = resolveProductionServerPaths(
+      new URL("../dist/start-next-with-bridge.mjs", import.meta.url).toString(),
+      "/tmp/codex-user-project",
+    );
+
+    const expectedRoot = resolve(fileURLToPath(new URL("../", import.meta.url)));
+    expect(paths.applicationRoot).toBe(expectedRoot);
+    expect(paths.workingDirectory).toBe("/tmp/codex-user-project");
+    expect(paths.buildIdPath).toBe(resolve(expectedRoot, ".next", "BUILD_ID"));
+  });
 });
 
 describe("readProductionPort", () => {

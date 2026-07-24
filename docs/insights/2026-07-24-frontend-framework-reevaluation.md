@@ -3,6 +3,8 @@
 > 执行计划：[2026-07-24-frontend-framework-reevaluation.md](../exec-plans/completed/2026-07-24-frontend-framework-reevaluation.md)
 >
 > 技术交接：[2026-07-23-web-only-performance-refactor.md](../handover/2026-07-23-web-only-performance-refactor.md)
+>
+> 生产入口预编译计划：[2026-07-24-production-entry-precompile-evaluation.md](../exec-plans/completed/2026-07-24-production-entry-precompile-evaluation.md)
 
 ## 结论
 
@@ -63,7 +65,7 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 - `/login` 10 次 TTFB 为 7.0 至 18.8 ms，平均 11.5 ms。
 - 已认证 `/chat` 10 次 TTFB 为 5.5 至 22.6 ms，平均 8.7 ms。
 - `/chat/[id]` 第一次 TTFB 为 565.4 ms，后续 9 次为 21.1 至 61.9 ms。
-- 请求后 `tsx` 启动层约 55 MiB RSS，承载 Next 与 bridge 的 Node 进程约 193 MiB RSS；app-server Node 启动层约 48 MiB，native app-server 约 64 MiB。Next 与 bridge 位于同一 Node 进程，不能把该进程全部 RSS 归因给 Next。
+- 阶段 5 记录的请求后 `tsx` 启动层约 55 MiB RSS，承载 Next 与 bridge 的 Node 进程约 193 MiB RSS；app-server Node 启动层约 48 MiB，native app-server 约 64 MiB。后续生产入口预编译已移除常驻 `tsx` launcher/loader，正式 `npm run start` 的入口进程树 RSS 中位数由 272.78 MiB 降到 166.82 MiB；该收益不代表 Next 本身只占剩余内存。
 - `.next/static` 为 21,277,802 bytes，`.next/server` 为 53,759,000 bytes；476 个 JS 文件合计 21,073,385 bytes，最大单文件 779,988 bytes。`.next` 总目录包含构建缓存，不能作为发布大小。
 - `npm pack --dry-run --json --ignore-scripts` 预估发布包压缩后 17,057,552 bytes，解包后 74,617,395 bytes，共 1632 个条目；dry-run 没有生成 tarball。
 
@@ -81,8 +83,8 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 
 1. 若继续深挖首次 `/chat/[id]`，先使用系统级异步 I/O/worker trace 证明可控等待来源；本轮服务端 profile 不支持修改认证、Proxy 或应用函数。
 2. 在禁用浏览器扩展并提供可映射源码的环境中复测客户端 Long Task；现有 CPU profile 没有支持修改单一组件的证据。
-3. 独立评估把生产 TypeScript 入口预编译为 JavaScript，避免运行时 `tsx` 启动层；必须先验证 CLI 打包和跨目录启动。
-4. 只有上述工作完成后仍有三轮证据满足 POC 门槛，才另建 Vite POC 计划。
+3. 生产 TypeScript 入口预编译已经完成；后续只需在入口或构建链变化时保持 pack 与跨目录安装回归。
+4. 只有其余工作出现新的三轮证据满足 POC 门槛，才另建 Vite POC 计划。
 
 ## 长历史滚动残余修复
 
@@ -135,5 +137,6 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 - 长历史修复基线：`/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T11-42-54-822Z-production-default/`
 - 客户端 CPU Profile：`/volume2/SSD/codex/Temp/codex-web-cpu-profile-buqqiX/`
 - 动态聊天路由服务端 trace：`/volume2/SSD/codex/Temp/codex-web-server-trace-qZHIxW/`
+- 生产入口 POC、九轮测量、tgz 与临时安装：`/volume2/SSD/codex/Temp/codex-web-production-entry-CPU62v/`
 
-阶段 5 及其两项 profile 后续只修改文档，没有修改产品代码、依赖或构建配置。三轮生产性能基线共 34/36 场景成功；不能表述为完整 `Smoke passed`。客户端与服务端 profile 均完成测量，但没有代码改动，不能表述为 `Tests pass` 或 `Smoke passed`。本阶段没有重新运行 `npm run test`、`npm run build` 或 `npm run test:smoke`。
+阶段 5 及其两项 profile 后续只修改文档，没有修改产品代码、依赖或构建配置。其后独立完成的生产入口预编译达到 `Code complete`、`Tests pass` 和 `Smoke passed`：全量 128 个测试文件、596 项通过，生产构建、CLI 构建、pack dry-run、全新安装及仓库外 cwd 启动均通过。该改动优化进程启动层，不改变“保留 Next.js”的框架结论，也没有证明动态路由或客户端 Long Task 已改善。
