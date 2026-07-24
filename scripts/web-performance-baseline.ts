@@ -332,7 +332,12 @@ type VirtualizationSnapshot = {
   totalMessageCount: number;
   initialMountedMessageCount: number;
   initialAtBottom: boolean;
+  initialBottomLockState: string | null;
+  lateHeightMaintainedBottom: boolean | null;
+  lateHeightBottomLockState: string | null;
+  lateHeightDistanceFromBottom: number | null;
   topMountedMessageCount: number;
+  userScrollPreserved: boolean | null;
   returnedToBottom: boolean;
 };
 
@@ -574,6 +579,7 @@ async function captureVirtualizationProbe(
     totalMessageCount: number;
     mountedMessageCount: number;
     atBottom: boolean;
+    bottomLockState: string | null;
   }>(`(() => {
     const root = document.querySelector('[data-virtualized-message-list]');
     const scroller = root?.querySelector('[data-message-list-scroller]');
@@ -584,12 +590,56 @@ async function captureVirtualizationProbe(
       totalMessageCount: Number(root.dataset.messageCount ?? 0),
       mountedMessageCount: root.querySelectorAll('[data-message-row], [data-streaming-message-row]').length,
       atBottom: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 64,
+      bottomLockState: scroller.dataset.initialBottomLockState ?? null,
     };
   })()`);
+
+  let lateHeightMaintainedBottom: boolean | null = null;
+  let lateHeightBottomLockState: string | null = null;
+  let lateHeightDistanceFromBottom: number | null = null;
+  if (scenario.name === "long-history") {
+    await client.evaluate(`(() => {
+      const rows = document.querySelectorAll('[data-message-row], [data-streaming-message-row]');
+      const row = rows.item(rows.length - 1);
+      if (!(row instanceof HTMLElement)) throw new Error('长历史底部高度探针缺少消息行');
+      row.dataset.performanceOriginalMinHeight = row.style.minHeight;
+      row.style.minHeight = String(Math.ceil(row.getBoundingClientRect().height) + 240) + 'px';
+    })()`);
+    await delay(300);
+    const lateHeight = await client.evaluate<{
+      atBottom: boolean;
+      bottomLockState: string | null;
+      distanceFromBottom: number;
+    }>(`(() => {
+      const scroller = document.querySelector('[data-message-list-scroller]');
+      if (!(scroller instanceof HTMLElement)) {
+        return { atBottom: false, bottomLockState: null, distanceFromBottom: -1 };
+      }
+      const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      return {
+        atBottom: distanceFromBottom <= 64,
+        bottomLockState: scroller.dataset.initialBottomLockState ?? null,
+        distanceFromBottom,
+      };
+    })()`);
+    lateHeightMaintainedBottom = lateHeight.atBottom;
+    lateHeightBottomLockState = lateHeight.bottomLockState;
+    lateHeightDistanceFromBottom = lateHeight.distanceFromBottom;
+    await client.evaluate(`(() => {
+      const row = document.querySelector('[data-performance-original-min-height]');
+      if (!(row instanceof HTMLElement)) return;
+      const original = row.dataset.performanceOriginalMinHeight ?? '';
+      if (original) row.style.minHeight = original;
+      else row.style.removeProperty('min-height');
+      delete row.dataset.performanceOriginalMinHeight;
+    })()`);
+    await delay(300);
+  }
 
   await client.evaluate(`(() => {
     const scroller = document.querySelector('[data-message-list-scroller]');
     if (!(scroller instanceof HTMLElement)) throw new Error('消息滚动容器不存在');
+    scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
     scroller.scrollTop = 0;
     scroller.dispatchEvent(new Event('scroll'));
   })()`);
@@ -598,17 +648,58 @@ async function captureVirtualizationProbe(
     `document.querySelectorAll('[data-message-row], [data-streaming-message-row]').length`,
   );
 
+  let userScrollPreserved: boolean | null = null;
+  if (scenario.name === "long-history") {
+    await client.evaluate(`(() => {
+      const rows = document.querySelectorAll('[data-message-row], [data-streaming-message-row]');
+      const row = rows.item(rows.length - 1);
+      if (!(row instanceof HTMLElement)) throw new Error('长历史顶部高度探针缺少消息行');
+      row.dataset.performanceOriginalMinHeight = row.style.minHeight;
+      row.style.minHeight = String(Math.ceil(row.getBoundingClientRect().height) + 240) + 'px';
+    })()`);
+    await delay(300);
+    userScrollPreserved = await client.evaluate<boolean>(`(() => {
+      const scroller = document.querySelector('[data-message-list-scroller]');
+      return scroller instanceof HTMLElement
+        && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 64;
+    })()`);
+    await client.evaluate(`(() => {
+      const row = document.querySelector('[data-performance-original-min-height]');
+      if (!(row instanceof HTMLElement)) return;
+      const original = row.dataset.performanceOriginalMinHeight ?? '';
+      if (original) row.style.minHeight = original;
+      else row.style.removeProperty('min-height');
+      delete row.dataset.performanceOriginalMinHeight;
+    })()`);
+    await delay(300);
+  }
+
   await client.evaluate(`(() => {
     const scroller = document.querySelector('[data-message-list-scroller]');
     if (!(scroller instanceof HTMLElement)) throw new Error('消息滚动容器不存在');
-    scroller.scrollTop = scroller.scrollHeight;
-    scroller.dispatchEvent(new Event('scroll'));
+    const button = document.querySelector('button[aria-label="滚动到底部"]');
+    if (!(button instanceof HTMLButtonElement)) throw new Error('滚动到底部按钮不存在');
+    button.click();
   })()`);
-  await client.waitFor(`(() => {
-    const scroller = document.querySelector('[data-message-list-scroller]');
-    return scroller instanceof HTMLElement
-      && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 64;
-  })()`, 5_000);
+  try {
+    await client.waitFor(`(() => {
+      const scroller = document.querySelector('[data-message-list-scroller]');
+      return scroller instanceof HTMLElement
+        && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 64;
+    })()`, 5_000);
+  } catch (error) {
+    const diagnostics = await client.evaluate(`(() => {
+      const scroller = document.querySelector('[data-message-list-scroller]');
+      if (!(scroller instanceof HTMLElement)) return { scroller: false };
+      return {
+        scroller: true,
+        bottomLockState: scroller.dataset.initialBottomLockState ?? null,
+        distanceFromBottom: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+      };
+    })()`);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${message}；恢复底部诊断：${JSON.stringify(diagnostics)}`);
+  }
   const returnedToBottom = await client.evaluate<boolean>(`(() => {
     const scroller = document.querySelector('[data-message-list-scroller]');
     if (!(scroller instanceof HTMLElement)) return false;
@@ -619,7 +710,12 @@ async function captureVirtualizationProbe(
     totalMessageCount: initial.totalMessageCount,
     initialMountedMessageCount: initial.mountedMessageCount,
     initialAtBottom: initial.atBottom,
+    initialBottomLockState: initial.bottomLockState,
+    lateHeightMaintainedBottom,
+    lateHeightBottomLockState,
+    lateHeightDistanceFromBottom,
     topMountedMessageCount,
+    userScrollPreserved,
     returnedToBottom,
   };
   if (scenario.name === "long-history") {
@@ -627,8 +723,11 @@ async function captureVirtualizationProbe(
     if (snapshot.initialMountedMessageCount >= snapshot.totalMessageCount) {
       throw new Error("长历史场景仍挂载了全部消息 DOM");
     }
-    if (!snapshot.initialAtBottom || !snapshot.returnedToBottom) {
-      throw new Error("长历史虚拟列表未保持初始底部位置或无法返回底部");
+    if (!snapshot.initialAtBottom || !snapshot.lateHeightMaintainedBottom || !snapshot.returnedToBottom) {
+      throw new Error(`长历史虚拟列表未保持初始底部、延迟高度变化或返回底部位置：${JSON.stringify(snapshot)}`);
+    }
+    if (!snapshot.userScrollPreserved) {
+      throw new Error(`长历史虚拟列表在用户向上阅读后错误抢夺滚动位置：${JSON.stringify(snapshot)}`);
     }
   }
   return snapshot;
@@ -650,11 +749,31 @@ async function waitForScenarioContent(
       `document.body.innerText.includes('perf-long-answer-120') && Boolean(document.querySelector('textarea'))`,
       20_000,
     );
-    await client.waitFor(`(() => {
-      const scroller = document.querySelector('[data-message-list-scroller]');
-      return scroller instanceof HTMLElement
-        && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 64;
-    })()`, 20_000);
+    try {
+      await client.waitFor(`(() => {
+        const scroller = document.querySelector('[data-message-list-scroller]');
+        return scroller instanceof HTMLElement
+          && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 64;
+      })()`, 20_000);
+    } catch (error) {
+      const diagnostics = await client.evaluate(`(() => {
+        const root = document.querySelector('[data-virtualized-message-list]');
+        const scroller = document.querySelector('[data-message-list-scroller]');
+        if (!(scroller instanceof HTMLElement)) return { scroller: false };
+        return {
+          scroller: true,
+          bottomLockState: scroller.dataset.initialBottomLockState ?? null,
+          scrollHeight: scroller.scrollHeight,
+          scrollTop: scroller.scrollTop,
+          clientHeight: scroller.clientHeight,
+          distanceFromBottom: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+          totalMessageCount: root instanceof HTMLElement ? Number(root.dataset.messageCount ?? 0) : null,
+          mountedMessageCount: root?.querySelectorAll('[data-message-row], [data-streaming-message-row]').length ?? null,
+        };
+      })()`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${message}；长历史诊断：${JSON.stringify(diagnostics)}`);
+    }
     return;
   }
   if (scenario.name.startsWith("optional-markdown-")) {

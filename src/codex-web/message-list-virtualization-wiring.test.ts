@@ -14,6 +14,14 @@ describe('聊天虚拟化与流式渲染接线', () => {
     expect(source).toContain("row.message.id : 'streaming-message'");
     expect(source).toContain('followOutput');
     expect(source).toContain('atBottomStateChange={handleAtBottomStateChange}');
+    expect(source).toContain('totalListHeightChanged={handleTotalListHeightChanged}');
+    expect(source).toContain('scrollerRef={handleScrollerRef}');
+    expect(source).toContain('handleInitialBottomLockUserInteraction');
+    expect(source).toContain('!nextIsAtBottom && initialBottomLockRef.current');
+    expect(source).toContain('useLayoutEffect(() => {');
+    expect(source).toContain('scroller.scrollTop = scroller.scrollHeight');
+    expect(source).toContain("next.addEventListener('scroll', handleInitialBottomLockScroll");
+    expect(source).not.toContain('height <= scroller.clientHeight) {');
     expect(source).toContain('data-virtualized-message-list');
     expect(source).not.toMatch(/^\s*alignToBottom\s*$/m);
     expect(source).not.toContain('{messages.map((message) =>');

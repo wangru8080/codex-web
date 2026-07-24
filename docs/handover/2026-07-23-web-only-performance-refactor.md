@@ -9,6 +9,10 @@
 > 阶段 3 执行计划：[2026-07-24-heavy-module-lazy-loading.md](../exec-plans/completed/2026-07-24-heavy-module-lazy-loading.md)
 >
 > 阶段 4 执行计划：[2026-07-24-desktop-ui-legacy-cleanup.md](../exec-plans/completed/2026-07-24-desktop-ui-legacy-cleanup.md)
+>
+> 阶段 5 执行计划：[2026-07-24-frontend-framework-reevaluation.md](../exec-plans/completed/2026-07-24-frontend-framework-reevaluation.md)
+>
+> 长历史底部锁计划：[2026-07-24-long-history-bottom-lock.md](../exec-plans/completed/2026-07-24-long-history-bottom-lock.md)
 
 ## 文档目的
 
@@ -320,11 +324,11 @@ codex app-server
 
 ### 阶段 5：重新评估前端框架
 
-只有阶段 0 至 4 完成后仍有证据指向 Next 生产运行时，才进行 Next 与 Vite 的 POC 对比。
+阶段 0 至 4 完成后先复核当前 Next 生产运行时，不默认进入 Next 与 Vite 的 POC 对比。阶段 5 的量化结论见 [前端框架性能复核结论](../insights/2026-07-24-frontend-framework-reevaluation.md)。
 
 POC 必须使用同一套 `/chat` 首屏组件、app-server fixture、登录与 WebSocket 安全约束、生产静态资源、性能采样设备和浏览器。
 
-若 Vite 只改善开发冷编译、却要求重写认证、API 和 CLI，则不应迁移。若独立 bridge 已经承担全部服务端职责，Vite 能显著降低生产资源与内存，才创建正式迁移计划。
+本次三轮生产基线与独立 HTTP 测量没有达到 POC 门槛，决策为保留 Next.js。若未来三轮同口径数据都证明 Next 可归因开销占主要延迟，并且现有架构内优化无法满足预算，才另建 Vite POC 计划。若 Vite 只改善开发冷编译、却要求重写认证、API 和 CLI，则不应迁移。
 
 ## 性能预算建议
 
@@ -438,9 +442,9 @@ npm pack --dry-run --json --ignore-scripts
 
 阶段 0、1、2、3、4 已完成并归档。阶段 4 已完成代码、测试、构建、Smoke 和本地 Headless Chrome 验证。
 
-归档阶段 4 后，下一步是阶段 5 的证据复核，而不是直接迁移框架：先用既有生产基线判断 Next 生产运行时是否仍是主要瓶颈，再决定是否值得创建 Next/Vite 同场景 POC。现有结果已经证明状态订阅、虚拟化和按需加载能改善主路径，但尚未证明 Next 生产运行时本身是剩余性能瓶颈。
+阶段 5 已完成证据复核，结论是保留 Next.js，不创建 Vite POC。下一步优先修复长历史初始置底竞态，对每个生产进程首次 `/chat/[id]` 约 565 ms 的冷路径增加 server trace，并为 224 至 336 ms 的客户端 Long Task 采集 CPU profile。
 
-在没有生产性能对照之前，不应把 `npm run dev` 的首次路由编译慢等同于产品生产环境慢；在没有 React Profiler 和浏览器 Performance 数据之前，也不应把 799 个 npm 包直接认定为点击卡顿的原因。
+若要继续降低运行成本，可独立评估将生产 TypeScript 入口预编译为 JavaScript，避免运行时 `tsx` 启动层；该工作必须保留同端口 bridge、CLI 打包和跨目录启动验证。没有新的三轮可归因证据前，不重新开启框架迁移讨论。
 
 ## 阶段 0 实施结果（2026-07-23）
 
@@ -577,3 +581,35 @@ npm pack --dry-run --json --ignore-scripts
 - 运行时源码扫描未发现 `electronAPI`、Electron shell、`WebkitAppRegion` 或 `/api/files/open`。阶段 2 的生产长历史初始置底残余未被本阶段掩盖或误报为通过。
 
 阶段 4 达到 `Code complete`、`Tests pass` 和 `Smoke passed`；执行计划已归档，阶段 4 代码与归档记录纳入同一 Git 提交，未远程推送。
+
+## 阶段 5 评估结果（2026-07-24）
+
+### 框架决策
+
+- 保留 Next.js 16，不创建 Vite POC。
+- 当前 Next 继续拥有 23 个静态 HTML、5 个 Route Handler、认证 Proxy、客户端路由、同端口 HTTP/WebSocket server 和 CLI 生产分发职责。
+- 三轮生产基线为 12/12、11/12、11/12；两次失败均为长历史虚拟列表初始置底条件。普通 Turn、Skill Turn、普通 Markdown 不加载可选能力，以及 Math/Mermaid/代码按需加载反例三轮通过。
+- `/login` 和已认证 `/chat` 的 10 次本机 TTFB 均在 23 ms 内；`/chat/[id]` 每进程第一次约 565 ms，随后为 21 至 62 ms。空聊天冷启动主要等待 app-server 初始化和客户端可交互条件。
+- 输入 P95 为 9.7 至 20.6 ms；最长 Long Task 为 139 至 336 ms。没有 CPU profile 前只归因到客户端主线程，不猜测具体依赖。
+
+### 运行与发布成本
+
+- 启动到 `/login` 首次成功响应约 2015 ms。
+- 请求后的 `tsx` 启动层约 55 MiB RSS，Next 与 bridge 组合 Node 进程约 193 MiB；app-server Node 启动层约 48 MiB，native app-server 约 64 MiB。Next 与 bridge 共享进程，不能把组合 RSS 全部归因给 Next。
+- `.next/static` 为 21,277,802 bytes，`.next/server` 为 53,759,000 bytes；JS 为 476 个文件、21,073,385 bytes。
+- `npm pack --dry-run --json --ignore-scripts` 预估压缩 17,057,552 bytes、解包 74,617,395 bytes、1632 个条目，没有生成 tarball。
+- 生产服务测量后已正常停止，3102 端口释放。
+
+阶段 5 只修改文档，没有修改产品代码或依赖。生产性能基线共 34/36 场景成功，不能表述为完整 `Smoke passed`；本阶段没有重新运行 `npm run test`、`npm run build` 或 `npm run test:smoke`。详细数据与官方框架边界记录在 [前端框架性能复核结论](../insights/2026-07-24-frontend-framework-reevaluation.md)。
+
+## 长历史初始底部锁修复（2026-07-24）
+
+- `MessageList` 在每个会话首次提交非空历史后启用初始底部锁；Virtuoso 总高度、at-bottom 状态和真实 scroller 的非用户滚动共同纠正位置。
+- 初始锁以真实 scroller 为最终事实，避免只依赖 Virtuoso 内部状态回调时出现无事件位置漂移。
+- wheel、touchstart、pointerdown 和 PageUp/Home/ArrowUp 会立即解除锁；用户向上阅读后，异步高度变化不会把页面拉回最新消息。
+- 短对话继续不使用 `alignToBottom`，阶段 4 的首条问题顶部语义不变；流式 `followOutput`、分页 `firstItemIndex` 和 app-server 消息语义未修改。
+- 生产基线新增延迟消息高度、用户阅读保护和真实“滚动到底部”按钮反例，并记录锁状态及离底距离用于失败诊断。
+
+最终验证达到 `Code complete`、`Tests pass` 和 `Smoke passed`：定向接线测试 1 个文件、4 项通过；全量 127 个测试文件、594 项通过；生产构建通过；隔离 app-server Smoke 通过，读取 7 个模型。三轮完整生产基线均为 12/12，长历史 60 条消息只挂载 11 至 13 条，初始底部、延迟高度保持、用户阅读保护和恢复底部全部通过。
+
+三轮整体可交互 P95 为 11.0 至 15.1 秒，最长 Long Task 为 788 至 1106 ms。本修复证明滚动正确性稳定，不证明整体性能预算改善；CPU profile 和首个动态路由冷路径仍应独立处理。生产服务均已停止，3102 端口释放。

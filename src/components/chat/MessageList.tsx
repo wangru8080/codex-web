@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useRef, useEffect, useState, useCallback, useMemo, type ComponentPropsWithoutRef } from 'react';
+import { forwardRef, useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo, type ComponentPropsWithoutRef } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { Virtuoso, type Components, type VirtuosoHandle } from 'react-virtuoso';
@@ -258,6 +258,10 @@ export function MessageList({
 }: MessageListProps) {
   const { t } = useTranslation();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrollerElementRef = useRef<HTMLElement | null>(null);
+  const initialBottomLockScrollFrameRef = useRef<number | null>(null);
+  const initialBottomLockRef = useRef(false);
+  const initialBottomLockSessionRef = useRef<string | undefined | null>(null);
   const isAtBottomRef = useRef(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const firstItemIndex = useVirtualFirstItemIndex(messages);
@@ -286,10 +290,91 @@ export function MessageList({
     onLoadMore: handleLoadMore,
   }), [handleLoadMore, hasMore, loadingMore, t]);
 
+  const pinInitialBottom = useCallback(() => {
+    if (!initialBottomLockRef.current) return;
+    virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' });
+    const scroller = scrollerElementRef.current;
+    if (scroller) {
+      scroller.dataset.initialBottomLockState = 'active-pinned';
+      scroller.scrollTop = scroller.scrollHeight;
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (rows.length === 0 || initialBottomLockSessionRef.current === sessionId) return;
+    initialBottomLockSessionRef.current = sessionId;
+    initialBottomLockRef.current = true;
+    if (scrollerElementRef.current) {
+      scrollerElementRef.current.dataset.initialBottomLockState = 'active-initialized';
+    }
+    const frame = window.requestAnimationFrame(pinInitialBottom);
+    return () => window.cancelAnimationFrame(frame);
+  }, [pinInitialBottom, rows.length, sessionId]);
+
   const handleAtBottomStateChange = useCallback((nextIsAtBottom: boolean) => {
     isAtBottomRef.current = nextIsAtBottom;
     setIsAtBottom(nextIsAtBottom);
+    if (!nextIsAtBottom && initialBottomLockRef.current) {
+      window.requestAnimationFrame(pinInitialBottom);
+    }
+  }, [pinInitialBottom]);
+
+  const handleInitialBottomLockUserInteraction = useCallback((event: Event) => {
+    if (event instanceof KeyboardEvent && !['ArrowUp', 'Home', 'PageUp'].includes(event.key)) return;
+    initialBottomLockRef.current = false;
+    if (scrollerElementRef.current) {
+      scrollerElementRef.current.dataset.initialBottomLockState = `released-${event.type}`;
+    }
   }, []);
+
+  const handleInitialBottomLockScroll = useCallback(() => {
+    if (!initialBottomLockRef.current || initialBottomLockScrollFrameRef.current !== null) return;
+    initialBottomLockScrollFrameRef.current = window.requestAnimationFrame(() => {
+      initialBottomLockScrollFrameRef.current = null;
+      if (!initialBottomLockRef.current) return;
+      const scroller = scrollerElementRef.current;
+      if (!scroller) return;
+      const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      if (distanceFromBottom > 48) pinInitialBottom();
+    });
+  }, [pinInitialBottom]);
+
+  const handleScrollerRef = useCallback((ref: HTMLElement | Window | null) => {
+    const previous = scrollerElementRef.current;
+    if (previous) {
+      previous.removeEventListener('wheel', handleInitialBottomLockUserInteraction);
+      previous.removeEventListener('touchstart', handleInitialBottomLockUserInteraction);
+      previous.removeEventListener('pointerdown', handleInitialBottomLockUserInteraction);
+      previous.removeEventListener('keydown', handleInitialBottomLockUserInteraction);
+      previous.removeEventListener('scroll', handleInitialBottomLockScroll);
+    }
+
+    const next = ref instanceof HTMLElement ? ref : null;
+    scrollerElementRef.current = next;
+    if (!next) return;
+    next.dataset.initialBottomLockState = initialBottomLockRef.current ? 'active-scroller' : 'inactive-scroller';
+    next.addEventListener('wheel', handleInitialBottomLockUserInteraction, { passive: true });
+    next.addEventListener('touchstart', handleInitialBottomLockUserInteraction, { passive: true });
+    next.addEventListener('pointerdown', handleInitialBottomLockUserInteraction, { passive: true });
+    next.addEventListener('keydown', handleInitialBottomLockUserInteraction);
+    next.addEventListener('scroll', handleInitialBottomLockScroll, { passive: true });
+    if (initialBottomLockRef.current) window.requestAnimationFrame(pinInitialBottom);
+  }, [handleInitialBottomLockScroll, handleInitialBottomLockUserInteraction, pinInitialBottom]);
+
+  const handleTotalListHeightChanged = useCallback((height: number) => {
+    if (!initialBottomLockRef.current) return;
+    const scroller = scrollerElementRef.current;
+    if (!scroller) return;
+    if (height <= scroller.clientHeight) return;
+    window.requestAnimationFrame(pinInitialBottom);
+  }, [pinInitialBottom]);
+
+  useEffect(() => () => {
+    handleScrollerRef(null);
+    if (initialBottomLockScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(initialBottomLockScrollFrameRef.current);
+    }
+  }, [handleScrollerRef]);
 
   const scrollToBottom = useCallback(() => {
     virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'smooth' });
@@ -369,6 +454,8 @@ export function MessageList({
         followOutput
         atBottomThreshold={48}
         atBottomStateChange={handleAtBottomStateChange}
+        scrollerRef={handleScrollerRef}
+        totalListHeightChanged={handleTotalListHeightChanged}
         increaseViewportBy={{ top: 600, bottom: 800 }}
         minOverscanItemCount={{ top: 2, bottom: 2 }}
         itemContent={(_index, row) => row.type === 'message' ? (
