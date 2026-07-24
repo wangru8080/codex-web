@@ -40,6 +40,7 @@ import { useChatCommands } from '@/hooks/useChatCommands';
 import { useAssistantTrigger } from '@/hooks/useAssistantTrigger';
 import { useStreamSubscription } from '@/hooks/useStreamSubscription';
 import { useProviderModels } from '@/hooks/useProviderModels';
+import { useAnimationFrameValue } from '@/hooks/useAnimationFrameValue';
 import { findModelOption } from '@/lib/model-option-match';
 import { dropLastUserTurns, latestEditableUserMessageId } from '@/codex-web/latest-user-message-edit';
 // Import from `chat-runtime-shared`, NOT `chat-runtime`. The latter
@@ -483,33 +484,34 @@ export function ChatView({
   const [appServerErrorBanner, setAppServerErrorBanner] = useState<{ message: string; description?: string } | null>(null);
   const finalizedAppServerTurnRef = useRef<string>('');
   const finalizedAppServerTurnPresentationKeyRef = useRef<string>('');
+  const presentedAppServerTurn = useAnimationFrameValue(appServerTurn);
   const appServerToolState = useMemo(
-    () => deriveCodexWebToolState(appServerTurn ?? null),
-    [appServerTurn],
+    () => deriveCodexWebToolState(presentedAppServerTurn ?? null),
+    [presentedAppServerTurn],
   );
   const appServerProcessBlocks = useMemo(
-    () => appServerTurn ? appServerTurnToMessageBlocks(appServerTurn) : [],
-    [appServerTurn],
+    () => presentedAppServerTurn ? appServerTurnToMessageBlocks(presentedAppServerTurn) : [],
+    [presentedAppServerTurn],
   );
   const appServerStatusText =
-    appServerTurn?.status === 'running'
+    presentedAppServerTurn?.status === 'running'
       ? '已处理'
-      : appServerTurn?.status === 'failed'
+      : presentedAppServerTurn?.status === 'failed'
         ? 'Codex 处理失败'
-        : appServerTurn?.status === 'interrupted'
+        : presentedAppServerTurn?.status === 'interrupted'
           ? 'Codex 已中断'
           : undefined;
   const presentAppServerTurnAsStreaming = shouldPresentAppServerTurnAsStreaming({
-    turn: appServerTurn ?? null,
+    turn: presentedAppServerTurn ?? null,
     localStreaming: appServerLocalStreaming,
     finalizedTurnKey: finalizedAppServerTurnPresentationKeyRef.current,
   });
   const isStreaming = appServerSend ? presentAppServerTurnAsStreaming : legacyIsStreaming;
-  const streamingContent = appServerSend ? appServerTurn?.assistantText ?? '' : streamSnapshot?.streamingContent ?? '';
+  const streamingContent = appServerSend ? presentedAppServerTurn?.assistantText ?? '' : streamSnapshot?.streamingContent ?? '';
   const toolUses = appServerSend ? appServerToolState.toolUses : streamSnapshot?.toolUses ?? [];
   const toolResults = appServerSend ? appServerToolState.toolResults : streamSnapshot?.toolResults ?? [];
   const streamingToolOutput = appServerSend ? appServerToolState.streamingToolOutput : streamSnapshot?.streamingToolOutput ?? '';
-  const streamingThinkingContent = appServerSend ? appServerTurn?.reasoningText ?? '' : streamSnapshot?.streamingThinkingContent ?? '';
+  const streamingThinkingContent = appServerSend ? presentedAppServerTurn?.reasoningText ?? '' : streamSnapshot?.streamingThinkingContent ?? '';
   const statusText = appServerSend ? appServerStatusText : streamSnapshot?.statusText;
   const appServerPermission = appServerRequest && "permission" in appServerRequest
     ? appServerRequest.permission
@@ -522,10 +524,10 @@ export function ChatView({
     appServerTurn?.status === 'interrupted';
   const showAppServerTurnPanel =
     !!appServerSend &&
-    !!appServerTurn &&
+    !!presentedAppServerTurn &&
     presentAppServerTurnAsStreaming;
   const appServerPanelStartedAt = appServerSend
-    ? resolveAppServerPanelStartedAt(appServerTurn ?? null, appServerPanelClock.startedAt)
+    ? resolveAppServerPanelStartedAt(presentedAppServerTurn ?? null, appServerPanelClock.startedAt)
     : streamSnapshot?.startedAt;
   const rewindPoints = getRewindPoints(activeSessionId);
   const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
@@ -1670,9 +1672,9 @@ export function ChatView({
               streamingToolOutput={streamingToolOutput}
               streamingThinkingContent={streamingThinkingContent}
               processBlocks={appServerProcessBlocks}
-              planBlocks={appServerTurn?.planBlocks}
+              planBlocks={presentedAppServerTurn?.planBlocks}
               statusText={statusText}
-              retryStatus={appServerTurn?.retryStatus}
+              retryStatus={presentedAppServerTurn?.retryStatus}
               onForceStop={stopStreaming}
               hasMore={hasMore}
               loadingMore={loadingMore}

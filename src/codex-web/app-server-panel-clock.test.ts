@@ -35,7 +35,7 @@ describe("resolveAppServerPanelStartedAt", () => {
     );
 
     expect(chatView).toContain(
-      "resolveAppServerPanelStartedAt(appServerTurn ?? null, appServerPanelClock.startedAt)",
+      "resolveAppServerPanelStartedAt(presentedAppServerTurn ?? null, appServerPanelClock.startedAt)",
     );
   });
 });

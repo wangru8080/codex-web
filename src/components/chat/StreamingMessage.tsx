@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 import {
   Message as AIMessage,
@@ -204,7 +204,7 @@ function StreamingRetryStatus({ status }: { status: AppServerRetryStatus }) {
   );
 }
 
-export function StreamingMessage({
+export const StreamingMessage = memo(function StreamingMessage({
   content,
   isStreaming,
   sessionId,
@@ -429,4 +429,4 @@ export function StreamingMessage({
       </MessageContent>
     </AIMessage>
   );
-}
+});

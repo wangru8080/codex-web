@@ -1,50 +1,24 @@
 'use client';
 
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { forwardRef, useRef, useEffect, useState, useCallback, useMemo, type ComponentPropsWithoutRef } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
-import { useStickToBottomContext } from 'use-stick-to-bottom';
+import { Virtuoso, type Components, type VirtuosoHandle } from 'react-virtuoso';
+import { ArrowDown } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import type { FileAttachment, Message, MessageContentBlock } from '@/types';
 import type { AppServerRetryStatus } from '@/codex-web/turn-reducer';
-import {
-  Conversation,
-  ConversationContent,
-  ConversationScrollButton,
-  ConversationEmptyState,
-} from '@/components/ai-elements/conversation';
+import { ConversationEmptyState } from '@/components/ai-elements/conversation';
 import { MessageItem } from './MessageItem';
 import { StreamingMessage } from './StreamingMessage';
 import { PerformanceProfiler } from '@/components/performance/PerformanceProfiler';
 import { MonolithIcon } from '@/components/brand/MonolithIcon';
 import { SPECIES_IMAGE_URL, EGG_IMAGE_URL, RARITY_BG_GRADIENT, type Species, type Rarity } from '@/lib/buddy';
-
-/**
- * Scrolls to bottom when streaming starts or new messages are appended.
- * Must be rendered inside <Conversation> (StickToBottom provider).
- */
-function ScrollOnStream({ isStreaming, messageCount }: { isStreaming: boolean; messageCount: number }) {
-  const { scrollToBottom } = useStickToBottomContext();
-  const wasStreaming = useRef(false);
-  const prevCount = useRef(messageCount);
-
-  // Scroll when new messages are appended (covers optimistic user message + assistant completion)
-  useEffect(() => {
-    if (messageCount > prevCount.current) {
-      scrollToBottom();
-    }
-    prevCount.current = messageCount;
-  }, [messageCount, scrollToBottom]);
-
-  useEffect(() => {
-    if (isStreaming && !wasStreaming.current) {
-      scrollToBottom();
-    }
-    wasStreaming.current = isStreaming;
-  }, [isStreaming, scrollToBottom]);
-
-  return null;
-}
+import {
+  INITIAL_VIRTUAL_FIRST_ITEM_INDEX,
+  classifyMessageWindowChange,
+  nextVirtualFirstItemIndex,
+} from './message-list-virtualization';
 
 /**
  * Rewind button shown on user messages that have file checkpoints.
@@ -187,6 +161,76 @@ interface MessageListProps {
   onEditUserMessage?: (content: string, files: FileAttachment[]) => Promise<boolean>;
 }
 
+type MessageListRow =
+  | { type: 'message'; message: Message; rewindSdkUuid?: string }
+  | { type: 'streaming' };
+
+type MessageListContext = {
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadEarlierLabel: string;
+  loadingLabel: string;
+  onLoadMore: () => void;
+};
+
+const VirtualListHeader = ({ context }: { context: MessageListContext }) => context.hasMore ? (
+  <div className="flex justify-center pb-4 pt-1">
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={context.onLoadMore}
+      disabled={context.loadingMore}
+      className="text-muted-foreground hover:text-foreground"
+    >
+      {context.loadingMore ? context.loadingLabel : context.loadEarlierLabel}
+    </Button>
+  </div>
+) : null;
+
+const VirtualListScroller = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<'div'> & { context: MessageListContext }
+>(function VirtualListScroller({ context: _context, ...props }, ref) {
+  return <div {...props} ref={ref} data-message-list-scroller />;
+});
+
+const VirtualListItems = forwardRef<
+  HTMLDivElement,
+  ComponentPropsWithoutRef<'div'> & { context: MessageListContext }
+>(function VirtualListItems({ context: _context, className, ...props }, ref) {
+  return (
+    <div
+      {...props}
+      ref={ref}
+      className={`mx-auto w-full max-w-3xl px-4 py-6 ${className ?? ''}`}
+    />
+  );
+});
+
+const VIRTUAL_LIST_COMPONENTS: Components<MessageListRow, MessageListContext> = {
+  Header: VirtualListHeader,
+  Scroller: VirtualListScroller,
+  List: VirtualListItems,
+};
+
+function useVirtualFirstItemIndex(messages: Message[]): number {
+  const [tracked, setTracked] = useState(() => ({
+    messages,
+    ids: messages.map((message) => message.id),
+    firstItemIndex: INITIAL_VIRTUAL_FIRST_ITEM_INDEX,
+  }));
+
+  if (tracked.messages === messages) return tracked.firstItemIndex;
+
+  const nextIds = messages.map((message) => message.id);
+  const change = classifyMessageWindowChange(tracked.ids, nextIds);
+  const firstItemIndex = change.type === 'replace'
+    ? INITIAL_VIRTUAL_FIRST_ITEM_INDEX
+    : nextVirtualFirstItemIndex(tracked.firstItemIndex, change);
+  setTracked({ messages, ids: nextIds, firstItemIndex });
+  return firstItemIndex;
+}
+
 export function MessageList({
   messages,
   streamingContent,
@@ -213,38 +257,49 @@ export function MessageList({
   onEditUserMessage,
 }: MessageListProps) {
   const { t } = useTranslation();
-  // Scroll anchor: preserve position when older messages are prepended
-  const anchorIdRef = useRef<string | null>(null);
-  // Before loading more, record the first visible message ID
-  const handleLoadMore = () => {
-    if (messages.length > 0) {
-      anchorIdRef.current = messages[0].id;
-    }
-    onLoadMore?.();
-  };
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const isAtBottomRef = useRef(true);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const firstItemIndex = useVirtualFirstItemIndex(messages);
+  const handleLoadMore = useCallback(() => onLoadMore?.(), [onLoadMore]);
 
-  // After messages are prepended, scroll the anchor element back into view.
-  // Uses the anchor ID (set before loading) rather than a length comparison,
-  // because a capped prepend can swap messages without changing total count.
-  useEffect(() => {
-    if (anchorIdRef.current) {
-      const el = document.getElementById(`msg-${anchorIdRef.current}`);
-      if (el) {
-        el.scrollIntoView({ block: 'start' });
+  const rows = useMemo<MessageListRow[]>(() => {
+    let userIndex = 0;
+    const messageRows = messages.map<MessageListRow>((message) => {
+      let rewindSdkUuid: string | undefined;
+      if (message.role === 'user') {
+        if (sessionId && userIndex < rewindPoints.length) {
+          rewindSdkUuid = rewindPoints[userIndex]?.userMessageId;
+        }
+        userIndex += 1;
       }
-      anchorIdRef.current = null;
-    }
-  }, [messages]);
+      return { type: 'message', message, rewindSdkUuid };
+    });
+    return showStreamingMessage ? [...messageRows, { type: 'streaming' }] : messageRows;
+  }, [messages, rewindPoints, sessionId, showStreamingMessage]);
 
-  // A2 (audit 2026-06): the visible user-message list drives rewind-point
-  // position mapping in the render below. Memoize it once per render — it used
-  // to be recomputed inside the messages.map() callback (once per message →
-  // O(n²) on every streaming re-render). Mapping semantics are unchanged; this
-  // only removes the duplicated filter (UUID-explicit matching stays in #39).
-  const userMessages = useMemo(
-    () => messages.filter((m) => m.role === 'user'),
-    [messages],
-  );
+  const listContext = useMemo<MessageListContext>(() => ({
+    hasMore: !!hasMore,
+    loadingMore: !!loadingMore,
+    loadEarlierLabel: t('messageList.loadEarlier'),
+    loadingLabel: t('messageList.loading'),
+    onLoadMore: handleLoadMore,
+  }), [handleLoadMore, hasMore, loadingMore, t]);
+
+  const handleAtBottomStateChange = useCallback((nextIsAtBottom: boolean) => {
+    isAtBottomRef.current = nextIsAtBottom;
+    setIsAtBottom(nextIsAtBottom);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => {
+    if (!showStreamingMessage || !isAtBottomRef.current) return;
+    const frame = window.requestAnimationFrame(() => virtuosoRef.current?.autoscrollToBottom());
+    return () => window.cancelAnimationFrame(frame);
+  }, [processBlocks, showStreamingMessage, streamingContent, streamingThinkingContent, streamingToolOutput, toolResults, toolUses]);
 
   if (messages.length === 0 && !isStreaming) {
     if (isAssistantProject) {
@@ -297,54 +352,44 @@ export function MessageList({
   }
 
   return (
-    <Conversation>
-      <ScrollOnStream isStreaming={isStreaming} messageCount={messages.length} />
-      <ConversationContent className="mx-auto max-w-3xl px-4 py-6 gap-6">
-        {hasMore && (
-          <div className="flex justify-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLoadMore}
-              disabled={loadingMore}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {loadingMore ? t('messageList.loading') : t('messageList.loadEarlier')}
-            </Button>
-          </div>
-        )}
-        {messages.map((message) => {
-          // Map rewind points to visible user messages by position:
-          // Backend only emits rewind_point for prompt-level user messages
-          // (not tool results, not auto-trigger), so they're 1:1 with visible user messages.
-          let rewindSdkUuid: string | undefined;
-          if (message.role === 'user' && sessionId && rewindPoints.length > 0) {
-            const userIndex = userMessages.indexOf(message);
-            if (userIndex >= 0 && userIndex < rewindPoints.length) {
-              rewindSdkUuid = rewindPoints[userIndex].userMessageId;
-            }
-          }
-
-          return (
-            <div key={message.id} id={`msg-${message.id}`} className="group">
+    <div
+      className="relative min-h-0 flex-1"
+      data-virtualized-message-list
+      data-message-count={messages.length}
+    >
+      <Virtuoso<MessageListRow, MessageListContext>
+        ref={virtuosoRef}
+        className="h-full"
+        data={rows}
+        context={listContext}
+        components={VIRTUAL_LIST_COMPONENTS}
+        computeItemKey={(_index, row) => row.type === 'message' ? row.message.id : 'streaming-message'}
+        firstItemIndex={firstItemIndex}
+        initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}
+        alignToBottom
+        followOutput
+        atBottomThreshold={48}
+        atBottomStateChange={handleAtBottomStateChange}
+        increaseViewportBy={{ top: 600, bottom: 800 }}
+        minOverscanItemCount={{ top: 2, bottom: 2 }}
+        itemContent={(_index, row) => row.type === 'message' ? (
+          <div id={`msg-${row.message.id}`} className="group pb-6" data-message-row>
               <PerformanceProfiler id="MessageItem">
                 <MessageItem
-                  message={message}
+                  message={row.message}
                   sessionId={sessionId}
-                  canEdit={message.id === editableUserMessageId}
-                  onEdit={message.id === editableUserMessageId ? onEditUserMessage : undefined}
+                  canEdit={row.message.id === editableUserMessageId}
+                  onEdit={row.message.id === editableUserMessageId ? onEditUserMessage : undefined}
                   isAssistantProject={isAssistantProject}
                   assistantName={assistantName}
                 />
               </PerformanceProfiler>
-              {rewindSdkUuid && sessionId && !isStreaming && (
-                <RewindButton sessionId={sessionId} userMessageId={rewindSdkUuid} />
+              {row.rewindSdkUuid && sessionId && !isStreaming && (
+                <RewindButton sessionId={sessionId} userMessageId={row.rewindSdkUuid} />
               )}
             </div>
-          );
-        })}
-
-        {showStreamingMessage && (
+        ) : (
+          <div className="pb-6" data-streaming-message-row>
           <PerformanceProfiler id="StreamingMessage">
             <StreamingMessage
               content={streamingContent}
@@ -362,9 +407,21 @@ export function MessageList({
               onForceStop={onForceStop}
             />
           </PerformanceProfiler>
+          </div>
         )}
-      </ConversationContent>
-      <ConversationScrollButton />
-    </Conversation>
+      />
+      {!isAtBottom && (
+        <Button
+          className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full dark:bg-background dark:hover:bg-muted"
+          onClick={scrollToBottom}
+          size="icon"
+          type="button"
+          variant="outline"
+          aria-label="滚动到底部"
+        >
+          <ArrowDown className="size-4" aria-hidden />
+        </Button>
+      )}
+    </div>
   );
 }

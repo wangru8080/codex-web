@@ -269,6 +269,15 @@ type ScenarioSnapshot = {
     idleCommitDelta: number;
     inputCommitDelta: number;
   };
+  virtualization: VirtualizationSnapshot | null;
+};
+
+type VirtualizationSnapshot = {
+  totalMessageCount: number;
+  initialMountedMessageCount: number;
+  initialAtBottom: boolean;
+  topMountedMessageCount: number;
+  returnedToBottom: boolean;
 };
 
 async function runScenario(
@@ -286,6 +295,7 @@ async function runScenario(
     await client.waitFor(`window.__CODEX_WEB_PERFORMANCE__?.snapshot().entries.some((entry) => entry.name === 'codex.first-interactive')`, 120_000);
     await waitForScenarioContent(client, scenario);
     await delay(500);
+    const virtualization = await captureVirtualizationProbe(client, scenario);
 
     const commitsBeforeIdle = await profilerCommitCount(client);
     await delay(500);
@@ -314,6 +324,7 @@ async function runScenario(
         idleCommitDelta: 0,
         inputCommitDelta: 0,
       })},
+      virtualization: ${JSON.stringify(virtualization)},
     })`);
     raw.renderCounterexample = {
       idleCommitDelta: commitsAfterIdle - commitsBeforeIdle,
@@ -402,6 +413,7 @@ async function runStreamingScenario(
       paints: performance.getEntriesByType('paint').map((entry) => entry.toJSON()),
       performance: window.__CODEX_WEB_PERFORMANCE__.snapshot(),
       renderCounterexample: { idleCommitDelta: 0, inputCommitDelta: 0 },
+      virtualization: null,
     })`);
     return {
       name: scenario.name,
@@ -450,7 +462,74 @@ async function captureScenarioSnapshot(client: CdpClient): Promise<ScenarioSnaps
     paints: performance.getEntriesByType('paint').map((entry) => entry.toJSON()),
     performance: window.__CODEX_WEB_PERFORMANCE__.snapshot(),
     renderCounterexample: { idleCommitDelta: 0, inputCommitDelta: 0 },
+    virtualization: null,
   })`);
+}
+
+async function captureVirtualizationProbe(
+  client: CdpClient,
+  scenario: WebPerformanceScenario,
+): Promise<VirtualizationSnapshot | null> {
+  if (scenario.name !== "ordinary-history" && scenario.name !== "long-history") return null;
+
+  const initial = await client.evaluate<{
+    totalMessageCount: number;
+    mountedMessageCount: number;
+    atBottom: boolean;
+  }>(`(() => {
+    const root = document.querySelector('[data-virtualized-message-list]');
+    const scroller = root?.querySelector('[data-message-list-scroller]');
+    if (!(root instanceof HTMLElement) || !(scroller instanceof HTMLElement)) {
+      throw new Error('消息虚拟列表或滚动容器不存在');
+    }
+    return {
+      totalMessageCount: Number(root.dataset.messageCount ?? 0),
+      mountedMessageCount: root.querySelectorAll('[data-message-row], [data-streaming-message-row]').length,
+      atBottom: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 64,
+    };
+  })()`);
+
+  await client.evaluate(`(() => {
+    const scroller = document.querySelector('[data-message-list-scroller]');
+    if (!(scroller instanceof HTMLElement)) throw new Error('消息滚动容器不存在');
+    scroller.scrollTop = 0;
+    scroller.dispatchEvent(new Event('scroll'));
+  })()`);
+  await delay(300);
+  const topMountedMessageCount = await client.evaluate<number>(
+    `document.querySelectorAll('[data-message-row], [data-streaming-message-row]').length`,
+  );
+
+  await client.evaluate(`(() => {
+    const scroller = document.querySelector('[data-message-list-scroller]');
+    if (!(scroller instanceof HTMLElement)) throw new Error('消息滚动容器不存在');
+    scroller.scrollTop = scroller.scrollHeight;
+    scroller.dispatchEvent(new Event('scroll'));
+  })()`);
+  await delay(300);
+  const returnedToBottom = await client.evaluate<boolean>(`(() => {
+    const scroller = document.querySelector('[data-message-list-scroller]');
+    if (!(scroller instanceof HTMLElement)) return false;
+    return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 64;
+  })()`);
+
+  const snapshot = {
+    totalMessageCount: initial.totalMessageCount,
+    initialMountedMessageCount: initial.mountedMessageCount,
+    initialAtBottom: initial.atBottom,
+    topMountedMessageCount,
+    returnedToBottom,
+  };
+  if (scenario.name === "long-history") {
+    if (snapshot.totalMessageCount <= 0) throw new Error("长历史虚拟列表未报告消息总数");
+    if (snapshot.initialMountedMessageCount >= snapshot.totalMessageCount) {
+      throw new Error("长历史场景仍挂载了全部消息 DOM");
+    }
+    if (!snapshot.initialAtBottom || !snapshot.returnedToBottom) {
+      throw new Error("长历史虚拟列表未保持初始底部位置或无法返回底部");
+    }
+  }
+  return snapshot;
 }
 
 async function waitForScenarioContent(

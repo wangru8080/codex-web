@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useCallback, useEffect, useMemo, type KeyboardEvent, type FormEvent, type ReactNode } from 'react';
+import { memo, useRef, useState, useCallback, useEffect, useMemo, type KeyboardEvent, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { cn } from '@/lib/utils';
@@ -626,7 +626,7 @@ function mentionFileMimeType(filename: string): string {
   return textExtensions.has(extension) ? 'text/plain' : 'application/octet-stream';
 }
 
-export function MessageInput({
+export const MessageInput = memo(function MessageInput({
   onSend,
   onCommand,
   onStop,
@@ -1858,4 +1858,4 @@ export function MessageInput({
 
     </div>
   );
-}
+});

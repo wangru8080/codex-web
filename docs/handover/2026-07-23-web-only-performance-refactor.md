@@ -3,6 +3,8 @@
 > 阶段 0 执行计划：[2026-07-23-web-performance-baseline.md](../exec-plans/completed/2026-07-23-web-performance-baseline.md)
 >
 > 阶段 1 执行计划：[2026-07-24-app-server-selector-subscriptions.md](../exec-plans/completed/2026-07-24-app-server-selector-subscriptions.md)
+>
+> 阶段 2 执行计划：[2026-07-24-chat-rendering-virtualization.md](../exec-plans/completed/2026-07-24-chat-rendering-virtualization.md)
 
 ## 文档目的
 
@@ -430,7 +432,7 @@ npm pack --dry-run --json --ignore-scripts
 
 ## 下一步
 
-阶段 0 已于 2026-07-23 完成，阶段 1 已于 2026-07-24 完成代码、验证和计划归档。下一项工作应单独创建“阶段 2：降低聊天渲染范围并评估长历史虚拟化”执行计划，不要同时混入依赖删除或桌面遗留清理。
+阶段 0 已于 2026-07-23 完成，阶段 1 已于 2026-07-24 完成代码、验证和计划归档。阶段 2 已建立独立执行计划并进入验证阶段：聊天列表使用动态高度虚拟化，流式 Turn 的展示快照按动画帧合并，输入区和流式消息边界使用浅比较隔离。当前仍需完成全量测试、构建、Smoke、真实桌面/移动视口检查和阶段 1 指标对照；在这些证据齐备前，不将阶段 2 标记为完成。
 
 在没有生产性能对照之前，不应把 `npm run dev` 的首次路由编译慢等同于产品生产环境慢；在没有 React Profiler 和浏览器 Performance 数据之前，也不应把 799 个 npm 包直接认定为点击卡顿的原因。
 
@@ -499,3 +501,24 @@ npm pack --dry-run --json --ignore-scripts
 `/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-23T17-00-14-834Z-dev-default/`
 
 空闲 commit 已显著下降，但仍未达到 0；长历史 `MessageList` 单次最慢约 205 ms，`ChatView` 约 222 ms，说明阶段 2 应继续收窄聊天内部渲染并评估虚拟化，而不是把阶段 1 结果视为性能工作完成。
+
+## 阶段 2 实施结果（2026-07-24）
+
+### 聊天渲染边界
+
+- `MessageList` 使用 MIT `react-virtuoso@4.18.10` 处理动态高度消息，稳定消息 ID 作为 key，单调 `firstItemIndex` 保持历史前插语义。
+- 加载更早、空状态、编辑最近用户消息、rewind、流式尾行、底部跟随和向上阅读入口仍保留在现有 `MessageListProps` 边界内。
+- `ChatView` 的展示派生值通过 `requestAnimationFrame` 合并为帧级快照；terminal effect 继续直接读取原始 app-server Turn，未延迟 completed、failed 或 interrupted 的业务收口。
+- `MessageInput` 和 `StreamingMessage` 增加浅比较 memo 边界；app-server reducer、generated schema、approval 顺序和 source breadcrumb 未改变。
+
+### 验证与性能对照
+
+- `npm run test`：123 个测试文件、574 项测试通过。
+- `npm run build`：Next.js 生产构建及 postbuild 环境文件恢复通过。
+- `npm run test:smoke`：隔离 `CODEX_HOME` 下 bridge/app-server Smoke 通过，读取 7 个模型，账号来源为 `app-server.account/read`。
+- 开发性能基准 8/8 场景通过，包括普通真实 Turn 与固定测试 Skill Turn；结果保存在 `/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T01-05-06-532Z-dev-default/`。
+- 长历史当前分页共 60 条消息，底部实际挂载 11 条、顶部挂载 13 条；初始位于底部且滚到顶部后能够恢复底部。普通历史 10 条全部挂载，作为短列表反例。
+- 长历史 `MessageList` 最慢提交由阶段 1 约 205 ms 降至约 61.1 ms；空闲窗口 commit 保持 18，输入窗口 commit 从 17 增至 22，输入到绘制 P95 为 63.2 ms。DOM 和单次提交耗时改善已经证实，但 commit 次数没有改善，不应表述为全部性能预算达标。
+- 1440×900 桌面与 390×844 移动视口均保持底部、输入框可见且无横向溢出；CDP 未捕获浏览器异常。
+
+阶段 2 当前达到 `Code complete`、`Tests pass` 和 `Smoke passed`，执行计划已归档到 completed；尚未提交或远程推送。

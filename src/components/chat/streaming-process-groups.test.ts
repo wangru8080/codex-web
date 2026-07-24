@@ -130,7 +130,7 @@ describe("连续工具分组展示接线", () => {
       resolve(process.cwd(), "src/components/chat/ChatView.tsx"),
       "utf8",
     );
-    expect(chatViewSource).toContain("retryStatus={appServerTurn?.retryStatus}");
+    expect(chatViewSource).toContain("retryStatus={presentedAppServerTurn?.retryStatus}");
   });
 
   it("历史消息默认折叠整轮过程，并保留连续工具子分组", () => {
@@ -157,7 +157,7 @@ describe("连续工具分组展示接线", () => {
     expect(source).toContain("? '已处理'");
     expect(source).toContain("setAppServerPanelClock({ turnKey: 'pending', startedAt: Date.now() })");
     expect(source).toContain(
-      "resolveAppServerPanelStartedAt(appServerTurn ?? null, appServerPanelClock.startedAt)",
+      "resolveAppServerPanelStartedAt(presentedAppServerTurn ?? null, appServerPanelClock.startedAt)",
     );
     expect(source).not.toContain("appServerTurn.threadId !== activeSessionId) return");
   });
