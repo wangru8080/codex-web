@@ -10,7 +10,7 @@
 
 三轮同机生产基线和独立 HTTP 测量没有证明 Next.js 生产运行时是剩余性能的主要来源：静态 `/login` 与已认证 `/chat` 的本机 TTFB 均稳定在 23 ms 内，动态 `/chat/[id]` 只有每个服务进程第一次请求约 565 ms，随后为 21 至 62 ms。空聊天冷启动中，HTTP `responseStart` 为 28 至 80 ms，而 app-server 初始化和首个可交互标记延后到 1.33 至 2.33 秒，主要等待不在页面 HTTP 响应。
 
-当前需要优先解决的是动态路由首次执行成本、客户端主线程长任务和长历史虚拟列表初始置底竞态。迁移框架不能直接消除 app-server 初始化或 React/Virtuoso 客户端问题，却需要重建认证 Proxy、5 个 Route Handler、23 个静态页面、路由、同端口 WebSocket bridge 和 CLI 生产分发边界。
+阶段 5 当时需要继续验证的是动态路由首次执行成本、客户端主线程长任务和长历史虚拟列表初始置底竞态；后续底部锁已修复，两项 profile 也已完成，但均未发现支持进一步产品代码修改的单一热点。迁移框架不能直接消除 app-server 初始化或 React/Virtuoso 客户端问题，却需要重建认证 Proxy、5 个 Route Handler、23 个静态页面、路由、同端口 WebSocket bridge 和 CLI 生产分发边界。
 
 ## 评估边界
 
@@ -53,7 +53,7 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 | 随后的长历史，三次范围 | 31.8 至 50.5 ms | 135.2 至 203.5 ms | 453.6 至 939.6 ms | 678.5 至 1180.7 ms | 同动态路由热后 HTTP 明显下降 |
 | 设置页第二次，三次范围 | 9.4 至 18.3 ms | 70.6 至 117.3 ms | 309.4 至 505.1 ms | 319.3 至 526.4 ms | 客户端与 app-server 状态仍影响可交互标记 |
 
-输入 P95 为 9.7 至 20.6 ms，满足 50 ms 建议预算。最长 Long Task 为 139 至 336 ms，仍超过 50 ms 预算；当前只有 Long Task 时间和场景归属，没有 CPU profile，故只标记为客户端主线程成本，不猜测具体依赖。
+输入 P95 为 9.7 至 20.6 ms，满足 50 ms 建议预算。最长 Long Task 为 139 至 336 ms，仍超过 50 ms 预算；阶段 5 形成该判断时只有 Long Task 时间和场景归属，故当时只标记为客户端主线程成本，不猜测具体依赖。后续 CPU Profile 结论见下文。
 
 ## 服务与发布成本
 
@@ -79,9 +79,9 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 
 ## 后续工作
 
-1. 对每进程首个 `/chat/[id]` 约 565 ms 的冷路径增加 Next server trace，确认动态参数路由、Proxy 或 RSC 渲染的具体占比。
-2. 在禁用浏览器扩展并提供可映射源码的环境中复测客户端 Long Task；本轮 CPU profile 没有支持修改单一组件的证据。
-3. 评估把生产 TypeScript 入口预编译为 JavaScript，避免运行时 `tsx` 启动层；必须先验证 CLI 打包和跨目录启动。
+1. 若继续深挖首次 `/chat/[id]`，先使用系统级异步 I/O/worker trace 证明可控等待来源；本轮服务端 profile 不支持修改认证、Proxy 或应用函数。
+2. 在禁用浏览器扩展并提供可映射源码的环境中复测客户端 Long Task；现有 CPU profile 没有支持修改单一组件的证据。
+3. 独立评估把生产 TypeScript 入口预编译为 JavaScript，避免运行时 `tsx` 启动层；必须先验证 CLI 打包和跨目录启动。
 4. 只有上述工作完成后仍有三轮证据满足 POC 门槛，才另建 Vite POC 计划。
 
 ## 长历史滚动残余修复
@@ -90,7 +90,7 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 
 最终三轮生产矩阵均为 12/12。长历史每轮 60 条消息只挂载 11 至 13 条；`initialAtBottom`、`lateHeightMaintainedBottom`、`userScrollPreserved` 和 `returnedToBottom` 三轮均为 true。普通 Turn、Skill Turn 和四种 Markdown 按需加载反例同时通过。
 
-三轮整体可交互 P95 为 11.0 至 15.1 秒，最长 Long Task 为 788 至 1106 ms，不能据此宣称整体性能改善。滚动正确性已稳定，但客户端 CPU profile 和动态路由冷路径仍是独立后续项，不改变“保留 Next.js”的框架结论。
+三轮整体可交互 P95 为 11.0 至 15.1 秒，最长 Long Task 为 788 至 1106 ms，不能据此宣称整体性能改善。滚动正确性已稳定；后续客户端 CPU Profile 和动态路由服务端追踪均已完成，未发现单一代码热点，不改变“保留 Next.js”的框架结论。
 
 ## 客户端 CPU Profile 复核
 
@@ -107,6 +107,23 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 
 本轮还有两个归因限制：远程 Chrome 注入了浏览器扩展脚本，长历史中扩展 self time 达 4.17%；当前生产静态 chunk 没有浏览器 source map，压缩函数名不能可靠映射回具体组件。因此本轮不修改产品代码，也不能用结果解释 app-server 初始化或服务端动态路由冷路径。下一次客户端采样应使用无扩展 Headless Chrome，并提供可映射源码或只围绕已定位的 Long Task 时间窗采样。
 
+## 动态聊天路由服务端追踪
+
+2026-07-24 使用三个独立生产进程、隔离 `CODEX_HOME` 和 Node Inspector 单请求 CPU Profiler 复核 `/chat/[id]`。每轮先登录并请求缓存 HIT 的 `/chat`，再分别只包围首次和二次 `/chat/[id]` 请求采样；固定 Thread 只用于 route 参数，未触发模型 Turn。
+
+| 轮次 | 首次 TTFB | 二次 TTFB | 首次 total | 二次 total | 首次 idle | 二次 idle |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 | 717.5 ms | 136.5 ms | 837.4 ms | 180.8 ms | 93.33% | 79.99% |
+| 2 | 623.4 ms | 103.8 ms | 821.2 ms | 128.9 ms | 93.05% | 73.07% |
+| 3 | 840.6 ms | 97.6 ms | 930.2 ms | 191.2 ms | 90.83% | 75.89% |
+| 中位数 | 717.5 ms | 103.8 ms | 837.4 ms | 180.8 ms | 93.05% | 75.89% |
+
+首次与二次 TTFB 中位差为 613.6 ms，但主线程非 idle sampled time 中位数只从 47.7 ms 增至 61.5 ms，差值 13.8 ms。三轮 top frame 均以 `(idle)` 和 `(program)` 为主，没有认证、Proxy、应用代码或 Next JS 函数稳定占据主要 self time。另一次不启用 Inspector 的生产对照为首次 841.9 ms、二次 138.4 ms，确认 profiler 没有制造冷/热方向。
+
+响应边界也不同：`/chat` 是静态缓存 HIT，`/chat/[id]` 返回 `private, no-store`；动态路由 NFT 闭包相对 `/chat` 多 46 个文件、852650 bytes。这些证据说明冷路径主要位于主线程 CPU 外等待，可能包含异步模块装载、动态渲染或 worker 工作，但不能只凭 NFT 集合把 613.6 ms 全归因给磁盘 I/O。
+
+`src/app/chat/[id]/page.tsx` 是客户端页面，Thread 的 `readThread`、`resumeThread` 和 `listThreadTurns` 在浏览器连接 app-server 后由 effect 执行，不属于服务端文档 TTFB。因此本轮不修改产品代码，也不增加常驻预热或追踪逻辑；若继续，应先取得系统级异步 I/O/worker 证据。
+
 ## 产物
 
 - 三轮基线：`/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T08-18-36-729Z-production-default/`
@@ -117,5 +134,6 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 - 长历史修复基线：`/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T11-36-01-903Z-production-default/`
 - 长历史修复基线：`/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T11-42-54-822Z-production-default/`
 - 客户端 CPU Profile：`/volume2/SSD/codex/Temp/codex-web-cpu-profile-buqqiX/`
+- 动态聊天路由服务端 trace：`/volume2/SSD/codex/Temp/codex-web-server-trace-qZHIxW/`
 
-阶段 5 及其 CPU Profile 后续只修改文档，没有修改产品代码、依赖或构建配置。三轮生产性能基线共 34/36 场景成功；不能表述为完整 `Smoke passed`。CPU Profile 四场景采集完成，但因扩展污染和缺少 source map，只达到测量完成，不能表述为 `Tests pass` 或 `Smoke passed`。本阶段没有重新运行 `npm run test`、`npm run build` 或 `npm run test:smoke`。
+阶段 5 及其两项 profile 后续只修改文档，没有修改产品代码、依赖或构建配置。三轮生产性能基线共 34/36 场景成功；不能表述为完整 `Smoke passed`。客户端与服务端 profile 均完成测量，但没有代码改动，不能表述为 `Tests pass` 或 `Smoke passed`。本阶段没有重新运行 `npm run test`、`npm run build` 或 `npm run test:smoke`。

@@ -15,6 +15,8 @@
 > 长历史底部锁计划：[2026-07-24-long-history-bottom-lock.md](../exec-plans/completed/2026-07-24-long-history-bottom-lock.md)
 >
 > 客户端 CPU Profile 计划：[2026-07-24-client-long-task-cpu-profile.md](../exec-plans/completed/2026-07-24-client-long-task-cpu-profile.md)
+>
+> 动态聊天路由服务端追踪计划：[2026-07-24-dynamic-chat-route-server-trace.md](../exec-plans/completed/2026-07-24-dynamic-chat-route-server-trace.md)
 
 ## 文档目的
 
@@ -444,7 +446,7 @@ npm pack --dry-run --json --ignore-scripts
 
 阶段 0、1、2、3、4 已完成并归档。阶段 4 已完成代码、测试、构建、Smoke 和本地 Headless Chrome 验证。
 
-阶段 5 已完成证据复核，结论是保留 Next.js，不创建 Vite POC；长历史初始置底竞态也已修复。首轮客户端 CPU Profile 没有发现足以支持产品代码修改的单一热点，下一步优先对每个生产进程首次 `/chat/[id]` 约 565 ms 的冷路径增加 server trace。若继续客户端归因，应改用无扩展 Headless Chrome 和可映射源码，或围绕已定位的 Long Task 时间窗缩短采样范围。
+阶段 5 已完成证据复核，结论是保留 Next.js，不创建 Vite POC；长历史初始置底竞态也已修复。客户端 CPU Profile 和动态 `/chat/[id]` 服务端追踪均没有发现足以支持产品代码修改的单一热点。若继续客户端归因，应改用无扩展 Headless Chrome 和可映射源码；若继续服务端冷路径归因，应先取得系统级异步 I/O/worker 证据。
 
 若要继续降低运行成本，可独立评估将生产 TypeScript 入口预编译为 JavaScript，避免运行时 `tsx` 启动层；该工作必须保留同端口 bridge、CLI 打包和跨目录启动验证。没有新的三轮可归因证据前，不重新开启框架迁移讨论。
 
@@ -614,7 +616,7 @@ npm pack --dry-run --json --ignore-scripts
 
 最终验证达到 `Code complete`、`Tests pass` 和 `Smoke passed`：定向接线测试 1 个文件、4 项通过；全量 127 个测试文件、594 项通过；生产构建通过；隔离 app-server Smoke 通过，读取 7 个模型。三轮完整生产基线均为 12/12，长历史 60 条消息只挂载 11 至 13 条，初始底部、延迟高度保持、用户阅读保护和恢复底部全部通过。
 
-三轮整体可交互 P95 为 11.0 至 15.1 秒，最长 Long Task 为 788 至 1106 ms。本修复证明滚动正确性稳定，不证明整体性能预算改善；CPU profile 和首个动态路由冷路径仍应独立处理。生产服务均已停止，3102 端口释放。
+三轮整体可交互 P95 为 11.0 至 15.1 秒，最长 Long Task 为 788 至 1106 ms。本修复证明滚动正确性稳定，不证明整体性能预算改善；后续 CPU Profile 和首个动态路由服务端追踪已独立完成，结论见下文。生产服务均已停止，3102 端口释放。
 
 ## 客户端 CPU Profile 复核（2026-07-24）
 
@@ -625,4 +627,16 @@ npm pack --dry-run --json --ignore-scripts
 - 结论是证据不足，不修改产品代码。该 profile 也不能解释 app-server 初始化、HTTP 等待或首个动态路由服务端冷路径。
 - 原始 `.cpuprofile`、场景汇总和一次性采样器位于 `/volume2/SSD/codex/Temp/codex-web-cpu-profile-buqqiX/`，未纳入 Git；生产服务已停止，3102 端口已释放。
 
-本轮属于测量完成，不是产品代码 `Tests pass` 或 `Smoke passed`。下一项更高信号工作是动态路由 server trace；再次做客户端采样前应先解决无扩展浏览器和源码映射条件。
+本轮属于测量完成，不是产品代码 `Tests pass` 或 `Smoke passed`。后续动态路由服务端追踪也没有发现单一代码热点；再次做客户端采样前应先解决无扩展浏览器和源码映射条件。
+
+## 动态聊天路由服务端追踪（2026-07-24）
+
+- 使用三个独立生产进程、隔离 `CODEX_HOME` 和 Node Inspector，对 `/chat` 预热后的首次、二次 `/chat/[id]` 分别执行单请求 CPU Profile；未触发真实模型 Turn。
+- 首次 TTFB 为 623.4 至 840.6 ms，中位数 717.5 ms；二次为 97.6 至 136.5 ms，中位数 103.8 ms，冷路径中位差为 613.6 ms。无 Inspector 对照仍为首次 841.9 ms、二次 138.4 ms。
+- 首次主线程 idle 中位数为 93.05%，二次为 75.89%；非 idle sampled time 只相差 13.8 ms。三轮均没有认证、Proxy、应用或 Next JS 单一热点，不能把冷路径标记为主线程 CPU 问题。
+- `/chat` 返回静态缓存 HIT，`/chat/[id]` 返回 `private, no-store`；动态路由相对 `/chat` 的 NFT 唯一集合为 46 个文件、852650 bytes。它支持“动态路由首次装载/渲染存在等待”，但不能证明全部等待来自磁盘。
+- `src/app/chat/[id]/page.tsx` 为客户端页面，Thread 恢复与历史读取发生在浏览器连接 app-server 后，不属于服务端文档 TTFB。
+- 结论是冷路径稳定存在，但证据不足以支持修改单一服务端边界；不增加常驻埋点、预热请求或缓存改写。
+- 原始 profile 与汇总位于 `/volume2/SSD/codex/Temp/codex-web-server-trace-qZHIxW/`，未纳入 Git；生产服务和 Inspector 已停止，相关端口已释放。
+
+本轮只完成测量和文档更新，不是产品代码 `Tests pass` 或 `Smoke passed`。若继续该方向，下一步必须先取得系统级异步 I/O/worker trace；否则更直接的独立候选项是评估生产 TypeScript 入口预编译为 JavaScript。
