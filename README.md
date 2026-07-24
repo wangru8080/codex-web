@@ -92,10 +92,11 @@ cd codex-web
 npm install
 npm pack
 PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-npm install --global "./wangru8080-codex-web-${PACKAGE_VERSION}.tgz"
+mv "./wangru8080-codex-web-${PACKAGE_VERSION}.tgz" "./codex-web-${PACKAGE_VERSION}.tgz"
+npm install --global "./codex-web-${PACKAGE_VERSION}.tgz"
 ```
 
-`npm pack` 会自动执行生产构建和 CLI 打包。生成的文件名取决于 `package.json` 中的版本号。
+`npm pack` 会自动执行生产构建和 CLI 打包。scoped 包默认生成 `wangru8080-codex-web-<版本>.tgz`，上述命令将其重命名为 GitHub Release 使用的 `codex-web-<版本>.tgz`。
 
 安装后检查命令：
 
@@ -120,7 +121,7 @@ npm install --global "github:wangru8080/codex-web#master"
 
 ```bash
 PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-npm install --global "https://github.com/wangru8080/codex-web/releases/download/v${PACKAGE_VERSION}/wangru8080-codex-web-${PACKAGE_VERSION}.tgz"
+npm install --global "https://github.com/wangru8080/codex-web/releases/download/v${PACKAGE_VERSION}/codex-web-${PACKAGE_VERSION}.tgz"
 ```
 
 ### 从 npm registry 安装
@@ -243,7 +244,7 @@ ${CODEX_HOME}/codex-web/turnstile.json
 使用源码或 GitHub Release tarball 安装时，下载或生成新版本 tarball，然后再次执行全局安装：
 
 ```bash
-npm install --global ./wangru8080-codex-web-<新版本>.tgz
+npm install --global ./codex-web-<新版本>.tgz
 ```
 
 不要直接修改全局安装目录中的 `.next` 或 `dist` 文件。
