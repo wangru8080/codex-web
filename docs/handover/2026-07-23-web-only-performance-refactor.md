@@ -13,6 +13,8 @@
 > 阶段 5 执行计划：[2026-07-24-frontend-framework-reevaluation.md](../exec-plans/completed/2026-07-24-frontend-framework-reevaluation.md)
 >
 > 长历史底部锁计划：[2026-07-24-long-history-bottom-lock.md](../exec-plans/completed/2026-07-24-long-history-bottom-lock.md)
+>
+> 客户端 CPU Profile 计划：[2026-07-24-client-long-task-cpu-profile.md](../exec-plans/completed/2026-07-24-client-long-task-cpu-profile.md)
 
 ## 文档目的
 
@@ -442,7 +444,7 @@ npm pack --dry-run --json --ignore-scripts
 
 阶段 0、1、2、3、4 已完成并归档。阶段 4 已完成代码、测试、构建、Smoke 和本地 Headless Chrome 验证。
 
-阶段 5 已完成证据复核，结论是保留 Next.js，不创建 Vite POC。下一步优先修复长历史初始置底竞态，对每个生产进程首次 `/chat/[id]` 约 565 ms 的冷路径增加 server trace，并为 224 至 336 ms 的客户端 Long Task 采集 CPU profile。
+阶段 5 已完成证据复核，结论是保留 Next.js，不创建 Vite POC；长历史初始置底竞态也已修复。首轮客户端 CPU Profile 没有发现足以支持产品代码修改的单一热点，下一步优先对每个生产进程首次 `/chat/[id]` 约 565 ms 的冷路径增加 server trace。若继续客户端归因，应改用无扩展 Headless Chrome 和可映射源码，或围绕已定位的 Long Task 时间窗缩短采样范围。
 
 若要继续降低运行成本，可独立评估将生产 TypeScript 入口预编译为 JavaScript，避免运行时 `tsx` 启动层；该工作必须保留同端口 bridge、CLI 打包和跨目录启动验证。没有新的三轮可归因证据前，不重新开启框架迁移讨论。
 
@@ -613,3 +615,14 @@ npm pack --dry-run --json --ignore-scripts
 最终验证达到 `Code complete`、`Tests pass` 和 `Smoke passed`：定向接线测试 1 个文件、4 项通过；全量 127 个测试文件、594 项通过；生产构建通过；隔离 app-server Smoke 通过，读取 7 个模型。三轮完整生产基线均为 12/12，长历史 60 条消息只挂载 11 至 13 条，初始底部、延迟高度保持、用户阅读保护和恢复底部全部通过。
 
 三轮整体可交互 P95 为 11.0 至 15.1 秒，最长 Long Task 为 788 至 1106 ms。本修复证明滚动正确性稳定，不证明整体性能预算改善；CPU profile 和首个动态路由冷路径仍应独立处理。生产服务均已停止，3102 端口释放。
+
+## 客户端 CPU Profile 复核（2026-07-24）
+
+- 使用现有生产构建、隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home` 和远程 CDP，采集空聊天、普通历史、长历史与普通 Markdown；未触发真实模型 Turn。
+- 四段 profile 分别覆盖 5192、7823、8330 和 8471 ms；应用 origin self time 分别占 14.39%、43.05%、32.72% 和 29.85%。内容场景高于空聊天，反例方向成立。
+- 普通历史、长历史和普通 Markdown 的最高独立应用帧分别只占整段 2.98%、1.76% 和 1.88%；父链分散在模块初始化、React 提交、DOM 测量、Virtuoso 和 Markdown 相关 chunk，没有稳定单一热点。
+- 远程浏览器存在扩展注入，长历史扩展 self time 为 4.17%；生产静态 chunk 没有浏览器 source map，不能把压缩函数名可靠映射到源码组件。
+- 结论是证据不足，不修改产品代码。该 profile 也不能解释 app-server 初始化、HTTP 等待或首个动态路由服务端冷路径。
+- 原始 `.cpuprofile`、场景汇总和一次性采样器位于 `/volume2/SSD/codex/Temp/codex-web-cpu-profile-buqqiX/`，未纳入 Git；生产服务已停止，3102 端口已释放。
+
+本轮属于测量完成，不是产品代码 `Tests pass` 或 `Smoke passed`。下一项更高信号工作是动态路由 server trace；再次做客户端采样前应先解决无扩展浏览器和源码映射条件。

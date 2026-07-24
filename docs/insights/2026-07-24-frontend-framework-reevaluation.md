@@ -80,7 +80,7 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 ## 后续工作
 
 1. 对每进程首个 `/chat/[id]` 约 565 ms 的冷路径增加 Next server trace，确认动态参数路由、Proxy 或 RSC 渲染的具体占比。
-2. 对客户端 Long Task 采集 CPU profile，只优化有调用栈证据的模块。
+2. 在禁用浏览器扩展并提供可映射源码的环境中复测客户端 Long Task；本轮 CPU profile 没有支持修改单一组件的证据。
 3. 评估把生产 TypeScript 入口预编译为 JavaScript，避免运行时 `tsx` 启动层；必须先验证 CLI 打包和跨目录启动。
 4. 只有上述工作完成后仍有三轮证据满足 POC 门槛，才另建 Vite POC 计划。
 
@@ -92,6 +92,21 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 
 三轮整体可交互 P95 为 11.0 至 15.1 秒，最长 Long Task 为 788 至 1106 ms，不能据此宣称整体性能改善。滚动正确性已稳定，但客户端 CPU profile 和动态路由冷路径仍是独立后续项，不改变“保留 Next.js”的框架结论。
 
+## 客户端 CPU Profile 复核
+
+2026-07-24 使用隔离 `CODEX_HOME`、现有生产构建和远程 Chrome CDP，对空聊天、普通历史、长历史和普通 Markdown 从导航前采样到 `codex.first-interactive` 与内容就绪后 1 秒。四个场景分别采集 5192、7823、8330 和 8471 ms，原始 profile 均包含 nodes、samples 和 timeDeltas。
+
+| 场景 | Idle | 应用 origin | 浏览器原生或 eval | 扩展 | 最高独立应用帧 |
+|---|---:|---:|---:|---:|---:|
+| 空聊天 | 58.74% | 14.39% | 25.70% | 1.17% | 0.86% |
+| 普通历史 | 23.48% | 43.05% | 28.87% | 0.96% | 2.98% |
+| 长历史 | 34.07% | 32.72% | 29.04% | 4.17% | 1.76% |
+| 普通 Markdown | 43.60% | 29.85% | 25.56% | 0.99% | 1.88% |
+
+内容场景的应用 origin self time 高于空聊天，证明内容渲染确实增加客户端执行成本；但各场景的最高独立应用帧只占整段采样 0.86% 至 2.98%。父链同时涉及 Turbopack 模块执行、React 提交、DOM 测量、Virtuoso/Markdown chunk，没有单一调用栈稳定占据主要非 idle 时间。
+
+本轮还有两个归因限制：远程 Chrome 注入了浏览器扩展脚本，长历史中扩展 self time 达 4.17%；当前生产静态 chunk 没有浏览器 source map，压缩函数名不能可靠映射回具体组件。因此本轮不修改产品代码，也不能用结果解释 app-server 初始化或服务端动态路由冷路径。下一次客户端采样应使用无扩展 Headless Chrome，并提供可映射源码或只围绕已定位的 Long Task 时间窗采样。
+
 ## 产物
 
 - 三轮基线：`/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T08-18-36-729Z-production-default/`
@@ -101,5 +116,6 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 - 长历史修复基线：`/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T11-33-42-349Z-production-default/`
 - 长历史修复基线：`/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T11-36-01-903Z-production-default/`
 - 长历史修复基线：`/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T11-42-54-822Z-production-default/`
+- 客户端 CPU Profile：`/volume2/SSD/codex/Temp/codex-web-cpu-profile-buqqiX/`
 
-阶段 5 只修改文档，没有修改产品代码、依赖或构建配置。三轮生产性能基线共 34/36 场景成功；不能表述为完整 `Smoke passed`。本阶段没有重新运行 `npm run test`、`npm run build` 或 `npm run test:smoke`。
+阶段 5 及其 CPU Profile 后续只修改文档，没有修改产品代码、依赖或构建配置。三轮生产性能基线共 34/36 场景成功；不能表述为完整 `Smoke passed`。CPU Profile 四场景采集完成，但因扩展污染和缺少 source map，只达到测量完成，不能表述为 `Tests pass` 或 `Smoke passed`。本阶段没有重新运行 `npm run test`、`npm run build` 或 `npm run test:smoke`。
