@@ -154,14 +154,50 @@ args = ["${mockServer}"]
 async function writeHistoryFixtures(selectedCodexHome: string): Promise<{
   ordinaryThreadId: string;
   longThreadId: string;
+  plainMarkdownThreadId: string;
+  mathMarkdownThreadId: string;
+  mermaidMarkdownThreadId: string;
+  codeMarkdownThreadId: string;
 }> {
   const sessionsDirectory = path.join(selectedCodexHome, "sessions", "2026", "07", "23");
   await mkdir(sessionsDirectory, { recursive: true });
   const ordinaryThreadId = randomUUID();
   const longThreadId = randomUUID();
+  const plainMarkdownThreadId = randomUUID();
+  const mathMarkdownThreadId = randomUUID();
+  const mermaidMarkdownThreadId = randomUUID();
+  const codeMarkdownThreadId = randomUUID();
   const fixtures = [
     { threadId: ordinaryThreadId, turnCount: 5, markerPrefix: "perf-ordinary", suffix: "12-00-00" },
     { threadId: longThreadId, turnCount: 120, markerPrefix: "perf-long", suffix: "13-00-00" },
+    {
+      threadId: plainMarkdownThreadId,
+      turnCount: 1,
+      markerPrefix: "perf-optional-plain",
+      suffix: "14-00-00",
+      assistantText: () => "perf-optional-plain-answer：普通 **Markdown**，不包含可选渲染能力。",
+    },
+    {
+      threadId: mathMarkdownThreadId,
+      turnCount: 1,
+      markerPrefix: "perf-optional-math",
+      suffix: "15-00-00",
+      assistantText: () => "perf-optional-math-answer：$$E = mc^2$$",
+    },
+    {
+      threadId: mermaidMarkdownThreadId,
+      turnCount: 1,
+      markerPrefix: "perf-optional-mermaid",
+      suffix: "16-00-00",
+      assistantText: () => "perf-optional-mermaid-answer\n\n```mermaid\ngraph TD\n  A[Start] --> B[Done]\n```",
+    },
+    {
+      threadId: codeMarkdownThreadId,
+      turnCount: 1,
+      markerPrefix: "perf-optional-code",
+      suffix: "17-00-00",
+      assistantText: () => "perf-optional-code-answer\n\n```ts\nconst optionalCode = true;\n```",
+    },
   ];
   for (const fixture of fixtures) {
     const rolloutPath = path.join(
@@ -175,12 +211,20 @@ async function writeHistoryFixtures(selectedCodexHome: string): Promise<{
         turnCount: fixture.turnCount,
         markerPrefix: fixture.markerPrefix,
         cwd: process.cwd(),
+        assistantText: fixture.assistantText,
       }), "utf8");
     } finally {
       await handle.close();
     }
   }
-  return { ordinaryThreadId, longThreadId };
+  return {
+    ordinaryThreadId,
+    longThreadId,
+    plainMarkdownThreadId,
+    mathMarkdownThreadId,
+    mermaidMarkdownThreadId,
+    codeMarkdownThreadId,
+  };
 }
 
 function startServer(
@@ -270,6 +314,18 @@ type ScenarioSnapshot = {
     inputCommitDelta: number;
   };
   virtualization: VirtualizationSnapshot | null;
+  optionalMarkdown: OptionalMarkdownSnapshot | null;
+};
+
+type OptionalMarkdownSnapshot = {
+  codeLoaded: boolean;
+  mathLoaded: boolean;
+  mermaidLoaded: boolean;
+  shikiLoaded: boolean;
+  scriptResourceCount: number;
+  scriptTransferSize: number;
+  scriptEncodedBodySize: number;
+  scripts: string[];
 };
 
 type VirtualizationSnapshot = {
@@ -296,6 +352,7 @@ async function runScenario(
     await waitForScenarioContent(client, scenario);
     await delay(500);
     const virtualization = await captureVirtualizationProbe(client, scenario);
+    const optionalMarkdown = await captureOptionalMarkdownProbe(client, scenario);
 
     const commitsBeforeIdle = await profilerCommitCount(client);
     await delay(500);
@@ -325,6 +382,7 @@ async function runScenario(
         inputCommitDelta: 0,
       })},
       virtualization: ${JSON.stringify(virtualization)},
+      optionalMarkdown: ${JSON.stringify(optionalMarkdown)},
     })`);
     raw.renderCounterexample = {
       idleCommitDelta: commitsAfterIdle - commitsBeforeIdle,
@@ -414,6 +472,7 @@ async function runStreamingScenario(
       performance: window.__CODEX_WEB_PERFORMANCE__.snapshot(),
       renderCounterexample: { idleCommitDelta: 0, inputCommitDelta: 0 },
       virtualization: null,
+      optionalMarkdown: null,
     })`);
     return {
       name: scenario.name,
@@ -463,7 +522,46 @@ async function captureScenarioSnapshot(client: CdpClient): Promise<ScenarioSnaps
     performance: window.__CODEX_WEB_PERFORMANCE__.snapshot(),
     renderCounterexample: { idleCommitDelta: 0, inputCommitDelta: 0 },
     virtualization: null,
+    optionalMarkdown: null,
   })`);
+}
+
+async function captureOptionalMarkdownProbe(
+  client: CdpClient,
+  scenario: WebPerformanceScenario,
+): Promise<OptionalMarkdownSnapshot | null> {
+  if (!scenario.name.startsWith("optional-markdown-")) return null;
+
+  const snapshot = await client.evaluate<OptionalMarkdownSnapshot>(`(() => {
+    const hasMark = (name) => performance.getEntriesByName(name).length > 0;
+    const scripts = performance.getEntriesByType('resource')
+      .filter((entry) => entry.initiatorType === 'script');
+    return {
+      codeLoaded: hasMark('codex.optional-plugin.code.loaded'),
+      mathLoaded: hasMark('codex.optional-plugin.math.loaded'),
+      mermaidLoaded: hasMark('codex.optional-plugin.mermaid.loaded'),
+      shikiLoaded: hasMark('codex.optional-plugin.shiki.loaded'),
+      scriptResourceCount: scripts.length,
+      scriptTransferSize: scripts.reduce((total, entry) => total + entry.transferSize, 0),
+      scriptEncodedBodySize: scripts.reduce((total, entry) => total + entry.encodedBodySize, 0),
+      scripts: scripts.map((entry) => entry.name),
+    };
+  })()`);
+
+  const expected = scenario.name.slice("optional-markdown-".length);
+  if (expected === "plain" && (snapshot.codeLoaded || snapshot.mathLoaded || snapshot.mermaidLoaded || snapshot.shikiLoaded)) {
+    throw new Error("普通 Markdown 错误加载了可选渲染插件");
+  }
+  if (expected === "math" && (!snapshot.mathLoaded || snapshot.codeLoaded || snapshot.mermaidLoaded)) {
+    throw new Error("数学场景未按需隔离 Math 插件");
+  }
+  if (expected === "mermaid" && (!snapshot.mermaidLoaded || snapshot.codeLoaded || snapshot.mathLoaded)) {
+    throw new Error("Mermaid 场景未按需隔离 Mermaid 插件");
+  }
+  if (expected === "code" && (!snapshot.codeLoaded || !snapshot.shikiLoaded || snapshot.mathLoaded || snapshot.mermaidLoaded)) {
+    throw new Error("代码场景未按需加载共享代码插件与 Shiki");
+  }
+  return snapshot;
 }
 
 async function captureVirtualizationProbe(
@@ -506,7 +604,11 @@ async function captureVirtualizationProbe(
     scroller.scrollTop = scroller.scrollHeight;
     scroller.dispatchEvent(new Event('scroll'));
   })()`);
-  await delay(300);
+  await client.waitFor(`(() => {
+    const scroller = document.querySelector('[data-message-list-scroller]');
+    return scroller instanceof HTMLElement
+      && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 64;
+  })()`, 5_000);
   const returnedToBottom = await client.evaluate<boolean>(`(() => {
     const scroller = document.querySelector('[data-message-list-scroller]');
     if (!(scroller instanceof HTMLElement)) return false;
@@ -548,6 +650,23 @@ async function waitForScenarioContent(
       `document.body.innerText.includes('perf-long-answer-120') && Boolean(document.querySelector('textarea'))`,
       20_000,
     );
+    await client.waitFor(`(() => {
+      const scroller = document.querySelector('[data-message-list-scroller]');
+      return scroller instanceof HTMLElement
+        && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= 64;
+    })()`, 20_000);
+    return;
+  }
+  if (scenario.name.startsWith("optional-markdown-")) {
+    const marker = scenario.name.replace("optional-markdown-", "perf-optional-");
+    await client.waitFor(`document.body.innerText.includes('${marker}-answer')`, 20_000);
+    if (scenario.name === "optional-markdown-math") {
+      await client.waitFor(`Boolean(document.querySelector('.katex'))`, 20_000);
+    } else if (scenario.name === "optional-markdown-mermaid") {
+      await client.waitFor(`Boolean(document.querySelector('[data-streamdown="mermaid"]'))`, 20_000);
+    } else if (scenario.name === "optional-markdown-code") {
+      await client.waitFor(`performance.getEntriesByName('codex.optional-plugin.shiki.loaded').length > 0`, 20_000);
+    }
     return;
   }
   if (scenario.name.startsWith("empty-chat")) {

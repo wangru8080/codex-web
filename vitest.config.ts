@@ -14,6 +14,7 @@ export default defineConfig({
       "src/codex-web/**/*.test.ts",
       "src/lib/**/*.test.ts",
       "src/components/chat/ContextCompactionRow.test.tsx",
+      "src/components/ai-elements/streamdown-plugins.test.ts",
       "src/components/chat/message-list-virtualization.test.ts",
       "src/components/chat/streaming-process-groups.test.ts",
       "src/components/ui/semantic-icon.test.tsx",

@@ -23,12 +23,20 @@ export type WebPerformanceScenarioResult = {
 export function buildWebPerformanceScenarioMatrix(options: {
   ordinaryThreadId: string;
   longThreadId: string;
+  plainMarkdownThreadId: string;
+  mathMarkdownThreadId: string;
+  mermaidMarkdownThreadId: string;
+  codeMarkdownThreadId: string;
 }): WebPerformanceScenario[] {
   return [
     { name: "empty-chat-cold", path: "/chat", resetStorage: true },
     { name: "empty-chat-warm", path: "/chat", resetStorage: false },
     { name: "ordinary-history", path: `/chat/${options.ordinaryThreadId}`, resetStorage: false },
     { name: "long-history", path: `/chat/${options.longThreadId}`, resetStorage: false },
+    { name: "optional-markdown-plain", path: `/chat/${options.plainMarkdownThreadId}`, resetStorage: false },
+    { name: "optional-markdown-math", path: `/chat/${options.mathMarkdownThreadId}`, resetStorage: false },
+    { name: "optional-markdown-mermaid", path: `/chat/${options.mermaidMarkdownThreadId}`, resetStorage: false },
+    { name: "optional-markdown-code", path: `/chat/${options.codeMarkdownThreadId}`, resetStorage: false },
     { name: "settings-first", path: "/settings/codex", resetStorage: false },
     { name: "settings-second", path: "/settings/codex", resetStorage: false },
   ];
@@ -68,6 +76,7 @@ export function createHistoryFixtureJsonl(options: {
   turnCount: number;
   markerPrefix: string;
   cwd: string;
+  assistantText?: (index: number) => string;
 }): string {
   const createdAt = new Date("2026-07-23T12:00:00.000Z");
   const lines: unknown[] = [
@@ -93,7 +102,8 @@ export function createHistoryFixtureJsonl(options: {
     const turnId = `${options.threadId.slice(0, -3)}${padded}`;
     const timestamp = new Date(createdAt.getTime() + index * 10_000).toISOString();
     const userText = `${options.markerPrefix}-user-${padded}`;
-    const assistantText = `${options.markerPrefix}-answer-${padded}\n\n\`\`\`ts\nconst turn = ${index};\n\`\`\``;
+    const assistantText = options.assistantText?.(index)
+      ?? `${options.markerPrefix}-answer-${padded}\n\n\`\`\`ts\nconst turn = ${index};\n\`\`\``;
     lines.push(
       { timestamp, type: "event_msg", payload: { type: "task_started", turn_id: turnId, started_at: 1784808000 + index * 10, model_context_window: 258400, collaboration_mode_kind: "default" } },
       { timestamp, type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: userText }], internal_chat_message_metadata_passthrough: { turn_id: turnId } } },

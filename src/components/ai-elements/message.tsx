@@ -15,10 +15,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { cjk } from "@streamdown/cjk";
-import { createSharedCodePlugin } from "./code-block";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import { CaretLeft, CaretRight } from "@phosphor-icons/react";
 import {
   createContext,
@@ -31,6 +27,7 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import { CHAT_MARKDOWN_COMPONENTS } from "@/components/chat/markdown-components";
+import { useStreamdownPlugins } from "./streamdown-plugins";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -330,34 +327,31 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-// Phase 5.5 — use the shared-LRU plugin from code-block.tsx so chat
-// messages and file-preview rendering hit the same Shiki highlighter /
-// token caches instead of each running its own unbounded pool. See
-// POC 0.2. supportsLanguage is intentionally permissive (true) because
-// highlightCode() itself normalizes unknown languages to "text" via
-// getHighlighter's fallback path.
-const _codePlugin = createSharedCodePlugin();
-const streamdownPlugins = { cjk, code: _codePlugin, math, mermaid };
-
 export const MessageResponse = memo(
-  ({ className, components, mode = "static", parseIncompleteMarkdown = false, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className
-      )}
-      plugins={streamdownPlugins}
-      // Round 12 chat UI refresh — every markdown element rendered
-      // here goes through CHAT_MARKDOWN_COMPONENTS so tables, code
-      // blocks, headings, lists, etc. all match the Widget-card
-      // design language. Callers can still override individual
-      // elements via the `components` prop (last-write-wins).
-      components={{ ...CHAT_MARKDOWN_COMPONENTS, ...components }}
-      mode={mode}
-      parseIncompleteMarkdown={parseIncompleteMarkdown}
-      {...props}
-    />
-  ),
+  ({ className, components, mode = "static", parseIncompleteMarkdown = false, children, ...props }: MessageResponseProps) => {
+    const markdown = typeof children === "string" ? children : String(children ?? "");
+    const plugins = useStreamdownPlugins(markdown);
+    return (
+      <Streamdown
+        className={cn(
+          "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+          className
+        )}
+        plugins={plugins}
+        // Round 12 chat UI refresh — every markdown element rendered
+        // here goes through CHAT_MARKDOWN_COMPONENTS so tables, code
+        // blocks, headings, lists, etc. all match the Widget-card
+        // design language. Callers can still override individual
+        // elements via the `components` prop (last-write-wins).
+        components={{ ...CHAT_MARKDOWN_COMPONENTS, ...components }}
+        mode={mode}
+        parseIncompleteMarkdown={parseIncompleteMarkdown}
+        {...props}
+      >
+        {children}
+      </Streamdown>
+    );
+  },
   (prevProps, nextProps) => prevProps.children === nextProps.children
 );
 

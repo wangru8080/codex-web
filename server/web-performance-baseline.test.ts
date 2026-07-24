@@ -20,12 +20,23 @@ describe("Web 性能基准配置", () => {
   });
 
   it("覆盖空、普通、长历史和设置首次/二次访问", () => {
-    expect(buildWebPerformanceScenarioMatrix({ ordinaryThreadId: "ordinary", longThreadId: "long" }))
+    expect(buildWebPerformanceScenarioMatrix({
+      ordinaryThreadId: "ordinary",
+      longThreadId: "long",
+      plainMarkdownThreadId: "plain",
+      mathMarkdownThreadId: "math",
+      mermaidMarkdownThreadId: "mermaid",
+      codeMarkdownThreadId: "code",
+    }))
       .toEqual([
         { name: "empty-chat-cold", path: "/chat", resetStorage: true },
         { name: "empty-chat-warm", path: "/chat", resetStorage: false },
         { name: "ordinary-history", path: "/chat/ordinary", resetStorage: false },
         { name: "long-history", path: "/chat/long", resetStorage: false },
+        { name: "optional-markdown-plain", path: "/chat/plain", resetStorage: false },
+        { name: "optional-markdown-math", path: "/chat/math", resetStorage: false },
+        { name: "optional-markdown-mermaid", path: "/chat/mermaid", resetStorage: false },
+        { name: "optional-markdown-code", path: "/chat/code", resetStorage: false },
         { name: "settings-first", path: "/settings/codex", resetStorage: false },
         { name: "settings-second", path: "/settings/codex", resetStorage: false },
       ]);
@@ -52,6 +63,19 @@ describe("Web 性能基准配置", () => {
     expect(lines[0]).toMatchObject({ type: "session_meta" });
     expect(JSON.stringify(lines)).toContain("perf-ordinary-user-003");
     expect(JSON.stringify(lines)).toContain("```ts");
+  });
+
+  it("允许专项 Markdown 场景覆盖助手正文", () => {
+    const fixture = createHistoryFixtureJsonl({
+      threadId: "00000000-0000-4000-8000-000000000002",
+      turnCount: 1,
+      markerPrefix: "perf-math",
+      cwd: "/workspace",
+      assistantText: () => "perf-math-answer：$$x^2$$",
+    });
+
+    expect(fixture).toContain("perf-math-answer：$$x^2$$");
+    expect(fixture).not.toContain("```ts");
   });
 
   it("汇总成功、失败、可交互时间和长任务", () => {

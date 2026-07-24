@@ -11,11 +11,7 @@ import { cn } from '@/lib/utils';
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { useStickToBottomContext } from 'use-stick-to-bottom';
 import { Streamdown } from 'streamdown';
-import { cjk } from '@streamdown/cjk';
-import { math } from '@streamdown/math';
-import { mermaid } from '@streamdown/mermaid';
-
-const thinkingPlugins = { cjk, math, mermaid };
+import { useStreamdownPlugins } from '@/components/ai-elements/streamdown-plugins';
 import type { MediaBlock } from '@/types';
 
 const TOOL_OUTPUT_MAX_LINES = 5;
@@ -453,6 +449,7 @@ function ThinkingRow({ content, isStreaming }: { content: string; isStreaming?: 
   const [expanded, setExpanded] = useState(!!isStreaming);
   const [hovered, setHovered] = useState(false);
   const { stopScroll } = useStickToBottomContext();
+  const plugins = useStreamdownPlugins(content);
 
   // Extract summary from first **bold** or # heading
   const summary = (() => {
@@ -502,7 +499,7 @@ function ThinkingRow({ content, isStreaming }: { content: string; isStreaming?: 
             style={{ overflow: 'hidden' }}
           >
             <div className="ml-6 px-2 py-1.5 text-xs text-muted-foreground/70 border-l-2 border-border/30 prose prose-sm dark:prose-invert max-w-none">
-              <Streamdown plugins={thinkingPlugins}>{content}</Streamdown>
+              <Streamdown plugins={plugins}>{content}</Streamdown>
             </div>
           </motion.div>
         )}

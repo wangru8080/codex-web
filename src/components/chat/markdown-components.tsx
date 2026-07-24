@@ -134,87 +134,6 @@ function ChatTBody(props: ComponentProps<"tbody">) {
 }
 
 // ---------------------------------------------------------------------------
-// Code block — Widget-style card with copy button
-// ---------------------------------------------------------------------------
-// streamdown's `code` plugin highlights via Shiki and ships its own
-// `<pre>`. We only override `pre` so the OUTER chrome matches the
-// Widget card; the inner highlighted code is left to the plugin.
-
-function ChatPre({ children, className, ...props }: ComponentProps<"pre">) {
-  const preRef = useRef<HTMLPreElement>(null);
-
-  // Inspect the code child for a language hint — streamdown puts the
-  // language as `data-language` on the code element when its shiki
-  // plugin runs. Fall back to "code" so the badge always shows.
-  const langGuess = (() => {
-    if (!Array.isArray(children) && typeof children === "object" && children && "props" in children) {
-      const props = (children as { props?: Record<string, unknown> }).props;
-      const dl = props?.["data-language"];
-      if (typeof dl === "string") return dl;
-      const cls = props?.className;
-      if (typeof cls === "string") {
-        const m = cls.match(/language-([a-z0-9+#-]+)/i);
-        if (m) return m[1];
-      }
-    }
-    return "";
-  })();
-
-  const handleCopy = useCallback(async () => {
-    const pre = preRef.current;
-    if (!pre) return;
-    const txt = pre.innerText;
-    try {
-      await navigator.clipboard.writeText(txt);
-      showToast({ type: "success", message: "已复制" });
-    } catch {
-      showToast({ type: "error", message: "复制失败" });
-    }
-  }, []);
-
-  // Same header-bar layout as ChatTable — keeps the action buttons
-  // out of the code area so long single-line code can use the full
-  // card width without hiding behind the copy button.
-  // Round 14: header bar uses `bg-muted/30` to mark itself off from
-  // the code area; the explicit `border-b` between header and pre
-  // was redundant (color shift already does the separation) and
-  // showed as an extra hairline that didn't read well.
-  return (
-    <div className="my-4 rounded-xl bg-muted/20 overflow-hidden">
-      <div className="flex items-center justify-between gap-2 bg-muted/30 px-3 py-1">
-        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70">
-          {langGuess || "code"}
-        </span>
-        <button type="button" onClick={handleCopy} className={cn(cardActionBtn, "h-7 w-7 px-0")} aria-label="Copy code" title="复制代码">
-          <CodexWebIcon name="copy" size="sm" aria-hidden />
-        </button>
-      </div>
-      <pre
-        ref={preRef}
-        className={cn("overflow-x-auto px-4 py-3 text-sm font-mono leading-relaxed", className)}
-        {...props}
-      >
-        {children}
-      </pre>
-    </div>
-  );
-}
-
-// Inline code (single backtick). Don't apply card chrome — just a
-// muted pill so it stands out in prose.
-function ChatInlineCode({ className, ...props }: ComponentProps<"code">) {
-  return (
-    <code
-      className={cn(
-        "rounded bg-muted px-1.5 py-0.5 font-mono text-[0.875em] text-foreground",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Typography — heading / paragraph / list / blockquote / hr / link
 // ---------------------------------------------------------------------------
 
@@ -357,6 +276,4 @@ export const CHAT_MARKDOWN_COMPONENTS = {
   table: ChatTable,
   thead: ChatTHead,
   tbody: ChatTBody,
-  pre: ChatPre,
-  code: ChatInlineCode,
 } as const;

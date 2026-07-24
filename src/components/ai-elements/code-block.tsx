@@ -34,7 +34,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createHighlighter } from "shiki";
 import { usePanel } from "@/hooks/usePanel";
 import type { PreviewSource } from "@/hooks/usePanel";
 
@@ -172,10 +171,29 @@ const getTokensCacheKey = (code: string, language: BundledLanguage, lightTheme: 
 };
 
 // Lazy-loaded bundledLanguages to avoid eager import of the full shiki module
+let shikiModulePromise: Promise<typeof import("shiki")> | null = null;
 let _bundledLanguages: Record<string, unknown> | null = null;
+function loadShiki(): Promise<typeof import("shiki")> {
+  if (!shikiModulePromise) {
+    shikiModulePromise = import("shiki").then((module) => {
+      if (typeof window !== "undefined") {
+        const performanceWindow = window as typeof window & { __CODEX_WEB_PERFORMANCE__?: unknown };
+        if (performanceWindow.__CODEX_WEB_PERFORMANCE__) {
+          performance.mark("codex.optional-plugin.shiki.loaded");
+        }
+      }
+      return module;
+    }).catch((error) => {
+      shikiModulePromise = null;
+      throw error;
+    });
+  }
+  return shikiModulePromise;
+}
+
 async function loadBundledLanguages(): Promise<Record<string, unknown>> {
   if (!_bundledLanguages) {
-    const mod = await import("shiki");
+    const mod = await loadShiki();
     _bundledLanguages = mod.bundledLanguages as Record<string, unknown>;
   }
   return _bundledLanguages;
@@ -205,10 +223,10 @@ const getHighlighter = (
     return cached;
   }
 
-  const highlighterPromise = createHighlighter({
+  const highlighterPromise = loadShiki().then((module) => module.createHighlighter({
     langs: [safeLang],
     themes: [lightTheme, darkTheme],
-  }).catch(() => {
+  })).catch(() => {
     // Language or theme not supported — fall back to plain text + default themes.
     // Using default themes avoids infinite retry if the *theme* was the problem.
     highlighterCache.delete(cacheKey);

@@ -5,6 +5,8 @@
 > 阶段 1 执行计划：[2026-07-24-app-server-selector-subscriptions.md](../exec-plans/completed/2026-07-24-app-server-selector-subscriptions.md)
 >
 > 阶段 2 执行计划：[2026-07-24-chat-rendering-virtualization.md](../exec-plans/completed/2026-07-24-chat-rendering-virtualization.md)
+>
+> 阶段 3 执行计划：[2026-07-24-heavy-module-lazy-loading.md](../exec-plans/completed/2026-07-24-heavy-module-lazy-loading.md)
 
 ## 文档目的
 
@@ -432,7 +434,7 @@ npm pack --dry-run --json --ignore-scripts
 
 ## 下一步
 
-阶段 0 已于 2026-07-23 完成，阶段 1 已于 2026-07-24 完成代码、验证和计划归档。阶段 2 已建立独立执行计划并进入验证阶段：聊天列表使用动态高度虚拟化，流式 Turn 的展示快照按动画帧合并，输入区和流式消息边界使用浅比较隔离。当前仍需完成全量测试、构建、Smoke、真实桌面/移动视口检查和阶段 1 指标对照；在这些证据齐备前，不将阶段 2 标记为完成。
+阶段 0、1、2、3 已完成并归档。下一阶段是阶段 4 桌面 UI 遗留清理；该阶段涉及移动文件，必须先建立独立执行计划和清单并再次确认，不能与阶段 3 混合。
 
 在没有生产性能对照之前，不应把 `npm run dev` 的首次路由编译慢等同于产品生产环境慢；在没有 React Profiler 和浏览器 Performance 数据之前，也不应把 799 个 npm 包直接认定为点击卡顿的原因。
 
@@ -522,3 +524,30 @@ npm pack --dry-run --json --ignore-scripts
 - 1440×900 桌面与 390×844 移动视口均保持底部、输入框可见且无横向溢出；CDP 未捕获浏览器异常。
 
 阶段 2 当前达到 `Code complete`、`Tests pass` 和 `Smoke passed`，执行计划已归档到 completed；尚未提交或远程推送。
+
+## 阶段 3 实施结果（2026-07-24）
+
+### 按需加载边界
+
+- 聊天普通 Markdown 只保留 CJK 基础插件；Math、Mermaid 和共享代码插件根据正文能力扫描结果动态导入，模块 Promise 缓存失败后可重试。
+- Shiki 从静态 `createHighlighter` 导入改为缓存动态导入，共享高亮器与 token LRU 上限不变。
+- `MessageResponse`、Reasoning 与 ThinkingRow 复用同一加载 Hook；app-server 消息正文、通知顺序和 source breadcrumb 未改变。
+- 聊天自定义 Markdown 组件不再覆盖 Streamdown 的 `code`/`pre` 分派，否则 Mermaid 与代码插件只会下载而不会渲染。
+- Sandpack、CodeMirror Markdown 编辑器和 CSV 数据表继续保持既有 `next/dynamic` 边界；`react-syntax-highlighter` 保留，等待独立视觉回归。
+
+### 依赖收敛
+
+- 从直接依赖移除 `markdown-it`、`@types/markdown-it`、`rehype-raw` 和 `@codemirror/lang-yaml`，锁文件通过 `npm install --package-lock-only --ignore-scripts` 更新。
+- 未执行 `npm uninstall` 或删除命令，因此现有 `node_modules` 中仍可能显示旧包为 extraneous；全新安装不再把它们作为直接依赖。`rehype-raw` 仍可由 Streamdown 间接依赖，不应误报为完全退出依赖树。
+
+### 验证与性能反例
+
+- `npm run test`：125 个测试文件、582 项测试通过。
+- `npm run build`：Next.js 生产构建及 postbuild 环境恢复通过，聊天主 chunk 只保留能力检测与动态导入调度，重实现位于独立 chunk。
+- `npm run test:smoke`：隔离 `CODEX_HOME` 下 bridge/app-server Smoke 通过，读取 7 个模型，账号来源为 `app-server.account/read`。
+- 开发性能基准 12/12 通过；普通 Markdown 的 code/math/mermaid/shiki 标记均为 false，Math 仅 math=true，Mermaid 仅 mermaid=true，代码仅 code/shiki=true。结果位于 `/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T02-18-14-537Z-dev-default/`。
+- 生产性能基准中阶段 3 专项 4/4 通过，但整套为 11/12：阶段 2 长历史初始置底条件稳定超时。结果位于 `/volume2/SSD/codex/Temp/codex-web-performance-baseline/2026-07-24T02-34-45-896Z-production-default/`，不得表述为生产矩阵全部通过。
+- 1440×900 桌面与 390×844 移动视口下，Mermaid、KaTeX、代码块和输入框均可见；移动端 Mermaid 宽 340px，无页面或图表横向溢出。
+- Sandpack 反例确认触发前没有 `.sp-wrapper`，触发 inline TSX 后动态出现容器与 iframe。远程 CDP 访问 HTTP IP 来源时不是可信上下文且没有 `crypto.subtle`；随后复用本机 Playwright 缓存的 Headless Chrome 149 访问 `http://localhost:3102`，确认 `isSecureContext=true`、`crypto.subtle=true`，Sandpack 按需加载后没有 digest 异常、JavaScript exception 或 Sandpack console error。唯一 404 为既有 `/api/git/status` 探测，不属于 Sandpack。
+
+阶段 3 达到 `Code complete`、`Tests pass` 和 `Smoke passed`；生产长历史残余与远程 HTTP IP 的可信上下文限制已显式保留，本地 Headless Chrome 已补齐 Sandpack console 证据。执行计划已归档，阶段 3 代码与归档记录纳入同一提交，未远程推送。
