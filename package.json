@@ -1,7 +1,20 @@
 {
-  "name": "codex-web",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@wangru8080/codex-web",
+  "version": "0.2.0",
+  "description": "基于 Codex app-server 的浏览器 Web 工作台",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wangru8080/codex-web.git"
+  },
+  "homepage": "https://github.com/wangru8080/codex-web#readme",
+  "bugs": {
+    "url": "https://github.com/wangru8080/codex-web/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "bin": {
     "codex-web": "dist/cli/codex-web.mjs"

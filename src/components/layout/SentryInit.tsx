@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { APP_VERSION } from "@/lib/app-version";
+
 /**
  * Client-side Sentry initialization component.
  * Must be rendered in the client tree (inside a "use client" boundary).
@@ -25,7 +27,7 @@ export function SentryInit() {
       Sentry.init({
         dsn,
         environment: process.env.NODE_ENV,
-        release: `codepilot@${process.env.NEXT_PUBLIC_APP_VERSION}`,
+        release: `codepilot@${APP_VERSION}`,
         tracesSampleRate: 0,
         beforeBreadcrumb(breadcrumb) {
           if (breadcrumb.category === "ui.input") return null;

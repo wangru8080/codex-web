@@ -84,14 +84,15 @@ codex --version
 
 ### 从源码构建 tarball
 
-当前项目尚未发布到 npm registry。现阶段最可靠的安装方式是在源码仓库中构建 npm tarball，再全局安装该产物：
+也可以在源码仓库中构建 npm tarball，再全局安装该产物：
 
 ```bash
 git clone https://github.com/wangru8080/codex-web.git
 cd codex-web
 npm install
 npm pack
-npm install --global ./codex-web-0.1.0.tgz
+PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+npm install --global "./wangru8080-codex-web-${PACKAGE_VERSION}.tgz"
 ```
 
 `npm pack` 会自动执行生产构建和 CLI 打包。生成的文件名取决于 `package.json` 中的版本号。
@@ -118,10 +119,17 @@ npm install --global "github:wangru8080/codex-web#master"
 发布 GitHub Release 后，可以安装 Release 附件：
 
 ```bash
-npm install --global "https://github.com/wangru8080/codex-web/releases/download/v0.1.0/codex-web-0.1.0.tgz"
+PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+npm install --global "https://github.com/wangru8080/codex-web/releases/download/v${PACKAGE_VERSION}/wangru8080-codex-web-${PACKAGE_VERSION}.tgz"
 ```
 
-当前 npm registry 尚无该软件包，因此 `npm install --global codex-web` 需要等正式发布后才能使用。
+### 从 npm registry 安装
+
+发布后，可以从 npm 官方 registry 直接安装：
+
+```bash
+npm install --global @wangru8080/codex-web --registry=https://registry.npmjs.org/
+```
 
 ## 快速开始
 
@@ -235,7 +243,7 @@ ${CODEX_HOME}/codex-web/turnstile.json
 使用源码或 GitHub Release tarball 安装时，下载或生成新版本 tarball，然后再次执行全局安装：
 
 ```bash
-npm install --global ./codex-web-<新版本>.tgz
+npm install --global ./wangru8080-codex-web-<新版本>.tgz
 ```
 
 不要直接修改全局安装目录中的 `.next` 或 `dist` 文件。
@@ -277,7 +285,6 @@ npm pack --dry-run
 ## 当前限制
 
 - 当前只接入本机 `codex app-server --stdio`；SSH remote 尚未完成。
-- npm registry 尚未发布，当前不能仅按包名全局安装。
 - 浏览器版更新按钮尚未接入 CLI/npm 自动更新。
 - 浏览器重连不会终止仍在 bridge 中运行的 Turn；但 app-server 进程崩溃后，旧进程内存中的运行中 Turn 无法继续。
 - app-server 没有提供历史消息全文搜索时，界面会明确显示不支持，而不会返回伪造结果。

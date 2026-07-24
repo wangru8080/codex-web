@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { APP_VERSION } from "../src/lib/app-version";
 import { parseCodexWebCliArgs } from "./codex-web-cli-options";
 
 const applicationRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -16,7 +15,7 @@ async function main(): Promise<void> {
     return;
   }
   if (options.version) {
-    console.log(await readPackageVersion());
+    console.log(APP_VERSION);
     return;
   }
   if (options.open && options.port === 0) {
@@ -32,14 +31,6 @@ async function main(): Promise<void> {
   await import("./start-next-with-bridge");
 
   if (options.open) openBrowser(`http://${options.publicHost}:${options.port}`);
-}
-
-async function readPackageVersion(): Promise<string> {
-  const packageJson = JSON.parse(await readFile(join(applicationRoot, "package.json"), "utf8")) as {
-    version?: unknown;
-  };
-  if (typeof packageJson.version !== "string") throw new Error("package.json 缺少有效版本号");
-  return packageJson.version;
 }
 
 function openBrowser(url: string): void {

@@ -22,8 +22,7 @@ import { SettingsCard } from "@/components/patterns/SettingsCard";
 import { Button } from "@/components/ui/button";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import type { TranslationKey } from "@/i18n";
-
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.1.0";
+import { APP_VERSION } from "@/lib/app-version";
 
 export function AboutSection() {
   const { t } = useTranslation();

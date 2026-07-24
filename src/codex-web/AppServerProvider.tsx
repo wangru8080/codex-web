@@ -56,6 +56,7 @@ import type { LoginAccountResponse } from "@/codex/protocol/generated/v2/LoginAc
 import type { CancelLoginAccountResponse } from "@/codex/protocol/generated/v2/CancelLoginAccountResponse";
 import type { LogoutAccountResponse } from "@/codex/protocol/generated/v2/LogoutAccountResponse";
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
+import { APP_VERSION } from "@/lib/app-version";
 import type { FileAttachment, PermissionProfile, SkillInputReference } from "@/types";
 import type { MCPServer } from "@/types";
 import {
@@ -454,7 +455,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         const latestBridgeUrl = await resolveCodexBridgeUrl(publicBridgeUrl);
         await client.connect(latestBridgeUrl);
         const initialize = (await client.request("initialize", {
-          clientInfo: { name: "codex_web", title: "Codex Web", version: "0.1.0" },
+          clientInfo: { name: "codex_web", title: "Codex Web", version: APP_VERSION },
           capabilities: appServerInitializeCapabilities(),
         })) as InitializeResponse;
         client.notify("initialized");

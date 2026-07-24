@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
 
+import { APP_VERSION } from "../src/lib/app-version";
 import { AppServerSession, type AppServerSessionTransport } from "./app-server-session";
 
 describe("AppServerSession", () => {
@@ -27,7 +28,7 @@ describe("AppServerSession", () => {
         "request",
         "initialize",
         {
-          clientInfo: { name: "codex_web", title: "Codex Web", version: "0.1.0" },
+          clientInfo: { name: "codex_web", title: "Codex Web", version: APP_VERSION },
           capabilities: {
             experimentalApi: true,
             requestAttestation: false,

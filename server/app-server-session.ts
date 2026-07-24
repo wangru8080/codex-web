@@ -5,6 +5,7 @@ import type { InitializeResponse } from "../src/codex/protocol/generated/Initial
 import type { GetAccountResponse } from "../src/codex/protocol/generated/v2/GetAccountResponse";
 import type { ModelListResponse } from "../src/codex/protocol/generated/v2/ModelListResponse";
 import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
+import { APP_VERSION } from "../src/lib/app-version";
 
 export type SourceBreadcrumb =
   | "app-server.initialize"
@@ -43,7 +44,7 @@ export type BootstrapResult = {
 const clientInfo = {
   name: "codex_web",
   title: "Codex Web",
-  version: "0.1.0",
+  version: APP_VERSION,
 };
 
 export class AppServerSession {
