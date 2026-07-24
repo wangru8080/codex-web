@@ -30,12 +30,6 @@ export interface DiffSummaryProps {
    * haven't opted into the Artifact surface yet.
    */
   onPreview?: (file: DiffFile) => void;
-  /**
-   * Called when the user clicks "Export long screenshot". Phase 3 wires
-   * this to the artifact:export-long-shot IPC; leave undefined to hide
-   * the button per row.
-   */
-  onExportLongShot?: (file: DiffFile) => void;
 }
 
 /**
@@ -44,20 +38,6 @@ export interface DiffSummaryProps {
  * extend both to .jsx/.tsx once Sandpack lands).
  */
 const PREVIEWABLE = new Set(['.md', '.mdx', '.html', '.htm', '.jsx', '.tsx', '.csv', '.tsv']);
-
-/**
- * Extensions where "Export long shot" is a meaningful action *today*.
- *
- * Only HTML is here because the current export pipeline sends the raw
- * file contents to the hidden-BrowserWindow → PNG path. For .jsx/.tsx,
- * the raw content is source code, not a rendered page — letting that
- * through would hand users a PNG of their TSX source instead of the
- * Sandpack preview they're looking at. (Codex P2.)
- *
- * Re-adds .jsx/.tsx once a Sandpack-to-HTML or iframe-capture path
- * (POC 0.3 §X-jsx-1 / X-jsx-2) ships in a later phase.
- */
-const LONGSHOT = new Set(['.html', '.htm']);
 
 function getExt(name: string): string {
   const i = name.lastIndexOf('.');
@@ -75,16 +55,13 @@ function getExt(name: string): string {
 function ArtifactFileCard({
   file,
   onPreview,
-  onExportLongShot,
 }: {
   file: DiffFile;
   onPreview?: (file: DiffFile) => void;
-  onExportLongShot?: (file: DiffFile) => void;
 }) {
   const { t } = useTranslation();
   const ext = getExt(file.name);
   const canPreview = !!onPreview && PREVIEWABLE.has(ext);
-  const canExport = !!onExportLongShot && LONGSHOT.has(ext);
   const label = file.operation === 'created' ? 'Created' : 'Modified';
 
   return (
@@ -111,30 +88,17 @@ function ArtifactFileCard({
           {file.path}
         </p>
       </div>
-      {(canPreview || canExport) && (
+      {canPreview && (
         <div className="flex shrink-0 items-center gap-2">
-          {canPreview && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPreview?.(file)}
-              className="gap-1.5"
-            >
-              <CodexWebIcon name="preview" size="sm" aria-hidden />
-              {t('diffSummary.openPreview')}
-            </Button>
-          )}
-          {canExport && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onExportLongShot?.(file)}
-              title={t('diffSummary.exportLongShot')}
-              aria-label={t('diffSummary.exportLongShot')}
-            >
-              <CodexWebIcon name="image" size="sm" aria-hidden />
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPreview?.(file)}
+            className="gap-1.5"
+          >
+            <CodexWebIcon name="preview" size="sm" aria-hidden />
+            {t('diffSummary.openPreview')}
+          </Button>
         </div>
       )}
     </div>
@@ -154,7 +118,7 @@ function ArtifactFileCard({
  * glance. If a future turn produces many cards (e.g. 10+ previewable
  * files), we can add a per-card collapse, not a list-level one.
  */
-export function DiffSummary({ files, onPreview, onExportLongShot }: DiffSummaryProps) {
+export function DiffSummary({ files, onPreview }: DiffSummaryProps) {
   const previewable = files.filter(
     (f) => !!onPreview && PREVIEWABLE.has(getExt(f.name)),
   );
@@ -171,7 +135,6 @@ export function DiffSummary({ files, onPreview, onExportLongShot }: DiffSummaryP
           key={f.path}
           file={f}
           onPreview={onPreview}
-          onExportLongShot={onExportLongShot}
         />
       ))}
       {others.length > 0 && (

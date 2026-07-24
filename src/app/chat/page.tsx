@@ -22,7 +22,6 @@ import { readNewChatKey } from '@/lib/new-chat-url';
 // useOverviewData。RunCheckpoint 只承载“本次能否发送”的会话级原因；
 // 全局健康信息属于 /settings/codex，不进入聊天首屏依赖图。
 import { FolderPicker } from '@/components/chat/FolderPicker';
-import { useNativeFolderPicker } from '@/hooks/useNativeFolderPicker';
 import { useTranslation } from '@/hooks/useTranslation';
 import { usePanel } from '@/hooks/usePanel';
 import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
@@ -133,7 +132,6 @@ function NewChatPageInner() {
     publishCrossClientUserMessage,
   } = useAppServerActions();
   const { t } = useTranslation();
-  const { isElectron, openNativePicker } = useNativeFolderPicker();
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingThinkingContent, setStreamingThinkingContent] = useState('');
@@ -558,19 +556,9 @@ function NewChatPageInner() {
     return workingDir.trim() ? [workingDir, ...projects] : projects;
   }, [recentProjects, workingDir]);
 
-  const handleSelectFolder = useCallback(async () => {
-    if (isElectron) {
-      const path = await openNativePicker({ title: t('folderPicker.title') });
-      if (path) {
-        workingDirectorySelectionVersionRef.current += 1;
-        workingDirectoryClearedRef.current = false;
-        setWorkingDir(path);
-        localStorage.setItem('codepilot:last-working-directory', path);
-      }
-    } else {
-      setFolderPickerOpen(true);
-    }
-  }, [isElectron, openNativePicker, t]);
+  const handleSelectFolder = useCallback(() => {
+    setFolderPickerOpen(true);
+  }, []);
 
   const handleFolderPickerSelect = useCallback((path: string) => {
     workingDirectorySelectionVersionRef.current += 1;

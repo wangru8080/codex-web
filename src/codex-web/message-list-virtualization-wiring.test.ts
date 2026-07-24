@@ -10,10 +10,12 @@ describe('聊天虚拟化与流式渲染接线', () => {
     const source = read('src/components/chat/MessageList.tsx');
     expect(source).toContain("from 'react-virtuoso'");
     expect(source).toContain('firstItemIndex={firstItemIndex}');
+    expect(source).toContain("initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}");
     expect(source).toContain("row.message.id : 'streaming-message'");
     expect(source).toContain('followOutput');
     expect(source).toContain('atBottomStateChange={handleAtBottomStateChange}');
     expect(source).toContain('data-virtualized-message-list');
+    expect(source).not.toMatch(/^\s*alignToBottom\s*$/m);
     expect(source).not.toContain('{messages.map((message) =>');
   });
 

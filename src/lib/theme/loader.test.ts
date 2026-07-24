@@ -3,22 +3,10 @@ import { describe, expect, it } from "vitest";
 import { _resetCache, getAllThemeFamilies, resolveThemesDir } from "./loader";
 
 describe("resolveThemesDir", () => {
-  it("优先使用存在的 Electron 资源目录", () => {
-    const themesDir = resolveThemesDir({
-      resourcesPath: "/opt/codex-web/resources",
-      applicationRoot: "/opt/codex-web/app",
-      workingDirectory: "/home/user/project",
-      pathExists: (pathValue) => pathValue === "/opt/codex-web/resources/standalone/themes",
-    });
-
-    expect(themesDir).toBe("/opt/codex-web/resources/standalone/themes");
-  });
-
   it("使用应用根目录而不是用户工作目录", () => {
     const themesDir = resolveThemesDir({
       applicationRoot: "/opt/codex-web/app",
       workingDirectory: "/home/user/project",
-      pathExists: () => false,
     });
 
     expect(themesDir).toBe("/opt/codex-web/app/themes");
@@ -28,7 +16,6 @@ describe("resolveThemesDir", () => {
     const themesDir = resolveThemesDir({
       applicationRoot: "",
       workingDirectory: "/home/user/codex-web-source",
-      pathExists: () => false,
     });
 
     expect(themesDir).toBe("/home/user/codex-web-source/themes");

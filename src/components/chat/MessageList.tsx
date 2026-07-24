@@ -366,7 +366,6 @@ export function MessageList({
         computeItemKey={(_index, row) => row.type === 'message' ? row.message.id : 'streaming-message'}
         firstItemIndex={firstItemIndex}
         initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}
-        alignToBottom
         followOutput
         atBottomThreshold={48}
         atBottomStateChange={handleAtBottomStateChange}

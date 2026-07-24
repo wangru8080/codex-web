@@ -6,7 +6,7 @@
  * `handleCopyId`, SessionListItem dropdown "复制对话 ID",
  * ProjectGroupHeader "Copy folder path") called
  * `navigator.clipboard.writeText(value)` and dropped the promise. In
- * Electron renderers the call rejects with `NotAllowedError` whenever
+ * Browser clipboard access can reject with `NotAllowedError` whenever
  * the document isn't focused (very common — DropdownMenu blurs the
  * page on click), and an unhandled promise rejection bubbles up as a
  * console error / Sentry report.

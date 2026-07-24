@@ -384,8 +384,7 @@ export type PromptInputProps = Omit<
   }) => void;
   /**
    * Called when directories are dragged onto the prompt input. Caller is
-   * responsible for turning each File into a usable path (e.g. via
-   * `window.electronAPI?.fs?.getPathForFile`). When unset, directories are
+   * responsible for turning each File into a usable browser path. When unset, directories are
    * silently dropped — this keeps the component generic while letting the
    * @mention-aware composer route them to a "@path/" insertion.
    */

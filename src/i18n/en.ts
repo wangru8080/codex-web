@@ -31,7 +31,6 @@ const en = {
   'chatList.copySessionId': 'Copy Conversation ID',
   'chatList.renameConversation': 'Rename Conversation',
   'chatList.removeProject': 'Archive Project Conversations',
-  'chatList.openFolder': 'Open Folder',
   'chatList.copyFolderPath': 'Copy Folder Path',
   'chatList.searchSessions': 'Search sessions...',
   'chatList.noSessions': 'No sessions yet',
@@ -155,10 +154,6 @@ const en = {
   'settings.codepilot': 'CodexWeb',
   'settings.version': 'Version {version}',
   'settings.checkForUpdates': 'Check for Updates',
-  'settings.checking': 'Checking...',
-  'settings.updateAvailable': 'Update available: v{version}',
-  'settings.viewRelease': 'View Release',
-  'settings.latestVersion': "You're on the latest version.",
   'settings.cancel': 'Cancel',
   'settings.errorReporting': 'Anonymous Error Reporting',
   'settings.errorReportingDesc': 'Help improve CodexWeb by anonymously reporting errors. No conversation content or API keys are included. Restart the app for the change to fully take effect.',
@@ -333,7 +328,6 @@ const en = {
   'filePreview.save.saved': 'Saved',
   'filePreview.save.unsaved': 'Unsaved changes',
   'filePreview.copyContent': 'Copy content',
-  'filePreview.exportLongScreenshot': 'Export long screenshot',
   'filePreview.closePreview': 'Close preview',
   // ── Phase 4 Phase 1: external / read-only authorization + disk conflict ─
   'filePreview.external.chip': 'External · Read-only',
@@ -370,7 +364,6 @@ const en = {
   'filePreview.external.confirm.permission': 'Read-only · no disk writes',
   'filePreview.external.confirm.source': 'Source: file mentioned by the AI',
   'diffSummary.openPreview': 'Open preview',
-  'diffSummary.exportLongShot': 'Export long shot',
 
   // ── File tree actions (Phase 4) ─────────────────────────────
   'fileTree.sectionTitle': 'Files',
@@ -523,36 +516,6 @@ const en = {
   'connection.manualUpdateHint': 'This install channel does not auto-update. Run the upgrade to check for new versions.',
 
   // ── Install wizard ──────────────────────────────────────────
-  'install.title': 'Install Claude Code',
-  'install.checkingPrereqs': 'Checking environment...',
-  'install.alreadyInstalled': 'Claude Code is already installed',
-  'install.readyToInstall': 'Ready to install',
-  'install.installing': 'Installing Claude Code...',
-  'install.complete': 'Installation complete',
-  'install.failed': 'Installation failed',
-  'install.copyLogs': 'Copy Logs',
-  'install.copied': 'Copied',
-  'install.install': 'Install',
-  'install.cancel': 'Cancel',
-  'install.retry': 'Retry',
-  'install.done': 'Done',
-  'install.recheck': 'Recheck',
-  'install.copy': 'Copy',
-  'install.notDetected': 'not detected',
-  'install.nativeDescription': 'Claude Code CLI was not detected. Install it using the official native installer?',
-  'install.autoDescription': 'Automatically install Claude Code CLI',
-  'install.nativeExplain': 'Click Install to download and run the official native installer. No Node.js required — the native binary auto-updates in the background.',
-  'install.nativeCompleteDesc': 'Claude Code has been installed via the native installer. It will auto-update in the background.',
-  'install.conflictTitle': 'Multiple installations detected',
-  'install.conflictUsing': 'Currently using',
-  'install.conflictAlso': 'Also found',
-  'install.conflictRemove': 'To remove',
-  'install.gitRequired': 'Git for Windows is required',
-  'install.gitDescription': 'Claude Code requires Git for Windows to run commands on Windows. Please install it first.',
-  'install.gitSteps': 'Follow these steps:',
-  'install.gitStep1': 'Download Git for Windows from https://git-scm.com/downloads/win',
-  'install.gitStep2': 'Run the installer with default settings',
-  'install.gitStep3': 'Come back here and click "Recheck"',
 
   // ── Task list ───────────────────────────────────────────────
 
@@ -577,7 +540,7 @@ const en = {
   'common.copyFailed': 'Could not copy. You can copy this manually:',
   'common.disabled': 'Disabled',
 
-  // ── Prompt dialog (replacement for window.prompt — not supported in Electron) ──
+  // ── Prompt dialog ────────────────────────────────────────────
   'prompt.rename.title': 'Rename Conversation',
   'prompt.rename.placeholder': 'Enter new title',
   'prompt.workspacePath.title': 'Workspace Path',
@@ -591,18 +554,6 @@ const en = {
   'error.hideDetails': 'Hide details',
   'error.tryAgain': 'Try Again',
   'error.reloadApp': 'Reload App',
-
-  // ── Update ─────────────────────────────────────────────────
-  'update.newVersionAvailable': 'New Version Available',
-  'update.downloading': 'Downloading',
-  'update.restartToUpdate': 'Restart to Update',
-  'update.restartNow': 'Restart Now',
-  'update.readyToInstall': 'CodexWeb v{version} is ready — restart to update',
-  'update.installUpdate': 'Download & Install',
-  'update.later': 'Later',
-  'update.rosettaWarning': 'CodexWeb is running through Rosetta on this Apple Silicon Mac. Install the arm64 build for better responsiveness.',
-  'update.recommendedAsset': 'Recommended download: {asset}',
-  'update.getRecommendedBuild': 'Get Recommended Build',
 
   // ── Image Generation ──────────────────────────────────────
 

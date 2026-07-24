@@ -21,13 +21,11 @@ export function useClientPlatform(): ClientPlatform {
   const [platform, setPlatform] = useState<ClientPlatform>(DEFAULT);
 
   useEffect(() => {
-    // Check electronAPI first (most reliable in Electron)
-    const electronPlatform = (window as unknown as { electronAPI?: { versions?: { platform?: string } } }).electronAPI?.versions?.platform;
-    const raw = electronPlatform || navigator.platform || '';
+    const raw = navigator.platform || '';
 
-    const isWindows = raw === 'win32' || /^Win/i.test(raw);
-    const isMac = raw === 'darwin' || /^Mac/i.test(raw);
-    const isLinux = raw === 'linux' || /^Linux/i.test(raw);
+    const isWindows = /^Win/i.test(raw);
+    const isMac = /^Mac/i.test(raw);
+    const isLinux = /^Linux/i.test(raw);
 
     setPlatform({
       isWindows,

@@ -147,7 +147,7 @@ export function SessionListItem({
           )}
           <DropdownMenuItem onClick={() => {
             // v11 fix — see lib/clipboard.ts for why fire-and-forget
-            // writeText fails in Electron renderers post-DropdownMenu blur.
+            // Clipboard access can fail after the dropdown loses focus.
             void copyWithToast({ text: session.id, t });
           }}>
             <CodexWebIcon name="copy" size="sm" aria-hidden />
@@ -167,7 +167,7 @@ export function SessionListItem({
         </DropdownMenuContent>
       </DropdownMenu>
       {/* Rename dialog — replaces window.prompt() which is unsupported in
-          Electron renderers (throws TypeError: prompt() is not supported).
+          Use the controlled dialog so rename behavior stays consistent.
           See docs/exec-plans/active/v0.48-post-release-issues.md §5.6. */}
       <PromptDialog
         open={renameOpen}

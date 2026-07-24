@@ -37,7 +37,7 @@ export function SentryInit() {
           'Operation aborted',
           'The operation was aborted',
           'signal is aborted',
-          'prompt() is not supported',        // Electron doesn't support window.prompt
+          'prompt() is not supported',        // Some browser contexts disable window.prompt
           'ResizeObserver loop',               // Browser quirk, not a real error
           /^Object \[object Object\] has no method/,  // Sentry's own frontend bug
         ],
@@ -58,7 +58,7 @@ export function SentryInit() {
           event.tags = {
             ...event.tags,
             platform: navigator.platform,
-            electron: typeof window !== 'undefined' && 'electronAPI' in window ? 'yes' : 'no',
+            shell: 'web',
           };
           return event;
         },

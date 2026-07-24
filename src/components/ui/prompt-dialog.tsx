@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 /**
- * Replacement for `window.prompt()`, which is disabled in Electron renderers
+ * Controlled replacement for `window.prompt()`, which keeps browser behavior
  * and throws `TypeError: prompt() is not supported`.
  *
  * See docs/exec-plans/active/v0.48-post-release-issues.md §5.6 and the

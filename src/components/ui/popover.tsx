@@ -33,7 +33,7 @@ function PopoverContent({
           // bg routed through platform popover surface (Phase 7b / Phase 2).
           // Default `var(--popover)` matches the prior opaque `bg-popover`;
           // macOS profile drops alpha for a HIG popover material feel.
-          // Note: CSS-simulated, not an Electron native overlay window —
+          // Note: CSS-simulated overlay —
           // see docs/handover/macos-visual-profile.md "Reference Notes".
           // Round 12 fix: animation selectors changed from
           // `data-open:` / `data-closed:` to `data-[state=open]:` /

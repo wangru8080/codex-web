@@ -21,7 +21,6 @@ import { useSplit } from "@/hooks/useSplit";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/i18n";
 import { createNewChatHref } from "@/lib/new-chat-url";
-import { useNativeFolderPicker } from "@/hooks/useNativeFolderPicker";
 import { cn } from "@/lib/utils";
 import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 import { threadToChatSession } from "@/codex-web/thread-history-adapter";
@@ -41,12 +40,10 @@ import type { ChatSession } from "@/types";
 
 interface ChatListPanelProps {
   open: boolean;
-  hasUpdate?: boolean;
-  readyToInstall?: boolean;
 }
 
 
-export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanelProps) {
+export function ChatListPanel({ open }: ChatListPanelProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, workingDirectory, setChatListOpen } = usePanel();
@@ -55,7 +52,6 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
   const { refreshThreads, setThreadName, archiveThread } = useAppServerActions();
   const { removeFromSplit, isInSplit } = useSplit();
   const { t } = useTranslation();
-  const { isElectron, openNativePicker } = useNativeFolderPicker();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [archivingSession, setArchivingSession] = useState<string | null>(null);
@@ -82,14 +78,9 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
     router.push(createNewChatHref());
   }, [router]);
 
-  const openFolderPicker = useCallback(async (defaultPath?: string) => {
-    if (isElectron) {
-      const path = await openNativePicker({ defaultPath, title: t('folderPicker.title') });
-      if (path) handleFolderSelect(path);
-    } else {
-      setFolderPickerOpen(true);
-    }
-  }, [isElectron, openNativePicker, t, handleFolderSelect]);
+  const openFolderPicker = useCallback(() => {
+    setFolderPickerOpen(true);
+  }, []);
 
   const handleNewChat = useCallback(async () => {
     router.push(createNewChatHref());
@@ -552,9 +543,6 @@ export function ChatListPanel({ open, hasUpdate, readyToInstall }: ChatListPanel
           >
             <CodexWebIcon name="settings" size="md" strokeWidth={pathname.startsWith("/settings") ? 2 : undefined} className="text-inherit" aria-hidden />
             {t('nav.settings' as TranslationKey)}
-            {(hasUpdate || readyToInstall) && (
-              <span className={`ml-auto h-2 w-2 rounded-full ${readyToInstall ? "bg-primary" : "bg-primary animate-pulse"}`} />
-            )}
           </Button>
         </Link>
       </div>

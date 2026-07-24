@@ -7,6 +7,8 @@
 > 阶段 2 执行计划：[2026-07-24-chat-rendering-virtualization.md](../exec-plans/completed/2026-07-24-chat-rendering-virtualization.md)
 >
 > 阶段 3 执行计划：[2026-07-24-heavy-module-lazy-loading.md](../exec-plans/completed/2026-07-24-heavy-module-lazy-loading.md)
+>
+> 阶段 4 执行计划：[2026-07-24-desktop-ui-legacy-cleanup.md](../exec-plans/completed/2026-07-24-desktop-ui-legacy-cleanup.md)
 
 ## 文档目的
 
@@ -434,7 +436,9 @@ npm pack --dry-run --json --ignore-scripts
 
 ## 下一步
 
-阶段 0、1、2、3 已完成并归档。下一阶段是阶段 4 桌面 UI 遗留清理；该阶段涉及移动文件，必须先建立独立执行计划和清单并再次确认，不能与阶段 3 混合。
+阶段 0、1、2、3、4 已完成并归档。阶段 4 已完成代码、测试、构建、Smoke 和本地 Headless Chrome 验证。
+
+归档阶段 4 后，下一步是阶段 5 的证据复核，而不是直接迁移框架：先用既有生产基线判断 Next 生产运行时是否仍是主要瓶颈，再决定是否值得创建 Next/Vite 同场景 POC。现有结果已经证明状态订阅、虚拟化和按需加载能改善主路径，但尚未证明 Next 生产运行时本身是剩余性能瓶颈。
 
 在没有生产性能对照之前，不应把 `npm run dev` 的首次路由编译慢等同于产品生产环境慢；在没有 React Profiler 和浏览器 Performance 数据之前，也不应把 799 个 npm 包直接认定为点击卡顿的原因。
 
@@ -551,3 +555,25 @@ npm pack --dry-run --json --ignore-scripts
 - Sandpack 反例确认触发前没有 `.sp-wrapper`，触发 inline TSX 后动态出现容器与 iframe。远程 CDP 访问 HTTP IP 来源时不是可信上下文且没有 `crypto.subtle`；随后复用本机 Playwright 缓存的 Headless Chrome 149 访问 `http://localhost:3102`，确认 `isSecureContext=true`、`crypto.subtle=true`，Sandpack 按需加载后没有 digest 异常、JavaScript exception 或 Sandpack console error。唯一 404 为既有 `/api/git/status` 探测，不属于 Sandpack。
 
 阶段 3 达到 `Code complete`、`Tests pass` 和 `Smoke passed`；生产长历史残余与远程 HTTP IP 的可信上下文限制已显式保留，本地 Headless Chrome 已补齐 Sandpack console 证据。执行计划已归档，阶段 3 代码与归档记录纳入同一提交，未远程推送。
+
+## 阶段 4 实施结果（2026-07-24）
+
+### Web-only renderer 边界
+
+- 新聊天和侧栏“新建项目”统一使用 app-server 目录读取支撑的 `FolderPicker`；项目路径在顶栏只读展示，不再请求不存在的 `/api/files/open`。
+- AppShell 和侧栏移除桌面安装、更新器状态与终端状态；About 保留禁用的未来 Web 更新入口，但不恢复 Electron updater 或 no-op Hook；Preview、Diff 和 Markdown 表格不再展示只能调用 Electron IPC 的长图导出入口。
+- RootLayout、全局样式、顶栏和 Dialog 移除 Electron preload 探测、drag region、traffic lights、vibrancy 与专属平台覆盖；默认浏览器产品 token 保留。
+- 主题目录只解析 Web 应用根目录或工作目录；About 从 `app-server.initialize.data.platformOs` 显示运行端系统，浏览器本机平台判断仍只使用 navigator，Sentry shell 标签固定为 `web`。
+- 短对话移除 Virtuoso `alignToBottom`，首条用户问题从消息区域顶部开始；长历史默认打开最新消息、流式跟随和向上阅读保护保持不变。
+- 15 个桌面专属文件按原层级移动到 `/volume2/SSD/Trash/home/rrssnas/code/codex-web/`，没有执行删除命令。
+
+### 验证与反例
+
+- 补充修正后 `npm run typecheck` 通过；`npm run test` 为 127 个测试文件、594 项测试通过。
+- `npm run build` 的 Next 生产构建和 postbuild 通过。
+- `npm run test:smoke` 在默认隔离 `CODEX_HOME` 下通过，读取 7 个模型，账号来源为 `app-server.account/read`。
+- Web-only 边界、主题目录和 About 初始定向回归共 3 个测试文件、11 项测试通过；补充的平台来源、About 更新入口和短对话布局测试为 3 个文件、17 项通过，均记录先红后绿。边界测试保留 CLI 的 macOS、Windows、Linux 打开命令、Windows `npm.cmd` 与 generated `platformOs` 反例。
+- Headless Chrome 149 验证：1440x900 About 显示 app-server Linux 且保留禁用更新按钮；真实新 Turn 的首条问题相对消息滚动容器 `topOffset=0`、`scrollTop=0`，回答紧随其下；390x844 About 宽度与视口均为 390px，无横向溢出；console 无错误或 Electron/JavaScript 异常。
+- 运行时源码扫描未发现 `electronAPI`、Electron shell、`WebkitAppRegion` 或 `/api/files/open`。阶段 2 的生产长历史初始置底残余未被本阶段掩盖或误报为通过。
+
+阶段 4 达到 `Code complete`、`Tests pass` 和 `Smoke passed`；执行计划已归档，阶段 4 代码与归档记录纳入同一 Git 提交，未远程推送。

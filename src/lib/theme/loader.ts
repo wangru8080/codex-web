@@ -126,26 +126,16 @@ function sanitizeThemeMappings(theme: ThemeFamily): void {
 }
 
 export type ThemeDirectoryOptions = {
-  resourcesPath?: string;
   applicationRoot?: string;
   workingDirectory?: string;
-  pathExists?: (pathValue: string) => boolean;
 };
 
 /** Resolve the themes directory without treating the user's project as app resources. */
 export function resolveThemesDir(options: ThemeDirectoryOptions = {}): string {
-  const resourcesPath = options.resourcesPath ?? process.env.RESOURCES_PATH;
   const applicationRoot = options.applicationRoot ?? process.env.CODEX_WEB_APP_ROOT;
   const workingDirectory = options.workingDirectory ?? process.cwd();
-  const pathExists = options.pathExists ?? ((pathValue: string) => (
-    fs.existsSync(/* turbopackIgnore: true */ pathValue)
-  ));
-  const electronPath = resourcesPath
-    ? path.join(resourcesPath, 'standalone', 'themes')
-    : null;
   const applicationThemesPath = path.resolve(applicationRoot?.trim() || workingDirectory, 'themes');
 
-  if (electronPath && pathExists(electronPath)) return electronPath;
   return applicationThemesPath;
 }
 

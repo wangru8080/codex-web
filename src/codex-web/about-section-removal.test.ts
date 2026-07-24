@@ -32,10 +32,17 @@ describe("关于页面精简", () => {
     expect(chinese).toContain("'settings.aboutDesc': 'CodexWeb 版本、平台信息'");
   });
 
-  it("保留版本和平台信息作为反例", () => {
+  it("保留版本、运行端平台和未来更新入口作为反例", () => {
     const about = source("src/components/settings/AboutSection.tsx");
 
-    expect(about).toContain("settings.checkForUpdates");
+    expect(about).toContain("APP_VERSION");
     expect(about).toContain("about.platform.title");
+    expect(about).toContain("useAppServerSelector");
+    expect(about).toContain("state.initialize?.data.platformOs");
+    expect(about).toContain("runtimePlatformLabel");
+    expect(about).toContain("settings.checkForUpdates");
+    expect(about).toMatch(/<Button[\s\S]*disabled[\s\S]*settings\.checkForUpdates/);
+    expect(about).not.toContain("navigator.userAgent");
+    expect(about).not.toContain("electronAPI");
   });
 });

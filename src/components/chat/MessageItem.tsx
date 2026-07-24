@@ -686,36 +686,6 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
                 readonly,
               });
             }}
-            // Phase 3: export long screenshot via the Electron IPC. Only
-            // .html/.htm rows pass the PREVIEWABLE+LONGSHOT gate in
-            // DiffSummary; for those, we fetch the raw file contents from
-            // /api/files/preview and hand them to the long-shot helper.
-            // Markdown / JSX long-shot support requires a prior render-
-            // to-HTML step (Streamdown serialize for .md; esbuild compile
-            // for .tsx) that's Phase 3 follow-up — DiffSummary already
-            // gates the button by extension so we won't get called for
-            // those unless the gate changes later.
-            onExportLongShot={async (file) => {
-              try {
-                const { exportHtmlAsLongShot } = await import('@/lib/artifact-export');
-                const qs = new URLSearchParams({ path: file.path });
-                if (workingDirectory) qs.set('baseDir', workingDirectory);
-                const res = await fetch(`/api/files/preview?${qs}`);
-                if (!res.ok) {
-                  const data = await res.json().catch(() => ({}));
-                  alert(`Export failed: ${data.error || res.status}`);
-                  return;
-                }
-                const { preview } = await res.json();
-                await exportHtmlAsLongShot({
-                  html: preview.content,
-                  filename: file.name.replace(/\.[^.]+$/, ''),
-                  width: 1024,
-                });
-              } catch (err) {
-                alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
-              }
-            }}
           />
         );
       })()}

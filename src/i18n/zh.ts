@@ -28,7 +28,6 @@ const zh: Record<TranslationKey, string> = {
   'chatList.copySessionId': '复制对话 ID',
   'chatList.renameConversation': '重命名对话',
   'chatList.removeProject': '归档项目中的对话',
-  'chatList.openFolder': '打开文件夹',
   'chatList.copyFolderPath': '复制文件夹路径',
   'chatList.searchSessions': '搜索会话...',
   'chatList.noSessions': '暂无会话',
@@ -152,10 +151,6 @@ const zh: Record<TranslationKey, string> = {
   'settings.codepilot': 'CodexWeb',
   'settings.version': '版本 {version}',
   'settings.checkForUpdates': '检查更新',
-  'settings.checking': '检查中...',
-  'settings.updateAvailable': '有新版本：v{version}',
-  'settings.viewRelease': '查看发布',
-  'settings.latestVersion': '已是最新版本。',
   'settings.cancel': '取消',
   'settings.errorReporting': '匿名错误上报',
   'settings.errorReportingDesc': '帮助改进 CodexWeb：匿名上报错误信息，不包含对话内容和 API Key。更改后需重启应用才能完全生效。',
@@ -320,7 +315,6 @@ const zh: Record<TranslationKey, string> = {
   'filePreview.save.saved': '已保存',
   'filePreview.save.unsaved': '未保存修改',
   'filePreview.copyContent': '复制内容',
-  'filePreview.exportLongScreenshot': '导出长图',
   'filePreview.closePreview': '关闭预览',
   // ── Phase 4 Phase 1: 外部 / 只读授权 + 磁盘冲突 ───────────────
   'filePreview.external.chip': '外部 · 只读',
@@ -357,7 +351,6 @@ const zh: Record<TranslationKey, string> = {
   'filePreview.external.confirm.permission': '只读 · 不会写入磁盘',
   'filePreview.external.confirm.source': '来源：AI 提到的文件',
   'diffSummary.openPreview': '预览',
-  'diffSummary.exportLongShot': '导出长图',
 
   // ── File tree actions (Phase 4) ─────────────────────────────
   'fileTree.sectionTitle': '文件',
@@ -510,36 +503,6 @@ const zh: Record<TranslationKey, string> = {
   'connection.manualUpdateHint': '当前安装渠道不会自动更新，点击下方按钮检查并安装新版本。',
 
   // ── Install wizard ──────────────────────────────────────────
-  'install.title': '安装 Claude Code',
-  'install.checkingPrereqs': '检查环境...',
-  'install.alreadyInstalled': 'Claude Code 已安装',
-  'install.readyToInstall': '准备安装',
-  'install.installing': '正在安装 Claude Code...',
-  'install.complete': '安装完成',
-  'install.failed': '安装失败',
-  'install.copyLogs': '复制日志',
-  'install.copied': '已复制',
-  'install.install': '安装',
-  'install.cancel': '取消',
-  'install.retry': '重试',
-  'install.done': '完成',
-  'install.recheck': '重新检测',
-  'install.copy': '复制',
-  'install.notDetected': '未检测到',
-  'install.nativeDescription': '未检测到 Claude Code CLI。使用官方原生安装器安装？',
-  'install.autoDescription': '自动安装 Claude Code CLI',
-  'install.nativeExplain': '点击安装将下载并运行官方原生安装器。无需 Node.js — 原生二进制文件会在后台自动更新。',
-  'install.nativeCompleteDesc': 'Claude Code 已通过原生安装器安装完成，将在后台自动更新。',
-  'install.conflictTitle': '检测到多个安装版本',
-  'install.conflictUsing': '当前使用',
-  'install.conflictAlso': '还发现',
-  'install.conflictRemove': '卸载方式',
-  'install.gitRequired': '需要安装 Git for Windows',
-  'install.gitDescription': 'Claude Code 需要 Git for Windows 才能在 Windows 上运行命令，请先安装。',
-  'install.gitSteps': '请按以下步骤操作：',
-  'install.gitStep1': '从 https://git-scm.com/downloads/win 下载 Git for Windows',
-  'install.gitStep2': '使用默认设置运行安装程序',
-  'install.gitStep3': '回到这里点击"重新检测"',
 
   // ── Task list ───────────────────────────────────────────────
 
@@ -564,7 +527,7 @@ const zh: Record<TranslationKey, string> = {
   'common.copySuccess': '已复制到剪贴板',
   'common.copyFailed': '复制失败，可以手动复制：',
 
-  // ── Prompt dialog (replacement for window.prompt — not supported in Electron) ──
+  // ── Prompt dialog ────────────────────────────────────────────
   'prompt.rename.title': '重命名对话',
   'prompt.rename.placeholder': '输入新标题',
   'prompt.workspacePath.title': '工作区路径',
@@ -578,18 +541,6 @@ const zh: Record<TranslationKey, string> = {
   'error.hideDetails': '隐藏详情',
   'error.tryAgain': '重试',
   'error.reloadApp': '重新加载',
-
-  // ── Update ─────────────────────────────────────────────────
-  'update.newVersionAvailable': '有新版本可用',
-  'update.downloading': '下载中',
-  'update.restartToUpdate': '重启以更新',
-  'update.restartNow': '立即重启',
-  'update.readyToInstall': 'CodexWeb v{version} 已就绪 — 重启以完成更新',
-  'update.installUpdate': '下载并安装',
-  'update.later': '稍后',
-  'update.rosettaWarning': 'CodexWeb 当前正通过 Rosetta 在这台 Apple Silicon Mac 上运行。安装 arm64 版本可获得更好的响应速度。',
-  'update.recommendedAsset': '推荐下载：{asset}',
-  'update.getRecommendedBuild': '下载推荐版本',
 
   // ── Image Generation ──────────────────────────────────────
 

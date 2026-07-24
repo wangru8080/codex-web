@@ -8,12 +8,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatListPanel } from "./ChatListPanel";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { CardFrame, CardSurface, ResizeGutter } from "./card-primitives";
-import { UpdateBanner } from "./UpdateBanner";
 import { UnifiedTopBar } from "./UnifiedTopBar";
 import { WorkspaceSidebarProvider, useWorkspaceSidebar, useWorkspaceSidebarOptional } from "@/hooks/useWorkspaceSidebar";
 import { PanelContext, usePanel, type PreviewViewMode, type PreviewSource } from "@/hooks/usePanel";
-import { UpdateContext } from "@/hooks/useUpdate";
-import { useUpdateChecker } from "@/hooks/useUpdateChecker";
 import { SplitContext, type SplitSession } from "@/hooks/useSplit";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SentryInit } from "./SentryInit";
@@ -25,7 +22,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { useCompactViewport } from '@/hooks/useCompactViewport';
 import { useAppServerSelector } from '@/codex-web/AppServerProvider';
 
-// AppShell 静态导入约束（Phase A 内存优化，2026-05-08）：以下四个组件
+// AppShell 静态导入约束（Phase A 内存优化，2026-05-08）：以下三个组件
 // 仅在对应路由、状态或弹窗触发时渲染。使用 next/dynamic + ssr:false 可避免
 // 它们进入首次 /chat 开发编译图；改回静态导入会造成明显内存回归。
 // 每个加载器保留具名导出的形状，避免影响下游 JSX。
@@ -41,11 +38,6 @@ const PanelZone = dynamic(
   () => import('./PanelZone').then((m) => ({ default: m.PanelZone })),
   { ssr: false },
 );
-const UpdateDialog = dynamic(
-  () => import('./UpdateDialog').then((m) => ({ default: m.UpdateDialog })),
-  { ssr: false },
-);
-
 const SPLIT_SESSIONS_KEY = "codepilot:split-sessions";
 const SPLIT_ACTIVE_COLUMN_KEY = "codepilot:split-active-column";
 
@@ -303,7 +295,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // independent topbar entry, plus assistantPanelOpen which doesn't
   // fit the AI-work-surface Tab model.
   const [fileTreeOpen, setFileTreeOpen] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
   const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
   const [isAssistantWorkspace, setIsAssistantWorkspace] = useState(false);
 
@@ -566,17 +557,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => mql.removeEventListener("change", handler);
   }, []);
 
-  // --- Update checker (native Electron + browser fallback) ---
-  const updateContextValue = useUpdateChecker();
-
   const panelContextValue = useMemo(
     () => ({
       chatListOpen,
       setChatListOpen,
       fileTreeOpen,
       setFileTreeOpen,
-      terminalOpen,
-      setTerminalOpen,
       assistantPanelOpen,
       setAssistantPanelOpen,
       isAssistantWorkspace,
@@ -604,11 +590,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       previewViewMode,
       setPreviewViewMode,
     }),
-    [chatListOpen, setChatListOpen, fileTreeOpen, terminalOpen, assistantPanelOpen, isAssistantWorkspace, currentBranch, gitDirtyCount, currentWorktreeLabel, workingDirectory, sessionId, sessionTitle, streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, previewSource, setPreviewSource, previewFile, setPreviewFile, previewViewMode]
+    [chatListOpen, setChatListOpen, fileTreeOpen, assistantPanelOpen, isAssistantWorkspace, currentBranch, gitDirtyCount, currentWorktreeLabel, workingDirectory, sessionId, sessionTitle, streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, previewSource, setPreviewSource, previewFile, setPreviewFile, previewViewMode]
   );
 
   return (
-    <UpdateContext.Provider value={updateContextValue}>
+    <>
       <SentryInit />
       <PanelContext.Provider value={panelContextValue}>
         <WorkspaceSidebarProvider workingDirectory={workingDirectory} sessionId={sessionId}>
@@ -627,7 +613,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               globals.css can inset the whole window the same way. */}
           <div className="flex flex-col h-screen overflow-hidden" data-app-shell>
             <UnifiedTopBar />
-            <UpdateBanner />
             <div className="flex flex-1 min-h-0 overflow-hidden" data-app-content-row>
               {/* Phase 7c closeout — the left sidebar is now a
                   row-level card, exactly like main / workspace /
@@ -666,11 +651,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         {pathname.startsWith('/settings') ? (
                           <SettingsSidebar open={chatListOpen} />
                         ) : (
-                          <ChatListPanel
-                            open={chatListOpen}
-                            hasUpdate={updateContextValue.updateInfo?.updateAvailable ?? false}
-                            readyToInstall={updateContextValue.updateInfo?.readyToInstall ?? false}
-                          />
+                          <ChatListPanel open={chatListOpen} />
                         )}
                       </ErrorBoundary>
                     </CardSurface>
@@ -686,11 +667,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       {pathname.startsWith('/settings') ? (
                         <SettingsSidebar open={chatListOpen} />
                       ) : (
-                        <ChatListPanel
-                          open={chatListOpen}
-                          hasUpdate={updateContextValue.updateInfo?.updateAvailable ?? false}
-                          readyToInstall={updateContextValue.updateInfo?.readyToInstall ?? false}
-                        />
+                        <ChatListPanel open={chatListOpen} />
                       )}
                     </ErrorBoundary>
                   </CardSurface>
@@ -716,24 +693,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </ChatContentRow>
             </div>
           </div>
-          {/* Phase A state gates: only mount when actually needed.
-              UpdateDialog gate (P3 review fix): require BOTH
-              `showDialog` AND an available update. Earlier the gate was
-              just `updateAvailable`, which meant clicking "Later" only
-              flipped `showDialog` to false — the dialog stayed mounted
-              and the lazy chunk stuck around for the rest of the
-              session. UpdateBanner is the always-on lightweight
-              indicator; the dialog chunk should only be live when the
-              modal is actually open. */}
-          {updateContextValue.showDialog
-            && (updateContextValue.updateInfo?.updateAvailable ?? false)
-            && <UpdateDialog />}
           <Toaster />
           <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
         </TooltipProvider>
         </SplitContext.Provider>
         </WorkspaceSidebarProvider>
       </PanelContext.Provider>
-    </UpdateContext.Provider>
+    </>
   );
 }

@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { X, Check, SpinnerGap } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
-import { exportHtmlAsLongShot, ArtifactExportError } from "@/lib/artifact-export";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Light as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -552,8 +551,6 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const [exporting, setExporting] = useState(false);
-
   // Editor state for Phase 4.3 edit mode. editContent is the in-memory
   // buffer the CodeMirror surface writes to; saving pushes it to
   // /api/files/write and overwrites the on-disk content. The buffer is
@@ -569,7 +566,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   // this panel. Populated when loadPreview successfully seats a new
   // preview.content; cleared synchronously on filePath changes before
   // the fetch starts. Every consumer that derives from preview.content
-  // (editor buffer, export button, source/render fallbacks) gates on
+  // (editor buffer and source/render fallbacks) gates on
   // `loadedPath === previewSource.filePath` so a freshly-mounted
   // previewSource can never be paired with the previous file's
   // content — catches autosave cross-file writes, stale Sandpack first
@@ -604,26 +601,6 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   useEffect(() => {
     setEditorSelection(null);
   }, [filePath, previewViewMode]);
-
-  // Whether the current preview source is an HTML document we can ship
-  // to the Phase 3 long-shot IPC. Lit up when:
-  //   • inline-html kind (html lives on the source itself), or
-  //   • file kind, extension is HTML, AND the loaded-path anchor
-  //     confirms preview.content belongs to the active filePath.
-  // The second clause prevents a stale Export click during a mid-switch
-  // frame from shipping the outgoing file's content under the incoming
-  // file's name.
-  const exportableHtml: string | null = useMemo(() => {
-    if (previewSource?.kind === 'inline-html') return previewSource.html;
-    if (
-      previewSource?.kind === 'file' &&
-      isHtml(filePath) &&
-      freshPreview?.content
-    ) {
-      return freshPreview.content;
-    }
-    return null;
-  }, [previewSource, filePath, freshPreview]);
 
   const handleSaveEdit = useCallback(async () => {
     if (!editDirty || savingEdit) return;
@@ -793,36 +770,6 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     window.addEventListener(FILE_CHANGED_EVENT, handle);
     return () => window.removeEventListener(FILE_CHANGED_EVENT, handle);
   }, [filePath, editDirty, htmlPreviewUrl, htmlDepScope, scheduleHtmlDepReload]);
-  const handleExportLongShot = useCallback(async () => {
-    if (!exportableHtml) return;
-    setExporting(true);
-    try {
-      // Compute basename locally so this callback doesn't depend on the
-      // `fileName` variable declared later in the component — avoids
-      // a TDZ (let/const before initialization) error at mount time.
-      const virtualName =
-        previewSource?.kind === 'inline-html' ? previewSource.virtualName ?? 'preview.html' :
-        previewSource?.kind === 'file' ? (filePath.split('/').pop() || filePath) :
-        'artifact';
-      await exportHtmlAsLongShot({
-        html: exportableHtml,
-        filename: virtualName.replace(/\.[^.]+$/, '') || 'artifact',
-        width: 1024,
-      });
-    } catch (err) {
-      if (err instanceof ArtifactExportError) {
-        // Surface the code so users know whether it was a transient busy
-        // state or a hard limit. Full toast/i18n wiring is Phase 3
-        // polish — for now, alert() is acceptable for this short flow.
-        alert(`Export failed: ${err.code} — ${err.message}`);
-      } else {
-        alert(`Export failed: ${String(err)}`);
-      }
-    } finally {
-      setExporting(false);
-    }
-  }, [exportableHtml, filePath, previewSource]);
-
   // No `handleClose` here — the Workspace Sidebar Tab strip's X owns
   // close, and there's no panel chrome on this surface for the user
   // to close from.
@@ -1155,27 +1102,6 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
               <Check size={14} className="text-status-success-foreground" />
             ) : (
               <CodexWebIcon name="copy" size="sm" aria-hidden />
-            )}
-          </Button>
-        )}
-
-        {/* Long-shot export — only surfaces when we have concrete HTML
-            to ship to the IPC. Markdown and Sandpack/JSX variants need
-            a serialization step (Phase 3 follow-up). */}
-        {exportableHtml && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={handleExportLongShot}
-            disabled={exporting}
-            title={t("filePreview.exportLongScreenshot")}
-            aria-label={t("filePreview.exportLongScreenshot")}
-            className="h-7 w-7 text-muted-foreground/80 hover:text-foreground hover:bg-muted/50"
-          >
-            {exporting ? (
-              <SpinnerGap size={14} className="animate-spin" />
-            ) : (
-              <CodexWebIcon name="image" size="sm" aria-hidden />
             )}
           </Button>
         )}

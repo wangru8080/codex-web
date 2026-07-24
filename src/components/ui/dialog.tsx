@@ -77,24 +77,10 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            // Electron: keep the close button clickable. UnifiedTopBar marks
-            // the top ~40px as `-webkit-app-region: drag`; a fullscreen dialog
-            // covers that bar, and a covering element that doesn't opt out is
-            // still treated as draggable — so on macOS the top-right close
-            // button swallowed clicks as window-drags ("点不到"). `no-drag`
-            // carves it back out. Harmless on web (property ignored) and on
-            // non-fullscreen dialogs (centered, below the drag band).
-            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
             className={cn(
               "ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute rounded-full opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
               fullscreen
-                // Windows: the system WCO (titleBarOverlay close/minimize,
-                // height 44 in electron/main.ts) draws across the top-right.
-                // Nudge the button below that band via
-                // --platform-titlebar-safe-area (44px on win32 electron; 0px
-                // on macOS/web → no change). macOS traffic lights are
-                // top-LEFT, so the top-right position never collides there.
-                ? "top-[calc(1.25rem_+_var(--platform-titlebar-safe-area))] right-5 size-9 inline-flex items-center justify-center hover:bg-muted [&_svg:not([class*='size-'])]:size-5"
+                ? "top-5 right-5 size-9 inline-flex items-center justify-center hover:bg-muted [&_svg:not([class*='size-'])]:size-5"
                 : "top-4 right-4 rounded-xs [&_svg:not([class*='size-'])]:size-4"
             )}
           >

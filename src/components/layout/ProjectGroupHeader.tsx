@@ -5,7 +5,6 @@ import {
   CaretRight,
   FolderMinus,
   DotsThree,
-  ArrowSquareOut,
 } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
@@ -101,23 +100,8 @@ export function ProjectGroupHeader({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[160px]" onClick={(e) => e.stopPropagation()}>
           <DropdownMenuItem onClick={() => {
-            const w = window as unknown as { electronAPI?: { shell?: { openPath?: (p: string) => void } } };
-            if (w.electronAPI?.shell?.openPath) {
-              w.electronAPI.shell.openPath(workingDirectory);
-            } else {
-              fetch('/api/files/open', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: workingDirectory }),
-              }).catch(() => {});
-            }
-          }}>
-            <ArrowSquareOut size={14} />
-            <span>{t('chatList.openFolder' as TranslationKey)}</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => {
             // v11 fix — see lib/clipboard.ts for why fire-and-forget
-            // writeText fails in Electron renderers after dropdown blur.
+            // Clipboard access can fail after the dropdown loses focus.
             void copyWithToast({ text: workingDirectory, t });
           }}>
             <CodexWebIcon name="copy" size="sm" aria-hidden />

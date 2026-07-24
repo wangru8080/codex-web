@@ -171,8 +171,6 @@ export interface PanelContextValue {
   // independent topbar entry; assistantPanelOpen is its own concern.
   fileTreeOpen: boolean;
   setFileTreeOpen: (open: boolean) => void;
-  terminalOpen: boolean;
-  setTerminalOpen: (open: boolean) => void;
   assistantPanelOpen: boolean;
   setAssistantPanelOpen: (open: boolean) => void;
   isAssistantWorkspace: boolean;

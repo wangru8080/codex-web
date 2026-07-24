@@ -1582,14 +1582,9 @@ export const MessageInput = memo(function MessageInput({
   // them as bogus attachments. Route them to the existing @mention pipeline as
   // directory references instead — matching what the picker produces.
   const handleDirectoriesDropped = useCallback((dirs: File[]) => {
-    const resolver = typeof window !== 'undefined' ? window.electronAPI?.fs?.getPathForFile : undefined;
     for (const dir of dirs) {
-      const absolute = resolver ? resolver(dir) : '';
-      // Without an absolute path (non-Electron or resolver missing), fall back
-      // to the folder name — the LLM can still act on the name as a hint.
-      const rawPath = absolute || dir.name;
-      if (!rawPath) continue;
-      const normalized = normalizeMentionPath(rawPath);
+      const normalized = normalizeMentionPath(dir.name);
+      if (!normalized) continue;
       window.dispatchEvent(new CustomEvent('insert-file-mention', {
         detail: { path: normalized, nodeType: 'directory' },
       }));

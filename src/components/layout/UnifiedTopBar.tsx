@@ -106,7 +106,7 @@ export function UnifiedTopBar() {
   const handleCopyId = useCallback(() => {
     if (!sessionId) return;
     // v11 fix — was fire-and-forget `navigator.clipboard.writeText(...)`,
-    // which rejects with NotAllowedError in Electron renderers when the
+    // which can reject with NotAllowedError when the
     // page isn't the focused document (very common after a dropdown
     // click). The unhandled rejection became a console error / Sentry
     // report and the user got no feedback either way.
@@ -152,12 +152,7 @@ export function UnifiedTopBar() {
             setChatListOpen(nextOpen);
           }}
           aria-label={t((chatListOpen ? 'chatList.collapseSidebar' : 'chatList.expandSidebar') as TranslationKey)}
-          // ml + translateY route through platform tokens: 0/0 on
-          // web/win32/linux (no shift), 78px/2px on macOS so the button
-          // (a) clears the traffic-light cluster horizontally and
-          // (b) lines up vertically with the traffic-light center.
-          className="text-muted-foreground hover:text-foreground ml-[var(--platform-traffic-light-safe-area)] translate-y-[var(--platform-traffic-light-offset-y)]"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          className="text-muted-foreground hover:text-foreground"
         >
           <CodexWebIcon
             name={chatListOpen ? 'panel_left_close' : 'panel_left_open'}
@@ -177,8 +172,7 @@ export function UnifiedTopBar() {
   // topbar (Codex feedback: "既然顶上有 Tab 条了, 返回可以放上面").
   // Mirrors the logic that used to live in `SettingsSidebar`: prefer
   // the recorded last-non-settings path, fall back to /chat. Wrapped
-  // in `WebkitAppRegion: 'no-drag'` so it stays clickable inside the
-  // draggable topbar.
+  // Keep the action in the shared browser top bar.
   const isSettingsRoute = pathname.startsWith('/settings');
   const handleSettingsBack = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -191,14 +185,13 @@ export function UnifiedTopBar() {
     router.push("/chat");
   }, [router]);
 
-  // On non-chat routes the bar is otherwise just a thin drag region.
+  // On non-chat routes the bar remains a thin navigation row.
   // We still need the reopen button visible there so the user has a
   // way back to the sidebar from /skills, /mcp, /settings, etc.
   if (!isChatRoute) {
     return (
       <div
         className="flex h-10 shrink-0 items-center gap-2 pl-3 bg-[var(--platform-surface-bar)]"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {sidebarToggleButton}
         {isSettingsRoute && (
@@ -208,7 +201,6 @@ export function UnifiedTopBar() {
             size="sm"
             onClick={handleSettingsBack}
             className="h-7 px-2 gap-1 text-xs font-normal text-muted-foreground hover:text-foreground"
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <ArrowLeft size={14} />
             {t("common.back" as TranslationKey)}
@@ -223,12 +215,8 @@ export function UnifiedTopBar() {
   return (
     <>
       <div
-        // bg routed through the platform token (Phase 7b / Phase 2).
-        // Default = `var(--background)` so non-macOS visuals are
-        // identical to the prior `bg-background`. macOS profile drops
-        // alpha so Electron's window vibrancy shows through the bar.
+        // The top bar shares the browser shell surface token.
         className="flex h-10 shrink-0 items-center gap-3 bg-[var(--platform-surface-bar)] px-4"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* Reopen-sidebar toggle, only present when the user collapsed
             the left nav. Pairs with the collapse button inside
@@ -241,7 +229,6 @@ export function UnifiedTopBar() {
             was retired in favour of the unified menu). */}
         <div
           className="flex items-center gap-2 min-w-0 shrink"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           {sessionTitle && (
             <h2 className="text-sm font-medium text-foreground truncate max-w-[280px]">
@@ -252,26 +239,12 @@ export function UnifiedTopBar() {
           {projectName && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
+                <div
                   className="h-7 max-w-[200px] px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    if (workingDirectory) {
-                      if (window.electronAPI?.shell?.openPath) {
-                        window.electronAPI.shell.openPath(workingDirectory);
-                      } else {
-                        fetch('/api/files/open', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ path: workingDirectory }),
-                        }).catch(() => {});
-                      }
-                    }
-                  }}
+                  aria-label={workingDirectory}
                 >
-                  <span className="truncate">{projectName}</span>
-                </Button>
+                  <span className="block truncate leading-7">{projectName}</span>
+                </div>
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 <p className="text-xs break-all">{workingDirectory}</p>
@@ -329,7 +302,6 @@ export function UnifiedTopBar() {
         {/* Right: panel toggles */}
         <div
           className="flex items-center gap-1"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           {/* Branch label — informational only (no longer a toggle since
               Git lives inside the Workspace Sidebar). Click jumps to the

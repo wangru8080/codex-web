@@ -20,10 +20,6 @@
  * font scale, not the library's compact default.
  *
  * Round 12 (2026-05-23): first cut of the unified markdown rendering.
- * "Export as PNG" on tables is deferred — that needs the same
- * `electronAPI.widget.exportPng` pipeline the Widget uses and is a
- * separate slice; the action button slot is reserved so we can
- * plug it in without restyling.
  */
 
 import type { ComponentProps, ReactNode } from "react";
@@ -108,13 +104,6 @@ function ChatTable({ children, className, ...props }: ComponentProps<"table">) {
       <div className="flex items-center justify-end gap-1 bg-muted/30 px-2 py-1">
         <button type="button" onClick={handleCopyMarkdown} className={cn(cardActionBtn, "h-7 w-7 px-0")} aria-label="Copy as Markdown" title="复制 Markdown">
           <CodexWebIcon name="copy" size="sm" aria-hidden />
-        </button>
-        {/* Export PNG placeholder — same slot the Widget card uses for
-            its download button. Wire-up deferred; needs the
-            electronAPI.widget.exportPng plumbing applied to an HTML
-            snapshot of the table. */}
-        <button type="button" disabled className={cn(cardActionBtn, "h-7 w-7 px-0")} aria-label="Export PNG (coming soon)" title="导出图片（即将上线）">
-          <CodexWebIcon name="download" size="sm" aria-hidden />
         </button>
       </div>
       <div className="overflow-x-auto px-3 pb-3 pt-2">
