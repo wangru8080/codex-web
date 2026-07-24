@@ -448,9 +448,9 @@ npm pack --dry-run --json --ignore-scripts
 
 阶段 0、1、2、3、4、5 已完成并归档。阶段 4 已完成代码、测试、构建、Smoke 和本地 Headless Chrome 验证。
 
-阶段 5 已完成证据复核，结论是保留 Next.js，不创建 Vite POC；长历史初始置底竞态也已修复。客户端 CPU Profile 和动态 `/chat/[id]` 服务端追踪均没有发现足以支持产品代码修改的单一热点。若继续客户端归因，应改用无扩展 Headless Chrome 和可映射源码；若继续服务端冷路径归因，应先取得系统级异步 I/O/worker 证据。
+阶段 5 已完成证据复核，结论是保留 Next.js，不创建 Vite POC；长历史初始置底竞态也已修复。无扩展 Headless Chrome 与 source map 的客户端 Long Task 归因已经完成：含代码块历史稳定触发 Shiki/Oniguruma 冷启动，但没有达到门槛的第一方 self hotspot，不修改产品组件。动态 `/chat/[id]` 服务端追踪同样没有足以支持修改单一边界的证据。
 
-生产 TypeScript 入口预编译已经完成并通过三轮正式入口、CLI 打包和跨目录安装验证；没有新的三轮可归因证据前，不重新开启框架迁移讨论。后续性能工作应优先取得无扩展客户端源码映射或系统级异步 I/O/worker 证据。
+生产 TypeScript 入口预编译已经完成并通过三轮正式入口、CLI 打包和跨目录安装验证；没有新的三轮可归因证据前，不重新开启框架迁移讨论。Web-only 性能重构主线至此结束；若另行深挖服务端动态路由冷路径，应先取得系统级异步 I/O/worker 证据。
 
 ## 阶段 0 实施结果（2026-07-23）
 
@@ -630,6 +630,18 @@ npm pack --dry-run --json --ignore-scripts
 - 原始 `.cpuprofile`、场景汇总和一次性采样器位于 `/volume2/SSD/codex/Temp/codex-web-cpu-profile-buqqiX/`，未纳入 Git；生产服务已停止，3102 端口已释放。
 
 本轮属于测量完成，不是产品代码 `Tests pass` 或 `Smoke passed`。后续动态路由服务端追踪也没有发现单一代码热点；再次做客户端采样前应先解决无扩展浏览器和源码映射条件。
+
+## 无扩展 Source Map Long Task 归因（2026-07-25）
+
+- `next.config.mjs` 增加默认关闭的 `CODEX_WEB_PROFILE_SOURCE_MAPS=1` 诊断开关；诊断构建生成 473 个浏览器 map、52,943,611 bytes，正式默认构建恢复为 0 个 map。
+- Chrome for Testing 149 使用独立 `--headless=new --disable-extensions` profile，对空聊天、普通历史、长历史、纯 Markdown 各运行三轮；12 份 CPU profile 完整，扩展 target 和扩展 self time 均为 0。
+- 四类场景的 Long Task 数量中位数分别为 1、4、5、2，最长任务中位数为 77、166、162、83 ms。项目 mapped self time 中位数分别为 12.570、33.218、31.415、25.847 ms。
+- 最高稳定项目 self frame 是纯 Markdown 的 `MessageItem.tsx:389`，中位数 17.146 ms / 8.833%，低于 50 ms / 10% 门槛；`qualifyingHotspots=[]`。
+- 普通历史和长历史 fixture 每条回复均含 TypeScript 代码块。两者的 inclusive 栈稳定归属到 `code-block.tsx:360` 调用的 Shiki 高亮子树，中位数分别为 156.001 ms / 36.029% 和 150.152 ms / 32.971%；纯 Markdown 反例没有该栈。
+- 未映射时间主要来自 `@shikijs/engine-oniguruma` WASM 初始化的稀疏 map，对应 chunk 的 map 来源仅有第三方模块，不是遗漏的项目 `src/` 热点。
+- 结论是代码高亮冷启动已精确归因，但第一方源码没有达到预设 self-time 修改门槛。本轮不修改 UI、消息流、按需加载或 app-server 接线；原始证据位于 `/volume2/SSD/codex/Temp/codex-web-headless-sourcemap-profile-Emh5Yp/`。
+
+本轮达到 `Code complete`、`Tests pass` 和 `Smoke passed`：`npm run test` 为 129 个文件、597 项通过；默认 `npm run build` 通过且不含浏览器 map；隔离 `npm run test:smoke` 通过，读取 5 个模型。Chrome、生产服务和 app-server 已停止，3102/9224 端口释放。
 
 ## 动态聊天路由服务端追踪（2026-07-24）
 

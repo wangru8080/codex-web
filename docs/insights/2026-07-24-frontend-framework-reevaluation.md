@@ -12,7 +12,7 @@
 
 三轮同机生产基线和独立 HTTP 测量没有证明 Next.js 生产运行时是剩余性能的主要来源：静态 `/login` 与已认证 `/chat` 的本机 TTFB 均稳定在 23 ms 内，动态 `/chat/[id]` 只有每个服务进程第一次请求约 565 ms，随后为 21 至 62 ms。空聊天冷启动中，HTTP `responseStart` 为 28 至 80 ms，而 app-server 初始化和首个可交互标记延后到 1.33 至 2.33 秒，主要等待不在页面 HTTP 响应。
 
-阶段 5 当时需要继续验证的是动态路由首次执行成本、客户端主线程长任务和长历史虚拟列表初始置底竞态；后续底部锁已修复，两项 profile 也已完成，但均未发现支持进一步产品代码修改的单一热点。迁移框架不能直接消除 app-server 初始化或 React/Virtuoso 客户端问题，却需要重建认证 Proxy、5 个 Route Handler、23 个静态页面、路由、同端口 WebSocket bridge 和 CLI 生产分发边界。
+阶段 5 当时需要继续验证的是动态路由首次执行成本、客户端主线程长任务和长历史虚拟列表初始置底竞态；后续底部锁已修复，服务端 profile 与无扩展 source map 客户端 profile 也已完成。客户端已精确归因到含代码块场景的 Shiki/Oniguruma 冷启动，但没有达到预设门槛的第一方 self hotspot，不支持进一步修改产品组件。迁移框架不能直接消除 app-server 初始化或 React/Virtuoso 客户端问题，却需要重建认证 Proxy、5 个 Route Handler、23 个静态页面、路由、同端口 WebSocket bridge 和 CLI 生产分发边界。
 
 ## 评估边界
 
@@ -82,7 +82,7 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 ## 后续工作
 
 1. 若继续深挖首次 `/chat/[id]`，先使用系统级异步 I/O/worker trace 证明可控等待来源；本轮服务端 profile 不支持修改认证、Proxy 或应用函数。
-2. 在禁用浏览器扩展并提供可映射源码的环境中复测客户端 Long Task；现有 CPU profile 没有支持修改单一组件的证据。
+2. 无扩展 source map 客户端 Long Task 复测已经完成；后续只在代码高亮实现、Shiki 版本或性能预算变化时重测，不继续无证据地修改组件。
 3. 生产 TypeScript 入口预编译已经完成；后续只需在入口或构建链变化时保持 pack 与跨目录安装回归。
 4. 只有其余工作出现新的三轮证据满足 POC 门槛，才另建 Vite POC 计划。
 
@@ -108,6 +108,21 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 内容场景的应用 origin self time 高于空聊天，证明内容渲染确实增加客户端执行成本；但各场景的最高独立应用帧只占整段采样 0.86% 至 2.98%。父链同时涉及 Turbopack 模块执行、React 提交、DOM 测量、Virtuoso/Markdown chunk，没有单一调用栈稳定占据主要非 idle 时间。
 
 本轮还有两个归因限制：远程 Chrome 注入了浏览器扩展脚本，长历史中扩展 self time 达 4.17%；当前生产静态 chunk 没有浏览器 source map，压缩函数名不能可靠映射回具体组件。因此本轮不修改产品代码，也不能用结果解释 app-server 初始化或服务端动态路由冷路径。下一次客户端采样应使用无扩展 Headless Chrome，并提供可映射源码或只围绕已定位的 Long Task 时间窗采样。
+
+## 无扩展 Source Map Long Task 归因
+
+2026-07-25 使用 Chrome for Testing 149 的全新无扩展 profile、仅诊断构建启用的 Next 浏览器 source map，以及 Long Task 时间窗内的 V8 samples，对相同四个场景各运行三轮。12 份 profile 均包含完整 nodes、samples 和 timeDeltas，扩展 target 与 `chrome-extension://` self time 均为 0；正式结果保存在 `/volume2/SSD/codex/Temp/codex-web-headless-sourcemap-profile-Emh5Yp/`。
+
+| 场景 | Long Task 数量中位数 | 最长任务中位数 | 项目 mapped self | 依赖占比 | 未映射占比 |
+|---|---:|---:|---:|---:|---:|
+| 空聊天 | 1 | 77 ms | 12.570 ms / 16.297% | 64.175% | 0% |
+| 普通历史 | 4 | 166 ms | 33.218 ms / 7.837% | 43.617% | 14.079% |
+| 长历史 | 5 | 162 ms | 31.415 ms / 6.747% | 46.217% | 14.717% |
+| 普通 Markdown | 2 | 83 ms | 25.847 ms / 14.589% | 77.211% | 0% |
+
+最高稳定项目 self frame 是普通 Markdown 的 `MessageItem.tsx:389`，中位数 17.146 ms / 8.833%，低于 50 ms / 10% 修改门槛。普通历史与长历史的 inclusive 栈分别稳定指向 `code-block.tsx:360` 下的 Shiki 高亮子树，中位数为 156.001 ms / 36.029% 和 150.152 ms / 32.971%；两类 fixture 每条回答都含 TypeScript 代码块，而纯 Markdown 反例没有该栈。未映射时间主要是 source map 稀疏的 `@shikijs/engine-oniguruma` WASM 初始化，对应 map 只含第三方来源。
+
+因此剩余 Long Task 已从“无法映射”收敛为“代码块首次出现时的第三方高亮器冷启动，外加分散的 React/Markdown 工作”。`code-block.tsx` 是调用归属，不是 150 ms 的 self-time 热点；本轮不修改 UI、消息语义、按需加载边界或依赖。常规构建默认不生成浏览器 source map，诊断开关仅在 `CODEX_WEB_PROFILE_SOURCE_MAPS=1` 时启用。
 
 ## 动态聊天路由服务端追踪
 
@@ -138,5 +153,6 @@ POC 触发门槛为：至少三次同口径生产基线均显示可归因给 Nex
 - 客户端 CPU Profile：`/volume2/SSD/codex/Temp/codex-web-cpu-profile-buqqiX/`
 - 动态聊天路由服务端 trace：`/volume2/SSD/codex/Temp/codex-web-server-trace-qZHIxW/`
 - 生产入口 POC、九轮测量、tgz 与临时安装：`/volume2/SSD/codex/Temp/codex-web-production-entry-CPU62v/`
+- 无扩展 source map 客户端 profile：`/volume2/SSD/codex/Temp/codex-web-headless-sourcemap-profile-Emh5Yp/`
 
 阶段 5 及其两项 profile 后续只修改文档，没有修改产品代码、依赖或构建配置。其后独立完成的生产入口预编译达到 `Code complete`、`Tests pass` 和 `Smoke passed`：全量 128 个测试文件、596 项通过，生产构建、CLI 构建、pack dry-run、全新安装及仓库外 cwd 启动均通过。该改动优化进程启动层，不改变“保留 Next.js”的框架结论，也没有证明动态路由或客户端 Long Task 已改善。
