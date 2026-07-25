@@ -13,6 +13,7 @@ export type TurnFileChangeSummary = {
   deletions: number;
   files: TurnFileChange[];
   sourceBreadcrumb: "app-server.item/fileChange/patchUpdated";
+  lifecycleSourceBreadcrumb?: "app-server.command/exec:git-status";
 };
 
 export function deriveTurnFileChangeSummary(

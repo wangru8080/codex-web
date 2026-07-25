@@ -56,7 +56,24 @@ async function main(): Promise<void> {
   await click(cdp, '[data-testid="composer-file-changes"] > button');
   await click(cdp, '[data-testid="composer-file-changes"] [title="src/app.ts"]');
   await waitFor(cdp, `document.body.innerText.includes("+const nextValue = 2;")`, 15_000);
-  console.log("文件变更 UI smoke 通过：普通路径隐藏，触发路径显示 2 文件 +3/-1，点击后右侧 diff 可见");
+
+  fake.setGitStatus("partial");
+  await cdp.call("Runtime.evaluate", { expression: `window.dispatchEvent(new CustomEvent("git-refresh"))` });
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("1 个文件已更改") === true`, 15_000);
+  await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("+1") === true`, "部分提交后新增行统计错误");
+  await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("-0") === true`, "部分提交后删除行统计错误");
+  await click(cdp, '[data-testid="composer-file-changes"] > button');
+  await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"] [title="src/new.ts"]') !== null`, "部分提交后应保留未提交文件");
+  await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"] [title="src/app.ts"]') === null`, "部分提交后不应保留已提交文件");
+
+  fake.setGitStatus("clean");
+  await cdp.call("Runtime.evaluate", { expression: `window.dispatchEvent(new CustomEvent("git-refresh"))` });
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-file-changes"]') === null`, 15_000);
+
+  fake.setGitStatus("unavailable");
+  await cdp.call("Runtime.evaluate", { expression: `window.dispatchEvent(new CustomEvent("git-refresh"))` });
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("2 个文件已更改") === true`, 15_000);
+  console.log("文件变更 UI smoke 通过：普通路径隐藏，未提交显示 2 文件，部分提交剩 1 文件，全部提交隐藏，Git 不可用时回退，右侧 diff 可见");
 
   fake.sendRequests();
 
@@ -143,6 +160,7 @@ async function startFakeAppServer(publicHost: string): Promise<{
   url: string;
   sendRequests: () => void;
   sendFileChanges: () => void;
+  setGitStatus: (status: GitSmokeStatus) => void;
   waitForResponse: (id: string) => Promise<unknown>;
   hasResponse: (id: string) => boolean;
   close: () => Promise<void>;
@@ -156,6 +174,7 @@ async function startFakeAppServer(publicHost: string): Promise<{
   if (!address || typeof address === "string") throw new Error("fake app-server 未返回端口");
 
   let client: WebSocket | null = null;
+  let gitStatus: GitSmokeStatus = "all";
   const responses = new Map<string, unknown>();
   const responseWaiters = new Map<string, (value: unknown) => void>();
   server.on("connection", (socket) => {
@@ -164,10 +183,11 @@ async function startFakeAppServer(publicHost: string): Promise<{
       const message = JSON.parse(data.toString("utf8")) as {
         id?: string | number;
         method?: string;
+        params?: unknown;
         result?: unknown;
       };
       if (message.method && message.id !== undefined) {
-        socket.send(JSON.stringify({ id: message.id, result: responseForMethod(message.method) }));
+        socket.send(JSON.stringify({ id: message.id, result: responseForMethod(message.method, message.params, gitStatus) }));
         return;
       }
       if (message.id !== undefined && "result" in message) {
@@ -188,6 +208,9 @@ async function startFakeAppServer(publicHost: string): Promise<{
     sendFileChanges: () => {
       if (!client || client.readyState !== client.OPEN) throw new Error("fake app-server 尚未连接");
       for (const notification of fileChangeNotifications()) client.send(JSON.stringify(notification));
+    },
+    setGitStatus: (status) => {
+      gitStatus = status;
     },
     waitForResponse: (id) => {
       if (responses.has(id)) return Promise.resolve(responses.get(id));
@@ -228,7 +251,9 @@ function fileChangeNotifications(): unknown[] {
   ];
 }
 
-function responseForMethod(method: string): unknown {
+type GitSmokeStatus = "all" | "partial" | "clean" | "unavailable";
+
+function responseForMethod(method: string, params: unknown, gitStatus: GitSmokeStatus): unknown {
   const thread = smokeThread();
   switch (method) {
     case "initialize":
@@ -260,6 +285,22 @@ function responseForMethod(method: string): unknown {
       return { data: [], nextCursor: null, backwardsCursor: null };
     case "fs/readDirectory":
       return { entries: [] };
+    case "command/exec": {
+      const command = params && typeof params === "object" && Array.isArray((params as { command?: unknown }).command)
+        ? (params as { command: string[] }).command
+        : [];
+      if (gitStatus === "unavailable") return { exitCode: 128, stdout: "", stderr: "not a git repository" };
+      if (command.includes("rev-parse")) return { exitCode: 0, stdout: `${process.cwd()}\n`, stderr: "" };
+      if (command.includes("status")) {
+        const stdout = gitStatus === "all"
+          ? " M src/app.ts\0?? src/new.ts\0"
+          : gitStatus === "partial"
+            ? "?? src/new.ts\0"
+            : "";
+        return { exitCode: 0, stdout, stderr: "" };
+      }
+      return { exitCode: 1, stdout: "", stderr: "unsupported fake command" };
+    }
     default:
       return {};
   }

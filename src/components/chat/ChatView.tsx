@@ -73,6 +73,7 @@ import {
 import { resolveAppServerPanelStartedAt } from '@/codex-web/app-server-panel-clock';
 import { deriveCodexWebToolState } from '@/codex-web/tool-adapter';
 import { deriveTurnFileChangeSummary } from '@/codex-web/file-change-summary';
+import { useTurnFileChangeSummary } from '@/hooks/useTurnFileChangeSummary';
 import type { AppServerTurnState } from '@/codex-web/turn-reducer';
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
@@ -493,6 +494,10 @@ export function ChatView({
   const appServerFileChangeSummary = useMemo(
     () => deriveTurnFileChangeSummary(presentedAppServerTurn ?? null),
     [presentedAppServerTurn],
+  );
+  const visibleAppServerFileChangeSummary = useTurnFileChangeSummary(
+    appServerFileChangeSummary,
+    workingDirectory,
   );
   const appServerProcessBlocks = useMemo(
     () => presentedAppServerTurn ? appServerTurnToMessageBlocks(presentedAppServerTurn) : [],
@@ -1657,7 +1662,7 @@ export function ChatView({
               hasMessages={false}
               onPendingContextTokensChange={setPendingContextTokens}
               contextWindowUsage={appServerTokenUsage}
-              fileChangeSummary={appServerSend ? appServerFileChangeSummary : null}
+              fileChangeSummary={appServerSend ? visibleAppServerFileChangeSummary : null}
               onModeChange={settingsLocked ? undefined : handleModeChange}
               modeChangeDisabled={settingsLocked || isStreaming}
               blockingReasonIds={blockingReasonIds}
@@ -1941,7 +1946,7 @@ export function ChatView({
         hasMessages={messages.length > 0}
         onPendingContextTokensChange={setPendingContextTokens}
         contextWindowUsage={appServerTokenUsage}
-        fileChangeSummary={appServerSend ? appServerFileChangeSummary : null}
+        fileChangeSummary={appServerSend ? visibleAppServerFileChangeSummary : null}
         onModeChange={settingsLocked ? undefined : handleModeChange}
         modeChangeDisabled={settingsLocked || isStreaming}
         blockingReasonIds={blockingReasonIds}

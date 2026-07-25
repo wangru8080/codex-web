@@ -10,10 +10,12 @@ describe("Turn 文件变更 UI 接线", () => {
   const messageInput = read("src/components/chat/MessageInput.tsx");
   const composerChanges = read("src/components/chat/ComposerFileChanges.tsx");
   const summary = read("src/codex-web/file-change-summary.ts");
+  const lifecycleHook = read("src/hooks/useTurnFileChangeSummary.ts");
+  const provider = read("src/codex-web/AppServerProvider.tsx");
 
   it("从 app-server Turn 派生摘要并传入输入框", () => {
     expect(chatView).toContain("deriveTurnFileChangeSummary(presentedAppServerTurn ?? null)");
-    expect(chatView).toContain("fileChangeSummary={appServerSend ? appServerFileChangeSummary : null}");
+    expect(chatView).toContain("fileChangeSummary={appServerSend ? visibleAppServerFileChangeSummary : null}");
     expect(messageInput).toContain("<ComposerFileChanges summary={fileChangeSummary ?? null} />");
   });
 
@@ -25,7 +27,18 @@ describe("Turn 文件变更 UI 接线", () => {
   });
 
   it("文件变更事实不依赖 Git", () => {
-    expect(summary.toLowerCase()).not.toContain("git");
     expect(summary).toContain("app-server.item/fileChange/patchUpdated");
+    expect(summary).toContain("deriveTurnFileChangeSummary");
+    expect(summary).not.toContain("git status");
+  });
+
+  it("通过同一 app-server runtime 的只读 Git 状态管理提交生命周期", () => {
+    expect(provider).toContain('client.request("command/exec", params)');
+    expect(lifecycleHook).toContain('command: ["git", "rev-parse", "--show-toplevel"]');
+    expect(lifecycleHook).toContain('command: ["git", "--literal-pathspecs", "status"');
+    expect(lifecycleHook).toContain('sandboxPolicy: { type: "readOnly" as const, networkAccess: false }');
+    expect(lifecycleHook).toContain('window.addEventListener("git-refresh", refresh)');
+    expect(chatView).toContain("const visibleAppServerFileChangeSummary = useTurnFileChangeSummary(");
+    expect(chatView).toContain("appServerFileChangeSummary,");
   });
 });

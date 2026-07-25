@@ -55,6 +55,8 @@ import type { LoginAccountParams } from "@/codex/protocol/generated/v2/LoginAcco
 import type { LoginAccountResponse } from "@/codex/protocol/generated/v2/LoginAccountResponse";
 import type { CancelLoginAccountResponse } from "@/codex/protocol/generated/v2/CancelLoginAccountResponse";
 import type { LogoutAccountResponse } from "@/codex/protocol/generated/v2/LogoutAccountResponse";
+import type { CommandExecParams } from "@/codex/protocol/generated/v2/CommandExecParams";
+import type { CommandExecResponse } from "@/codex/protocol/generated/v2/CommandExecResponse";
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
 import { APP_VERSION } from "@/lib/app-version";
 import type { FileAttachment, PermissionProfile, SkillInputReference } from "@/types";
@@ -192,6 +194,7 @@ export type AppServerActions = {
   deleteThread: (threadId: string) => Promise<ThreadDeleteResponse>;
   readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
   listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
+  execCommand: (params: CommandExecParams) => Promise<CommandExecResponse>;
   readDirectory: (path: string) => Promise<FsReadDirectoryResponse>;
   createDirectory: (path: string, recursive?: boolean) => Promise<FsCreateDirectoryResponse>;
   readFile: (path: string) => Promise<FsReadFileResponse>;
@@ -731,6 +734,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return (await client.request("thread/turns/list", params)) as ThreadTurnsListResponse;
   }, []);
 
+  const execCommand = useCallback(async (params: CommandExecParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("command/exec", params)) as CommandExecResponse;
+  }, []);
+
   const readDirectory = useCallback(async (path: string) => {
     const client = clientRef.current;
     if (!client) {
@@ -1267,6 +1276,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       deleteThread,
       readThread,
       listThreadTurns,
+      execCommand,
       readDirectory,
       createDirectory,
       readFile,
@@ -1298,7 +1308,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       logoutAccount,
       publishCrossClientUserMessage,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
+    [startThread, sendOneTurn, resumeThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
   );
 
   return (
