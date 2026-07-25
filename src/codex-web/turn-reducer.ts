@@ -30,6 +30,7 @@ export type AppServerTurnState = {
   durationMs?: number;
   items: ThreadItem[];
   toolOutputs: Record<string, string>;
+  turnDiff: string;
   filePatchChanges: Record<string, FileUpdateChange[]>;
   mcpProgress: Record<string, string>;
   contextCompactionStatusById: Record<string, "inProgress" | "completed">;
@@ -51,6 +52,7 @@ export const initialAppServerTurnState: AppServerTurnState = {
   durationMs: undefined,
   items: [],
   toolOutputs: {},
+  turnDiff: "",
   filePatchChanges: {},
   mcpProgress: {},
   contextCompactionStatusById: {},
@@ -252,6 +254,15 @@ export function reduceAppServerTurnNotification(
       return {
         ...state,
         toolOutputs: appendRecordText(state.toolOutputs, itemId, delta),
+      };
+    }
+
+    case "turn/diff/updated": {
+      const diff = readRecord(params).diff;
+      if (typeof diff !== "string") return state;
+      return {
+        ...state,
+        turnDiff: diff,
       };
     }
 

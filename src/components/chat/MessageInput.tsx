@@ -38,10 +38,12 @@ import type { FileAttachment, MentionRef, PermissionProfile, SkillInputReference
 import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadTokenUsage';
 import type { McpServerStatus } from '@/codex/protocol/generated/v2/McpServerStatus';
 import type { GetAccountRateLimitsResponse } from '@/codex/protocol/generated/v2/GetAccountRateLimitsResponse';
+import type { TurnFileChangeSummary } from '@/codex-web/file-change-summary';
 import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { ContextWindowIndicator } from './ContextWindowIndicator';
 import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, FileExcerptCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
+import { ComposerFileChanges } from './ComposerFileChanges';
 import { useMentionTokenEstimate } from '@/hooks/useMentionTokenEstimate';
 import { dataUrlToFileAttachment } from '@/lib/file-utils';
 import { usePopoverState } from '@/hooks/usePopoverState';
@@ -189,6 +191,7 @@ interface MessageInputProps {
   codexOnly?: boolean;
   /** 可选文件选择器 accept；空字符串允许任意文件。 */
   attachmentsAccept?: string;
+  fileChangeSummary?: TurnFileChangeSummary | null;
 }
 
 function ComposerPlusMenuItem({
@@ -656,6 +659,7 @@ export const MessageInput = memo(function MessageInput({
   blockingReasonIds,
   codexOnly,
   attachmentsAccept,
+  fileChangeSummary,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const appServer = useAppServerActions();
@@ -1601,6 +1605,7 @@ export const MessageInput = memo(function MessageInput({
   return (
     <div className="bg-[var(--platform-surface-bar)] backdrop-blur-lg px-4 pt-2 pb-1">
       <div className="mx-auto w-full max-w-3xl">
+        <ComposerFileChanges summary={fileChangeSummary ?? null} />
         <div className="relative">
           {(commandPanel || commandError) && (
             <div className="absolute bottom-full left-0 z-50 mb-2 max-h-80 w-full overflow-y-auto rounded-2xl border bg-popover p-3 shadow-[var(--shadow-diffuse)]" data-testid="composer-command-panel">

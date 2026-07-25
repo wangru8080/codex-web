@@ -242,7 +242,7 @@ describe("reduceAppServerTurnNotification", () => {
     expect(state.assistantText).toBe("搜索完成。");
   });
 
-  it("保存工具输出、文件 patch 和 MCP progress 增量", () => {
+  it("保存工具输出、Turn diff、文件 patch 和 MCP progress 增量", () => {
     let state = createStartingTurnState();
 
     state = reduceAppServerTurnNotification(state, {
@@ -252,6 +252,10 @@ describe("reduceAppServerTurnNotification", () => {
     state = reduceAppServerTurnNotification(state, {
       method: "item/commandExecution/outputDelta",
       params: { threadId: "thread-1", turnId: "turn-1", itemId: "cmd-1", delta: "\nworld" },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "turn/diff/updated",
+      params: { threadId: "thread-1", turnId: "turn-1", diff: "diff --git a/src/app.ts b/src/app.ts" },
     });
     state = reduceAppServerTurnNotification(state, {
       method: "item/fileChange/patchUpdated",
@@ -268,6 +272,7 @@ describe("reduceAppServerTurnNotification", () => {
     });
 
     expect(state.toolOutputs["cmd-1"]).toBe("hello\nworld");
+    expect(state.turnDiff).toBe("diff --git a/src/app.ts b/src/app.ts");
     expect(state.filePatchChanges["patch-1"]).toEqual([
       { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@" },
     ]);

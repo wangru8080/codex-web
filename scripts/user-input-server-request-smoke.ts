@@ -5,10 +5,16 @@ import { resolve } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { resolveTestCodexHome } from "../server/test-codex-home";
+import { createSessionToken, WEB_AUTH_COOKIE, type WebAuthConfig } from "../server/web-auth";
 
 const codexHome = resolveTestCodexHome();
 process.env.CODEX_HOME = codexHome;
 const threadId = "user-input-smoke-thread";
+const webAuth: WebAuthConfig = {
+  email: "smoke@codex-web.local",
+  password: "smoke-password",
+  sessionSecret: "codex-web-smoke-session-secret-2026",
+};
 
 async function main(): Promise<void> {
   const cdpBaseUrl = process.env.CODEX_WEB_CDP_URL ?? "http://192.168.3.12:45737";
@@ -26,6 +32,12 @@ async function main(): Promise<void> {
   cdp = await CdpClient.connect(target.webSocketDebuggerUrl);
   await cdp.call("Page.enable");
   await cdp.call("Runtime.enable");
+  await cdp.call("Network.enable");
+  await cdp.call("Network.setCookie", {
+    name: WEB_AUTH_COOKIE,
+    value: createSessionToken(webAuth),
+    url: appUrl,
+  });
   await cdp.call("Page.addScriptToEvaluateOnNewDocument", {
     source: `(() => {
       const realDateNow = Date.now.bind(Date);
@@ -35,6 +47,16 @@ async function main(): Promise<void> {
   });
   await cdp.call("Page.navigate", { url: `${appUrl}/chat/${threadId}` });
   await waitFor(cdp, `document.body.innerText.includes("用户输入 Smoke") && document.querySelector("textarea") !== null`, 30_000);
+
+  await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]') === null`, "普通路径不应显示文件变更汇总");
+  fake.sendFileChanges();
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("2 个文件已更改") === true`, 15_000);
+  await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("+3") === true`, "文件变更新增行统计错误");
+  await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("-1") === true`, "文件变更删除行统计错误");
+  await click(cdp, '[data-testid="composer-file-changes"] > button');
+  await click(cdp, '[data-testid="composer-file-changes"] [title="src/app.ts"]');
+  await waitFor(cdp, `document.body.innerText.includes("+const nextValue = 2;")`, 15_000);
+  console.log("文件变更 UI smoke 通过：普通路径隐藏，触发路径显示 2 文件 +3/-1，点击后右侧 diff 可见");
 
   fake.sendRequests();
 
@@ -108,7 +130,7 @@ async function main(): Promise<void> {
   await assert(cdp, `!document.body.innerText.includes("不应显示的跨线程问题")`, "跨 thread 请求不应显示");
   await assert(cdp, `document.querySelector("textarea")?.disabled === false`, "其他 thread 的 pending request 不应禁用当前 composer");
 
-  console.log("用户输入 server request smoke 通过：表单响应、自动处理、交互暂停、FIFO、跨 thread 与反例均符合预期");
+  console.log("用户输入 server request smoke 通过：表单响应、自动处理、FIFO、跨 thread、文件变更统计与右侧 diff 反例均符合预期");
   } finally {
     cdp?.close();
     if (target) await fetch(`${cdpBaseUrl}/json/close/${target.id}`).catch(() => undefined);
@@ -120,6 +142,7 @@ async function main(): Promise<void> {
 async function startFakeAppServer(publicHost: string): Promise<{
   url: string;
   sendRequests: () => void;
+  sendFileChanges: () => void;
   waitForResponse: (id: string) => Promise<unknown>;
   hasResponse: (id: string) => boolean;
   close: () => Promise<void>;
@@ -162,6 +185,10 @@ async function startFakeAppServer(publicHost: string): Promise<{
       if (!client || client.readyState !== client.OPEN) throw new Error("fake app-server 尚未连接");
       for (const request of smokeRequests()) client.send(JSON.stringify(request));
     },
+    sendFileChanges: () => {
+      if (!client || client.readyState !== client.OPEN) throw new Error("fake app-server 尚未连接");
+      for (const notification of fileChangeNotifications()) client.send(JSON.stringify(notification));
+    },
     waitForResponse: (id) => {
       if (responses.has(id)) return Promise.resolve(responses.get(id));
       return new Promise((resolveResponse, reject) => {
@@ -178,6 +205,27 @@ async function startFakeAppServer(publicHost: string): Promise<{
     hasResponse: (id) => responses.has(id),
     close: () => new Promise<void>((resolveClose) => server.close(() => resolveClose())),
   };
+}
+
+function fileChangeNotifications(): unknown[] {
+  const changes = [
+    {
+      path: "src/app.ts",
+      kind: { type: "update", move_path: null },
+      diff: "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,2 +1,3 @@\n const value = 1;\n-const oldValue = 2;\n+const nextValue = 2;\n+export { nextValue };",
+    },
+    {
+      path: "src/new.ts",
+      kind: { type: "add" },
+      diff: "--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1 @@\n+export {};",
+    },
+  ];
+  return [
+    { method: "turn/started", params: { threadId, turn: { id: "turn-file-smoke", status: "inProgress" } } },
+    { method: "item/started", params: { threadId, turnId: "turn-file-smoke", item: { type: "fileChange", id: "patch-smoke", changes: [], status: "inProgress" } } },
+    { method: "turn/diff/updated", params: { threadId, turnId: "turn-file-smoke", diff: changes.map((change) => change.diff).join("\n") } },
+    { method: "item/fileChange/patchUpdated", params: { threadId, turnId: "turn-file-smoke", itemId: "patch-smoke", changes } },
+  ];
 }
 
 function responseForMethod(method: string): unknown {
@@ -210,6 +258,8 @@ function responseForMethod(method: string): unknown {
       };
     case "thread/turns/list":
       return { data: [], nextCursor: null, backwardsCursor: null };
+    case "fs/readDirectory":
+      return { entries: [] };
     default:
       return {};
   }
@@ -336,6 +386,9 @@ function startNext(port: number, bridgeUrl: string): ChildProcess {
       ...process.env,
       CODEX_WEB_DEMO: "1",
       NEXT_PUBLIC_CODEX_BRIDGE_URL: bridgeUrl,
+      CODEX_WEB_LOGIN_EMAIL: webAuth.email,
+      CODEX_WEB_LOGIN_PASSWORD: webAuth.password,
+      CODEX_WEB_SESSION_SECRET: webAuth.sessionSecret,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

@@ -351,6 +351,8 @@ const zh: Record<TranslationKey, string> = {
   'filePreview.external.confirm.permission': '只读 · 不会写入磁盘',
   'filePreview.external.confirm.source': '来源：AI 提到的文件',
   'diffSummary.openPreview': '预览',
+  'composer.fileChanges.summary': '{count} 个文件已更改',
+  'composer.fileChanges.open': '查看本轮文件变更',
 
   // ── File tree actions (Phase 4) ─────────────────────────────
   'fileTree.sectionTitle': '文件',

@@ -364,6 +364,8 @@ const en = {
   'filePreview.external.confirm.permission': 'Read-only · no disk writes',
   'filePreview.external.confirm.source': 'Source: file mentioned by the AI',
   'diffSummary.openPreview': 'Open preview',
+  'composer.fileChanges.summary': 'Changed files: {count}',
+  'composer.fileChanges.open': 'View file changes from this turn',
 
   // ── File tree actions (Phase 4) ─────────────────────────────
   'fileTree.sectionTitle': 'Files',
