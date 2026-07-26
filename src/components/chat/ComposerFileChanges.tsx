@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useId } from 'react';
 
 import { CaretDown } from '@/components/ui/icon';
 import { CodexWebIcon } from '@/components/ui/semantic-icon';
@@ -10,17 +10,24 @@ import type { TranslationKey } from '@/i18n';
 import { cn } from '@/lib/utils';
 import type { TurnFileChangeSummary } from '@/codex-web/file-change-summary';
 
-export function ComposerFileChanges({ summary }: { summary: TurnFileChangeSummary | null }) {
+export function ComposerFileChanges({
+  summary,
+  expanded,
+  onExpandedChange,
+}: {
+  summary: TurnFileChangeSummary | null;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+}) {
   const { t } = useTranslation();
   const { setPreviewSource } = usePanel();
-  const [expanded, setExpanded] = useState(false);
   const panelId = useId();
 
   if (!summary) return null;
 
   return (
     <div
-      className="relative mb-2 flex justify-center"
+      className="relative flex min-w-0 justify-center"
       data-testid="composer-file-changes"
       data-source-breadcrumb={summary.sourceBreadcrumb}
     >
@@ -41,7 +48,7 @@ export function ComposerFileChanges({ summary }: { summary: TurnFileChangeSummar
                   diff: file.diff,
                   virtualName: file.path.split(/[/\\]/).pop() || file.path,
                 });
-                setExpanded(false);
+                onExpandedChange(false);
               }}
             >
               <CodexWebIcon name="edit" size={12} className="shrink-0 text-muted-foreground" aria-hidden />
@@ -64,7 +71,7 @@ export function ComposerFileChanges({ summary }: { summary: TurnFileChangeSummar
         aria-controls={panelId}
         aria-label={t('composer.fileChanges.open' as TranslationKey)}
         className="inline-flex h-8 max-w-full items-center gap-2 rounded-full border border-border/70 bg-background/95 px-3.5 text-xs text-muted-foreground shadow-sm hover:bg-accent hover:text-foreground"
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => onExpandedChange(!expanded)}
       >
         <span className="truncate">
           {t('composer.fileChanges.summary' as TranslationKey, { count: summary.fileCount })}

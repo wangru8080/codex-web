@@ -125,10 +125,68 @@ async function main(): Promise<void> {
   console.log("最小 Git 面板 smoke 通过：真实点击文件 diff、选择单文件并提交、部分提交后保留剩余文件");
 
   await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]') === null`, "普通路径不应显示文件变更汇总");
+  await assert(cdp, `document.querySelector('[data-testid="composer-turn-plan"]') === null`, "普通路径不应显示任务进度");
+  fake.sendTurnPlan("running");
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan-standalone"]')?.textContent?.includes("1/3 项任务已完成") === true`, 15_000);
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"]') !== null`, 15_000);
+  await assert(cdp, `document.querySelector('[data-testid="composer-activity-bar"]')?.dataset.variant === "standalone-task"`, "只有任务时应使用独立面板");
+  await assert(cdp, `document.querySelectorAll('[data-testid="turn-task-checklist"]').length === 1`, "独立任务面板应默认展开");
+  await captureScreenshot(cdp, "10-turn-task-standalone.png");
+  await click(cdp, '[data-testid="composer-turn-plan"]');
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"]') === null`, 15_000);
+  await click(cdp, '[data-testid="composer-turn-plan"]');
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"]') !== null`, 15_000);
   fake.sendFileChanges();
   await waitFor(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("2 个文件已更改") === true`, 15_000);
   await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("+3") === true`, "文件变更新增行统计错误");
   await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]')?.textContent?.includes("-1") === true`, "文件变更删除行统计错误");
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan"]')?.textContent?.includes("1/3") === true`, 15_000);
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"]') === null`, 15_000);
+  await assert(cdp, `document.querySelector('[data-testid="composer-activity-bar"]')?.dataset.variant === "compact"`, "文件变更出现后应切换为双胶囊布局");
+  await assert(cdp, `document.querySelector('[data-testid="composer-turn-plan"]')?.dataset.variant === "compact"`, "双 UI 场景应使用任务胶囊");
+  await assert(cdp, `document.querySelector('[data-testid="composer-activity-bar"]')?.children[0]?.getAttribute("data-testid") === "composer-file-changes"`, "文件变更应位于活动条左侧");
+  await assert(cdp, `document.querySelector('[data-testid="composer-activity-bar"]')?.children[1]?.getAttribute("data-testid") === "composer-turn-plan"`, "任务进度应位于活动条右侧");
+  await captureScreenshot(cdp, "11-turn-task-with-files.png");
+  await click(cdp, '[data-testid="composer-file-changes"] > button');
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-file-changes"] [title="src/app.ts"]') !== null`, 15_000);
+  await click(cdp, '[data-testid="composer-turn-plan"]');
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"]') !== null`, 15_000);
+  await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"] [title="src/app.ts"]') === null`, "展开任务时应自动关闭文件列表，避免浮层重叠");
+  await assert(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"] [data-task-status="completed"]')?.textContent?.includes("建立任务状态") === true`, "已完成任务内容错误");
+  await assert(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"] [data-task-status="completed"] > span:last-child')?.classList.contains("line-through") === true`, "已完成任务应显示删除线");
+  await assert(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"] [data-task-status="inProgress"]')?.textContent?.includes("实现悬浮 UI") === true`, "进行中任务内容错误");
+  await assert(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"] [data-task-status="pending"]')?.textContent?.includes("运行浏览器验证") === true`, "待执行任务内容错误");
+  await assert(cdp, `document.querySelectorAll('[data-testid="turn-task-checklist"]').length === 1`, "执行任务只应在输入框浮层展示");
+  await captureScreenshot(cdp, "12-turn-task-with-files-expanded.png");
+  await cdp.call("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await assert(cdp, `document.documentElement.scrollWidth <= window.innerWidth`, "移动端任务浮层不应产生横向溢出");
+  await captureScreenshot(cdp, "13-turn-task-mobile.png");
+  await cdp.call("Emulation.setDeviceMetricsOverride", {
+    width: 1600,
+    height: 1000,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  fake.sendTurnPlan("progressed");
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan"]')?.textContent?.includes("2/3") === true`, 15_000);
+  fake.setGitStatus("clean");
+  await cdp.call("Runtime.evaluate", { expression: `window.dispatchEvent(new CustomEvent("git-refresh"))` });
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-file-changes"]') === null`, 15_000);
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan-standalone"]')?.textContent?.includes("2/3 项任务已完成") === true`, 15_000);
+  await assert(cdp, `document.querySelector('[data-testid="composer-turn-plan-panel"]') !== null`, "文件变更消失后应恢复并展开独立任务面板");
+  fake.setGitStatus("unavailable");
+  await cdp.call("Runtime.evaluate", { expression: `window.dispatchEvent(new CustomEvent("git-refresh"))` });
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-file-changes"]') !== null`, 15_000);
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-activity-bar"]')?.dataset.variant === "compact"`, 15_000);
+  fake.sendTurnPlan("completed");
+  await waitFor(cdp, `document.querySelector('[data-testid="composer-turn-plan"]') === null`, 15_000);
+  await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]') !== null`, "任务完成后文件变更 UI 应继续保留");
+  console.log("任务进度 UI smoke 通过：仅任务时独立展开，文件出现时切换双胶囊，文件消失后恢复独立面板，完成后自动退出");
   await click(cdp, '[data-testid="composer-file-changes"] > button');
   await click(cdp, '[data-testid="composer-file-changes"] [title="src/app.ts"]');
   await waitFor(cdp, `document.body.innerText.includes("+const nextValue = 2;")`, 15_000);
@@ -236,6 +294,7 @@ async function startFakeAppServer(publicHost: string): Promise<{
   url: string;
   sendRequests: () => void;
   sendFileChanges: () => void;
+  sendTurnPlan: (stage: "running" | "progressed" | "completed") => void;
   setGitStatus: (status: GitSmokeStatus) => void;
   waitForResponse: (id: string) => Promise<unknown>;
   hasResponse: (id: string) => boolean;
@@ -290,6 +349,13 @@ async function startFakeAppServer(publicHost: string): Promise<{
       if (!client || client.readyState !== client.OPEN) throw new Error("fake app-server 尚未连接");
       for (const notification of fileChangeNotifications()) client.send(JSON.stringify(notification));
     },
+    sendTurnPlan: (stage) => {
+      if (!client || client.readyState !== client.OPEN) throw new Error("fake app-server 尚未连接");
+      if (stage === "running") {
+        client.send(JSON.stringify({ method: "turn/started", params: { threadId, turn: { id: "turn-file-smoke", status: "inProgress" } } }));
+      }
+      client.send(JSON.stringify(turnPlanNotification(stage)));
+    },
     setGitStatus: (status) => {
       gitStatus = status;
     },
@@ -328,11 +394,27 @@ function fileChangeNotifications(): unknown[] {
     },
   ];
   return [
-    { method: "turn/started", params: { threadId, turn: { id: "turn-file-smoke", status: "inProgress" } } },
     { method: "item/started", params: { threadId, turnId: "turn-file-smoke", item: { type: "fileChange", id: "patch-smoke", changes: [], status: "inProgress" } } },
     { method: "turn/diff/updated", params: { threadId, turnId: "turn-file-smoke", diff: changes.map((change) => change.diff).join("\n") } },
     { method: "item/fileChange/patchUpdated", params: { threadId, turnId: "turn-file-smoke", itemId: "patch-smoke", changes } },
   ];
+}
+
+function turnPlanNotification(stage: "running" | "progressed" | "completed"): unknown {
+  const completedCount = stage === "running" ? 1 : stage === "progressed" ? 2 : 3;
+  return {
+    method: "turn/plan/updated",
+    params: {
+      threadId,
+      turnId: "turn-file-smoke",
+      explanation: "使用真实 app-server 计划进度验证输入框任务 UI。",
+      plan: [
+        { step: "建立任务状态", status: "completed" },
+        { step: "实现悬浮 UI", status: completedCount >= 2 ? "completed" : "inProgress" },
+        { step: "运行浏览器验证", status: completedCount >= 3 ? "completed" : completedCount === 2 ? "inProgress" : "pending" },
+      ],
+    },
+  };
 }
 
 type GitSmokeStatus = "all" | "partial" | "clean" | "unavailable";

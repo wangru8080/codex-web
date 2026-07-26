@@ -73,6 +73,7 @@ import {
 import { resolveAppServerPanelStartedAt } from '@/codex-web/app-server-panel-clock';
 import { deriveCodexWebToolState } from '@/codex-web/tool-adapter';
 import { deriveTurnFileChangeSummary } from '@/codex-web/file-change-summary';
+import { deriveComposerTurnPlan } from '@/codex-web/composer-turn-plan';
 import { useTurnFileChangeSummary } from '@/hooks/useTurnFileChangeSummary';
 import type { AppServerTurnState } from '@/codex-web/turn-reducer';
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
@@ -493,6 +494,10 @@ export function ChatView({
   );
   const appServerFileChangeSummary = useMemo(
     () => deriveTurnFileChangeSummary(presentedAppServerTurn ?? null),
+    [presentedAppServerTurn],
+  );
+  const composerTurnPlan = useMemo(
+    () => deriveComposerTurnPlan(presentedAppServerTurn ?? null),
     [presentedAppServerTurn],
   );
   const visibleAppServerFileChangeSummary = useTurnFileChangeSummary(
@@ -1663,6 +1668,7 @@ export function ChatView({
               onPendingContextTokensChange={setPendingContextTokens}
               contextWindowUsage={appServerTokenUsage}
               fileChangeSummary={appServerSend ? visibleAppServerFileChangeSummary : null}
+              turnPlan={appServerSend ? composerTurnPlan : null}
               onModeChange={settingsLocked ? undefined : handleModeChange}
               modeChangeDisabled={settingsLocked || isStreaming}
               blockingReasonIds={blockingReasonIds}
@@ -1947,6 +1953,7 @@ export function ChatView({
         onPendingContextTokensChange={setPendingContextTokens}
         contextWindowUsage={appServerTokenUsage}
         fileChangeSummary={appServerSend ? visibleAppServerFileChangeSummary : null}
+        turnPlan={appServerSend ? composerTurnPlan : null}
         onModeChange={settingsLocked ? undefined : handleModeChange}
         modeChangeDisabled={settingsLocked || isStreaming}
         blockingReasonIds={blockingReasonIds}

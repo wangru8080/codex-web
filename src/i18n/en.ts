@@ -366,6 +366,8 @@ const en = {
   'diffSummary.openPreview': 'Open preview',
   'composer.fileChanges.summary': 'Changed files: {count}',
   'composer.fileChanges.open': 'View file changes from this turn',
+  'composer.turnPlan.open': 'View current task progress',
+  'composer.turnPlan.summary': '{completed}/{total} tasks completed',
 
   // ── File tree actions (Phase 4) ─────────────────────────────
   'fileTree.sectionTitle': 'Files',

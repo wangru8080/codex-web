@@ -16,7 +16,8 @@ describe("Turn 文件变更 UI 接线", () => {
   it("从 app-server Turn 派生摘要并传入输入框", () => {
     expect(chatView).toContain("deriveTurnFileChangeSummary(presentedAppServerTurn ?? null)");
     expect(chatView).toContain("fileChangeSummary={appServerSend ? visibleAppServerFileChangeSummary : null}");
-    expect(messageInput).toContain("<ComposerFileChanges summary={fileChangeSummary ?? null} />");
+    expect(messageInput).toContain("summary={fileChangeSummary ?? null}");
+    expect(messageInput).toContain('data-testid="composer-activity-bar"');
   });
 
   it("逐文件点击复用右侧 inline-diff 预览", () => {

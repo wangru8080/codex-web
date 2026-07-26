@@ -353,6 +353,8 @@ const zh: Record<TranslationKey, string> = {
   'diffSummary.openPreview': '预览',
   'composer.fileChanges.summary': '{count} 个文件已更改',
   'composer.fileChanges.open': '查看本轮文件变更',
+  'composer.turnPlan.open': '查看当前任务进度',
+  'composer.turnPlan.summary': '{completed}/{total} 项任务已完成',
 
   // ── File tree actions (Phase 4) ─────────────────────────────
   'fileTree.sectionTitle': '文件',

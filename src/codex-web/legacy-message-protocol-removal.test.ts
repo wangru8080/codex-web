@@ -51,18 +51,18 @@ describe("遗留消息协议移除", () => {
     expect(chatView).not.toContain("taskRuns");
   });
 
-  it("保留 app-server 过程、计划和媒体展示作为反例", () => {
+  it("保留 app-server 过程、Proposed Plan 和媒体展示，但不在消息流重复展示执行任务", () => {
     const item = source("src/components/chat/MessageItem.tsx");
     const streaming = source("src/components/chat/StreamingMessage.tsx");
     const list = source("src/components/chat/MessageList.tsx");
 
     expect(item).toContain("ProcessCollapseGroup");
     expect(item).toContain("ProposedPlanMessageBlock");
-    expect(item).toContain("UpdatedPlanMessageBlock");
+    expect(item).not.toContain("UpdatedPlanMessageBlock");
     expect(item).toContain("MediaPreview");
     expect(streaming).toContain("ProcessCollapseGroup");
     expect(streaming).toContain("ProposedPlanMessageBlock");
-    expect(streaming).toContain("UpdatedPlanMessageBlock");
+    expect(streaming).not.toContain("UpdatedPlanMessageBlock");
     expect(streaming).toContain("MediaPreview");
     expect(list).toContain("processBlocks={processBlocks}");
     expect(list).toContain("planBlocks={planBlocks}");

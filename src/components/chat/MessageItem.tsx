@@ -19,7 +19,7 @@ import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { FileAttachmentDisplay } from './FileAttachmentDisplay';
 import { FileExcerptDisplay } from './FileExcerptDisplay';
 import { parseFileExcerptDisplay } from '@/lib/file-excerpt-reference';
-import { ProposedPlanMessageBlock, UpdatedPlanMessageBlock } from './PlanMessageBlock';
+import { ProposedPlanMessageBlock } from './PlanMessageBlock';
 import { ContextCompactionRow } from './ContextCompactionRow';
 // SPECIES_IMAGE_URL / EGG_IMAGE_URL / RARITY_BG_GRADIENT were used by
 // the assistant-chat avatar (removed 2026-05-21); the imports are kept
@@ -67,14 +67,7 @@ type AssistantRenderPart =
   | { type: 'text'; text: string; variant: 'process' | 'final' }
   | { type: 'tools'; tools: ToolBlock[] }
   | Extract<MessageContentBlock, { type: 'codex_context_compaction' }>
-  | { type: 'proposed_plan'; text: string; sourceBreadcrumb: string }
-  | {
-      type: 'updated_plan';
-      explanation?: string | null;
-      steps: Array<{ step: string; status: 'pending' | 'inProgress' | 'completed' }>;
-      sourceBreadcrumb: string;
-      progress?: { completed: number; total: number } | null;
-    };
+  | { type: 'proposed_plan'; text: string; sourceBreadcrumb: string };
 
 function parseToolBlocks(content: string): {
   text: string;
@@ -169,24 +162,6 @@ function parseToolBlocks(content: string): {
             type: 'proposed_plan',
             text: block.text,
             sourceBreadcrumb: block.sourceBreadcrumb || 'app-server.item/completed',
-          });
-        } else if (block.type === 'codex_updated_plan') {
-          flushPendingTools();
-          renderParts.push({
-            type: 'updated_plan',
-            explanation: block.explanation ?? null,
-            steps: Array.isArray(block.steps)
-              ? block.steps
-                  .filter((step) =>
-                    typeof step.step === 'string' &&
-                    (step.status === 'pending' || step.status === 'inProgress' || step.status === 'completed')
-                  )
-                  .map((step) => ({ step: step.step as string, status: step.status as 'pending' | 'inProgress' | 'completed' }))
-              : [],
-            sourceBreadcrumb: block.sourceBreadcrumb || 'app-server.turn/plan/updated',
-            progress: block.progress && typeof block.progress.completed === 'number' && typeof block.progress.total === 'number'
-              ? { completed: block.progress.completed, total: block.progress.total }
-              : null,
           });
         } else if (block.type === 'tool_use') {
           pushToolPart({
@@ -481,7 +456,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
     part.type === 'codex_context_compaction' ||
     (part.type === 'text' && part.variant === 'process')
   );
-  const planParts = renderParts.filter((part) => part.type === 'proposed_plan' || part.type === 'updated_plan');
+  const planParts = renderParts.filter((part) => part.type === 'proposed_plan');
   const finalParts = renderParts.filter((part) => part.type === 'text' && part.variant === 'final');
   const renderAssistantPart = (part: AssistantRenderPart, index: number) => {
     if (part.type === 'tools') {
@@ -509,20 +484,6 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
         <ProposedPlanMessageBlock
           key={`assistant-proposed-plan-${index}`}
           block={{ type: 'codex_proposed_plan', text: part.text, sourceBreadcrumb: part.sourceBreadcrumb }}
-        />
-      );
-    }
-    if (part.type === 'updated_plan') {
-      return (
-        <UpdatedPlanMessageBlock
-          key={`assistant-updated-plan-${index}`}
-          block={{
-            type: 'codex_updated_plan',
-            explanation: part.explanation,
-            steps: part.steps,
-            sourceBreadcrumb: part.sourceBreadcrumb,
-            progress: part.progress,
-          }}
         />
       );
     }

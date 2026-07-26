@@ -39,11 +39,13 @@ import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadToken
 import type { McpServerStatus } from '@/codex/protocol/generated/v2/McpServerStatus';
 import type { GetAccountRateLimitsResponse } from '@/codex/protocol/generated/v2/GetAccountRateLimitsResponse';
 import type { TurnFileChangeSummary } from '@/codex-web/file-change-summary';
+import type { ComposerTurnPlan as ComposerTurnPlanData } from '@/codex-web/composer-turn-plan';
 import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { ContextWindowIndicator } from './ContextWindowIndicator';
 import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, FileExcerptCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
 import { ComposerFileChanges } from './ComposerFileChanges';
+import { ComposerTurnPlan } from './ComposerTurnPlan';
 import { useMentionTokenEstimate } from '@/hooks/useMentionTokenEstimate';
 import { dataUrlToFileAttachment } from '@/lib/file-utils';
 import { usePopoverState } from '@/hooks/usePopoverState';
@@ -192,6 +194,7 @@ interface MessageInputProps {
   /** 可选文件选择器 accept；空字符串允许任意文件。 */
   attachmentsAccept?: string;
   fileChangeSummary?: TurnFileChangeSummary | null;
+  turnPlan?: ComposerTurnPlanData | null;
 }
 
 function ComposerPlusMenuItem({
@@ -660,6 +663,7 @@ export const MessageInput = memo(function MessageInput({
   codexOnly,
   attachmentsAccept,
   fileChangeSummary,
+  turnPlan,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const appServer = useAppServerActions();
@@ -680,6 +684,7 @@ export const MessageInput = memo(function MessageInput({
     try { return sessionStorage.getItem(draftKey) || ''; } catch { return ''; }
   });
   const [goalPromptActive, setGoalPromptActive] = useState(false);
+  const [composerActivityPanel, setComposerActivityPanel] = useState<'files' | 'tasks' | null>(null);
   const [commandPanel, setCommandPanel] = useState<null | 'mcp' | 'review' | 'reasoning' | 'model' | 'status' | 'memory'>(null);
   const [commandError, setCommandError] = useState('');
   const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]);
@@ -1597,6 +1602,22 @@ export const MessageInput = memo(function MessageInput({
 
   const currentModelValue = modelName || 'sonnet';
   const chatStatus: ChatStatus = isStreaming ? 'streaming' : 'ready';
+  const standaloneTurnPlan = !!turnPlan && !fileChangeSummary;
+  const wasStandaloneTurnPlanRef = useRef(false);
+
+  useEffect(() => {
+    if (standaloneTurnPlan !== wasStandaloneTurnPlanRef.current) {
+      setComposerActivityPanel(standaloneTurnPlan ? 'tasks' : null);
+      wasStandaloneTurnPlanRef.current = standaloneTurnPlan;
+      return;
+    }
+    if (
+      (composerActivityPanel === 'files' && !fileChangeSummary) ||
+      (composerActivityPanel === 'tasks' && !turnPlan)
+    ) {
+      setComposerActivityPanel(null);
+    }
+  }, [composerActivityPanel, fileChangeSummary, standaloneTurnPlan, turnPlan]);
 
   // Composer shell bg routed through the platform token (Phase 7b /
   // Phase 2). Default = `var(--background)` matches prior
@@ -1605,7 +1626,28 @@ export const MessageInput = memo(function MessageInput({
   return (
     <div className="bg-[var(--platform-surface-bar)] backdrop-blur-lg px-4 pt-2 pb-1">
       <div className="mx-auto w-full max-w-3xl">
-        <ComposerFileChanges summary={fileChangeSummary ?? null} />
+        {(fileChangeSummary || turnPlan) && (
+          <div
+            className={cn(
+              'relative mb-2 flex min-w-0 justify-center gap-2',
+              standaloneTurnPlan && 'w-full',
+            )}
+            data-testid="composer-activity-bar"
+            data-variant={standaloneTurnPlan ? 'standalone-task' : 'compact'}
+          >
+            <ComposerFileChanges
+              summary={fileChangeSummary ?? null}
+              expanded={composerActivityPanel === 'files'}
+              onExpandedChange={(expanded) => setComposerActivityPanel(expanded ? 'files' : null)}
+            />
+            <ComposerTurnPlan
+              plan={turnPlan ?? null}
+              expanded={composerActivityPanel === 'tasks'}
+              onExpandedChange={(expanded) => setComposerActivityPanel(expanded ? 'tasks' : null)}
+              variant={standaloneTurnPlan ? 'standalone' : 'compact'}
+            />
+          </div>
+        )}
         <div className="relative">
           {(commandPanel || commandError) && (
             <div className="absolute bottom-full left-0 z-50 mb-2 max-h-80 w-full overflow-y-auto rounded-2xl border bg-popover p-3 shadow-[var(--shadow-diffuse)]" data-testid="composer-command-panel">

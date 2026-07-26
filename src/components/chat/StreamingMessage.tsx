@@ -11,7 +11,7 @@ import { ProcessCollapseGroup, ToolActionsGroup } from '@/components/ai-elements
 import { MediaPreview } from './MediaPreview';
 import { Button } from '@/components/ui/button';
 import { Shimmer } from '@/components/ai-elements/shimmer';
-import { ProposedPlanMessageBlock, UpdatedPlanMessageBlock } from './PlanMessageBlock';
+import { ProposedPlanMessageBlock } from './PlanMessageBlock';
 import { ContextCompactionRow } from './ContextCompactionRow';
 import { CaretDown, WifiHigh } from '@/components/ui/icon';
 import {
@@ -386,9 +386,6 @@ export const StreamingMessage = memo(function StreamingMessage({
         {planBlocks.map((block, index) => {
           if (block.type === 'codex_proposed_plan') {
             return <ProposedPlanMessageBlock key={`stream-proposed-plan-${index}`} block={block} />;
-          }
-          if (block.type === 'codex_updated_plan') {
-            return <UpdatedPlanMessageBlock key={`stream-updated-plan-${index}`} block={block} />;
           }
           return null;
         })}
