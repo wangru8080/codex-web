@@ -126,7 +126,7 @@ npm install --global "https://github.com/wangru8080/codex-web/releases/download/
 
 ### 从 npm registry 安装
 
-发布后，可以从 npm 官方 registry 直接安装：
+可以从 npm 官方 registry 直接安装：
 
 ```bash
 npm install --global @wangru8080/codex-web --registry=https://registry.npmjs.org/
