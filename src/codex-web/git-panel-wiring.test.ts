@@ -7,9 +7,11 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8"
 describe("最小 app-server Git 面板接线", () => {
   const panel = read("src/components/git/GitPanel.tsx");
   const status = read("src/components/git/GitStatusSection.tsx");
+  const history = read("src/components/git/GitHistorySection.tsx");
   const dialog = read("src/components/git/CommitDialog.tsx");
   const hook = read("src/hooks/useGitWorkspace.ts");
   const appShell = read("src/components/layout/AppShell.tsx");
+  const previewPanel = read("src/components/layout/panels/PreviewPanel.tsx");
 
   it("状态、diff 和提交都使用 app-server command/exec", () => {
     expect(panel).toContain("useGitWorkspace(workingDirectory)");
@@ -24,6 +26,20 @@ describe("最小 app-server Git 面板接线", () => {
     expect(appShell).not.toContain("useGitStatus");
   });
 
+  it("历史提交、文件清单、diff 和文件版本都通过只读 app-server 命令加载", () => {
+    expect(panel).toContain("<GitHistorySection");
+    expect(panel).toContain('data-testid="git-view-history"');
+    expect(hook).toContain("'log'");
+    expect(hook).toContain("'diff-tree'");
+    expect(hook).toContain("'cat-file', '-s'");
+    expect(hook).toContain("readHistoricalDiff");
+    expect(hook).toContain("readHistoricalFile");
+    expect(hook).toContain("assertGitCommitSha(sha)");
+    expect(history).toContain('data-testid="git-history-file"');
+    expect(panel).toContain('kind: "inline-code"');
+    expect(previewPanel).toContain('previewSource?.kind === "inline-code"');
+  });
+
   it("文件选择、diff 预览和提交后刷新形成闭环", () => {
     expect(status).toContain('type="checkbox"');
     expect(panel).toContain("const diff = await git.readDiff(file)");
@@ -35,10 +51,9 @@ describe("最小 app-server Git 面板接线", () => {
   });
 
   it("不再暴露失效或延后的完整 Git 客户端操作", () => {
-    const source = `${panel}\n${status}\n${dialog}\n${hook}`;
+    const source = `${panel}\n${status}\n${history}\n${dialog}\n${hook}`;
     expect(source).not.toContain("/api/git/");
     expect(source).not.toContain("GitBranchSelector");
-    expect(source).not.toContain("GitHistorySection");
     expect(source).not.toContain("GitWorktreeSection");
     expect(source).not.toContain("commit-and-push");
   });

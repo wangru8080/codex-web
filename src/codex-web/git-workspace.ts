@@ -1,4 +1,4 @@
-import type { GitChangedFile, GitStatus } from "@/types";
+import type { GitChangedFile, GitHistoryEntry, GitHistoryFile, GitStatus } from "@/types";
 
 type GitNumstat = {
   additions: number | null;
@@ -96,6 +96,53 @@ export function buildGitCommitCommands(files: GitChangedFile[], message: string)
   };
 }
 
+export function parseGitHistory(stdout: string): GitHistoryEntry[] {
+  return stdout
+    .split("\x1e")
+    .filter(Boolean)
+    .map((record) => {
+      const [sha = "", authorName = "", authorEmail = "", timestamp = "", message = ""] = record
+        .replace(/\r?\n$/, "")
+        .split("\0");
+      return {
+        sha: assertGitCommitSha(sha),
+        authorName,
+        authorEmail,
+        timestamp,
+        message,
+      };
+    });
+}
+
+export function parseGitHistoryFiles(stdout: string): GitHistoryFile[] {
+  const records = stdout.split("\0").filter(Boolean);
+  const files: GitHistoryFile[] = [];
+  for (let index = 0; index < records.length; index += 2) {
+    const code = records[index];
+    const firstPath = records[index + 1];
+    if (!code || !firstPath) continue;
+    const renamed = code.startsWith("R") || code.startsWith("C");
+    const path = renamed ? records[index + 2] : firstPath;
+    if (!path) continue;
+    files.push({
+      path,
+      ...(renamed ? { originalPath: firstPath } : {}),
+      status: historyStatusFromCode(code),
+    });
+    if (renamed) index += 1;
+  }
+  return files;
+}
+
+export function gitHistoryPathspecs(file: GitHistoryFile): string[] {
+  return file.originalPath ? [file.path, file.originalPath] : [file.path];
+}
+
+export function assertGitCommitSha(sha: string): string {
+  if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error("无效的 Git commit SHA");
+  return sha.toLowerCase();
+}
+
 function parseBranch(value: string): Pick<GitStatus, "branch" | "upstream" | "ahead" | "behind"> {
   const normalized = value.replace(/^No commits yet on /, "");
   const [branch = "", upstreamWithCounts = ""] = normalized.split("...", 2);
@@ -117,5 +164,13 @@ function statusFromCode(
   if (code === "D") return "deleted";
   if (code === "R") return "renamed";
   if (code === "C") return "copied";
+  return "modified";
+}
+
+function historyStatusFromCode(code: string): GitHistoryFile["status"] {
+  if (code.startsWith("A")) return "added";
+  if (code.startsWith("D")) return "deleted";
+  if (code.startsWith("R")) return "renamed";
+  if (code.startsWith("C")) return "copied";
   return "modified";
 }

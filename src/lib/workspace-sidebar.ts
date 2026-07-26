@@ -353,6 +353,8 @@ function readInlineContent(source: PreviewSource): string {
       return JSON.stringify({ header: source.header, rows: source.rows });
     case 'inline-json':
       return source.text;
+    case 'inline-code':
+      return source.text;
     case 'inline-diff':
       return source.diff;
     case 'inline-markdown':

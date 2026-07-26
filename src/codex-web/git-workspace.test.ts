@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { GitChangedFile } from "@/types";
+import type { GitChangedFile, GitHistoryFile } from "@/types";
 import {
   applyGitNumstat,
+  assertGitCommitSha,
   buildGitCommitCommands,
   gitCommitPathspecs,
+  gitHistoryPathspecs,
+  parseGitHistory,
+  parseGitHistoryFiles,
   parseGitNumstat,
   parseGitWorkspaceStatus,
 } from "./git-workspace";
@@ -134,5 +138,64 @@ describe("gitCommitPathspecs", () => {
         "src/selected file.ts",
       ],
     });
+  });
+});
+
+describe("Git 历史解析", () => {
+  it("解析记录分隔的提交元数据并保留中文和空格", () => {
+    const stdout = [
+      "\x1eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\x00张三\x00zhang@example.com\x002026-07-26T08:00:00+08:00\x00feat: 增加历史视图\n",
+      "\x1ebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\x00Li Si\x00li@example.com\x002026-07-25T18:30:00+08:00\x00fix: file name with spaces\n",
+    ].join("");
+
+    expect(parseGitHistory(stdout)).toEqual([
+      {
+        sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        authorName: "张三",
+        authorEmail: "zhang@example.com",
+        timestamp: "2026-07-26T08:00:00+08:00",
+        message: "feat: 增加历史视图",
+      },
+      {
+        sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        authorName: "Li Si",
+        authorEmail: "li@example.com",
+        timestamp: "2026-07-25T18:30:00+08:00",
+        message: "fix: file name with spaces",
+      },
+    ]);
+  });
+
+  it("解析修改、新增、删除、重命名和复制文件", () => {
+    const stdout = [
+      "M", "src/app file.ts",
+      "A", "src/new.ts",
+      "D", "src/old.ts",
+      "R100", "src/before.ts", "src/after.ts",
+      "C75", "src/source.ts", "src/copy.ts",
+      "",
+    ].join("\0");
+
+    expect(parseGitHistoryFiles(stdout)).toEqual([
+      { path: "src/app file.ts", status: "modified" },
+      { path: "src/new.ts", status: "added" },
+      { path: "src/old.ts", status: "deleted" },
+      { path: "src/after.ts", originalPath: "src/before.ts", status: "renamed" },
+      { path: "src/copy.ts", originalPath: "src/source.ts", status: "copied" },
+    ]);
+  });
+
+  it("历史路径包含 rename 新旧路径并拒绝非法 SHA", () => {
+    const file = {
+      path: "src/after.ts",
+      originalPath: "src/before.ts",
+      status: "renamed",
+    } satisfies GitHistoryFile;
+
+    expect(gitHistoryPathspecs(file)).toEqual(["src/after.ts", "src/before.ts"]);
+    expect(assertGitCommitSha("ABCDEF0123456789abcdef0123456789abcdef01")).toBe(
+      "abcdef0123456789abcdef0123456789abcdef01",
+    );
+    expect(() => assertGitCommitSha("HEAD~1")).toThrow("无效的 Git commit SHA");
   });
 });

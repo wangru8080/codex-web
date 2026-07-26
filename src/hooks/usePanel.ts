@@ -105,6 +105,8 @@ export type PreviewSource =
    * and falls back to a syntax-highlighted text view on parse error.
    */
   | { kind: "inline-json"; text: string; virtualName?: string }
+  /** Read-only source text that is not backed by the current filesystem. */
+  | { kind: "inline-code"; text: string; language: string; virtualName?: string }
   /**
    * Phase 4.B — unified diff viewer. Used by ```diff fences. The
    * viewer parses hunks line-by-line and color-codes +/- prefixes.

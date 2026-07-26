@@ -106,5 +106,6 @@ function samePreviewSource(
   if (a.kind === 'inline-html' && b.kind === 'inline-html') return a.html === b.html && a.virtualName === b.virtualName;
   if (a.kind === 'inline-jsx' && b.kind === 'inline-jsx') return a.jsx === b.jsx && a.virtualName === b.virtualName;
   if (a.kind === 'inline-datatable' && b.kind === 'inline-datatable') return a.virtualName === b.virtualName;
+  if (a.kind === 'inline-code' && b.kind === 'inline-code') return a.text === b.text && a.virtualName === b.virtualName;
   return false;
 }

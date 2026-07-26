@@ -301,8 +301,9 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   const isUserSelectedExternal =
     previewSource?.kind === "file" && sourceTrust === "user-selected";
   const isReadonlySource =
-    previewSource?.kind === "file" &&
-    (previewSource.readonly === true || sourceTrust === "user-selected");
+    previewSource?.kind === "inline-code" ||
+    (previewSource?.kind === "file" &&
+      (previewSource.readonly === true || sourceTrust === "user-selected"));
   // baseDir the fetch must use. Workspace tier passes the working
   // directory; user-selected tier intentionally leaves baseDir undefined
   // so /api/files/preview falls back to homeDir scoping. We never trust
@@ -545,7 +546,9 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   }, [filePath, isAgentReferenced, readFile, reloadTick, t, triggerUpdatedFlash]);
 
   const handleCopyContent = async () => {
-    const text = freshPreview?.content || filePath;
+    const text = previewSource?.kind === "inline-code"
+      ? previewSource.text
+      : freshPreview?.content || filePath;
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -818,6 +821,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     previewSource?.kind === "inline-jsx" ? (previewSource.virtualName ?? "preview.jsx") :
     previewSource?.kind === "inline-datatable" ? (previewSource.virtualName ?? "table") :
     previewSource?.kind === "inline-json" ? (previewSource.virtualName ?? "preview.json") :
+    previewSource?.kind === "inline-code" ? (previewSource.virtualName ?? "preview.txt") :
     previewSource?.kind === "inline-diff" ? (previewSource.virtualName ?? "preview.diff") :
     previewSource?.kind === "inline-markdown" ? (previewSource.virtualName ?? "preview.md") :
     filePath.split("/").pop() || filePath;
@@ -921,6 +925,14 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
                 title={t("filePreview.external.chipTooltip")}
               >
                 {t("filePreview.external.chip")}
+              </span>
+            )}
+            {previewSource?.kind === "inline-code" && (
+              <span
+                className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase text-muted-foreground"
+                title={t("git.historyReadOnly")}
+              >
+                {t("git.readOnly")}
               </span>
             )}
             {/* Phase 4 UX v5 — "已更新" badge sits next to the
@@ -1173,6 +1185,20 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
           // and any other inline-json source. Falls back to a syntax-
           // highlighted text view internally if the payload is malformed.
           <JsonTreeViewer text={previewSource.text} />
+        ) : previewSource?.kind === "inline-code" ? (
+          <SourceView
+            preview={{
+              path: previewSource.virtualName ?? "preview.txt",
+              content: previewSource.text,
+              language: previewSource.language,
+              line_count: previewSource.text ? previewSource.text.split("\n").length : 0,
+              line_count_exact: true,
+              truncated: false,
+              bytes_read: new TextEncoder().encode(previewSource.text).byteLength,
+              bytes_total: new TextEncoder().encode(previewSource.text).byteLength,
+            }}
+            isDark={isDark}
+          />
         ) : previewSource?.kind === "inline-diff" ? (
           // Phase 4.B — unified-diff viewer for ```diff code-fence Previews.
           <DiffViewer diff={previewSource.diff} />

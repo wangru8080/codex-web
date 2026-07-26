@@ -5,12 +5,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppServerActions } from '@/codex-web/AppServerProvider';
 import {
   applyGitNumstat,
+  assertGitCommitSha,
   buildGitCommitCommands,
   gitCommitPathspecs,
+  gitHistoryPathspecs,
+  parseGitHistory,
+  parseGitHistoryFiles,
   parseGitNumstat,
   parseGitWorkspaceStatus,
 } from '@/codex-web/git-workspace';
-import type { GitChangedFile, GitStatus } from '@/types';
+import type { GitChangedFile, GitHistoryFile, GitStatus } from '@/types';
 
 const REFRESH_INTERVAL_MS = 10_000;
 const OUTPUT_CAP = 1024 * 1024;
@@ -119,6 +123,98 @@ export function useGitWorkspace(cwd: string, includeUntrackedStats = true) {
     return response.stdout;
   }, [cwd, execCommand]);
 
+  const readHistory = useCallback(async (offset = 0, limit = 30) => {
+    const safeOffset = Math.max(0, Math.floor(offset));
+    const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
+    if (safeOffset === 0) {
+      const head = await execCommand({
+        command: ['git', 'rev-parse', '--verify', 'HEAD'],
+        ...readOnlyOptions,
+      });
+      if (head.exitCode !== 0) return { entries: [], hasMore: false };
+    }
+    const response = await execCommand({
+      command: [
+        'git',
+        'log',
+        '--no-color',
+        '--date=iso-strict',
+        '--format=%x1e%H%x00%an%x00%ae%x00%aI%x00%s',
+        `--skip=${safeOffset}`,
+        '-n',
+        String(safeLimit + 1),
+      ],
+      ...readOnlyOptions,
+    });
+    if (response.exitCode !== 0) throw commandError(response, '读取 Git 历史失败');
+    const entries = parseGitHistory(response.stdout);
+    return { entries: entries.slice(0, safeLimit), hasMore: entries.length > safeLimit };
+  }, [cwd, execCommand]);
+
+  const readHistoryFiles = useCallback(async (sha: string): Promise<GitHistoryFile[]> => {
+    const commit = assertGitCommitSha(sha);
+    const response = await execCommand({
+      command: [
+        'git',
+        'diff-tree',
+        '--no-commit-id',
+        '--name-status',
+        '-z',
+        '-r',
+        '--root',
+        '--first-parent',
+        '--find-renames',
+        commit,
+      ],
+      ...readOnlyOptions,
+    });
+    if (response.exitCode !== 0) throw commandError(response, '读取提交文件失败');
+    return parseGitHistoryFiles(response.stdout);
+  }, [cwd, execCommand]);
+
+  const readHistoricalDiff = useCallback(async (sha: string, file: GitHistoryFile): Promise<string> => {
+    const commit = assertGitCommitSha(sha);
+    const response = await execCommand({
+      command: [
+        'git',
+        '--literal-pathspecs',
+        'show',
+        '--format=',
+        '--no-ext-diff',
+        '--no-color',
+        '--find-renames',
+        '--root',
+        commit,
+        '--',
+        ...gitHistoryPathspecs(file),
+      ],
+      ...readOnlyOptions,
+    });
+    if (response.exitCode !== 0) throw commandError(response, '读取历史文件差异失败');
+    if (!response.stdout) throw new Error('该文件没有可预览的历史差异');
+    return response.stdout;
+  }, [cwd, execCommand]);
+
+  const readHistoricalFile = useCallback(async (sha: string, file: GitHistoryFile): Promise<string> => {
+    const commit = assertGitCommitSha(sha);
+    const revision = file.status === 'deleted'
+      ? `${commit}^1:${file.path}`
+      : `${commit}:${file.path}`;
+    const size = await execCommand({
+      command: ['git', 'cat-file', '-s', revision],
+      ...readOnlyOptions,
+    });
+    if (size.exitCode !== 0) throw commandError(size, '读取历史文件大小失败');
+    if (Number(size.stdout.trim()) > OUTPUT_CAP) throw new Error('历史文件超过 1 MiB，无法安全预览');
+    const response = await execCommand({
+      command: ['git', 'show', '--no-ext-diff', '--no-color', revision],
+      ...readOnlyOptions,
+    });
+    if (response.exitCode !== 0) throw commandError(response, '读取历史文件版本失败');
+    if (response.stdout.includes('\0')) throw new Error('二进制文件不支持文本预览');
+    return response.stdout;
+  }, [cwd, execCommand]);
+
   const commitSelected = useCallback(async (files: GitChangedFile[], message: string) => {
     const trimmed = message.trim();
     const paths = gitCommitPathspecs(files);
@@ -182,7 +278,19 @@ export function useGitWorkspace(cwd: string, includeUntrackedStats = true) {
     };
   }, [refresh]);
 
-  return { status, loading, committing, error, refresh, readDiff, commitSelected };
+  return {
+    status,
+    loading,
+    committing,
+    error,
+    refresh,
+    readDiff,
+    readHistory,
+    readHistoryFiles,
+    readHistoricalDiff,
+    readHistoricalFile,
+    commitSelected,
+  };
 }
 
 function commandError(

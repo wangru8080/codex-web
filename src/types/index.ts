@@ -1567,6 +1567,20 @@ export interface GitChangedFile {
   deletions?: number | null;
 }
 
+export interface GitHistoryEntry {
+  sha: string;
+  authorName: string;
+  authorEmail: string;
+  timestamp: string;
+  message: string;
+}
+
+export interface GitHistoryFile {
+  path: string;
+  originalPath?: string;
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'copied';
+}
+
 export interface GitBranch {
   name: string;
   isRemote: boolean;

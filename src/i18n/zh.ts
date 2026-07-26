@@ -1350,6 +1350,15 @@ const zh: Record<TranslationKey, string> = {
   'git.selectAll': '全选文件',
   'git.selected': '已选 {count} 个',
   'git.commitSelected': '提交 {count} 个文件',
+  'git.changes': '更改',
+  'git.viewSwitcher': 'Git 视图',
+  'git.historyReadOnly': '历史提交与文件仅供只读查看',
+  'git.readOnly': '只读',
+  'git.noHistory': '暂无提交历史',
+  'git.noCommitFiles': '该提交没有可显示的文件',
+  'git.loadMore': '加载更多',
+  'git.viewHistoricalFile': '查看该版本文件',
+  'git.viewHistoricalFileNamed': '只读查看 {path} 的历史版本',
 
   // ── Terminal ──────────────────────────────────────────────────
   'terminal.title': '终端',

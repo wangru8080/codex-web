@@ -1369,6 +1369,15 @@ const en = {
   'git.selectAll': 'Select all files',
   'git.selected': '{count} selected',
   'git.commitSelected': 'Commit {count} files',
+  'git.changes': 'Changes',
+  'git.viewSwitcher': 'Git views',
+  'git.historyReadOnly': 'Commit history and files are read-only',
+  'git.readOnly': 'Read only',
+  'git.noHistory': 'No commit history',
+  'git.noCommitFiles': 'This commit has no files to display',
+  'git.loadMore': 'Load more',
+  'git.viewHistoricalFile': 'View file at this revision',
+  'git.viewHistoricalFileNamed': 'View historical revision of {path} read-only',
 
   // ── Terminal ──────────────────────────────────────────────────
   'terminal.title': 'Terminal',

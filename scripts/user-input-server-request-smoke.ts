@@ -76,7 +76,35 @@ async function main(): Promise<void> {
   await assert(cdp, `document.querySelector('[data-testid="git-panel"]')?.textContent?.includes("-1") === true`, "Git 面板删除行总计错误");
   await assert(cdp, `document.querySelector('[data-testid="git-panel"] [title="src/app.ts"]') !== null`, "Git 面板缺少已修改文件");
   await assert(cdp, `document.querySelector('[data-testid="git-panel"] [title="src/new.ts"]') !== null`, "Git 面板缺少未跟踪文件");
+  await assert(cdp, `document.querySelector('[data-testid="git-history"]') === null`, "普通更改路径不应提前渲染 Git 历史");
   await captureScreenshot(cdp, "01-git-status.png");
+
+  await click(cdp, '[data-testid="git-view-history"]');
+  await waitFor(cdp, `document.querySelector('[data-testid="git-history-commit-1111111"]') !== null`, 15_000);
+  await click(cdp, '[data-testid="git-history-commit-1111111"]');
+  await waitFor(cdp, `document.querySelector('[data-testid="git-history-file"]')?.textContent?.includes("src/history.ts") === true`, 15_000);
+  await captureScreenshot(cdp, "04-git-history.png");
+  await click(cdp, '[data-testid="git-history-file"]');
+  await waitFor(cdp, `document.body.innerText.includes("+const historicalValue = 2;")`, 15_000);
+  await captureScreenshot(cdp, "05-history-diff.png");
+
+  await click(cdp, "#tab-git");
+  await waitFor(cdp, `document.querySelector('[data-testid="git-history"]') !== null`, 15_000);
+  await assert(cdp, `document.querySelector('[data-testid="git-view-history"]')?.getAttribute("data-state") === "active"`, "从历史 diff 返回后应保留历史视图");
+  await waitFor(cdp, `document.querySelector('[data-testid="git-history-commit-1111111"]') !== null`, 15_000);
+  await click(cdp, '[data-testid="git-history-commit-1111111"]');
+  await waitFor(cdp, `document.querySelector('[aria-label="只读查看 src/history.ts 的历史版本"]') !== null`, 2_000).catch(async () => {
+    await click(cdp!, '[data-testid="git-history-commit-1111111"]');
+  });
+  await waitFor(cdp, `document.querySelector('[aria-label="只读查看 src/history.ts 的历史版本"]') !== null`, 15_000);
+  await click(cdp, '[aria-label="只读查看 src/history.ts 的历史版本"]');
+  await waitFor(cdp, `document.body.innerText.includes("const historicalValue = 2;") && document.body.innerText.includes("只读")`, 15_000);
+  await captureScreenshot(cdp, "06-history-file.png");
+  console.log("Git 历史 smoke 通过：普通路径不预取历史，提交可展开文件，diff 与完整版本均只读打开");
+
+  await click(cdp, "#tab-git");
+  await waitFor(cdp, `document.querySelector('[data-testid="git-view-changes"]') !== null`, 15_000);
+  await click(cdp, '[data-testid="git-view-changes"]');
   await click(cdp, '[data-testid="git-panel"] [title="src/app.ts"]');
   await waitFor(cdp, `document.body.innerText.includes("-const oldValue = 2;")`, 15_000);
   await captureScreenshot(cdp, "02-file-diff.png");
@@ -356,6 +384,25 @@ function responseForMethod(method: string, params: unknown, gitStatus: GitSmokeS
             : "## main\0";
         return { exitCode: 0, stdout, stderr: "" };
       }
+      if (command.includes("log")) {
+        return {
+          exitCode: 0,
+          stdout: "\x1e1111111111111111111111111111111111111111\x00Smoke User\x00smoke@example.com\x002026-07-26T09:00:00+08:00\x00feat: 历史提交",
+          stderr: "",
+        };
+      }
+      if (command.includes("diff-tree")) {
+        return { exitCode: 0, stdout: "M\0src/history.ts\0", stderr: "" };
+      }
+      if (command.includes("cat-file")) {
+        return { exitCode: 0, stdout: "34\n", stderr: "" };
+      }
+      if (command.includes("show")) {
+        const revisionFile = command.find((part) => part.includes(":"));
+        return revisionFile
+          ? { exitCode: 0, stdout: "export const historicalValue = 2;\n", stderr: "" }
+          : { exitCode: 0, stdout: "--- a/src/history.ts\n+++ b/src/history.ts\n@@ -1 +1 @@\n-const historicalValue = 1;\n+const historicalValue = 2;", stderr: "" };
+      }
       if (command.includes("--numstat")) {
         if (command.includes("--no-index")) {
           return { exitCode: 1, stdout: "1\t0\t\0/dev/null\0src/new.ts\0", stderr: "" };
@@ -606,6 +653,8 @@ async function advanceBrowserClock(cdp: CdpClient, milliseconds: number): Promis
 async function captureScreenshot(cdp: CdpClient, filename: string): Promise<void> {
   const directory = process.env.CODEX_SMOKE_SCREENSHOT_DIR?.trim();
   if (!directory) return;
+  const filter = process.env.CODEX_SMOKE_SCREENSHOT_FILTER?.split(",").map((item) => item.trim()).filter(Boolean);
+  if (filter?.length && !filter.includes(filename)) return;
   const outputPath = join(directory, filename);
   if (existsSync(outputPath)) throw new Error(`拒绝覆盖已有截图：${outputPath}`);
   const response = await cdp.call<{ data: string }>("Page.captureScreenshot", {
