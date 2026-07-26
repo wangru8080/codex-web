@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { WebSocketServer, type WebSocket } from "ws";
 
@@ -27,12 +28,20 @@ async function main(): Promise<void> {
   let cdp: CdpClient | null = null;
 
   try {
+  debug("等待 Next 页面");
   await waitForHttp(`http://127.0.0.1:${appPort}/chat/${threadId}`, next);
+  debug("Next 页面可访问，创建 CDP target");
   target = await createTarget(cdpBaseUrl);
   cdp = await CdpClient.connect(target.webSocketDebuggerUrl);
   await cdp.call("Page.enable");
   await cdp.call("Runtime.enable");
   await cdp.call("Network.enable");
+  await cdp.call("Emulation.setDeviceMetricsOverride", {
+    width: 1600,
+    height: 1000,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
   await cdp.call("Network.setCookie", {
     name: WEB_AUTH_COOKIE,
     value: createSessionToken(webAuth),
@@ -46,7 +55,46 @@ async function main(): Promise<void> {
     })();`,
   });
   await cdp.call("Page.navigate", { url: `${appUrl}/chat/${threadId}` });
-  await waitFor(cdp, `document.body.innerText.includes("用户输入 Smoke") && document.querySelector("textarea") !== null`, 30_000);
+  await waitFor(cdp, `document.body.innerText.includes("用户输入 Smoke") && (document.querySelector("textarea") !== null || document.body.innerText.includes("This page could not be found"))`, 30_000);
+  if (!await evaluate<boolean>(cdp, `document.querySelector("textarea") !== null`)) {
+    const isRoute404 = await evaluate<boolean>(cdp, `document.body.innerText.includes("This page could not be found")`);
+    if (!isRoute404) throw new Error("聊天页未渲染输入框");
+    debug("动态聊天路由首次返回 404，重新导航一次");
+    await cdp.call("Page.navigate", { url: `${appUrl}/chat/${threadId}` });
+  }
+  await waitFor(cdp, `document.querySelector("textarea") !== null`, 30_000);
+  debug("聊天页面已渲染，开始 Git 面板断言");
+
+  if (!await evaluate<boolean>(cdp, `document.querySelector("#tab-git") !== null`)) {
+    await click(cdp, '[aria-label="工作区侧栏"]');
+    await waitFor(cdp, `document.querySelector("#tab-git") !== null`, 15_000);
+  }
+  await click(cdp, "#tab-git");
+  await waitFor(cdp, `document.querySelector('[data-testid="git-panel"]') !== null`, 15_000);
+  debug("Git 面板已渲染");
+  await assert(cdp, `document.querySelector('[data-testid="git-panel"]')?.textContent?.includes("+3") === true`, "Git 面板新增行总计错误");
+  await assert(cdp, `document.querySelector('[data-testid="git-panel"]')?.textContent?.includes("-1") === true`, "Git 面板删除行总计错误");
+  await assert(cdp, `document.querySelector('[data-testid="git-panel"] [title="src/app.ts"]') !== null`, "Git 面板缺少已修改文件");
+  await assert(cdp, `document.querySelector('[data-testid="git-panel"] [title="src/new.ts"]') !== null`, "Git 面板缺少未跟踪文件");
+  await captureScreenshot(cdp, "01-git-status.png");
+  await click(cdp, '[data-testid="git-panel"] [title="src/app.ts"]');
+  await waitFor(cdp, `document.body.innerText.includes("-const oldValue = 2;")`, 15_000);
+  await captureScreenshot(cdp, "02-file-diff.png");
+  debug("Git 文件 diff 已打开");
+  await click(cdp, "#tab-git");
+  await waitFor(cdp, `document.querySelector('[data-testid="git-panel"] input[aria-label="src/app.ts"]') !== null`, 15_000);
+  await click(cdp, '[data-testid="git-panel"] input[aria-label="src/app.ts"]');
+  await clickButtonByText(cdp, "提交 1 个文件");
+  await setTextarea(cdp, '[data-testid="git-commit-dialog"] textarea', "测试：只提交 app.ts");
+  await captureScreenshot(cdp, "03-commit-dialog.png");
+  await click(cdp, '[data-testid="git-commit-submit"]');
+  await waitFor(cdp, `document.querySelector('[data-testid="git-commit-dialog"]') === null`, 15_000);
+  debug("Git 提交弹窗已关闭");
+  await waitFor(cdp, `document.querySelector('[data-testid="git-panel"] [title="src/app.ts"]') === null`, 15_000);
+  await assert(cdp, `document.querySelector('[data-testid="git-panel"] [title="src/new.ts"]') !== null`, "部分提交后 Git 面板应保留未提交文件");
+  fake.setGitStatus("all");
+  await cdp.call("Runtime.evaluate", { expression: `window.dispatchEvent(new CustomEvent("git-refresh"))` });
+  console.log("最小 Git 面板 smoke 通过：真实点击文件 diff、选择单文件并提交、部分提交后保留剩余文件");
 
   await assert(cdp, `document.querySelector('[data-testid="composer-file-changes"]') === null`, "普通路径不应显示文件变更汇总");
   fake.sendFileChanges();
@@ -187,7 +235,12 @@ async function startFakeAppServer(publicHost: string): Promise<{
         result?: unknown;
       };
       if (message.method && message.id !== undefined) {
-        socket.send(JSON.stringify({ id: message.id, result: responseForMethod(message.method, message.params, gitStatus) }));
+        const command = commandFromParams(message.params);
+        const result = responseForMethod(message.method, message.params, gitStatus);
+        if (message.method === "command/exec" && command.includes("commit") && (result as { exitCode?: number }).exitCode === 0) {
+          gitStatus = command.includes("src/app.ts") ? "partial" : "clean";
+        }
+        socket.send(JSON.stringify({ id: message.id, result }));
         return;
       }
       if (message.id !== undefined && "result" in message) {
@@ -226,7 +279,10 @@ async function startFakeAppServer(publicHost: string): Promise<{
       });
     },
     hasResponse: (id) => responses.has(id),
-    close: () => new Promise<void>((resolveClose) => server.close(() => resolveClose())),
+    close: () => new Promise<void>((resolveClose) => {
+      for (const socket of server.clients) socket.terminate();
+      server.close(() => resolveClose());
+    }),
   };
 }
 
@@ -286,24 +342,44 @@ function responseForMethod(method: string, params: unknown, gitStatus: GitSmokeS
     case "fs/readDirectory":
       return { entries: [] };
     case "command/exec": {
-      const command = params && typeof params === "object" && Array.isArray((params as { command?: unknown }).command)
-        ? (params as { command: string[] }).command
-        : [];
+      const command = commandFromParams(params);
       if (gitStatus === "unavailable") return { exitCode: 128, stdout: "", stderr: "not a git repository" };
+      if (command.includes("--absolute-git-dir") || command.includes("--git-common-dir")) {
+        return { exitCode: 0, stdout: `${process.cwd()}/.git\n`, stderr: "" };
+      }
       if (command.includes("rev-parse")) return { exitCode: 0, stdout: `${process.cwd()}\n`, stderr: "" };
       if (command.includes("status")) {
         const stdout = gitStatus === "all"
-          ? " M src/app.ts\0?? src/new.ts\0"
+          ? "## main\0 M src/app.ts\0?? src/new.ts\0"
           : gitStatus === "partial"
-            ? "?? src/new.ts\0"
-            : "";
+            ? "## main\0?? src/new.ts\0"
+            : "## main\0";
         return { exitCode: 0, stdout, stderr: "" };
       }
+      if (command.includes("--numstat")) {
+        if (command.includes("--no-index")) {
+          return { exitCode: 1, stdout: "1\t0\t\0/dev/null\0src/new.ts\0", stderr: "" };
+        }
+        return { exitCode: 0, stdout: gitStatus === "all" ? "2\t1\tsrc/app.ts\0" : "", stderr: "" };
+      }
+      if (command.includes("diff")) {
+        if (command.includes("--no-index")) {
+          return { exitCode: 1, stdout: "--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1 @@\n+export {};", stderr: "" };
+        }
+        return { exitCode: 0, stdout: "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,2 +1,3 @@\n const value = 1;\n-const oldValue = 2;\n+const nextValue = 2;\n+export { nextValue };", stderr: "" };
+      }
+      if (command.includes("add") || command.includes("commit")) return { exitCode: 0, stdout: "ok", stderr: "" };
       return { exitCode: 1, stdout: "", stderr: "unsupported fake command" };
     }
     default:
       return {};
   }
+}
+
+function commandFromParams(params: unknown): string[] {
+  return params && typeof params === "object" && Array.isArray((params as { command?: unknown }).command)
+    ? (params as { command: string[] }).command
+    : [];
 }
 
 function smokeThread() {
@@ -433,8 +509,8 @@ function startNext(port: number, bridgeUrl: string): ChildProcess {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  child.stdout?.on("data", () => undefined);
-  child.stderr?.on("data", () => undefined);
+  child.stdout?.on("data", (data) => debug(`[next stdout] ${String(data).trimEnd()}`));
+  child.stderr?.on("data", (data) => debug(`[next stderr] ${String(data).trimEnd()}`));
   return child;
 }
 
@@ -473,6 +549,7 @@ async function stopProcess(process: ChildProcess): Promise<void> {
     new Promise<void>((resolveExit) => process.once("exit", () => resolveExit())),
     delay(5_000).then(() => undefined),
   ]);
+  if (process.exitCode === null) process.kill("SIGKILL");
 }
 
 async function createTarget(baseUrl: string): Promise<{ id: string; webSocketDebuggerUrl: string }> {
@@ -490,6 +567,16 @@ async function setInput(cdp: CdpClient, selector: string, value: string): Promis
     const input = document.querySelector(${JSON.stringify(selector)});
     if (!(input instanceof HTMLInputElement)) throw new Error('未找到输入框：${selector}');
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, ${JSON.stringify(value)});
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+  })()`);
+}
+
+async function setTextarea(cdp: CdpClient, selector: string, value: string): Promise<void> {
+  await evaluate(cdp, `(() => {
+    const input = document.querySelector(${JSON.stringify(selector)});
+    if (!(input instanceof HTMLTextAreaElement)) throw new Error('未找到文本框：${selector}');
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
     setter?.call(input, ${JSON.stringify(value)});
     input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
   })()`);
@@ -514,6 +601,19 @@ async function clickButtonByText(cdp: CdpClient, text: string): Promise<void> {
 
 async function advanceBrowserClock(cdp: CdpClient, milliseconds: number): Promise<void> {
   await evaluate(cdp, `globalThis.__codexSmokeNowOffsetMs += ${milliseconds}`);
+}
+
+async function captureScreenshot(cdp: CdpClient, filename: string): Promise<void> {
+  const directory = process.env.CODEX_SMOKE_SCREENSHOT_DIR?.trim();
+  if (!directory) return;
+  const outputPath = join(directory, filename);
+  if (existsSync(outputPath)) throw new Error(`拒绝覆盖已有截图：${outputPath}`);
+  const response = await cdp.call<{ data: string }>("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: false,
+  });
+  writeFileSync(outputPath, Buffer.from(response.data, "base64"));
+  console.log(`截图已保存：${outputPath}`);
 }
 
 async function assert(cdp: CdpClient, expression: string, message: string): Promise<void> {
@@ -551,6 +651,10 @@ function expectEqual(actual: unknown, expected: unknown, label: string): void {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+}
+
+function debug(message: string): void {
+  if (process.env.CODEX_SMOKE_DEBUG === "1") console.log(`[smoke] ${message}`);
 }
 
 class CdpClient {

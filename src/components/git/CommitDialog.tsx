@@ -1,176 +1,90 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+
 import { X } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/hooks/useTranslation";
+import type { GitChangedFile } from "@/types";
 
-interface CommitDialogProps {
-  cwd: string;
+type Props = {
+  files: GitChangedFile[];
   open: boolean;
+  committing: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
-}
+  onCommit: (message: string) => Promise<void>;
+};
 
-type CommitMode = "commit" | "commit-and-push";
-
-export function CommitDialog({ cwd, open, onClose, onSuccess }: CommitDialogProps) {
+export function CommitDialog({ files, open, committing, onClose, onCommit }: Props) {
   const { t } = useTranslation();
   const [message, setMessage] = useState("");
-  const [mode, setMode] = useState<CommitMode>("commit");
-  const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (open && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) {
+    if (open) textareaRef.current?.focus();
+    else {
       setMessage("");
       setError(null);
     }
   }, [open]);
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !committing) onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [committing, onClose, open]);
 
-  const handleSubmit = useCallback(async () => {
-    const trimmed = message.trim();
-    if (!trimmed || !cwd || committing) return;
-    setCommitting(true);
+  const submit = async () => {
+    if (!message.trim() || files.length === 0 || committing) return;
     setError(null);
     try {
-      // Commit
-      const commitRes = await fetch("/api/git/commit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, message: trimmed }),
-      });
-      if (!commitRes.ok) {
-        const data = await commitRes.json();
-        throw new Error(data.error || "Commit failed");
-      }
-
-      // Push if selected
-      if (mode === "commit-and-push") {
-        const pushRes = await fetch("/api/git/push", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cwd }),
-        });
-        if (!pushRes.ok) {
-          const data = await pushRes.json();
-          throw new Error(data.error || "Push failed");
-        }
-      }
-
-      setMessage("");
-      onSuccess?.();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Operation failed");
-    } finally {
-      setCommitting(false);
+      await onCommit(message.trim());
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t('git.error'));
     }
-  }, [cwd, message, mode, committing, onClose, onSuccess]);
+  };
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-
-      {/* Dialog */}
-      <div className="relative z-10 w-[420px] rounded-lg border border-border bg-background shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
-          <h3 className="text-sm font-semibold">{t('git.commitAll')}</h3>
-          <Button variant="ghost" size="icon-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid="git-commit-dialog">
+      <button className="absolute inset-0 bg-black/50" aria-label={t('common.cancel')} onClick={() => !committing && onClose()} />
+      <div className="relative z-10 w-full max-w-[420px] rounded-lg border border-border bg-background shadow-xl">
+        <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
+          <h3 className="text-sm font-semibold">{t('git.commitSelected', { count: String(files.length) })}</h3>
+          <Button variant="ghost" size="icon-sm" disabled={committing} onClick={onClose} aria-label={t('common.close')}>
             <X size={14} />
           </Button>
         </div>
-
-        {/* Body */}
-        <div className="p-4 space-y-3">
+        <div className="space-y-3 p-4">
+          <div className="max-h-28 overflow-y-auto rounded border border-border/50 px-2 py-1.5">
+            {files.map((file) => <div key={file.path} className="truncate font-mono text-xs text-muted-foreground">{file.path}</div>)}
+          </div>
           <textarea
             ref={textareaRef}
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={(event) => setMessage(event.target.value)}
             placeholder={t('git.commitMessage')}
-            className="w-full h-24 rounded-md border border-input bg-transparent px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                handleSubmit();
+            className="h-24 w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                void submit();
               }
             }}
           />
-
-          {/* Mode selector */}
-          <div className="flex flex-col gap-1.5">
-            <label className="flex items-center gap-2 cursor-pointer text-sm">
-              <input
-                type="radio"
-                name="commit-mode"
-                checked={mode === "commit"}
-                onChange={() => setMode("commit")}
-                className="accent-primary"
-              />
-              <CodexWebIcon name="git_commit" size="sm" className="text-muted-foreground" aria-hidden />
-              {t('topBar.commit')}
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer text-sm">
-              <input
-                type="radio"
-                name="commit-mode"
-                checked={mode === "commit-and-push"}
-                onChange={() => setMode("commit-and-push")}
-                className="accent-primary"
-              />
-              <CodexWebIcon name="upload_cloud" size="sm" className="text-muted-foreground" aria-hidden />
-              {t('git.commitAndPush')}
-            </label>
-          </div>
-
-          {error && (
-            <p className="text-[11px] text-destructive">{error}</p>
-          )}
+          {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border/40">
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button
-            size="sm"
-            disabled={!message.trim() || committing}
-            onClick={handleSubmit}
-          >
-            {mode === "commit-and-push" ? (
-              <CodexWebIcon name="upload_cloud" size="sm" className="mr-1.5" aria-hidden />
-            ) : (
-              <CodexWebIcon name="git_commit" size="sm" className="mr-1.5" aria-hidden />
-            )}
-            {committing
-              ? t('git.loading')
-              : mode === "commit-and-push"
-                ? t('git.commitAndPush')
-                : t('git.commitAll')
-            }
+        <div className="flex items-center justify-end gap-2 border-t border-border/40 px-4 py-3">
+          <Button variant="ghost" size="sm" disabled={committing} onClick={onClose}>{t('common.cancel')}</Button>
+          <Button data-testid="git-commit-submit" size="sm" disabled={!message.trim() || files.length === 0 || committing} onClick={() => void submit()}>
+            <CodexWebIcon name="git_commit" size="sm" className="mr-1.5" aria-hidden />
+            {committing ? t('git.loading') : t('git.commit')}
           </Button>
         </div>
       </div>

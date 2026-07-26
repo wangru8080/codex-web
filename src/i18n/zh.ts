@@ -1347,6 +1347,9 @@ const zh: Record<TranslationKey, string> = {
   'git.pushSuccess': '推送成功',
   'git.commitSuccess': '提交成功',
   'git.commitEmpty': '没有可提交的内容',
+  'git.selectAll': '全选文件',
+  'git.selected': '已选 {count} 个',
+  'git.commitSelected': '提交 {count} 个文件',
 
   // ── Terminal ──────────────────────────────────────────────────
   'terminal.title': '终端',

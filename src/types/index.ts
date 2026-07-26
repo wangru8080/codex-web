@@ -1552,13 +1552,19 @@ export interface GitStatus {
   ahead: number;
   behind: number;
   dirty: boolean;
+  additions?: number;
+  deletions?: number;
   changedFiles: GitChangedFile[];
 }
 
 export interface GitChangedFile {
   path: string;
+  originalPath?: string;
   status: 'modified' | 'added' | 'deleted' | 'renamed' | 'copied' | 'untracked';
   staged: boolean;
+  unstaged?: boolean;
+  additions?: number | null;
+  deletions?: number | null;
 }
 
 export interface GitBranch {

@@ -1366,6 +1366,9 @@ const en = {
   'git.pushSuccess': 'Pushed successfully',
   'git.commitSuccess': 'Committed successfully',
   'git.commitEmpty': 'Nothing to commit',
+  'git.selectAll': 'Select all files',
+  'git.selected': '{count} selected',
+  'git.commitSelected': 'Commit {count} files',
 
   // ── Terminal ──────────────────────────────────────────────────
   'terminal.title': 'Terminal',

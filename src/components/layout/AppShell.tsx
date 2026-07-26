@@ -14,7 +14,7 @@ import { PanelContext, usePanel, type PreviewViewMode, type PreviewSource } from
 import { SplitContext, type SplitSession } from "@/hooks/useSplit";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SentryInit } from "./SentryInit";
-import { useGitStatus } from "@/hooks/useGitStatus";
+import { useGitWorkspace } from "@/hooks/useGitWorkspace";
 import { Toaster } from '@/components/ui/toast';
 import { useGlobalSearchShortcut } from '@/hooks/useGlobalSearchShortcut';
 import { GlobalSearchDialog } from './GlobalSearchDialog';
@@ -315,7 +315,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [streamingSessionId, setStreamingSessionId] = useState("");
   const [pendingApprovalSessionId, setPendingApprovalSessionId] = useState("");
 
-  const { status: gitStatusFromHook } = useGitStatus(workingDirectory);
+  const { status: gitStatusFromHook } = useGitWorkspace(workingDirectory, false);
   const currentBranch = gitStatusFromHook?.branch ?? "";
   const gitDirtyCount = gitStatusFromHook?.changedFiles.filter(f => f.status !== 'untracked').length ?? 0;
 
