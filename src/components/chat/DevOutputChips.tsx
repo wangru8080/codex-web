@@ -35,7 +35,7 @@ import {
   tokenizeDevOutput,
   type DevOutputToken,
 } from "@/lib/markdown/dev-output-parser";
-import { splitPathAndAnchor } from "@/lib/markdown/anchor";
+import { parseAnchor, splitPathAndAnchor } from "@/lib/markdown/anchor";
 import { looksLikeRemoteHref, isPotentialLocalFile } from "@/lib/markdown/local-link-detector";
 import { resolveToolPath } from "@/lib/file-write-tools";
 
@@ -50,7 +50,7 @@ const PROCESSED_ATTR = "data-codepilot-dev-processed";
 
 export function DevOutputSegment({ text }: { text: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const { workingDirectory, setPreviewSource } = usePanel();
+  const { workingDirectory, setPreviewSource, setPreviewViewMode } = usePanel();
 
   // Click delegation — single listener at the container catches every
   // chip + intercepted markdown-link click.
@@ -82,6 +82,7 @@ export function DevOutputSegment({ text }: { text: string }) {
           readonly: cls.readonly,
           ...(anchor ? { anchor } : {}),
         });
+        if (parseAnchor(anchor).kind === "line") setPreviewViewMode("source");
         return;
       }
       const action = el.getAttribute("data-codepilot-localhost-action");
@@ -113,7 +114,7 @@ export function DevOutputSegment({ text }: { text: string }) {
         cspMode: "navigate",
       });
     },
-    [workingDirectory, setPreviewSource],
+    [workingDirectory, setPreviewSource, setPreviewViewMode],
   );
 
   // Post-render enrichment. Runs after streamdown has rendered the
@@ -214,9 +215,12 @@ function buildTokenNode(doc: Document, tok: DevOutputToken): Node {
     btn.title = tok.filePath + (tok.anchor ?? "");
     btn.appendChild(doc.createTextNode(basename));
     if (tok.anchor) {
+      const parsedAnchor = parseAnchor(tok.anchor);
       const anchorSpan = doc.createElement("span");
       anchorSpan.className = "text-muted-foreground/70";
-      anchorSpan.appendChild(doc.createTextNode(tok.anchor));
+      anchorSpan.appendChild(doc.createTextNode(
+        parsedAnchor.kind === "line" ? `(line ${parsedAnchor.line})` : tok.anchor,
+      ));
       btn.appendChild(anchorSpan);
     }
     return btn;

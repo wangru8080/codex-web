@@ -35,6 +35,8 @@ export interface MarkdownEditorProps {
   onChange: (v: string) => void;
   onSave?: () => void;
   onSelectionChange?: (selection: FileTextSelection | null) => void;
+  /** 可选的 1-based 目标行，用于滚动显示并放置光标。 */
+  targetLine?: number;
   /** Optional filename shown via data-attribute (used for testing hooks). */
   filename?: string;
   /** Aria label for a11y; also shown as placeholder hint. */
@@ -47,6 +49,7 @@ export function MarkdownEditor({
   onChange,
   onSave,
   onSelectionChange,
+  targetLine,
   filename,
   placeholder,
   className,
@@ -159,6 +162,17 @@ export function MarkdownEditor({
       });
     }
   }, [value]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !targetLine || targetLine < 1) return;
+    const line = Math.min(targetLine, view.state.doc.lines);
+    const position = view.state.doc.line(line).from;
+    view.dispatch({
+      selection: { anchor: position },
+      effects: EditorView.scrollIntoView(position, { y: "start", yMargin: 12 }),
+    });
+  }, [filename, targetLine]);
 
   // Theme compartment swap — no EditorView rebuild, no cursor loss.
   useEffect(() => {

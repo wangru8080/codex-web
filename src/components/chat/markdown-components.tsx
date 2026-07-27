@@ -29,6 +29,7 @@ import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { showToast } from "@/hooks/useToast";
 import { usePanel } from "@/hooks/usePanel";
 import { classifyChatLinkHref } from "@/lib/markdown/chat-link";
+import { parseAnchor } from "@/lib/markdown/anchor";
 import { classifyPath } from "@/lib/preview-source";
 import { resolveToolPath } from "@/lib/file-write-tools";
 
@@ -52,6 +53,11 @@ function childrenToText(children: ReactNode): string {
     return childrenToText(props?.children);
   }
   return "";
+}
+
+function hasLineLabel(children: ReactNode, line: number): boolean {
+  const text = childrenToText(children);
+  return new RegExp(`(?:\\bline\\s*${line}\\b|第\\s*${line}\\s*行)`, "i").test(text);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +173,7 @@ function ChatLink({
   node: _node,
   ...props
 }: ComponentProps<"a"> & { node?: unknown }) {
-  const { workingDirectory, setPreviewSource } = usePanel();
+  const { workingDirectory, setPreviewSource, setPreviewViewMode } = usePanel();
   const target = classifyChatLinkHref(href);
   const linkClass = "inline-flex items-center gap-1 rounded px-1 py-0.5 align-baseline font-medium text-blue-600 no-underline transition-colors hover:bg-blue-500/10 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300";
 
@@ -175,6 +181,8 @@ function ChatLink({
     return <span title="Blocked URL">{children}</span>;
   }
   if (target.kind === "local-file") {
+    const parsedAnchor = parseAnchor(target.anchor);
+    const lineNumber = parsedAnchor.kind === "line" ? parsedAnchor.line : undefined;
     const handleLocalFile = (event: React.MouseEvent<HTMLAnchorElement>) => {
       event.preventDefault();
       event.stopPropagation();
@@ -188,6 +196,7 @@ function ChatLink({
         readonly: classification.readonly,
         ...(target.anchor ? { anchor: target.anchor } : {}),
       });
+      if (lineNumber) setPreviewViewMode("source");
     };
     return (
       <a
@@ -201,6 +210,9 @@ function ChatLink({
       >
         <CodexWebIcon name="file_code" size="sm" className="shrink-0" aria-hidden />
         <span>{children}</span>
+        {lineNumber && !hasLineLabel(children, lineNumber) ? (
+          <span className="text-blue-500/80">(line {lineNumber})</span>
+        ) : null}
       </a>
     );
   }

@@ -386,6 +386,12 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   }, []);
 
   const filePath = previewFile || "";
+  const parsedPreviewAnchor = parseAnchor(
+    previewSource?.kind === "file" ? previewSource.anchor : undefined,
+  );
+  const targetLine = parsedPreviewAnchor.kind === "line"
+    ? parsedPreviewAnchor.line
+    : undefined;
 
   // Phase 4 UX v6 — interactive-scripts is now a PERSISTENT user
   // preference (default: enabled). The previous per-file reset was
@@ -1282,6 +1288,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
                   onChange={setEditContent}
                   onSave={handleSaveEdit}
                   onSelectionChange={setEditorSelection}
+                  targetLine={targetLine}
                   filename={filePath}
                   className="min-h-0 flex-1 overflow-hidden"
                 />
@@ -1302,7 +1309,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
                 }
               />
             ) : (
-              <SourceView preview={freshPreview} isDark={isDark} />
+              <SourceView preview={freshPreview} isDark={isDark} targetLine={targetLine} />
             )}
           </>
         ) : (
@@ -1404,12 +1411,26 @@ function useDocCodeTheme(isDark: boolean) {
   return resolveHljsStyle(codeTheme, isDark);
 }
 
-function sourceLineProps(lineNumber: number): React.HTMLProps<HTMLElement> {
-  return { "data-source-line": String(lineNumber) } as React.HTMLProps<HTMLElement>;
+function sourceLineProps(
+  lineNumber: number,
+  targetLine?: number,
+): React.HTMLProps<HTMLElement> {
+  return {
+    "data-source-line": String(lineNumber),
+    className: lineNumber === targetLine ? "block bg-blue-500/10" : "block",
+  } as React.HTMLProps<HTMLElement>;
 }
 
 /** Source code view using react-syntax-highlighter */
-function SourceView({ preview, isDark }: { preview: FilePreviewType; isDark: boolean }) {
+function SourceView({
+  preview,
+  isDark,
+  targetLine,
+}: {
+  preview: FilePreviewType;
+  isDark: boolean;
+  targetLine?: number;
+}) {
   const hljsStyle = useDocCodeTheme(isDark);
   const sourceRef = useRef<HTMLDivElement | null>(null);
   const selection = useDomFileSelection({
@@ -1417,6 +1438,16 @@ function SourceView({ preview, isDark }: { preview: FilePreviewType; isDark: boo
     sourceText: preview.content,
     resolveLines: sourceLineRangeFromDom,
   });
+  useEffect(() => {
+    if (!targetLine) return;
+    const frame = requestAnimationFrame(() => {
+      const target = sourceRef.current?.querySelector<HTMLElement>(
+        `[data-source-line="${targetLine}"]`,
+      );
+      target?.scrollIntoView({ block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [preview.path, targetLine]);
   return (
     <div className="flex min-h-full flex-col text-xs">
       <FileSelectionToolbar filePath={preview.path} selection={selection} />
@@ -1426,7 +1457,7 @@ function SourceView({ preview, isDark }: { preview: FilePreviewType; isDark: boo
           style={hljsStyle}
           showLineNumbers
           wrapLines
-          lineProps={sourceLineProps}
+          lineProps={(lineNumber) => sourceLineProps(lineNumber, targetLine)}
           customStyle={{
             margin: 0,
             padding: "8px",

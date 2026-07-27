@@ -46,6 +46,8 @@ describe("MessageResponse", () => {
     } as unknown as PanelContextValue;
     const markdown = [
       "[websocket-bridge.ts](/repo/server/websocket-bridge.ts#L42)",
+      "[already (line 42)](/repo/server/already.ts:42)",
+      "[README.md](/repo/README.md)",
       "[OpenAI 文档](https://platform.openai.com/docs)",
     ].join(" ");
     const html = renderToStaticMarkup(
@@ -59,6 +61,8 @@ describe("MessageResponse", () => {
     expect(html).toContain('data-codepilot-fileref-path="/repo/server/websocket-bridge.ts"');
     expect(html).toContain('data-codepilot-fileref-anchor="#L42"');
     expect(html).toContain("websocket-bridge.ts");
+    expect(html.match(/\(line 42\)/g)).toHaveLength(2);
+    expect(html).not.toContain("README.md (line");
     expect(html).toContain('href="https://platform.openai.com/docs"');
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
