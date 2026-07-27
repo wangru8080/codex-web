@@ -1126,7 +1126,7 @@ function NewChatPageInner() {
         // Centered new-chat hero: welcome → composer → onboarding cards
         // as one vertically-centered max-w-3xl block. Mirrors ChatGPT /
         // Claude / Codex new-chat pattern.
-        <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-4 py-8">
+        <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-0 py-8 sm:px-4">
           <div className="w-full max-w-3xl">
             <NewChatWelcome />
             {composerStack}

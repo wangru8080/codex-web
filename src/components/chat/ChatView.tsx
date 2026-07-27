@@ -1606,7 +1606,7 @@ export function ChatView({
         // inline post-stream affordances (TerminalReasonChip,
         // skillNudge, RateLimitBanner, etc.) since none of them
         // apply when there are no messages yet.
-        <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-4 py-8">
+        <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-0 py-8 sm:px-4">
           <div className="w-full max-w-3xl">
             <NewChatWelcome projectName={projectName} isAssistant={isAssistantProject} />
             {readOnly && (
