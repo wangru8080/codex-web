@@ -18,4 +18,18 @@ describe("app-server 文件预览接线", () => {
     expect(preview).not.toContain('const res = await fetch(\n          `/api/files/preview');
     expect(preview).not.toContain('fetch("/api/files/write"');
   });
+
+  it("复制按钮右侧通过 app-server 原始字节下载已授权文件", () => {
+    const copyButton = preview.indexOf('name="copy"');
+    const downloadButton = preview.indexOf('name="download"');
+
+    expect(preview).toContain('previewSource?.kind === "file" && !isAgentReferenced');
+    expect(preview).toContain("await readFile(path)");
+    expect(preview).toContain("fileBytesFromResponse(response)");
+    expect(preview).toContain("URL.createObjectURL(blob)");
+    expect(preview).toContain('link.download = path.split(/[/\\\\]/).pop() || "download"');
+    expect(preview).toContain("URL.revokeObjectURL(url)");
+    expect(copyButton).toBeGreaterThan(-1);
+    expect(downloadButton).toBeGreaterThan(copyButton);
+  });
 });

@@ -57,10 +57,12 @@ import { injectInlineHtmlCsp } from "@/lib/inline-html-csp";
 import { useAppServerActions } from "@/codex-web/AppServerProvider";
 import {
   AppServerFilePreviewError,
+  fileBytesFromResponse,
   fileDataUrlFromResponse,
   filePreviewFromResponse,
   utf8ToBase64,
 } from "@/codex-web/app-server-files";
+import { showToast } from "@/hooks/useToast";
 // MarkdownOutlineRail removed from the UI per Codex UX feedback —
 // outline rail ate too much sidebar width and its partial background
 // looked broken. The post-render heading + callout helpers stay
@@ -552,6 +554,28 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownloadFile = async () => {
+    if (previewSource?.kind !== "file" || isAgentReferenced) return;
+    const path = previewSource.filePath;
+    try {
+      const response = await readFile(path);
+      const blob = new Blob([fileBytesFromResponse(response)], {
+        type: "application/octet-stream",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = path.split(/[/\\]/).pop() || "download";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showToast({ type: "success", message: t("fileTree.downloadStarted") });
+    } catch {
+      showToast({ type: "error", message: t("fileTree.downloadFailed") });
+    }
   };
 
   // Editor state for Phase 4.3 edit mode. editContent is the in-memory
@@ -1115,6 +1139,19 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
             ) : (
               <CodexWebIcon name="copy" size="sm" aria-hidden />
             )}
+          </Button>
+        )}
+
+        {previewSource?.kind === "file" && !isAgentReferenced && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleDownloadFile}
+            className="h-7 w-7 text-muted-foreground/80 hover:text-foreground hover:bg-muted/50"
+            title={t("fileTree.download")}
+            aria-label={t("fileTree.download")}
+          >
+            <CodexWebIcon name="download" size="sm" aria-hidden />
           </Button>
         )}
 
