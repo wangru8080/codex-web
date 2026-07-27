@@ -13,6 +13,8 @@
  * The two surfaces stay clean separately.
  */
 
+import { useState } from "react";
+
 import { useTranslation } from "@/hooks/useTranslation";
 import { useAccountInfo } from "@/hooks/useAccountInfo";
 import { useAppServerSelector } from "@/codex-web/AppServerProvider";
@@ -23,12 +25,46 @@ import { Button } from "@/components/ui/button";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import type { TranslationKey } from "@/i18n";
 import { APP_VERSION } from "@/lib/app-version";
+import { copyWithToast } from "@/lib/clipboard";
+
+const UPGRADE_COMMAND = "npm install --global @wangru8080/codex-web@latest";
+
+type UpdateCheckState =
+  | { status: "idle" | "checking" | "current" | "failed" }
+  | { status: "available"; latestVersion: string; releaseUrl: string };
 
 export function AboutSection() {
   const { t } = useTranslation();
   const { accountInfo } = useAccountInfo();
   const platformOs = useAppServerSelector((state) => state.initialize?.data.platformOs);
   const os = runtimePlatformLabel(platformOs);
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({ status: "idle" });
+
+  async function checkForUpdates() {
+    setUpdateCheck({ status: "checking" });
+    try {
+      const response = await fetch("/api/app/updates", { cache: "no-store" });
+      const result: unknown = await response.json();
+      if (!response.ok || !result || typeof result !== "object") throw new Error("检查更新失败");
+
+      const update = result as Record<string, unknown>;
+      if (typeof update.updateAvailable !== "boolean" || typeof update.latestVersion !== "string") {
+        throw new Error("更新响应无效");
+      }
+      if (update.updateAvailable) {
+        if (typeof update.releaseUrl !== "string") throw new Error("更新地址无效");
+        setUpdateCheck({
+          status: "available",
+          latestVersion: update.latestVersion,
+          releaseUrl: update.releaseUrl,
+        });
+      } else {
+        setUpdateCheck({ status: "current" });
+      }
+    } catch {
+      setUpdateCheck({ status: "failed" });
+    }
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -39,7 +75,7 @@ export function AboutSection() {
         </p>
       </div>
 
-      {/* Browser build identity with a stable future Web update entry. */}
+      {/* Browser build identity and the user-triggered npm update check. */}
       <SettingsCard>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -51,11 +87,61 @@ export function AboutSection() {
               </p>
             </div>
           </div>
-          <Button disabled size="sm" variant="outline">
-            <CodexWebIcon name="refresh" size="sm" aria-hidden />
-            {t("settings.checkForUpdates")}
+          <Button
+            aria-busy={updateCheck.status === "checking"}
+            disabled={updateCheck.status === "checking"}
+            onClick={() => void checkForUpdates()}
+            size="sm"
+            variant="outline"
+          >
+            <CodexWebIcon
+              name="refresh"
+              size="sm"
+              className={updateCheck.status === "checking" ? "animate-spin" : undefined}
+              aria-hidden
+            />
+            {updateCheck.status === "checking"
+              ? t("settings.checkingForUpdates")
+              : t("settings.checkForUpdates")}
           </Button>
         </div>
+        {updateCheck.status !== "idle" && updateCheck.status !== "checking" && (
+          <div
+            className="border-t border-border/50 pt-3 text-xs"
+            role="status"
+            aria-live="polite"
+            data-source="npm.registry/@wangru8080/codex-web/latest"
+          >
+            {updateCheck.status === "available" ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-foreground/85">
+                  {t("about.update.available", { version: updateCheck.latestVersion })}{" "}
+                  <a
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                    href={updateCheck.releaseUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t("about.update.viewRelease")}
+                    <CodexWebIcon name="external" size={10} aria-hidden />
+                  </a>
+                </p>
+                <Button
+                  onClick={() => void copyWithToast({ text: UPGRADE_COMMAND, t })}
+                  size="xs"
+                  variant="outline"
+                >
+                  <CodexWebIcon name="copy" size="sm" aria-hidden />
+                  {t("about.update.copyCommand")}
+                </Button>
+              </div>
+            ) : (
+              <p className={updateCheck.status === "failed" ? "text-destructive" : "text-muted-foreground"}>
+                {t(updateCheck.status === "failed" ? "about.update.failed" : "about.update.current")}
+              </p>
+            )}
+          </div>
+        )}
       </SettingsCard>
 
       {/* Platform info — "what build am I running" surfaces here so a

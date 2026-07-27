@@ -32,7 +32,7 @@ describe("关于页面精简", () => {
     expect(chinese).toContain("'settings.aboutDesc': 'CodexWeb 版本、平台信息'");
   });
 
-  it("保留版本、运行端平台和未来更新入口作为反例", () => {
+  it("保留版本、运行端平台和真实 npm 更新入口作为反例", () => {
     const about = source("src/components/settings/AboutSection.tsx");
 
     expect(about).toContain("APP_VERSION");
@@ -41,7 +41,17 @@ describe("关于页面精简", () => {
     expect(about).toContain("state.initialize?.data.platformOs");
     expect(about).toContain("runtimePlatformLabel");
     expect(about).toContain("settings.checkForUpdates");
-    expect(about).toMatch(/<Button[\s\S]*disabled[\s\S]*settings\.checkForUpdates/);
+    expect(about).toContain('fetch("/api/app/updates"');
+    expect(about).toContain('status === "checking"');
+    expect(about).toContain("about.update.available");
+    expect(about).toContain("about.update.current");
+    expect(about).toContain("about.update.failed");
+    expect(about).toContain("about.update.copyCommand");
+    expect(about).toContain("copyWithToast");
+    expect(about).toContain('npm install --global @wangru8080/codex-web@latest');
+    expect(about).toContain('data-source="npm.registry/@wangru8080/codex-web/latest"');
+    expect(about).toContain('disabled={updateCheck.status === "checking"}');
+    expect(about).not.toContain("<Button disabled size=\"sm\"");
     expect(about).not.toContain("navigator.userAgent");
     expect(about).not.toContain("electronAPI");
   });

@@ -1,3 +1,5 @@
+import { APP_VERSION } from "@/lib/app-version";
+
 const now = new Date("2026-07-06T10:00:00.000Z");
 
 function minutesAgo(minutes: number): string {
@@ -469,12 +471,10 @@ export function mockApiResponse(request: Request): Response | null {
   if (pathname === "/api/app/updates") {
     return json({
       updateAvailable: false,
-      latestVersion: "0.1.0",
-      currentVersion: "0.1.0",
-      releaseName: "",
-      releaseNotes: "",
-      releaseUrl: "",
-      publishedAt: ""
+      latestVersion: APP_VERSION,
+      currentVersion: APP_VERSION,
+      releaseUrl: "https://www.npmjs.com/package/@wangru8080/codex-web",
+      source: "npm.registry/@wangru8080/codex-web/latest"
     });
   }
 
