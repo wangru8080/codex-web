@@ -208,7 +208,7 @@ function ChatLink({
         onClick={handleLocalFile}
         title={target.filePath + (target.anchor ?? "")}
       >
-        <CodexWebIcon name="file_code" size="sm" className="shrink-0" aria-hidden />
+        <CodexWebIcon name="file_code" size="sm" className="shrink-0 text-inherit" aria-hidden />
         <span>{children}</span>
         {lineNumber && !hasLineLabel(children, lineNumber) ? (
           <span className="text-blue-500/80">(line {lineNumber})</span>
@@ -225,7 +225,7 @@ function ChatLink({
         target="_blank"
         rel="noopener noreferrer"
       >
-        <CodexWebIcon name="web_simple" size="sm" className="shrink-0" aria-hidden />
+        <CodexWebIcon name="web_simple" size="sm" className="shrink-0 text-inherit" aria-hidden />
         <span>{children}</span>
       </a>
     );
