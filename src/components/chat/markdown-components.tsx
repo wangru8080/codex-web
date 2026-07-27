@@ -169,7 +169,7 @@ function ChatLink({
 }: ComponentProps<"a"> & { node?: unknown }) {
   const { workingDirectory, setPreviewSource } = usePanel();
   const target = classifyChatLinkHref(href);
-  const linkClass = "inline-flex items-center gap-1 rounded px-1 py-0.5 align-baseline font-medium text-primary no-underline transition-colors hover:bg-primary/10 hover:text-primary";
+  const linkClass = "inline-flex items-center gap-1 rounded px-1 py-0.5 align-baseline font-medium text-blue-600 no-underline transition-colors hover:bg-blue-500/10 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300";
 
   if (target.kind === "blocked") {
     return <span title="Blocked URL">{children}</span>;

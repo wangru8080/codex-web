@@ -63,5 +63,7 @@ describe("MessageResponse", () => {
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noopener noreferrer"');
     expect(html.match(/<svg/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html.match(/text-blue-600/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html.match(/hover:bg-blue-500\/10/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });
