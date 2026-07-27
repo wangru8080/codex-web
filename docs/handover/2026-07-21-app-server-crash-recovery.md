@@ -22,7 +22,7 @@ Web bridge 现在监督 `codex app-server` 运行时代际。app-server transpor
 
 - `server/persistent-app-server.ts`：持有可替换的 process/rpc 代际，处理 fatal close、协议状态清理、诊断摘要和重启退避。
 - `server/websocket-bridge.ts`：动态暴露当前 app-server PID。
-- `server/websocket-bridge.test.ts`：覆盖 fatal exit、重新 initialize、主动关闭和取消延迟重启。
+- `server/tests/websocket-bridge.test.ts`：覆盖 fatal exit、重新 initialize、主动关闭和取消延迟重启。
 - `scripts/app-server-recovery-smoke.ts`：在隔离环境中精确终止 bridge 返回的 app-server PID，验证真实进程恢复。
 - `package.json`：提供 `npm run test:smoke:app-server-recovery`。
 

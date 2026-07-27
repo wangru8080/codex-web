@@ -20,7 +20,7 @@
 
 ## 验证记录
 
-- 定向测试：`server/production-server-options.test.ts`、`server/codex-process.test.ts`、`src/lib/theme/loader.test.ts`，3 个文件、10 项通过。
+- 定向测试：`server/tests/production-server-options.test.ts`、`server/tests/codex-process.test.ts`、`src/lib/theme/tests/loader.test.ts`，3 个文件、10 项通过。
 - 全量测试：114 个文件、542 项通过。
 - 生产构建：Next.js 生产构建成功。
 - bridge smoke：隔离 `CODEX_HOME` 下通过，模型 7 个，账号来源 `app-server.account/read`。
