@@ -59,6 +59,7 @@ import {
   AppServerFilePreviewError,
   fileBytesFromResponse,
   fileDataUrlFromResponse,
+  fileDocumentBytesFromResponse,
   filePreviewFromResponse,
   utf8ToBase64,
 } from "@/codex-web/app-server-files";
@@ -103,6 +104,18 @@ const MarkdownEditor = dynamic(
 const DataTableViewer = dynamic(
   () => import("@/components/editor/DataTableViewer").then((m) => m.DataTableViewer),
   { ssr: false, loading: () => <div className="flex h-full items-center justify-center py-12"><SpinnerGap size={20} className="animate-spin text-muted-foreground" /></div> },
+);
+const PdfViewer = dynamic(
+  () => import("@/components/editor/PdfViewer").then((m) => m.PdfViewer),
+  { ssr: false, loading: () => <div className="flex h-full items-center justify-center"><SpinnerGap size={20} className="animate-spin text-muted-foreground" /></div> },
+);
+const WordDocumentViewer = dynamic(
+  () => import("@/components/editor/WordDocumentViewer").then((m) => m.WordDocumentViewer),
+  { ssr: false, loading: () => <div className="flex h-full items-center justify-center"><SpinnerGap size={20} className="animate-spin text-muted-foreground" /></div> },
+);
+const SpreadsheetViewer = dynamic(
+  () => import("@/components/editor/SpreadsheetViewer").then((m) => m.SpreadsheetViewer),
+  { ssr: false, loading: () => <div className="flex h-full items-center justify-center"><SpinnerGap size={20} className="animate-spin text-muted-foreground" /></div> },
 );
 
 // Lazy-load Streamdown and plugins — only loaded when rendered markdown is needed
@@ -180,6 +193,7 @@ function isEditable(filePath: string): boolean {
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".avif", ".ico"]);
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".webm", ".mkv", ".avi"]);
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".ogg", ".flac", ".aac"]);
+const DOCUMENT_EXTENSIONS = new Set([".pdf", ".doc", ".docx", ".xls", ".xlsx"]);
 
 function getExtension(filePath: string): string {
   const dot = filePath.lastIndexOf(".");
@@ -204,6 +218,10 @@ function isAudioPreview(filePath: string): boolean {
 
 function isMediaPreview(filePath: string): boolean {
   return isImagePreview(filePath) || isVideoPreview(filePath) || isAudioPreview(filePath);
+}
+
+function isDocumentPreview(filePath: string): boolean {
+  return DOCUMENT_EXTENSIONS.has(getExtension(filePath));
 }
 
 function isHtml(filePath: string): boolean {
@@ -288,6 +306,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mediaUrl, setMediaUrl] = useState("");
+  const [documentBytes, setDocumentBytes] = useState<Uint8Array<ArrayBuffer> | null>(null);
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [width, setWidth] = useState(PREVIEW_DEFAULT_WIDTH);
@@ -454,6 +473,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     if (isAgentReferenced) {
       setLoading(false);
       setPreview(null);
+      setDocumentBytes(null);
       setError(null);
       setLoadedPath(null);
       setDiskConflict(false);
@@ -469,6 +489,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
       // freshPreview gating below.
       setLoading(true);
       setPreview(null);
+      setDocumentBytes(null);
       setError(null);
       setLoadedPath(null);
       setDiskConflict(false);
@@ -482,10 +503,19 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
         const response = await readFile(filePath);
         if (cancelled) return;
         if (isMediaPreview(filePath)) {
+          setDocumentBytes(null);
           setMediaUrl(fileDataUrlFromResponse(filePath, response));
           setLoadedPath(filePath);
           return;
         }
+        if (isDocumentPreview(filePath)) {
+          setPreview(null);
+          setMediaUrl("");
+          setDocumentBytes(fileDocumentBytesFromResponse(response));
+          setLoadedPath(filePath);
+          return;
+        }
+        setDocumentBytes(null);
         const newPreview = filePreviewFromResponse(filePath, response);
         // Phase 4 UX — content equality short-circuit on warm refresh.
         // If the route returned bytes identical to what we already
@@ -630,6 +660,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   // to the loading branch, so the UI shows a spinner instead of a
   // cross-file frankenstate.
   const freshPreview = loadedMatchesActive ? preview : null;
+  const freshDocumentBytes = loadedMatchesActive ? documentBytes : null;
 
   useEffect(() => {
     setEditorSelection(null);
@@ -868,6 +899,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
 
   const canRender = isRenderable(filePath);
   const isMedia = isMediaPreview(filePath);
+  const isDocument = isDocumentPreview(filePath);
 
   // Outer wrapper — fills the Workspace Sidebar's Tab body. Resize +
   // width are owned by the sidebar shell so we don't ResizeHandle here.
@@ -999,7 +1031,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
                   suffix for inline/unknown sources where the
                   filename doesn't disclose the language. */}
               {freshPreview &&
-              !isMedia &&
+              !isMedia && !isDocument &&
               freshPreview.language &&
               !filenameImpliesLanguage(filePath, freshPreview.language) ? (
                 <span className="ml-1.5 text-muted-foreground/40">· {freshPreview.language}</span>
@@ -1032,7 +1064,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
             the identity row above. Keeps the controls cluster
             (Select + view-mode Tabs) compact and visually balanced. */}
 
-        {canRender && !isMedia && !isAgentReferenced && (
+        {canRender && !isMedia && !isDocument && !isAgentReferenced && (
           <ViewModeToggle
             value={previewViewMode}
             onChange={setPreviewViewMode}
@@ -1252,6 +1284,16 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
           // typically don't carry frontmatter and the navigation rail
           // would be visual noise for a short fence.
           <InlineMarkdownView markdown={previewSource.markdown} />
+        ) : isDocument && loading ? (
+          <div className="flex items-center justify-center py-12">
+            <SpinnerGap size={20} className="animate-spin text-muted-foreground" />
+          </div>
+        ) : isDocument && error ? (
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
+        ) : isDocument && freshDocumentBytes ? (
+          <DocumentView filePath={filePath} bytes={freshDocumentBytes} />
         ) : isMedia && loading ? (
           <div className="flex items-center justify-center py-12">
             <SpinnerGap size={20} className="animate-spin text-muted-foreground" />
@@ -1631,6 +1673,16 @@ function MediaView({ filePath, fileServeUrl }: { filePath: string; fileServeUrl:
   }
 
   return null;
+}
+
+function DocumentView({ filePath, bytes }: { filePath: string; bytes: Uint8Array<ArrayBuffer> }) {
+  const extension = getExtension(filePath);
+  const title = filePath.split(/[/\\]/).pop() || filePath;
+  if (extension === ".pdf") return <PdfViewer key={filePath} bytes={bytes} title={title} />;
+  if (extension === ".doc" || extension === ".docx") {
+    return <WordDocumentViewer key={filePath} bytes={bytes} filePath={filePath} />;
+  }
+  return <SpreadsheetViewer key={filePath} bytes={bytes} />;
 }
 function RenderedView({
   content,

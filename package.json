@@ -83,6 +83,7 @@
     "@codemirror/theme-one-dark": "^6.1.3",
     "@codemirror/view": "^6.43.6",
     "@codesandbox/sandpack-react": "^2.20.0",
+    "@file-viewer/doc": "2.2.2",
     "@hugeicons/core-free-icons": "^4.2.2",
     "@hugeicons/react": "^1.1.9",
     "@phosphor-icons/react": "^2.1.10",
@@ -100,6 +101,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "codemirror": "^6.0.2",
+    "docx-preview": "0.4.0",
     "dompurify": "^3.4.11",
     "jdenticon": "^3.3.0",
     "lucide-react": "1.14.0",
@@ -122,6 +124,7 @@
     "tokenlens": "^1.3.1",
     "use-stick-to-bottom": "^1.1.6",
     "uuid": "^13.0.2",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }

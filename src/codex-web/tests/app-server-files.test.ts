@@ -5,6 +5,7 @@ import {
   directoryEntriesToNodes,
   fileDataUrlFromResponse,
   fileBytesFromResponse,
+  fileDocumentBytesFromResponse,
   filePreviewFromResponse,
   utf8ToBase64,
 } from "../app-server-files";
@@ -60,6 +61,14 @@ describe("app-server 文件适配器", () => {
   it("拒绝超过 10 MB 的文件", () => {
     const dataBase64 = "A".repeat(Math.ceil((10 * 1024 * 1024 + 1) / 3) * 4);
     expect(() => filePreviewFromResponse("/workspace/large.txt", { dataBase64 })).toThrow("file_too_large");
+  });
+
+  it("二进制文档读取同样拒绝超过 10 MB 的文件", () => {
+    const dataBase64 = "A".repeat(Math.ceil((10 * 1024 * 1024 + 1) / 3) * 4);
+    expect(() => fileDocumentBytesFromResponse({ dataBase64 })).toThrow("file_too_large");
+    expect(Array.from(fileDocumentBytesFromResponse({
+      dataBase64: Buffer.from([0xd0, 0xcf, 0x11, 0xe0]).toString("base64"),
+    }))).toEqual([0xd0, 0xcf, 0x11, 0xe0]);
   });
 
   it("为图片生成 data URL", () => {

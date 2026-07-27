@@ -84,6 +84,13 @@ export function fileBytesFromResponse(response: FsReadFileResponse): Uint8Array<
   return bytes;
 }
 
+export function fileDocumentBytesFromResponse(response: FsReadFileResponse): Uint8Array<ArrayBuffer> {
+  if (decodedBase64Size(response.dataBase64) > FILE_PREVIEW_BYTE_LIMIT) {
+    throw new AppServerFilePreviewError("file_too_large");
+  }
+  return fileBytesFromResponse(response);
+}
+
 export function utf8ToBase64(content: string): string {
   const bytes = new TextEncoder().encode(content);
   let binary = "";

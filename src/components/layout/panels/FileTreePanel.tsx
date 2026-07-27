@@ -171,7 +171,7 @@ export function FileTreePanel({ variant = 'legacy' }: { variant?: 'legacy' | 'si
     const ext = path.split(".").pop()?.toLowerCase() || "";
     const NON_PREVIEWABLE = new Set([
       "zip", "tar", "gz", "rar", "7z", "bz2",
-      "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+      "ppt", "pptx",
       "exe", "dll", "so", "dylib", "bin", "dmg", "iso",
       "woff", "woff2", "ttf", "otf", "eot",
       "flv", "wmv", "wma",
