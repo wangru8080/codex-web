@@ -18,7 +18,7 @@ const zh: Record<TranslationKey, string> = {
   'chatList.justNow': '刚刚',
   'chatList.minutesAgo': '{n}分钟',
   'chatList.hoursAgo': '{n}小时',
-  'chatList.daysAgo': '{n}天',
+  'chatList.daysAgo': '{n}天前',
   'chatList.newConversation': '新对话',
   'chatList.delete': '删除',
   'chatList.deleteConversation': '删除对话',

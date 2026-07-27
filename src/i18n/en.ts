@@ -21,7 +21,7 @@ const en = {
   'chatList.justNow': 'just now',
   'chatList.minutesAgo': '{n}m',
   'chatList.hoursAgo': '{n}h',
-  'chatList.daysAgo': '{n}d',
+  'chatList.daysAgo': '{n}d ago',
   'chatList.newConversation': 'New Conversation',
   'chatList.delete': 'Delete',
   'chatList.deleteConversation': 'Delete Conversation',

@@ -1,7 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { groupSessionsByProject } from "@/components/layout/chat-list-utils";
+import {
+  formatRelativeTime,
+  groupSessionsByProject,
+} from "@/components/layout/chat-list-utils";
+import type { TranslationKey } from "@/i18n";
 import type { ChatSession } from "@/types";
+
+const translate = (
+  key: TranslationKey,
+  params?: Record<string, string | number>,
+) => `${key}:${params?.n ?? ""}`;
+
+afterEach(() => vi.useRealTimers());
 
 function createSession(overrides: Partial<ChatSession> = {}): ChatSession {
   return {
@@ -49,5 +60,26 @@ describe("groupSessionsByProject", () => {
 
   it("没有当前目录和会话时不生成虚假项目", () => {
     expect(groupSessionsByProject([])).toEqual([]);
+  });
+});
+
+describe("formatRelativeTime", () => {
+  it("超过一周和数百天的会话仍显示具体天数", () => {
+    vi.setSystemTime(new Date("2026-07-27T12:00:00.000Z"));
+
+    expect(formatRelativeTime("2026-07-19T12:00:00.000Z", translate)).toBe(
+      "chatList.daysAgo:8",
+    );
+    expect(formatRelativeTime("2025-06-22T12:00:00.000Z", translate)).toBe(
+      "chatList.daysAgo:400",
+    );
+  });
+
+  it("不足一天时仍显示小时数", () => {
+    vi.setSystemTime(new Date("2026-07-27T12:00:00.000Z"));
+
+    expect(formatRelativeTime("2026-07-26T13:00:00.000Z", translate)).toBe(
+      "chatList.hoursAgo:23",
+    );
   });
 });

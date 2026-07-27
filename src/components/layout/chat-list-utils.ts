@@ -134,6 +134,5 @@ export function formatRelativeTime(dateStr: string, t: (key: TranslationKey, par
   if (diffMin < 1) return t('chatList.justNow');
   if (diffMin < 60) return t('chatList.minutesAgo', { n: diffMin });
   if (diffHr < 24) return t('chatList.hoursAgo', { n: diffHr });
-  if (diffDay < 7) return t('chatList.daysAgo', { n: diffDay });
-  return date.toLocaleDateString();
+  return t('chatList.daysAgo', { n: diffDay });
 }
