@@ -139,6 +139,7 @@ describe("reduceAppServerTurnNotification", () => {
       threadId: "thread-1",
       turnId: "turn-1",
       assistantText: "你好，Codex。",
+      assistantTextItemId: "item-1",
       reasoningText: "先确认上下文。",
       durationMs: 3000,
       errorMessage: "",
@@ -240,6 +241,77 @@ describe("reduceAppServerTurnNotification", () => {
       { id: "final-1", text: "搜索完成。", phase: "final_answer" },
     ]);
     expect(state.assistantText).toBe("搜索完成。");
+    expect(state.assistantTextItemId).toBe("final-1");
+  });
+
+  it("item 完成时确认为 commentary 后撤销误归类的最终回答文本", () => {
+    let state = createAcceptedTurnState("thread-1", "turn-1");
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: { type: "agentMessage", id: "comment-1", text: "", phase: null, memoryCitation: null },
+      },
+    });
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/agentMessage/delta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "comment-1", delta: "先确认环境。" },
+    });
+
+    expect(state.assistantText).toBe("先确认环境。");
+
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          type: "agentMessage",
+          id: "comment-1",
+          text: "先确认环境。",
+          phase: "commentary",
+          memoryCitation: null,
+        },
+      },
+    });
+
+    expect(state.assistantText).toBe("");
+    expect(state.assistantTextItemId).toBeNull();
+    expect(state.items).toMatchObject([
+      { id: "comment-1", text: "先确认环境。", phase: "commentary" },
+    ]);
+  });
+
+  it("item 元数据晚于 delta 到达时按 commentary phase 撤销误归类文本", () => {
+    let state = createAcceptedTurnState("thread-1", "turn-1");
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/agentMessage/delta",
+      params: { threadId: "thread-1", turnId: "turn-1", itemId: "comment-1", delta: "先检查日志。" },
+    });
+
+    expect(state.assistantText).toBe("先检查日志。");
+
+    state = reduceAppServerTurnNotification(state, {
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          type: "agentMessage",
+          id: "comment-1",
+          text: "先检查日志。",
+          phase: "commentary",
+          memoryCitation: null,
+        },
+      },
+    });
+
+    expect(state.assistantText).toBe("");
+    expect(state.assistantTextItemId).toBeNull();
+    expect(state.items).toMatchObject([
+      { id: "comment-1", text: "先检查日志。", phase: "commentary" },
+    ]);
   });
 
   it("保存工具输出、Turn diff、文件 patch 和 MCP progress 增量", () => {

@@ -21,6 +21,7 @@ export type AppServerTurnState = {
   threadId: string;
   turnId: string;
   assistantText: string;
+  assistantTextItemId: string | null;
   reasoningText: string;
   planText: string;
   latestProposedPlanMarkdown: string | null;
@@ -43,6 +44,7 @@ export const initialAppServerTurnState: AppServerTurnState = {
   threadId: "",
   turnId: "",
   assistantText: "",
+  assistantTextItemId: null,
   reasoningText: "",
   planText: "",
   latestProposedPlanMarkdown: null,
@@ -179,13 +181,25 @@ export function reduceAppServerTurnNotification(
             : state.planBlocks,
         };
       }
+      const clearsAssistantText =
+        item.type === "agentMessage" &&
+        item.phase === "commentary" &&
+        state.assistantTextItemId === item.id;
       return {
         ...state,
         items: upsertItem(state.items, item),
         assistantText:
-          item.type === "agentMessage" && item.phase !== "commentary"
+          clearsAssistantText
+            ? ""
+            : item.type === "agentMessage" && item.phase !== "commentary"
             ? item.text
             : state.assistantText,
+        assistantTextItemId:
+          clearsAssistantText
+            ? null
+            : item.type === "agentMessage" && item.phase !== "commentary"
+              ? item.id
+              : state.assistantTextItemId,
       };
     }
 
@@ -203,6 +217,8 @@ export function reduceAppServerTurnNotification(
         items: appendAgentMessageDelta(state.items, itemId, delta),
         assistantText:
           item?.phase === "commentary" ? state.assistantText : state.assistantText + delta,
+        assistantTextItemId:
+          item?.phase === "commentary" ? state.assistantTextItemId : itemId,
       };
     }
 
