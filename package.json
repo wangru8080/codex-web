@@ -1,6 +1,6 @@
 {
   "name": "@wangru8080/codex-web",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "基于 Codex app-server 的浏览器 Web 工作台",
   "license": "UNLICENSED",
   "repository": {
