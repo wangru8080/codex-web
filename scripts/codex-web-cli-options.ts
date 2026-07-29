@@ -10,7 +10,20 @@ export type CodexWebCliOptions = {
   version: boolean;
 };
 
+export type CodexWebCommand = {
+  command: "serve" | "runtime";
+  args: string[];
+};
+
 type CliEnvironment = Record<string, string | undefined>;
+
+export function parseCodexWebCommand(args: string[]): CodexWebCommand {
+  const command = args[0];
+  if (command === "runtime") return { command, args: args.slice(1) };
+  if (command === "serve") return { command, args: args.slice(1) };
+  if (!command || command.startsWith("-")) return { command: "serve", args };
+  throw new Error(`未知命令：${command}`);
+}
 
 export function parseCodexWebCliArgs(
   args: string[],

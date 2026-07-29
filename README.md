@@ -81,7 +81,7 @@ Linux 上可以运行一个非 root Codex Web，并由本机 root broker 按登�
 broker 配置必须由 root 拥有且权限为 `0600`。生成密码哈希：
 
 ```bash
-printf '%s' '独立强密码' | codex-web-broker hash-password
+printf '%s' '独立强密码' | codex-web runtime hash-password
 openssl rand -hex 32
 ```
 
@@ -89,10 +89,10 @@ openssl rand -hex 32
 
 仓库提供两个 systemd 样例：
 
-- [`codex-web-broker.service`](deploy/systemd/codex-web-broker.service)：root broker，仅监听权限为 `0660` 的 Unix socket。
+- [`codex-web-runtime.service`](deploy/systemd/codex-web-runtime.service)：以 root 运行 runtime broker，仅监听权限为 `0660` 的 Unix socket。
 - [`codex-web.service`](deploy/systemd/codex-web.service)：以 `codex` 用户运行 Web，通过 `codex-web-runtime` 组访问 socket。
 
-安装前应按实际 npm 全局 bin 路径、Web 用户、工作目录、监听地址和反向代理地址调整样例。多用户 Web 进程只需要 `CODEX_WEB_RUNTIME_BROKER_SOCKET`，不需要读取用户密码哈希、broker Session secret 或用户的 Codex 凭据。移除该变量并恢复 `CODEX_WEB_LOGIN_*` 后即可回到单用户模式。
+两个服务使用同一个 `codex-web` CLI：Web 执行 `codex-web serve`，runtime broker 执行 `codex-web runtime serve`。原有 `codex-web --host ... --port ...` 单用户命令继续兼容。安装前应按实际 npm 全局 bin 路径、Web 用户、工作目录、监听地址和反向代理地址调整样例。多用户 Web 进程只需要 `CODEX_WEB_RUNTIME_BROKER_SOCKET`，不需要读取用户密码哈希、broker Session secret 或用户的 Codex 凭据。移除该变量并恢复 `CODEX_WEB_LOGIN_*` 后即可回到单用户模式。
 
 ## 运行要求
 

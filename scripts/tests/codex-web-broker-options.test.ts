@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseCodexWebBrokerArgs } from "../codex-web-broker-options";
 
-describe("codex-web-broker CLI 参数", () => {
+describe("codex-web runtime CLI 参数", () => {
   it("解析 serve 的绝对配置与 socket 路径", () => {
     expect(parseCodexWebBrokerArgs([
       "serve",

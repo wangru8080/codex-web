@@ -10,7 +10,7 @@
     {
       "id": "codex",
       "email": "codex@example.com",
-      "passwordHash": "请使用 codex-web-broker hash-password 生成",
+      "passwordHash": "请使用 codex-web runtime hash-password 生成",
       "osUser": "codex",
       "home": "/home/codex",
       "codexHome": "/home/codex/CodexApp",

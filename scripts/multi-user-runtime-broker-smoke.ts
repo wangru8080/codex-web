@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import WebSocket from "ws";
 
 import type { AppServerPeer } from "../server/app-server-peer";
@@ -307,7 +308,7 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
   throw new Error(`等待 Web 服务超时：${url}`);
 }
 
-class CdpBrowser {
+export class CdpBrowser {
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   private readonly pages = new Set<CdpClient>();
@@ -386,7 +387,7 @@ class CdpBrowser {
   }
 }
 
-class CdpClient {
+export class CdpClient {
   constructor(
     private readonly browser: CdpBrowser,
     private readonly sessionId: string,
@@ -466,4 +467,6 @@ function runtimeSummary(): string {
   return JSON.stringify(runtimeSnapshot());
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  await main();
+}

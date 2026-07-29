@@ -1,6 +1,36 @@
 import { describe, expect, it } from "vitest";
 
-import { parseCodexWebCliArgs } from "../codex-web-cli-options";
+import { parseCodexWebCliArgs, parseCodexWebCommand } from "../codex-web-cli-options";
+
+describe("parseCodexWebCommand", () => {
+  it("支持显式 serve 和 legacy 单用户参数", () => {
+    expect(parseCodexWebCommand(["serve", "--port", "4100"])).toEqual({
+      command: "serve",
+      args: ["--port", "4100"],
+    });
+    expect(parseCodexWebCommand(["--port", "4100"])).toEqual({
+      command: "serve",
+      args: ["--port", "4100"],
+    });
+  });
+
+  it("将 runtime 子命令参数原样交给 runtime CLI", () => {
+    expect(parseCodexWebCommand([
+      "runtime", "serve", "--config", "/etc/codex-web/users.json",
+    ])).toEqual({
+      command: "runtime",
+      args: ["serve", "--config", "/etc/codex-web/users.json"],
+    });
+    expect(parseCodexWebCommand(["runtime", "hash-password"])).toEqual({
+      command: "runtime",
+      args: ["hash-password"],
+    });
+  });
+
+  it("拒绝未知顶层命令", () => {
+    expect(() => parseCodexWebCommand(["unknown"])).toThrow("未知命令");
+  });
+});
 
 describe("parseCodexWebCliArgs", () => {
   it("默认仅监听本机并使用固定端口和用户 Codex Home", () => {

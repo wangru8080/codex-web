@@ -7,8 +7,8 @@ import { readRuntimeBrokerConfig } from "../server/runtime-broker-config";
 import { createRuntimeBrokerServer } from "../server/runtime-broker-server";
 import { parseCodexWebBrokerArgs } from "./codex-web-broker-options";
 
-async function main(): Promise<void> {
-  const options = parseCodexWebBrokerArgs(process.argv.slice(2));
+export async function runCodexWebRuntimeCli(args: string[]): Promise<void> {
+  const options = parseCodexWebBrokerArgs(args);
   if (options.help) {
     console.log(HELP_TEXT);
     return;
@@ -50,17 +50,12 @@ function readStdin(): Promise<string> {
   });
 }
 
-const HELP_TEXT = `Codex Web Runtime Broker
+const HELP_TEXT = `Codex Web Runtime
 
 用法：
-  codex-web-broker serve --config <绝对路径> --socket <绝对路径>
-  printf '%s' '密码' | codex-web-broker hash-password
+  codex-web runtime serve --config <绝对路径> --socket <绝对路径>
+  printf '%s' '密码' | codex-web runtime hash-password
 
 选项：
   -h, --help      显示帮助
   -v, --version   显示版本`;
-
-void main().catch((error) => {
-  console.error(`Codex Web runtime broker 启动失败：${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});

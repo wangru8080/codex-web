@@ -3,12 +3,18 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { APP_VERSION } from "../src/lib/app-version";
-import { parseCodexWebCliArgs } from "./codex-web-cli-options";
+import { runCodexWebRuntimeCli } from "./codex-web-broker-cli";
+import { parseCodexWebCliArgs, parseCodexWebCommand } from "./codex-web-cli-options";
 
 const applicationRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 async function main(): Promise<void> {
-  const options = parseCodexWebCliArgs(process.argv.slice(2), process.env, homedir());
+  const command = parseCodexWebCommand(process.argv.slice(2));
+  if (command.command === "runtime") {
+    await runCodexWebRuntimeCli(command.args);
+    return;
+  }
+  const options = parseCodexWebCliArgs(command.args, process.env, homedir());
 
   if (options.help) {
     console.log(HELP_TEXT);
@@ -47,7 +53,10 @@ function openBrowser(url: string): void {
 const HELP_TEXT = `Codex Web CLI
 
 用法：
-  codex-web [选项]
+  codex-web serve [选项]
+  codex-web runtime serve --config <绝对路径> --socket <绝对路径>
+  printf '%s' '密码' | codex-web runtime hash-password
+  codex-web [选项]  # 兼容原有单用户命令
 
 选项：
   --host <地址>         监听地址，默认 127.0.0.1

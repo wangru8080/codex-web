@@ -37,4 +37,26 @@ describe("生产服务入口构建接线", () => {
     expect(launcher).toContain("spawnSync(process.execPath, [builderPath]");
     expect(launcher).toContain("await import(pathToFileURL(bundlePath).href)");
   });
+
+  it("只发布 codex-web CLI，并由 runtime 子命令启动多用户服务", () => {
+    const packageJson = JSON.parse(
+      readFileSync(resolve(repositoryRoot, "package.json"), "utf8"),
+    ) as {
+      bin: Record<string, string>;
+      files: string[];
+    };
+    const cliBuilder = readFileSync(resolve(repositoryRoot, "scripts/build-cli.ts"), "utf8");
+    const webService = readFileSync(resolve(repositoryRoot, "deploy/systemd/codex-web.service"), "utf8");
+    const runtimeService = readFileSync(
+      resolve(repositoryRoot, "deploy/systemd/codex-web-runtime.service"),
+      "utf8",
+    );
+
+    expect(packageJson.bin).toEqual({ "codex-web": "dist/cli/codex-web.mjs" });
+    expect(packageJson.files).toContain("dist/cli/codex-web.mjs");
+    expect(packageJson.files).not.toContain("dist/cli/");
+    expect(cliBuilder).not.toContain('"codex-web-broker"');
+    expect(webService).toContain("Requires=codex-web-runtime.service");
+    expect(runtimeService).toContain("/usr/local/bin/codex-web runtime serve");
+  });
 });

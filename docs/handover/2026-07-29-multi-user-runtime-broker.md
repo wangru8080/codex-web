@@ -2,6 +2,8 @@
 
 关联执行计划：[2026-07-29-multi-user-runtime-broker.md](../exec-plans/completed/2026-07-29-multi-user-runtime-broker.md)
 
+统一 CLI 计划：[2026-07-29-unified-codex-web-cli.md](../exec-plans/completed/2026-07-29-unified-codex-web-cli.md)
+
 延期事项：[2026-07-29-multi-user-runtime-broker-followups.md](../exec-plans/deferred/2026-07-29-multi-user-runtime-broker-followups.md)
 
 ## 用户能力
@@ -40,10 +42,11 @@ WebSocket upgrade 先验证远程连接策略、同源 Origin 和 cookie，再 a
 - Web 用户为 `codex`。
 - Web 与 broker 共享组为 `codex-web-runtime`。
 - CLI 位于 `/usr/local/bin`。
+- Web 使用 `codex-web serve`，root runtime 使用 `codex-web runtime serve`；npm 只发布一个 `codex-web` bin。
 - broker 配置位于 `/etc/codex-web/users.json`。
 - socket 位于 `/run/codex-web/runtime-broker.sock`。
 
-实际安装 systemd 文件、创建用户/组或写入 `/etc` 不属于仓库构建流程，需要管理员在核对路径后执行。升级 npm 包后应同时重启 broker 和 Web 服务，使两个预编译入口使用同一版本协议。
+实际安装 systemd 文件、创建用户/组或写入 `/etc` 不属于仓库构建流程，需要管理员在核对路径后执行。升级 npm 包后应同时重启 runtime 和 Web 服务，使两个进程使用同一个已升级 CLI。
 
 ## 诊断与限制
 
@@ -59,7 +62,9 @@ WebSocket upgrade 先验证远程连接策略、同源 Origin 和 cookie，再 a
 - legacy Web auth、Origin、Proxy 与 route wiring 定向测试。
 - 真实 Unix broker + HTTP WebSocket 集成测试：无 cookie 拒绝、同用户双浏览器复用、不同用户 JSON-RPC 隔离。
 - 全量 Vitest：149 个测试文件、676 项测试通过。
-- Next 生产构建、生产 server、`codex-web` 与 `codex-web-broker` 两个 CLI 构建通过；npm dry-run 清单包含两个 bin 和部署样例。
+- 初始实现验证过 `codex-web` 与 `codex-web-broker` 两个 CLI；当前发布入口已统一为单个 `codex-web` bin，通过 `serve` 与 `runtime` 子命令区分两个进程。
 - Chrome 150 CDP 真实浏览器 smoke 通过：`rrssnas` 与 `codex` 使用独立浏览器 context 登录，返回各自 home 和测试 `CODEX_HOME`；同用户第二页面复用一个 runtime；跨用户 marker 不串线；最后连接退出后两个 runtime 均关闭。证据位于 `/volume2/SSD/codex/Temp/codex-web-multi-user-browser-smoke-YRSiAf/result.json`。
 - 浏览器 smoke 发现并修复退出连接未主动关闭的问题：Web 退出成功后发布 `codex-web:logout`，AppServerProvider 停止重连并关闭 bridge，再进入登录页。
 - 实际 root 环境 Linux UID smoke 通过：broker 为 UID/GID 0；`rrssnas` runtime 为 UID/GID 1000/10、补充组 10/100/133；`codex` runtime 为 UID/GID 1004/100、补充组 100/133；两者 effective/bounding capability 均清零，使用独立测试 `CODEX_HOME` 和 cwd，互相读取身份文件被拒绝，最后连接断开后两个进程均退出。证据位于 `/volume2/SSD/codex/Temp/codex-web-multi-user-uid-smoke-5DFEwR/result.json`。
+- 统一 CLI 构建与回归通过：npm 只发布 `codex-web` bin；`serve`、legacy 无子命令和 `runtime` 分发通过；全量 149 个测试文件、680 项测试通过；npm dry-run 不包含旧 broker CLI 或 service。
+- 统一 CLI 的 Chrome 150 真实浏览器 smoke 通过：实际运行构建后的 `codex-web runtime serve` 和 `codex-web serve`，双用户 UID、测试 `CODEX_HOME`、cwd、同用户复用、跨用户 marker 隔离与退出回收均通过。证据位于 `/volume2/SSD/codex/Temp/codex-web-unified-cli-browser-smoke-FQr070/result.json`。
