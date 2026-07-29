@@ -744,6 +744,7 @@ function NewChatPageInner() {
       // otherwise a session-create 500 silently eats the screenshot.
       let accepted = false;
       let handoffToAppServerTurn = false;
+      let persistedFiles: readonly FileAttachment[] | undefined = files;
 
       try {
         const existingThreadId = forceNewThread ? undefined : getExistingNewChatThreadId(createdSessionId);
@@ -763,6 +764,9 @@ function NewChatPageInner() {
               mode: modeOverride ?? mode,
               permissionProfile,
               skills: selectedSkills,
+              onAccepted: (_threadId, _turnId, acceptedFiles) => {
+                persistedFiles = acceptedFiles ?? files;
+              },
             })
           : await sendOneTurn({
               content,
@@ -773,6 +777,9 @@ function NewChatPageInner() {
               mode: modeOverride ?? mode,
               permissionProfile,
               skills: selectedSkills,
+              onAccepted: (_threadId, _turnId, acceptedFiles) => {
+                persistedFiles = acceptedFiles ?? files;
+              },
             });
 
         accepted = true;
@@ -800,8 +807,8 @@ function NewChatPageInner() {
           // Optimistic user bubble — preserves base64 `data` so images render
           // their thumbnail immediately (backend strips `data` before persisting).
           const displayUserContent = displayOverride || content;
-          const contentWithFileMeta = files && files.length > 0
-            ? `<!--files:${JSON.stringify(files.map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, data: f.data })))}-->${displayUserContent}`
+          const contentWithFileMeta = persistedFiles && persistedFiles.length > 0
+            ? `<!--files:${JSON.stringify(persistedFiles.map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, data: f.data, filePath: f.filePath })))}-->${displayUserContent}`
             : displayUserContent;
           const userMessage: Message = {
             id: `temp-user-${acceptedTurn.turnId}`,

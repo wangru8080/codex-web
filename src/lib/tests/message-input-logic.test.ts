@@ -10,7 +10,25 @@ import {
   dispatchBadge,
   buildFileReferencePrompt,
   composeSubmitPayload,
+  normalizePastedText,
+  shouldAttachPastedText,
 } from "../message-input-logic";
+
+describe("message-input-logic 长文本粘贴", () => {
+  it("仅在超过官方 1000 字符阈值时转为附件", () => {
+    expect(shouldAttachPastedText("x".repeat(1000))).toBe(false);
+    expect(shouldAttachPastedText("x".repeat(1001))).toBe(true);
+  });
+
+  it("按 Unicode 字符而不是 UTF-16 码元计数", () => {
+    expect(shouldAttachPastedText("😀".repeat(1000))).toBe(false);
+    expect(shouldAttachPastedText("😀".repeat(1001))).toBe(true);
+  });
+
+  it("与官方 composer 一致地归一化换行", () => {
+    expect(normalizePastedText("a\r\nb\rc\n")).toBe("a\nb\nc\n");
+  });
+});
 
 describe("message-input-logic goal prompt", () => {
   it("把 composer goal 输入转换成 /goal 命令", () => {

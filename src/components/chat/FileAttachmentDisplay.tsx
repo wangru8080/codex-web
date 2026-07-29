@@ -12,6 +12,7 @@ import {
   Attachments,
 } from '@/components/ai-elements/attachments';
 import { ImageLightbox } from './ImageLightbox';
+import { usePanel } from '@/hooks/usePanel';
 
 const DIR_MIME = 'inode/directory';
 
@@ -56,6 +57,7 @@ function toFileUIPart(file: FileAttachment): FileUIPart & { id: string } {
  * how path-only images degrade gracefully when the browser cannot read the app-server filesystem.
  */
 export function FileAttachmentDisplay({ files }: FileAttachmentDisplayProps) {
+  const { setPreviewSource } = usePanel();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
@@ -77,6 +79,16 @@ export function FileAttachmentDisplay({ files }: FileAttachmentDisplayProps) {
     setLightboxIndex(index);
     setLightboxOpen(true);
   }, []);
+
+  const handleFilePreview = useCallback((file: FileAttachment) => {
+    if (!file.filePath || file.type === DIR_MIME) return;
+    setPreviewSource({
+      kind: 'file',
+      filePath: file.filePath,
+      trust: "user-selected",
+      readonly: true,
+    });
+  }, [setPreviewSource]);
 
   if (files.length === 0) return null;
 
@@ -108,10 +120,19 @@ export function FileAttachmentDisplay({ files }: FileAttachmentDisplayProps) {
               <Attachment
                 key={file.id}
                 data={toFileUIPart(file)}
+                onClick={file.filePath && !isDir ? () => handleFilePreview(file) : undefined}
+                onKeyDown={file.filePath && !isDir ? (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    handleFilePreview(file);
+                  }
+                } : undefined}
+                role={file.filePath && !isDir ? 'button' : undefined}
+                tabIndex={file.filePath && !isDir ? 0 : undefined}
                 // List chip = white card on the bubble's grey backdrop
                 // (instead of transparent + border, which blended with
                 // the muted bubble background — Codex April 2026 review).
-                className="bg-background border-border/60"
+                className={file.filePath && !isDir ? "cursor-pointer bg-background border-border/60" : "bg-background border-border/60"}
               >
                 <AttachmentPreview
                   // Inner icon box stays grey to keep the icon column

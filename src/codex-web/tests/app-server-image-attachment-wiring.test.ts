@@ -14,7 +14,7 @@ describe("app-server image attachment wiring", () => {
     expect(provider).toContain("buildAppServerTurnInput(trimmed, persistedFiles, skills)");
     expect(provider).not.toContain('file.type.startsWith("image/") && !!file.data');
     expect(provider.match(/if \(!trimmed && !files\?\.length\)/g)?.length).toBe(2);
-    expect(provider.match(/files\?: readonly FileAttachment\[\]/g)?.length).toBe(2);
+    expect(provider.match(/files\?: readonly FileAttachment\[\]/g)?.length).toBe(4);
     expect(provider).toContain("sendTurnInThread({ threadId, content: trimmed, files: persistedFiles,");
   });
 

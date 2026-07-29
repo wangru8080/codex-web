@@ -150,6 +150,7 @@ export type SendOneTurnParams = {
   mode?: string;
   permissionProfile?: PermissionProfile;
   skills?: readonly SkillInputReference[];
+  onAccepted?: (threadId: string, turnId: string, files?: readonly FileAttachment[]) => void;
 };
 
 export type StartThreadParams = {
@@ -175,7 +176,7 @@ export type SendTurnInThreadParams = {
   effort?: ReasoningEffort;
   mode?: string;
   permissionProfile?: PermissionProfile;
-  onAccepted?: (threadId: string, turnId: string) => void;
+  onAccepted?: (threadId: string, turnId: string, files?: readonly FileAttachment[]) => void;
   skills?: readonly SkillInputReference[];
 };
 
@@ -1135,7 +1136,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       });
       throw error;
     }
-    onAccepted?.(threadId, turnResponse.turn.id);
+    onAccepted?.(threadId, turnResponse.turn.id, persistedFiles);
     const acceptedTurn = createAcceptedTurnState(
       threadId,
       turnResponse.turn.id,
@@ -1153,7 +1154,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return acceptedTurn;
   }, [refreshThreads, store]);
 
-  const sendOneTurn = useCallback(async ({ content, files, cwd, model, effort, mode, permissionProfile = "request_approval", skills }: SendOneTurnParams) => {
+  const sendOneTurn = useCallback(async ({ content, files, cwd, model, effort, mode, permissionProfile = "request_approval", skills, onAccepted }: SendOneTurnParams) => {
     const client = clientRef.current;
     if (!client) {
       throw new Error("Web bridge 尚未连接");
@@ -1203,7 +1204,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }),
     }));
 
-    return sendTurnInThread({ threadId, content: trimmed, files: persistedFiles, cwd, model, effort, mode, permissionProfile, skills });
+    return sendTurnInThread({ threadId, content: trimmed, files: persistedFiles, cwd, model, effort, mode, permissionProfile, skills, onAccepted });
   }, [sendTurnInThread, store]);
 
   const interruptTurn = useCallback(async (params?: InterruptTurnParams) => {

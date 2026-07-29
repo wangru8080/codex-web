@@ -139,7 +139,7 @@ interface ChatViewProps {
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
   onAppServerGoalClear?: () => Promise<void>;
-  appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; skills?: readonly SkillInputReference[]; onAccepted?: (threadId: string, turnId: string) => void }) => Promise<AppServerTurnState>;
+  appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; skills?: readonly SkillInputReference[]; onAccepted?: (threadId: string, turnId: string, files?: readonly FileAttachment[]) => void }) => Promise<AppServerTurnState>;
   appServerSyncedUserMessages?: readonly CrossClientUserMessage[];
   onAppServerUserMessageAccepted?: (event: CrossClientUserMessage) => void;
   appServerClearContextAndSend?: (content: string, effort?: ReasoningEffort) => Promise<void>;
@@ -1227,7 +1227,7 @@ export function ChatView({
         }
 
         const trimmed = content.trim();
-        if (!trimmed) return false;
+        if (!trimmed && !files?.length) return false;
 
         if (isStreaming) {
           setMessageQueue((prev) => [...prev, { content, files, systemPromptAppend, displayOverride, mentions, selectedSkills }]);
@@ -1250,15 +1250,16 @@ export function ChatView({
             mode: modeOverride ?? mode,
             permissionProfile,
             skills: selectedSkills,
-            onAccepted: (threadId, turnId) => {
+            onAccepted: (threadId, turnId, acceptedFiles) => {
               if (accepted) return;
               accepted = true;
+              const displayedFiles = acceptedFiles ?? files;
               const userMessage: Message = {
                 id: `temp-user-${turnId}`,
                 session_id: threadId || activeSessionId,
                 role: 'user',
-                content: files && files.length > 0
-                  ? `<!--files:${JSON.stringify(files.map((file) => ({ id: file.id, name: file.name, type: file.type, size: file.size, data: file.data, filePath: file.filePath })))}-->${displayOverride || content}`
+                content: displayedFiles && displayedFiles.length > 0
+                  ? `<!--files:${JSON.stringify(displayedFiles.map((file) => ({ id: file.id, name: file.name, type: file.type, size: file.size, data: file.data, filePath: file.filePath })))}-->${displayOverride || content}`
                   : displayOverride || content,
                 created_at: new Date().toISOString(),
                 token_usage: null,

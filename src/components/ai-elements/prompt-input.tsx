@@ -55,6 +55,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { normalizePastedText, shouldAttachPastedText } from "@/lib/message-input-logic";
 import { ArrowElbowDownLeft, Square, X } from "@phosphor-icons/react";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { nanoid } from "nanoid";
@@ -876,13 +877,15 @@ export const PromptInputBody = ({
   <div className={cn("contents", className)} {...props} />
 );
 
-export type PromptInputTextareaProps = ComponentProps<
-  typeof InputGroupTextarea
->;
+export type PromptInputTextareaProps = ComponentProps<typeof InputGroupTextarea> & {
+  pasteLongTextAsFile?: boolean;
+};
 
 export const PromptInputTextarea = ({
   onChange,
   onKeyDown,
+  onPaste,
+  pasteLongTextAsFile = false,
   className,
   placeholder = "What would you like to know?",
   ...props
@@ -940,19 +943,19 @@ export const PromptInputTextarea = ({
 
   const handlePaste: ClipboardEventHandler<HTMLTextAreaElement> = useCallback(
     (event) => {
+      onPaste?.(event);
+      if (event.defaultPrevented) return;
+
       const items = event.clipboardData?.items;
-
-      if (!items) {
-        return;
-      }
-
       const files: File[] = [];
 
-      for (const item of items) {
-        if (item.kind === "file") {
-          const file = item.getAsFile();
-          if (file) {
-            files.push(file);
+      if (items) {
+        for (const item of items) {
+          if (item.kind === "file") {
+            const file = item.getAsFile();
+            if (file) {
+              files.push(file);
+            }
           }
         }
       }
@@ -960,9 +963,18 @@ export const PromptInputTextarea = ({
       if (files.length > 0) {
         event.preventDefault();
         attachments.add(files);
+        return;
+      }
+
+      const pastedText = normalizePastedText(event.clipboardData.getData("text/plain"));
+      if (pasteLongTextAsFile && shouldAttachPastedText(pastedText)) {
+        event.preventDefault();
+        attachments.add([
+          new File([pastedText], "pasted-text.txt", { type: "text/plain" }),
+        ]);
       }
     },
-    [attachments]
+    [attachments, onPaste, pasteLongTextAsFile]
   );
 
   const handleCompositionEnd = useCallback(() => setIsComposing(false), []);

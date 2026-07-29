@@ -57,8 +57,17 @@ export interface DirectSlashResult {
 
 export const GOAL_PROMPT_PLACEHOLDER = '描述你的目标，定义可衡量的成果，以获得最佳效果';
 export const PLAN_PROMPT_PLACEHOLDER = '描述你的任务以生成计划...';
+export const LARGE_PASTE_CHAR_THRESHOLD = 1000;
 
 // ─── Functions ───────────────────────────────────────────────────
+
+export function normalizePastedText(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+export function shouldAttachPastedText(text: string): boolean {
+  return Array.from(text).length > LARGE_PASTE_CHAR_THRESHOLD;
+}
 
 /**
  * Detects popover trigger from input text and cursor position.

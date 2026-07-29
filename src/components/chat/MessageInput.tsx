@@ -1816,6 +1816,7 @@ export const MessageInput = memo(function MessageInput({
             <PromptInputBody>
               <PromptInputTextarea
                 ref={textareaRef}
+                pasteLongTextAsFile={codexOnly}
                 placeholder={
                   goalPromptActive
                     ? GOAL_PROMPT_PLACEHOLDER
