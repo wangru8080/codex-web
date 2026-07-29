@@ -63,20 +63,24 @@ Codex Web + Web bridge
 codex app-server
 ```
 
-浏览器不会直接启动本地进程。CLI 同时启动 Next.js 应用、Web bridge 和本机 `codex app-server`。
+浏览器不会直接启动本地进程。`codex-web serve` 启动 Next.js 应用和 Web bridge：单用户模式由 Web bridge 启动本机 `codex app-server`；多用户模式由 Web bridge 连接独立的 runtime，再由 runtime 按登录账号启动对应 Linux 用户的 `codex app-server`。
 
 ### 多用户 Runtime Broker
 
-Linux 上可以运行一个非 root Codex Web，并由本机 root broker 按登录账号启动对应 Linux 用户的 `codex app-server`：
+Linux 上可以运行一个非 root Codex Web，并由本机 root runtime 按登录账号启动对应 Linux 用户的 `codex app-server`：
 
 ```text
-浏览器 -> 非 root Codex Web -> /run/codex-web/runtime-broker.sock
-                                   |
-                                   +-> codex 用户 app-server
-                                   +-> root 用户 app-server（必须双重授权）
+浏览器会话 A ─┐
+              ├─> Codex Web（<web-user>）
+浏览器会话 B ─┘          │
+                         │ Unix socket：<runtime-socket>
+                         v
+                   Runtime（root）
+                     ├─> app-server（<linux-user-a>）
+                     └─> app-server（<linux-user-b>）
 ```
 
-登录本身不会创建进程。某个用户首次建立 WebSocket bridge 时才启动该用户的 app-server；同一用户的多个浏览器共享一个进程，不同用户的 UID、补充组、`HOME`、`CODEX_HOME`、cwd、消息和审批相互隔离。最后一个连接断开后，没有运行中 Turn 时会在宽限期结束后退出；有运行中 Turn 时等待其完成再退出。
+Codex Web 和 runtime 是两个常驻进程。登录本身不会创建 app-server；某个用户首次建立 WebSocket bridge 时才启动该用户的 app-server。同一用户的多个浏览器共享一个 app-server，不同用户的 UID、补充组、`HOME`、`CODEX_HOME`、cwd、消息和审批相互隔离。最后一个连接断开后，没有运行中 Turn 时会在宽限期结束后退出；有运行中 Turn 时等待其完成再退出。
 
 broker 配置必须由 root 拥有且权限为 `0600`。生成密码哈希：
 
@@ -85,7 +89,7 @@ printf '%s' '独立强密码' | codex-web runtime hash-password
 openssl rand -hex 32
 ```
 
-以 [`deploy/systemd/users.example.json`](deploy/systemd/users.example.json) 为模板创建 `/etc/codex-web/users.json`，替换密码哈希与 Session 密钥，并保证配置中的 `home` 与系统账户数据库一致。普通用户通过固定 `/usr/bin/setpriv` 降权启动；root 还需要同时设置全局 `allowRootRuntime: true` 和 root 用户项 `allowRoot: true`，否则 broker 拒绝启动 UID 0 runtime。
+以 [`deploy/systemd/users.example.json`](deploy/systemd/users.example.json) 为模板创建 runtime 配置，替换密码哈希与 Session 密钥，并保证每个用户的 `osUser` 和 `home` 与系统账户数据库一致。普通用户通过固定的 `setpriv` 降权启动；如果允许登录 root 环境，还必须同时设置全局 `allowRootRuntime: true` 和 root 用户项 `allowRoot: true`，否则 runtime 拒绝启动 UID 0 app-server。
 
 仓库提供两个 systemd 样例：
 
@@ -93,6 +97,45 @@ openssl rand -hex 32
 - [`codex-web.service`](deploy/systemd/codex-web.service)：以 `codex` 用户运行 Web，通过 `codex-web-runtime` 组访问 socket。
 
 两个服务使用同一个 `codex-web` CLI：Web 执行 `codex-web serve`，runtime broker 执行 `codex-web runtime serve`。原有 `codex-web --host ... --port ...` 单用户命令继续兼容。安装前应按实际 npm 全局 bin 路径、Web 用户、工作目录、监听地址和反向代理地址调整样例。多用户 Web 进程只需要 `CODEX_WEB_RUNTIME_BROKER_SOCKET`，不需要读取用户密码哈希、broker Session secret 或用户的 Codex 凭据。移除该变量并恢复 `CODEX_WEB_LOGIN_*` 后即可回到单用户模式。
+
+部署前先确认命令位置：
+
+```bash
+command -v codex-web
+command -v codex
+command -v setpriv
+```
+
+创建共享组并安装配置模板；共享组已存在时跳过创建：
+
+```bash
+getent group codex-web-runtime >/dev/null || sudo groupadd --system codex-web-runtime
+sudo install -d -o root -g root -m 0750 /etc/codex-web
+sudo install -o root -g root -m 0600 deploy/systemd/users.example.json /etc/codex-web/users.json
+sudoedit /etc/codex-web/users.json
+```
+
+在配置中为每个登录账号填写唯一的 `id`、登录邮箱、密码哈希、Linux 用户、home、`CODEX_HOME` 和 cwd。`codexCommand`、`setprivCommand`、用户 home 和 cwd 都必须使用目标服务器上的绝对路径。runtime 配置必须由 root 拥有且权限为 `0600`，多用户 Web 进程不能读取它。
+
+安装 systemd 单元后，根据目标服务器修改其中的 `User`、`WorkingDirectory`、`ExecStart`、监听地址和端口：
+
+```bash
+sudo install -o root -g root -m 0644 deploy/systemd/codex-web-runtime.service /etc/systemd/system/codex-web-runtime.service
+sudo install -o root -g root -m 0644 deploy/systemd/codex-web.service /etc/systemd/system/codex-web.service
+sudoedit /etc/systemd/system/codex-web-runtime.service
+sudoedit /etc/systemd/system/codex-web.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now codex-web-runtime.service codex-web.service
+```
+
+检查两个常驻服务及其日志：
+
+```bash
+systemctl status codex-web-runtime.service codex-web.service
+journalctl -u codex-web-runtime.service -u codex-web.service -f
+```
+
+runtime socket 由 systemd 的 `RuntimeDirectory` 和 runtime 进程创建，不需要手动创建。未登录时不会启动任何用户 app-server。
 
 ## 运行要求
 
@@ -187,10 +230,10 @@ export CODEX_WEB_SESSION_SECRET="<至少32个字符的固定随机密钥>"
 
 ```bash
 cd /path/to/your/project
-codex-web --open
+codex-web serve --open
 ```
 
-默认地址为 `http://127.0.0.1:3001`。`--open` 会在服务启动后打开默认浏览器。
+默认地址为 `http://127.0.0.1:3001`。`--open` 会在服务启动后打开默认浏览器。旧命令 `codex-web --open` 仍然兼容，等价于 `codex-web serve --open`。
 
 ### 4. 登录并开始对话
 
@@ -233,28 +276,38 @@ Codex 正在生成时，输入普通消息并发送会将其加入待发送队�
 ## CLI 参数
 
 ```text
-codex-web [选项]
+codex-web serve [选项]
+codex-web runtime serve --config <绝对路径> --socket <绝对路径>
+printf '%s' '密码' | codex-web runtime hash-password
+codex-web [选项]  # 兼容原有单用户命令
 
+serve 选项：
 --host <地址>         监听地址，默认 127.0.0.1
 --port <端口>         HTTP 端口，默认 3001；0 表示随机端口
 --codex-home <路径>   Codex 配置与会话目录，默认 CODEX_HOME 或 ~/.codex
 --open                启动后打开默认浏览器，不能与 --port 0 同时使用
 -h, --help            显示帮助
 -v, --version         显示版本
+
+runtime serve 必需参数：
+--config <绝对路径>   root 拥有、权限为 0600 的用户配置文件
+--socket <绝对路径>   Web 与 runtime 通信的 Unix socket
 ```
+
+`codex-web runtime serve` 仅支持 Linux，并且必须以 root 启动。`codex-web runtime hash-password` 从标准输入读取密码并输出可写入用户配置的 scrypt 哈希，不需要 root 权限。
 
 也可以使用以下环境变量：
 
 | 环境变量 | 用途 | 必需 |
 |---|---|---|
-| `CODEX_WEB_LOGIN_EMAIL` | Web 登录邮箱 | 是 |
-| `CODEX_WEB_LOGIN_PASSWORD` | Web 登录密码 | 是 |
-| `CODEX_WEB_SESSION_SECRET` | Web 会话签名密钥，至少 32 个字符 | 是 |
-| `CODEX_HOME` | Codex 配置、账户和会话目录 | 否 |
+| `CODEX_WEB_LOGIN_EMAIL` | Web 登录邮箱 | 单用户模式 |
+| `CODEX_WEB_LOGIN_PASSWORD` | Web 登录密码 | 单用户模式 |
+| `CODEX_WEB_SESSION_SECRET` | Web 会话签名密钥，至少 32 个字符 | 单用户模式 |
+| `CODEX_HOME` | 单用户 app-server 的配置目录；多用户模式下只用于 Web 自身状态 | 否 |
 | `PORT` | HTTP 端口 | 否 |
 | `CODEX_WEB_NEXT_HOST` | 监听地址 | 否 |
 | `CODEX_WEB_PUBLIC_HOST` | `--open` 使用的公开主机名 | 否 |
-| `CODEX_WEB_RUNTIME_BROKER_SOCKET` | 启用多用户模式的 Unix socket 绝对路径；与单用户登录变量二选一 | 否 |
+| `CODEX_WEB_RUNTIME_BROKER_SOCKET` | 启用多用户模式的 Unix socket 绝对路径；与单用户登录变量二选一 | 多用户模式 |
 
 ## CODEX_HOME 与工作目录
 
@@ -284,7 +337,7 @@ Codex Web 使用三个彼此独立的路径：
 需要向局域网或公网提供访问时，至少应配置 HTTPS 反向代理、防火墙和访问控制，然后再显式监听外部地址：
 
 ```bash
-codex-web --host 0.0.0.0 --port 3001
+codex-web serve --host 0.0.0.0 --port 3001
 ```
 
 不要将未配置 HTTPS 和访问限制的实例直接暴露到公网。
@@ -310,6 +363,13 @@ npm install --global ./codex-web-<新版本>.tgz
 不要直接修改全局安装目录中的 `.next` 或 `dist` 文件。
 
 当前浏览器版的“检查更新”与“安装更新”还没有接入 CLI/npm 更新流程，升级需要在命令行完成。
+
+systemd 多用户部署升级 CLI 后，需要重启两个常驻服务，使 Web 与 runtime 使用同一版本：
+
+```bash
+sudo systemctl restart codex-web-runtime.service
+sudo systemctl restart codex-web.service
+```
 
 ## 源码开发
 
