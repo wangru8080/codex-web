@@ -5,11 +5,18 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const outputFile = resolve(repositoryRoot, "dist/cli/codex-web.mjs");
+const outputFiles = [
+  resolve(repositoryRoot, "dist/cli/codex-web.mjs"),
+  resolve(repositoryRoot, "dist/cli/codex-web-broker.mjs"),
+];
 
 await build({
-  entryPoints: [resolve(repositoryRoot, "scripts/codex-web-cli.ts")],
-  outfile: outputFile,
+  entryPoints: {
+    "codex-web": resolve(repositoryRoot, "scripts/codex-web-cli.ts"),
+    "codex-web-broker": resolve(repositoryRoot, "scripts/codex-web-broker-cli.ts"),
+  },
+  outdir: resolve(repositoryRoot, "dist/cli"),
+  outExtension: { ".js": ".mjs" },
   bundle: true,
   packages: "external",
   platform: "node",
@@ -20,4 +27,4 @@ await build({
   logLevel: "info",
 });
 
-await chmod(outputFile, 0o755);
+await Promise.all(outputFiles.map((outputFile) => chmod(outputFile, 0o755)));

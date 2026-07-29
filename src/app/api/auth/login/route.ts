@@ -4,10 +4,12 @@ import {
   createSessionToken,
   isSameOriginRequest,
   readWebAuthConfig,
+  runtimeBrokerSocket,
   verifyCredentials,
   WEB_AUTH_COOKIE,
   WEB_AUTH_MAX_AGE_SECONDS,
 } from "../../../../../server/web-auth";
+import { BrokerClientError, RuntimeBrokerClient } from "../../../../../server/runtime-broker-client";
 import { readTurnstileConfig } from "../../../../../server/turnstile-config";
 import { verifyTurnstileToken } from "../../../../../server/turnstile";
 
@@ -34,11 +36,30 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const auth = readWebAuthConfig(process.env);
-  if (!verifyCredentials(email, password, auth)) return invalidLogin();
+  let sessionToken: string;
+  const brokerSocket = runtimeBrokerSocket();
+  if (brokerSocket) {
+    try {
+      const login = await new RuntimeBrokerClient(brokerSocket).login(
+        email,
+        password,
+        request.headers.get("x-real-ip") ?? undefined,
+      );
+      sessionToken = login.token;
+    } catch (error) {
+      if (error instanceof BrokerClientError && error.code === "rate_limited") {
+        return NextResponse.json({ error: error.message }, { status: 429 });
+      }
+      return invalidLogin();
+    }
+  } else {
+    const auth = readWebAuthConfig(process.env);
+    if (!verifyCredentials(email, password, auth)) return invalidLogin();
+    sessionToken = createSessionToken(auth);
+  }
 
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(WEB_AUTH_COOKIE, createSessionToken(auth), {
+  response.cookies.set(WEB_AUTH_COOKIE, sessionToken, {
     httpOnly: true,
     sameSite: "strict",
     secure: request.nextUrl.protocol === "https:",

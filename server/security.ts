@@ -7,6 +7,8 @@ export type BridgeSecurityOptions = {
   allowSameOrigin?: boolean;
 };
 
+export type BrowserBridgeSecurityOptions = Omit<BridgeSecurityOptions, "token">;
+
 export type BridgeSecurityResult =
   | { ok: true }
   | { ok: false; statusCode: number; message: string };
@@ -15,13 +17,23 @@ export function validateBridgeRequest(
   request: IncomingMessage,
   options: BridgeSecurityOptions,
 ): BridgeSecurityResult {
-  if (!options.allowRemoteConnections && !isLocalhost(request.socket.remoteAddress)) {
-    return { ok: false, statusCode: 403, message: "只允许 localhost 连接" };
-  }
+  const browserSecurity = validateBrowserBridgeRequest(request, options);
+  if (!browserSecurity.ok) return browserSecurity;
 
   const token = readToken(request);
   if (token !== options.token) {
     return { ok: false, statusCode: 401, message: "bridge token 无效" };
+  }
+
+  return { ok: true };
+}
+
+export function validateBrowserBridgeRequest(
+  request: IncomingMessage,
+  options: BrowserBridgeSecurityOptions,
+): BridgeSecurityResult {
+  if (!options.allowRemoteConnections && !isLocalhost(request.socket.remoteAddress)) {
+    return { ok: false, statusCode: 403, message: "只允许 localhost 连接" };
   }
 
   const origin = request.headers.origin;

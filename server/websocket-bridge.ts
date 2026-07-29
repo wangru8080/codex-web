@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import WebSocket, { WebSocketServer } from "ws";
 
 import type { CodexProcessOptions } from "./codex-process";
+import { webSocketAppServerPeer, type AppServerPeer } from "./app-server-peer";
 import { isBridgeSyncNotification } from "./bridge-message-routing";
 import { PersistentAppServer } from "./persistent-app-server";
 import { validateBridgeRequest } from "./security";
@@ -40,14 +41,6 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
   const bridgePath = options.path ?? "/";
   const sockets = new Set<WebSocket>();
   const wsServer = new WebSocketServer({ noServer: true });
-  const broadcast = (message: JsonRpcMessage, excludedSocket?: WebSocket) => {
-    const serialized = JSON.stringify(message);
-    for (const socket of sockets) {
-      if (socket !== excludedSocket && socket.readyState === WebSocket.OPEN) {
-        socket.send(serialized);
-      }
-    }
-  };
   const appServer = new PersistentAppServer(options);
 
   const handleUpgrade = (request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
@@ -73,12 +66,13 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
   server.on("upgrade", handleUpgrade);
 
   wsServer.on("connection", (webSocket, request) => {
+    const peer = webSocketAppServerPeer(webSocket);
     sockets.add(webSocket);
-    appServer.attach(webSocket);
-    attachClient(webSocket, request, options, appServer, broadcast);
+    appServer.attach(peer);
+    attachClient(webSocket, peer, request, options, appServer);
     webSocket.on("close", () => {
       sockets.delete(webSocket);
-      appServer.detach(webSocket);
+      appServer.detach(peer);
     });
   });
 
@@ -136,17 +130,17 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
 
 function attachClient(
   webSocket: WebSocket,
+  peer: AppServerPeer,
   _request: IncomingMessage,
   options: WebSocketBridgeOptions,
   appServer: PersistentAppServer,
-  broadcast: (message: JsonRpcMessage, excludedSocket?: WebSocket) => void,
 ): void {
   webSocket.on("message", (data) => {
     try {
       const text = data.toString("utf8");
       const message = JSON.parse(text) as JsonRpcMessage;
       if (isBridgeSyncNotification(message)) {
-        broadcast(message, webSocket);
+        appServer.broadcast(message, peer);
         return;
       }
       const intercepted = options.clientMessageInterceptor?.(message);
@@ -154,7 +148,7 @@ function attachClient(
         webSocket.send(JSON.stringify(intercepted));
         return;
       }
-      appServer.handleClientMessage(webSocket, message);
+      appServer.handleClientMessage(peer, message);
     } catch (error) {
       sendBridgeError(webSocket, error instanceof Error ? error.message : String(error));
     }

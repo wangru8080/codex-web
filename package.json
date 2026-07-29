@@ -17,7 +17,8 @@
   },
   "type": "module",
   "bin": {
-    "codex-web": "dist/cli/codex-web.mjs"
+    "codex-web": "dist/cli/codex-web.mjs",
+    "codex-web-broker": "dist/cli/codex-web-broker.mjs"
   },
   "files": [
     ".next/BUILD_ID",
@@ -27,6 +28,7 @@
     ".next/static/",
     "dist/cli/",
     "dist/start-next-with-bridge.mjs",
+    "deploy/",
     "next.config.mjs",
     "public/",
     "scripts/start-production.mjs",
@@ -54,6 +56,8 @@
     "test:smoke:permissions": "tsx scripts/permission-policy-smoke.ts",
     "test:e2e:permissions": "tsx scripts/permission-policy-tool-e2e.ts",
     "test:smoke:goal-plan": "tsx scripts/goal-plan-plus-smoke.ts",
+    "test:smoke:multi-user": "tsx scripts/multi-user-runtime-broker-smoke.ts",
+    "test:smoke:multi-user:uid": "tsx scripts/multi-user-runtime-broker-uid-smoke.ts",
     "regression:history-pagination": "tsx scripts/history-pagination-regression.ts",
     "performance:baseline:dev": "tsx scripts/web-performance-baseline.ts dev",
     "performance:baseline:production": "tsx scripts/web-performance-baseline.ts production"

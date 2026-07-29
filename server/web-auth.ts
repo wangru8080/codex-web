@@ -1,4 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { homedir } from "node:os";
+
+import { RuntimeBrokerClient } from "./runtime-broker-client";
+import type { BrokerPublicUser } from "./runtime-broker-protocol";
 
 export const WEB_AUTH_COOKIE = "codex_web_session";
 export const WEB_AUTH_MAX_AGE_SECONDS = 3 * 24 * 60 * 60;
@@ -83,6 +87,50 @@ export function isAuthenticatedRequest(request: Request, env = process.env): boo
     return verifySessionToken(readSessionCookie(request.headers.get("cookie")), config) !== null;
   } catch {
     return false;
+  }
+}
+
+export function runtimeBrokerSocket(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string | null {
+  return env.CODEX_WEB_RUNTIME_BROKER_SOCKET?.trim() || null;
+}
+
+export async function authenticateWebRequest(
+  request: Request,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): Promise<BrokerPublicUser | null> {
+  const brokerSocket = runtimeBrokerSocket(env);
+  let token: string | undefined;
+  try {
+    token = readSessionCookie(request.headers.get("cookie"));
+  } catch {
+    return null;
+  }
+  if (brokerSocket) {
+    if (!token) return null;
+    try {
+      return await new RuntimeBrokerClient(brokerSocket).verifySession(token);
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const config = readWebAuthConfig(env);
+    const session = verifySessionToken(token, config);
+    if (!session) return null;
+    const home = env.CODEX_WEB_HOME_DIRECTORY?.trim() || homedir();
+    return {
+      id: config.email,
+      email: config.email,
+      osUser: env.USER?.trim() || config.email,
+      home,
+      codexHome: env.CODEX_HOME?.trim() || home,
+      cwd: process.cwd(),
+      role: "admin",
+    };
+  } catch {
+    return null;
   }
 }
 

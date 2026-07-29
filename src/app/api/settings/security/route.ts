@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
-  isAuthenticatedRequest,
+  authenticateWebRequest,
   isSameOriginRequest,
-  readWebAuthConfig,
 } from "../../../../../server/web-auth";
 import {
   publicTurnstileConfig,
@@ -14,16 +13,19 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  if (!isAuthenticatedRequest(request)) return unauthorized();
+  const user = await authenticateWebRequest(request);
+  if (!user) return unauthorized();
   const turnstile = publicTurnstileConfig(await readTurnstileConfig());
   return NextResponse.json(
-    { email: readWebAuthConfig(process.env).email, turnstile },
+    { email: user.email, canManageSecurity: user.role === "admin", turnstile },
     { headers: { "Cache-Control": "no-store" } },
   );
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!isAuthenticatedRequest(request)) return unauthorized();
+  const user = await authenticateWebRequest(request);
+  if (!user) return unauthorized();
+  if (user.role !== "admin") return NextResponse.json({ error: "需要管理员权限" }, { status: 403 });
   if (!isSameOriginRequest(request)) {
     return NextResponse.json({ error: "请求来源无效" }, { status: 403 });
   }
@@ -41,7 +43,8 @@ export async function PATCH(request: NextRequest) {
       secretKey: body.secretKey as string | undefined,
     });
     return NextResponse.json({
-      email: readWebAuthConfig(process.env).email,
+      email: user.email,
+      canManageSecurity: true,
       turnstile: publicTurnstileConfig(saved),
     });
   } catch (error) {

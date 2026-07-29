@@ -2,9 +2,11 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 export type CodexProcessOptions = {
   command?: string;
+  args?: string[];
   codexHome?: string;
   cwd?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: Record<string, string | undefined>;
+  inheritEnv?: boolean;
 };
 
 export type CodexProcess = {
@@ -15,11 +17,13 @@ export type CodexProcess = {
 
 export function buildCodexProcessEnv(
   options: CodexProcessOptions,
-  baseEnv: NodeJS.ProcessEnv = process.env,
+  baseEnv: Record<string, string | undefined> = process.env,
 ): NodeJS.ProcessEnv {
+  const nodeEnv = normalizeNodeEnv(options.env?.NODE_ENV ?? baseEnv.NODE_ENV);
   const env: NodeJS.ProcessEnv = {
-    ...baseEnv,
+    ...(options.inheritEnv === false ? {} : baseEnv),
     ...options.env,
+    NODE_ENV: nodeEnv,
     RUST_LOG: options.env?.RUST_LOG ?? "warn",
   };
   const codexHome = options.codexHome?.trim();
@@ -29,9 +33,15 @@ export function buildCodexProcessEnv(
   return env;
 }
 
+function normalizeNodeEnv(value: string | undefined): NodeJS.ProcessEnv["NODE_ENV"] {
+  return value === "development" || value === "test" || value === "production"
+    ? value
+    : "production";
+}
+
 export function startCodexAppServer(options: CodexProcessOptions = {}): CodexProcess {
   const diagnostics: string[] = [];
-  const child = spawn(options.command ?? "codex", ["app-server", "--stdio"], {
+  const child = spawn(options.command ?? "codex", options.args ?? ["app-server", "--stdio"], {
     cwd: options.cwd,
     env: buildCodexProcessEnv(options),
     stdio: ["pipe", "pipe", "pipe"],

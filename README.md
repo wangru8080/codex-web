@@ -65,6 +65,35 @@ codex app-server
 
 浏览器不会直接启动本地进程。CLI 同时启动 Next.js 应用、Web bridge 和本机 `codex app-server`。
 
+### 多用户 Runtime Broker
+
+Linux 上可以运行一个非 root Codex Web，并由本机 root broker 按登录账号启动对应 Linux 用户的 `codex app-server`：
+
+```text
+浏览器 -> 非 root Codex Web -> /run/codex-web/runtime-broker.sock
+                                   |
+                                   +-> codex 用户 app-server
+                                   +-> root 用户 app-server（必须双重授权）
+```
+
+登录本身不会创建进程。某个用户首次建立 WebSocket bridge 时才启动该用户的 app-server；同一用户的多个浏览器共享一个进程，不同用户的 UID、补充组、`HOME`、`CODEX_HOME`、cwd、消息和审批相互隔离。最后一个连接断开后，没有运行中 Turn 时会在宽限期结束后退出；有运行中 Turn 时等待其完成再退出。
+
+broker 配置必须由 root 拥有且权限为 `0600`。生成密码哈希：
+
+```bash
+printf '%s' '独立强密码' | codex-web-broker hash-password
+openssl rand -hex 32
+```
+
+以 [`deploy/systemd/users.example.json`](deploy/systemd/users.example.json) 为模板创建 `/etc/codex-web/users.json`，替换密码哈希与 Session 密钥，并保证配置中的 `home` 与系统账户数据库一致。普通用户通过固定 `/usr/bin/setpriv` 降权启动；root 还需要同时设置全局 `allowRootRuntime: true` 和 root 用户项 `allowRoot: true`，否则 broker 拒绝启动 UID 0 runtime。
+
+仓库提供两个 systemd 样例：
+
+- [`codex-web-broker.service`](deploy/systemd/codex-web-broker.service)：root broker，仅监听权限为 `0660` 的 Unix socket。
+- [`codex-web.service`](deploy/systemd/codex-web.service)：以 `codex` 用户运行 Web，通过 `codex-web-runtime` 组访问 socket。
+
+安装前应按实际 npm 全局 bin 路径、Web 用户、工作目录、监听地址和反向代理地址调整样例。多用户 Web 进程只需要 `CODEX_WEB_RUNTIME_BROKER_SOCKET`，不需要读取用户密码哈希、broker Session secret 或用户的 Codex 凭据。移除该变量并恢复 `CODEX_WEB_LOGIN_*` 后即可回到单用户模式。
+
 ## 运行要求
 
 - Node.js 20.9.0 或更高版本。
@@ -225,6 +254,7 @@ codex-web [选项]
 | `PORT` | HTTP 端口 | 否 |
 | `CODEX_WEB_NEXT_HOST` | 监听地址 | 否 |
 | `CODEX_WEB_PUBLIC_HOST` | `--open` 使用的公开主机名 | 否 |
+| `CODEX_WEB_RUNTIME_BROKER_SOCKET` | 启用多用户模式的 Unix socket 绝对路径；与单用户登录变量二选一 | 否 |
 
 ## CODEX_HOME 与工作目录
 

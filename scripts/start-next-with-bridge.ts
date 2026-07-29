@@ -8,14 +8,16 @@ import {
   readProductionPort,
   resolveProductionServerPaths,
 } from "../server/production-server-options";
+import { createBrokerWebSocketBridge } from "../server/broker-websocket-bridge";
 import { createWebSocketBridge } from "../server/websocket-bridge";
-import { readWebAuthConfig } from "../server/web-auth";
+import { readWebAuthConfig, runtimeBrokerSocket } from "../server/web-auth";
 
-if (!process.env.CODEX_HOME) {
+const brokerSocket = runtimeBrokerSocket();
+if (!brokerSocket && !process.env.CODEX_HOME) {
   console.error("start 必须显式设置 CODEX_HOME；可在当前 shell 或 .bashrc 中 export CODEX_HOME。");
   process.exit(1);
 }
-readWebAuthConfig(process.env);
+if (!brokerSocket) readWebAuthConfig(process.env);
 
 const paths = resolveProductionServerPaths(
   import.meta.url,
@@ -65,15 +67,30 @@ const server = createServer((request, response) => {
   });
 });
 
-const bridge = createWebSocketBridge({
-  server,
-  path: bridgePath,
-  allowRemoteConnections: true,
-  allowSameOrigin: true,
-  cwd: paths.workingDirectory,
-  codexHome: process.env.CODEX_HOME,
-});
-process.env.CODEX_WEB_BRIDGE_URL = `${bridgePath}?token=${bridge.token}`;
+let legacyBridgeToken: string | null = null;
+let legacyAppServerPid: number | undefined;
+const bridge = brokerSocket
+  ? createBrokerWebSocketBridge({
+      server,
+      path: bridgePath,
+      brokerSocketPath: brokerSocket,
+      allowRemoteConnections: true,
+      allowSameOrigin: true,
+    })
+  : (() => {
+      const legacyBridge = createWebSocketBridge({
+        server,
+        path: bridgePath,
+        allowRemoteConnections: true,
+        allowSameOrigin: true,
+        cwd: paths.workingDirectory,
+        codexHome: process.env.CODEX_HOME,
+      });
+      legacyBridgeToken = legacyBridge.token;
+      legacyAppServerPid = legacyBridge.appServerPid;
+      return legacyBridge;
+    })();
+process.env.CODEX_WEB_BRIDGE_URL = brokerSocket ? bridgePath : `${bridgePath}?token=${legacyBridgeToken}`;
 
 server.on("upgrade", (request, socket, head) => {
   const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -90,11 +107,12 @@ const address = server.address();
 if (!address || typeof address === "string") throw new Error("生产 Server 未返回 TCP 端口");
 const actualPort = address.port;
 console.log(`Codex Web: http://${publicHost}:${actualPort}`);
-console.log(`Codex Web bridge: ws://${publicHost}:${actualPort}${bridgePath}?token=${bridge.token}`);
-console.log(`Codex app-server PID: ${bridge.appServerPid ?? "未知"}`);
+console.log(`Codex Web bridge: ws://${publicHost}:${actualPort}${process.env.CODEX_WEB_BRIDGE_URL}`);
+if (!brokerSocket) console.log(`Codex app-server PID: ${legacyAppServerPid ?? "未知"}`);
+else console.log(`Codex Web runtime broker: ${brokerSocket}`);
 console.log(`Codex Web 应用目录: ${paths.applicationRoot}`);
 console.log(`Codex Web 工作目录: ${paths.workingDirectory}`);
-console.log(`Codex Web CODEX_HOME: ${process.env.CODEX_HOME}`);
+console.log(`Codex Web CODEX_HOME: ${process.env.CODEX_HOME ?? "由登录用户的 runtime 决定"}`);
 
 let closing = false;
 process.on("SIGINT", () => void shutdown(0));

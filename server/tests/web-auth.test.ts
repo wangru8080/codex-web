@@ -3,7 +3,9 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import {
+  authenticateWebRequest,
   createSessionToken,
+  WEB_AUTH_COOKIE,
   WEB_AUTH_MAX_AGE_SECONDS,
   readWebAuthConfig,
   verifyCredentials,
@@ -71,5 +73,12 @@ describe("Web 登录认证", () => {
     expect(isSameOriginRequest(new Request("http://0.0.0.0/login", {
       headers: { host: "127.0.0.1:3001", origin: "https://example.com" },
     }))).toBe(false);
+  });
+
+  it("畸形 Cookie 按未登录处理而不是抛出异常", async () => {
+    const request = new Request("http://localhost/chat", {
+      headers: { cookie: `${WEB_AUTH_COOKIE}=%` },
+    });
+    await expect(authenticateWebRequest(request, env)).resolves.toBeNull();
   });
 });

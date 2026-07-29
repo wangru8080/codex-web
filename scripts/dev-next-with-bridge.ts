@@ -1,13 +1,16 @@
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 
+import { createBrokerWebSocketBridge } from "../server/broker-websocket-bridge";
 import { createThreadTurnsListFailureInterceptorFromEnv } from "../server/thread-turns-list-failure-interceptor";
 import { createWebSocketBridge } from "../server/websocket-bridge";
-import { readWebAuthConfig } from "../server/web-auth";
+import { readWebAuthConfig, runtimeBrokerSocket } from "../server/web-auth";
 
 const defaultCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
 const codexHome = process.env.CODEX_HOME?.trim() || defaultCodexHome;
 process.env.CODEX_HOME = codexHome;
-readWebAuthConfig(process.env);
+const brokerSocket = runtimeBrokerSocket();
+if (!brokerSocket) readWebAuthConfig(process.env);
 
 const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "192.168.3.12";
 const devOrigins = [3000, 3001].flatMap((port) => [
@@ -15,14 +18,30 @@ const devOrigins = [3000, 3001].flatMap((port) => [
   `http://127.0.0.1:${port}`,
   `http://${publicHost}:${port}`,
 ]);
-const bridge = createWebSocketBridge({
-  host: "0.0.0.0",
-  cwd: process.cwd(),
-  codexHome,
-  allowedOrigins: devOrigins,
-  allowRemoteConnections: true,
-  clientMessageInterceptor: createThreadTurnsListFailureInterceptorFromEnv(process.env),
-});
+let legacyBridgeToken: string | null = null;
+let legacyAppServerPid: number | undefined;
+const bridge = brokerSocket
+  ? createBrokerWebSocketBridge({
+      server: createServer((_request, response) => response.writeHead(404).end()),
+      path: "/codex-bridge",
+      brokerSocketPath: brokerSocket,
+      allowedOrigins: devOrigins,
+      allowRemoteConnections: true,
+    })
+  : (() => {
+      const legacyBridge = createWebSocketBridge({
+        host: "0.0.0.0",
+        cwd: process.cwd(),
+        codexHome,
+        allowedOrigins: devOrigins,
+        allowRemoteConnections: true,
+        clientMessageInterceptor: createThreadTurnsListFailureInterceptorFromEnv(process.env),
+      });
+      legacyBridgeToken = legacyBridge.token;
+      legacyAppServerPid = legacyBridge.appServerPid;
+      return legacyBridge;
+    })();
+if (brokerSocket) bridge.server.listen(0, "0.0.0.0");
 await waitForListening(bridge.server);
 
 const address = bridge.server.address();
@@ -30,9 +49,12 @@ const bridgePort =
   typeof address === "object" && address !== null
     ? address.port
     : 0;
-const bridgeUrl = `ws://${publicHost}:${bridgePort}?token=${bridge.token}`;
+const bridgeUrl = brokerSocket
+  ? `ws://${publicHost}:${bridgePort}/codex-bridge`
+  : `ws://${publicHost}:${bridgePort}?token=${legacyBridgeToken}`;
 console.log(`Codex Web bridge: ${bridgeUrl}`);
-console.log(`Codex app-server PID: ${bridge.appServerPid ?? "未知"}`);
+if (!brokerSocket) console.log(`Codex app-server PID: ${legacyAppServerPid ?? "未知"}`);
+else console.log(`Codex Web runtime broker: ${brokerSocket}`);
 console.log(`Codex Web 开发 CODEX_HOME: ${codexHome}`);
 
 const next = spawn("next", ["dev"], {

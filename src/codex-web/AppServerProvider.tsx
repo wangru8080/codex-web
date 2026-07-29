@@ -445,6 +445,17 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }, delay);
     }
 
+    const handleWebLogout = () => {
+      disposed = true;
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      clientRef.current = null;
+      client.close();
+    };
+    window.addEventListener("codex-web:logout", handleWebLogout);
+
     async function bootstrap(isReconnect = false) {
       if (disposed || bootstrapping) {
         return;
@@ -504,6 +515,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     void bootstrap();
 
     return () => {
+      window.removeEventListener("codex-web:logout", handleWebLogout);
       disposed = true;
       if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer);

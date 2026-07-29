@@ -1,12 +1,12 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { mockApiResponse } from "@/frontend-preview/mock-api";
-import { isAuthenticatedRequest } from "../server/web-auth";
+import { authenticateWebRequest } from "../server/web-auth";
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const publicPath = isPublicWebAuthPath(pathname);
-  const authenticated = isAuthenticatedRequest(request);
+  const authenticated = await authenticateWebRequest(request);
 
   if (pathname === "/login" && authenticated) {
     return NextResponse.redirect(new URL("/chat", request.url));

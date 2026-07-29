@@ -58,9 +58,8 @@ const HELP_TEXT = `Codex Web CLI
   -v, --version         显示版本
 
 必需环境变量：
-  CODEX_WEB_LOGIN_EMAIL
-  CODEX_WEB_LOGIN_PASSWORD
-  CODEX_WEB_SESSION_SECRET`;
+  单用户模式：CODEX_WEB_LOGIN_EMAIL、CODEX_WEB_LOGIN_PASSWORD、CODEX_WEB_SESSION_SECRET
+  多用户模式：CODEX_WEB_RUNTIME_BROKER_SOCKET`;
 
 void main().catch((error) => {
   console.error(`Codex Web CLI 启动失败：${error instanceof Error ? error.message : String(error)}`);

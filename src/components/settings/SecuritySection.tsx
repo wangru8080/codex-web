@@ -66,6 +66,7 @@ export function SecuritySection() {
     try {
       const response = await fetch("/api/auth/logout", { method: "POST" });
       if (!response.ok) throw new Error(t("security.logoutFailed"));
+      window.dispatchEvent(new Event("codex-web:logout"));
       router.replace("/login"); router.refresh();
     } catch (logoutError) {
       setError(logoutError instanceof Error ? logoutError.message : t("security.logoutFailed"));

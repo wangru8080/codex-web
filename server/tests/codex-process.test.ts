@@ -30,4 +30,22 @@ describe("buildCodexProcessEnv", () => {
     expect(env.CODEX_HOME).toBeUndefined();
     expect(env.RUST_LOG).toBe("warn");
   });
+
+  it("干净环境模式不继承 broker 的敏感变量", () => {
+    const env = buildCodexProcessEnv(
+      {
+        inheritEnv: false,
+        env: { PATH: "/usr/bin", HOME: "/home/codex", CODEX_HOME: "/home/codex/CodexApp" },
+      },
+      { CODEX_WEB_BROKER_SESSION_SECRET: "secret", PATH: "/root/bin" },
+    );
+
+    expect(env).toMatchObject({
+      PATH: "/usr/bin",
+      HOME: "/home/codex",
+      CODEX_HOME: "/home/codex/CodexApp",
+      RUST_LOG: "warn",
+    });
+    expect(env.CODEX_WEB_BROKER_SESSION_SECRET).toBeUndefined();
+  });
 });

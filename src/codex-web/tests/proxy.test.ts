@@ -39,28 +39,28 @@ afterEach(() => {
 });
 
 describe("proxy demo gate", () => {
-  it("默认走真实路由，不启用 demo/mock", () => {
-    const response = proxy(makeRequest("/api/codex/account"));
+  it("默认走真实路由，不启用 demo/mock", async () => {
+    const response = await proxy(makeRequest("/api/codex/account"));
     expect(mockApiResponse).not.toHaveBeenCalled();
     expect(nextResponseNext).toHaveBeenCalledTimes(1);
     expect(response).toEqual({ kind: "next" });
   });
 
-  it("显式 CODEX_WEB_DEMO=1 时才走 mock", () => {
+  it("显式 CODEX_WEB_DEMO=1 时才走 mock", async () => {
     process.env.CODEX_WEB_DEMO = "1";
     mockApiResponse.mockReturnValue({ kind: "mock" });
 
-    const response = proxy(makeRequest("/api/codex/account"));
+    const response = await proxy(makeRequest("/api/codex/account"));
 
     expect(mockApiResponse).toHaveBeenCalledTimes(1);
     expect(nextResponseNext).not.toHaveBeenCalled();
     expect(response).toEqual({ kind: "mock" });
   });
 
-  it("bridge-url 始终放行真实路由", () => {
+  it("bridge-url 始终放行真实路由", async () => {
     process.env.CODEX_WEB_DEMO = "1";
 
-    const response = proxy(makeRequest("/api/codex/bridge-url"));
+    const response = await proxy(makeRequest("/api/codex/bridge-url"));
 
     expect(mockApiResponse).not.toHaveBeenCalled();
     expect(nextResponseNext).toHaveBeenCalledTimes(1);

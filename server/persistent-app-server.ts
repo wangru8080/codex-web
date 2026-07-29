@@ -1,5 +1,4 @@
-import WebSocket from "ws";
-
+import type { AppServerPeer } from "./app-server-peer";
 import { startCodexAppServer, type CodexProcess, type CodexProcessOptions } from "./codex-process";
 import { BridgeServerRequestRouter } from "./bridge-message-routing";
 import { JsonRpcClient } from "./json-rpc-client";
@@ -11,7 +10,7 @@ import type {
 } from "../src/codex/protocol/json-rpc";
 
 type ClientRequestRoute = {
-  socket: WebSocket;
+  socket: AppServerPeer;
   clientId: JsonRpcId;
 };
 
@@ -20,7 +19,7 @@ type InitializeWaiter = ClientRequestRoute;
 export class PersistentAppServer {
   private process: CodexProcess | null = null;
   private rpc: JsonRpcClient | null = null;
-  private readonly sockets = new Set<WebSocket>();
+  private readonly sockets = new Set<AppServerPeer>();
   private readonly requestRoutes = new Map<string, ClientRequestRoute>();
   private serverRequestRouter = new BridgeServerRequestRouter<JsonRpcClient>();
   private readonly pendingServerRequests = new Map<string, JsonRpcRequest>();
@@ -33,7 +32,10 @@ export class PersistentAppServer {
   private restartAttempt = 0;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly options: CodexProcessOptions = {}) {
+  constructor(
+    private readonly options: CodexProcessOptions = {},
+    private readonly onNotification?: (message: JsonRpcMessage) => void,
+  ) {
     this.startRuntime();
   }
 
@@ -41,7 +43,7 @@ export class PersistentAppServer {
     return this.process?.child.pid;
   }
 
-  attach(socket: WebSocket): void {
+  attach(socket: AppServerPeer): void {
     this.sockets.add(socket);
     if (!this.rpc) {
       this.sendBridgeError(socket, "app-server 正在恢复");
@@ -53,7 +55,7 @@ export class PersistentAppServer {
     }
   }
 
-  detach(socket: WebSocket): void {
+  detach(socket: AppServerPeer): void {
     this.sockets.delete(socket);
     for (const [upstreamId, route] of this.requestRoutes) {
       if (route.socket === socket) {
@@ -67,7 +69,7 @@ export class PersistentAppServer {
     }
   }
 
-  handleClientMessage(socket: WebSocket, message: JsonRpcMessage): void {
+  handleClientMessage(socket: AppServerPeer, message: JsonRpcMessage): void {
     const rpc = this.rpc;
     if (!rpc) {
       this.sendBridgeError(socket, "app-server 正在恢复");
@@ -103,7 +105,7 @@ export class PersistentAppServer {
     route.owner.sendRaw({ ...message, id: route.originalId });
   }
 
-  broadcast(message: JsonRpcMessage, excludedSocket?: WebSocket): void {
+  broadcast(message: JsonRpcMessage, excludedSocket?: AppServerPeer): void {
     for (const socket of this.sockets) {
       if (socket !== excludedSocket) {
         this.send(socket, message);
@@ -164,7 +166,7 @@ export class PersistentAppServer {
     const detail = diagnostics.length > 0 ? `\n${diagnostics.join("\n")}` : "";
     this.broadcastBridgeError(`${error?.message ?? "app-server 已关闭"}${detail}`);
     for (const socket of this.sockets) {
-      if (socket.readyState === WebSocket.OPEN) {
+      if (socket.isOpen()) {
         socket.close(1011, "app-server 已退出");
       }
     }
@@ -198,7 +200,7 @@ export class PersistentAppServer {
   }
 
   private handleClientRequest(
-    socket: WebSocket,
+    socket: AppServerPeer,
     request: JsonRpcRequest,
     rpc: JsonRpcClient,
   ): void {
@@ -212,7 +214,7 @@ export class PersistentAppServer {
     rpc.sendRaw({ ...request, id: upstreamId });
   }
 
-  private handleInitialize(socket: WebSocket, request: JsonRpcRequest, rpc: JsonRpcClient): void {
+  private handleInitialize(socket: AppServerPeer, request: JsonRpcRequest, rpc: JsonRpcClient): void {
     if (this.initializeResponse) {
       this.send(socket, { id: request.id, ...this.initializeResponse });
       return;
@@ -230,6 +232,7 @@ export class PersistentAppServer {
   private handleAppServerMessage(message: JsonRpcMessage, rpc: JsonRpcClient): void {
     if ("method" in message) {
       if (message.id === undefined) {
+        this.onNotification?.(message);
         this.broadcast(message);
         return;
       }
@@ -280,15 +283,15 @@ export class PersistentAppServer {
     });
   }
 
-  private sendBridgeError(socket: WebSocket, message: string): void {
+  private sendBridgeError(socket: AppServerPeer, message: string): void {
     this.send(socket, {
       method: "bridge/error",
       params: { message, source: "codex-web-bridge" },
     });
   }
 
-  private send(socket: WebSocket, message: JsonRpcMessage): void {
-    if (socket.readyState === WebSocket.OPEN) {
+  private send(socket: AppServerPeer, message: JsonRpcMessage): void {
+    if (socket.isOpen()) {
       socket.send(JSON.stringify(message));
     }
   }

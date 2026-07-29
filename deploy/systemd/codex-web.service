@@ -1,0 +1,26 @@
+[Unit]
+Description=Codex Web 多用户 Web 服务
+Requires=codex-web-broker.service
+After=network-online.target codex-web-broker.service
+
+[Service]
+Type=simple
+User=codex
+Group=codex-web-runtime
+WorkingDirectory=/home/codex/workspace/codex-web
+Environment=CODEX_WEB_RUNTIME_BROKER_SOCKET=/run/codex-web/runtime-broker.sock
+Environment=CODEX_HOME=/home/codex/.config/codex-web-state
+Environment=CODEX_WEB_NEXT_HOST=127.0.0.1
+Environment=CODEX_WEB_PUBLIC_HOST=127.0.0.1
+Environment=PORT=3001
+EnvironmentFile=-/etc/codex-web/web.env
+ExecStart=/usr/local/bin/codex-web
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
