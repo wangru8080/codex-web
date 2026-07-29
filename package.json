@@ -58,6 +58,7 @@
     "test:smoke:multi-user": "tsx scripts/multi-user-runtime-broker-smoke.ts",
     "test:smoke:multi-user:uid": "tsx scripts/multi-user-runtime-broker-uid-smoke.ts",
     "test:smoke:multi-user:unified-cli": "tsx scripts/unified-cli-browser-smoke.ts",
+    "test:smoke:multi-user:macos": "node scripts/macos-browser-smoke.mjs multi",
     "regression:history-pagination": "tsx scripts/history-pagination-regression.ts",
     "performance:baseline:dev": "tsx scripts/web-performance-baseline.ts dev",
     "performance:baseline:production": "tsx scripts/web-performance-baseline.ts production"

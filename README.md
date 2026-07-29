@@ -63,11 +63,20 @@ Codex Web + Web bridge
 codex app-server
 ```
 
-浏览器不会直接启动本地进程。`codex-web serve` 启动 Next.js 应用和 Web bridge：单用户模式由 Web bridge 启动本机 `codex app-server`；多用户模式由 Web bridge 连接独立的 runtime，再由 runtime 按登录账号启动对应 Linux 用户的 `codex app-server`。
+浏览器不会直接启动本地进程。`codex-web serve` 启动 Next.js 应用和 Web bridge：单用户模式由 Web bridge 启动本机 `codex app-server`；多用户模式由 Web bridge 连接独立的 runtime，再由 runtime 按登录账号启动对应系统用户的 `codex app-server`。
+
+### 平台支持
+
+| 服务端运行方式 | Linux | macOS | Windows |
+|---|---|---|---|
+| 单用户 `codex-web serve` | 支持 | 支持 | 支持 |
+| 多用户 `codex-web runtime serve` | 支持，使用 `setpriv` | 支持，使用 `dscacheutil` 与 `sudo` | 不支持 |
+
+浏览器客户端不受服务端操作系统限制。Windows 或 macOS 浏览器可以访问部署在 Linux/macOS 上的 Codex Web；表格描述的是运行 Codex Web、runtime 和 app-server 的服务端系统。
 
 ### 多用户 Runtime Broker
 
-Linux 上可以运行一个非 root Codex Web，并由本机 root runtime 按登录账号启动对应 Linux 用户的 `codex app-server`：
+Linux 或 macOS 上可以运行一个非 root Codex Web，并由本机 root runtime 按登录账号启动对应系统用户的 `codex app-server`：
 
 ```text
 浏览器会话 A ─┐
@@ -89,7 +98,9 @@ printf '%s' '独立强密码' | codex-web runtime hash-password
 openssl rand -hex 32
 ```
 
-以 [`deploy/systemd/users.example.json`](deploy/systemd/users.example.json) 为模板创建 runtime 配置，替换密码哈希与 Session 密钥，并保证每个用户的 `osUser` 和 `home` 与系统账户数据库一致。普通用户通过固定的 `setpriv` 降权启动；如果允许登录 root 环境，还必须同时设置全局 `allowRootRuntime: true` 和 root 用户项 `allowRoot: true`，否则 runtime 拒绝启动 UID 0 app-server。
+Linux 以 [`deploy/systemd/users.example.json`](deploy/systemd/users.example.json) 为配置模板，macOS 以 [`deploy/launchd/users.example.json`](deploy/launchd/users.example.json) 为模板。替换密码哈希与 Session 密钥，并保证每个用户的 `osUser` 和 `home` 与系统账户数据库一致。Linux 普通用户通过固定的 `setpriv` 降权；macOS 普通用户通过固定的 `sudo -n -H -u` 初始化目标账号的主组和补充组，再由 `env -i` 建立干净环境。两种平台都不使用 shell 拼接。允许登录 root 环境时，还必须同时设置全局 `allowRootRuntime: true` 和 root 用户项 `allowRoot: true`，否则 runtime 拒绝启动 UID 0 app-server。
+
+#### Linux systemd 部署
 
 仓库提供两个 systemd 样例：
 
@@ -137,11 +148,72 @@ journalctl -u codex-web-runtime.service -u codex-web.service -f
 
 runtime socket 由 systemd 的 `RuntimeDirectory` 和 runtime 进程创建，不需要手动创建。未登录时不会启动任何用户 app-server。
 
+#### macOS launchd 部署
+
+仓库提供三个 macOS 样例：
+
+- [`com.codex-web.runtime.plist`](deploy/launchd/com.codex-web.runtime.plist)：root LaunchDaemon，运行 `codex-web runtime serve`。
+- [`com.codex-web.web.plist`](deploy/launchd/com.codex-web.web.plist)：以示例非 root 用户运行 `codex-web serve`。
+- [`users.example.json`](deploy/launchd/users.example.json)：macOS 用户映射模板。
+
+先确认命令位置，并选择一个已存在的非 root Web 服务账号：
+
+```bash
+command -v codex-web
+command -v codex
+command -v dscacheutil
+command -v sudo
+WEB_USER="codexweb"
+```
+
+如果实际命令路径、Web 用户或工作目录与样例不同，必须先修改 plist 和用户配置。创建共享组及持久目录：
+
+```bash
+sudo dseditgroup -o create codex-web-runtime
+sudo dseditgroup -o edit -a "$WEB_USER" -t user codex-web-runtime
+sudo install -d -o root -g wheel -m 0750 "/Library/Application Support/CodexWeb"
+sudo install -d -o root -g codex-web-runtime -m 0750 "/Library/Application Support/CodexWeb/run"
+sudo install -d -o root -g wheel -m 0755 "/Library/Logs/CodexWeb"
+sudo install -d -o "$WEB_USER" -g codex-web-runtime -m 0750 "/Users/Shared/CodexWeb/workspace"
+sudo install -d -o "$WEB_USER" -g codex-web-runtime -m 0700 "/Users/Shared/CodexWeb/web-state"
+```
+
+安装配置和 LaunchDaemon；先编辑目标文件，再加载服务：
+
+```bash
+sudo install -o root -g wheel -m 0600 deploy/launchd/users.example.json "/Library/Application Support/CodexWeb/users.json"
+sudo install -o root -g wheel -m 0644 deploy/launchd/com.codex-web.runtime.plist /Library/LaunchDaemons/com.codex-web.runtime.plist
+sudo install -o root -g wheel -m 0644 deploy/launchd/com.codex-web.web.plist /Library/LaunchDaemons/com.codex-web.web.plist
+sudo nano "/Library/Application Support/CodexWeb/users.json"
+sudo nano /Library/LaunchDaemons/com.codex-web.runtime.plist
+sudo nano /Library/LaunchDaemons/com.codex-web.web.plist
+sudo plutil -lint /Library/LaunchDaemons/com.codex-web.runtime.plist /Library/LaunchDaemons/com.codex-web.web.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.codex-web.runtime.plist
+sudo launchctl bootstrap system /Library/LaunchDaemons/com.codex-web.web.plist
+```
+
+检查服务与日志：
+
+```bash
+sudo launchctl print system/com.codex-web.runtime
+sudo launchctl print system/com.codex-web.web
+sudo tail -f /Library/Logs/CodexWeb/runtime-error.log /Library/Logs/CodexWeb/web-error.log
+```
+
+停止并卸载两个 LaunchDaemon：
+
+```bash
+sudo launchctl bootout system/com.codex-web.web
+sudo launchctl bootout system/com.codex-web.runtime
+```
+
+macOS socket 父目录需要预先创建，但 socket 文件由 runtime 创建，不要手动创建。未登录时，两个 LaunchDaemon 常驻，但不会启动任何用户 app-server。
+
 ## 运行要求
 
 - Node.js 20.9.0 或更高版本。
 - 已安装 Codex CLI，并且可以通过 `PATH` 执行 `codex app-server`。
-- Linux、macOS 或其他可以运行当前 Node.js 与 Codex CLI 的环境。
+- 单用户服务支持 Linux、macOS 和 Windows；多用户 runtime 仅支持 Linux 与 macOS。
 - 用于访问界面的现代浏览器。
 
 检查环境：
@@ -294,7 +366,7 @@ runtime serve 必需参数：
 --socket <绝对路径>   Web 与 runtime 通信的 Unix socket
 ```
 
-`codex-web runtime serve` 仅支持 Linux，并且必须以 root 启动。`codex-web runtime hash-password` 从标准输入读取密码并输出可写入用户配置的 scrypt 哈希，不需要 root 权限。
+`codex-web runtime serve` 仅支持 Linux 与 macOS，并且必须以 root 启动。Windows 调用该命令会在读取配置或创建 socket 前失败。`codex-web runtime hash-password` 从标准输入读取密码并输出可写入用户配置的 scrypt 哈希，不需要 root 权限。
 
 也可以使用以下环境变量：
 
@@ -371,6 +443,13 @@ sudo systemctl restart codex-web-runtime.service
 sudo systemctl restart codex-web.service
 ```
 
+macOS launchd 部署升级 CLI 后执行：
+
+```bash
+sudo launchctl kickstart -k system/com.codex-web.runtime
+sudo launchctl kickstart -k system/com.codex-web.web
+```
+
 ## 源码开发
 
 ```bash
@@ -395,6 +474,8 @@ npm run test
 npm run build
 npm run test:smoke
 ```
+
+仓库还提供 `npm run test:smoke:multi-user:macos`，用于在 macOS 上以 root 验证真实 Chrome、普通用户与 root app-server 的隔离和回收。该命令要求先设置脚本提示的隔离目录、CLI、测试用户等 `CODEX_WEB_MACOS_SMOKE_*` 环境变量，不应指向日常使用的 `CODEX_HOME`。
 
 构建 CLI：
 

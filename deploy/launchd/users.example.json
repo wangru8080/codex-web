@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "sessionSecret": "请替换为至少32个字符的随机密钥",
+  "sessionMaxAgeSeconds": 259200,
+  "disconnectGraceMs": 30000,
+  "allowRootRuntime": false,
+  "codexCommand": "/usr/local/bin/codex",
+  "users": [
+    {
+      "id": "exampleuser",
+      "email": "exampleuser@example.com",
+      "passwordHash": "请使用 codex-web runtime hash-password 生成",
+      "osUser": "exampleuser",
+      "home": "/Users/exampleuser",
+      "codexHome": "/Users/exampleuser/Library/Application Support/Codex",
+      "cwd": "/Users/exampleuser/Workspace",
+      "role": "admin",
+      "enabled": true,
+      "allowRoot": false,
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin"
+      }
+    }
+  ]
+}

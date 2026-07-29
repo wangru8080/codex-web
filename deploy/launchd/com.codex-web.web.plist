@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.codex-web.web</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/codex-web</string>
+    <string>serve</string>
+  </array>
+  <key>UserName</key>
+  <string>codexweb</string>
+  <key>GroupName</key>
+  <string>codex-web-runtime</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/Shared/CodexWeb/workspace</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CODEX_HOME</key>
+    <string>/Users/Shared/CodexWeb/web-state</string>
+    <key>CODEX_WEB_NEXT_HOST</key>
+    <string>127.0.0.1</string>
+    <key>CODEX_WEB_PUBLIC_HOST</key>
+    <string>127.0.0.1</string>
+    <key>CODEX_WEB_RUNTIME_BROKER_SOCKET</key>
+    <string>/Library/Application Support/CodexWeb/run/runtime-broker.sock</string>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin</string>
+    <key>PORT</key>
+    <string>3001</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/CodexWeb/web.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/CodexWeb/web-error.log</string>
+</dict>
+</plist>

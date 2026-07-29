@@ -1,7 +1,11 @@
 import { stdin } from "node:process";
 
 import { APP_VERSION } from "../src/lib/app-version";
-import { createBrokerRuntimeFactory, resolveBrokerRuntimeUsers } from "../server/runtime-broker-launch";
+import {
+  createBrokerRuntimeFactory,
+  resolveBrokerRuntimeUsers,
+  resolveRuntimeBrokerPlatform,
+} from "../server/runtime-broker-launch";
 import { hashBrokerPassword } from "../server/runtime-broker-password";
 import { readRuntimeBrokerConfig } from "../server/runtime-broker-config";
 import { createRuntimeBrokerServer } from "../server/runtime-broker-server";
@@ -22,6 +26,7 @@ export async function runCodexWebRuntimeCli(args: string[]): Promise<void> {
     console.log(await hashBrokerPassword(password));
     return;
   }
+  const platform = resolveRuntimeBrokerPlatform(process.platform);
   if (process.getuid?.() !== 0) throw new Error("serve 必须由 root 启动");
 
   const config = await readRuntimeBrokerConfig(options.configPath!, { expectedOwnerUid: 0 });
@@ -29,7 +34,7 @@ export async function runCodexWebRuntimeCli(args: string[]): Promise<void> {
   const broker = await createRuntimeBrokerServer({
     socketPath: options.socketPath!,
     config,
-    createRuntime: createBrokerRuntimeFactory(config, users),
+    createRuntime: createBrokerRuntimeFactory(config, users, platform),
   });
   console.log(`Codex Web runtime broker 正在监听 ${broker.socketPath}`);
   const stop = async () => {

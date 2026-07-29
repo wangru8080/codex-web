@@ -51,6 +51,18 @@ describe("生产服务入口构建接线", () => {
       resolve(repositoryRoot, "deploy/systemd/codex-web-runtime.service"),
       "utf8",
     );
+    const runtimeLaunchDaemon = readFileSync(
+      resolve(repositoryRoot, "deploy/launchd/com.codex-web.runtime.plist"),
+      "utf8",
+    );
+    const webLaunchDaemon = readFileSync(
+      resolve(repositoryRoot, "deploy/launchd/com.codex-web.web.plist"),
+      "utf8",
+    );
+    const macUsers = JSON.parse(readFileSync(
+      resolve(repositoryRoot, "deploy/launchd/users.example.json"),
+      "utf8",
+    )) as { setprivCommand?: string; users: Array<{ osUser: string; home: string }> };
 
     expect(packageJson.bin).toEqual({ "codex-web": "dist/cli/codex-web.mjs" });
     expect(packageJson.files).toContain("dist/cli/codex-web.mjs");
@@ -58,5 +70,20 @@ describe("生产服务入口构建接线", () => {
     expect(cliBuilder).not.toContain('"codex-web-broker"');
     expect(webService).toContain("Requires=codex-web-runtime.service");
     expect(runtimeService).toContain("/usr/local/bin/codex-web runtime serve");
+    expect(runtimeLaunchDaemon).toContain("<string>/usr/local/bin/codex-web</string>");
+    expect(runtimeLaunchDaemon).toContain("<string>runtime</string>");
+    expect(runtimeLaunchDaemon).toContain("<string>serve</string>");
+    expect(runtimeLaunchDaemon).not.toContain("<key>UserName</key>");
+    expect(webLaunchDaemon).toContain("<string>/usr/local/bin/codex-web</string>");
+    expect(webLaunchDaemon).toContain("<string>serve</string>");
+    expect(webLaunchDaemon).toContain("<key>UserName</key>");
+    expect(runtimeLaunchDaemon).toContain("/Library/Application Support/CodexWeb/run/runtime-broker.sock");
+    expect(webLaunchDaemon).toContain("/Library/Application Support/CodexWeb/run/runtime-broker.sock");
+    expect(macUsers.setprivCommand).toBeUndefined();
+    expect(macUsers.users).toEqual(expect.arrayContaining([
+      expect.objectContaining({ osUser: "exampleuser", home: "/Users/exampleuser" }),
+    ]));
+    expect(JSON.stringify(macUsers)).not.toContain("rrssnas");
+    expect(JSON.stringify(macUsers)).not.toContain('"wr"');
   });
 });

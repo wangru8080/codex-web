@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.codex-web.runtime</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/codex-web</string>
+    <string>runtime</string>
+    <string>serve</string>
+    <string>--config</string>
+    <string>/Library/Application Support/CodexWeb/users.json</string>
+    <string>--socket</string>
+    <string>/Library/Application Support/CodexWeb/run/runtime-broker.sock</string>
+  </array>
+  <key>GroupName</key>
+  <string>codex-web-runtime</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>Umask</key>
+  <integer>7</integer>
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/CodexWeb/runtime.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/CodexWeb/runtime-error.log</string>
+</dict>
+</plist>
