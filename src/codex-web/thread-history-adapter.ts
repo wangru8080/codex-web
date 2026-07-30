@@ -21,8 +21,36 @@ export type ThreadMessagesOptions = {
   omitAssistantTurnId?: string | null;
 };
 
+function threadTitle(thread: Thread): string {
+  return thread.name?.trim() || thread.preview.trim() || "Codex 会话";
+}
+
+export function nextForkedThreadName(sourceThread: Thread, threads: readonly Thread[]): string {
+  const sourceTitle = threadTitle(sourceThread);
+  const projectTitles = threads
+    .filter((thread) => thread.cwd === sourceThread.cwd)
+    .map(threadTitle);
+  const numberedSource = sourceTitle.match(/^(.*) \(([2-9]\d*)\)$/);
+  const baseTitle = numberedSource && projectTitles.includes(numberedSource[1])
+    ? numberedSource[1]
+    : sourceTitle;
+  let highestSequence = 1;
+
+  for (const title of projectTitles) {
+    if (title === baseTitle) continue;
+    const prefix = `${baseTitle} (`;
+    if (!title.startsWith(prefix) || !title.endsWith(")")) continue;
+    const sequence = Number(title.slice(prefix.length, -1));
+    if (sequence >= 2 && title === `${baseTitle} (${sequence})`) {
+      highestSequence = Math.max(highestSequence, sequence);
+    }
+  }
+
+  return `${baseTitle} (${highestSequence + 1})`;
+}
+
 export function threadToChatSession(thread: Thread): ChatSession {
-  const title = thread.name || thread.preview || "Codex 会话";
+  const title = threadTitle(thread);
   const createdAt = secondsToIso(thread.createdAt);
   const updatedAt = secondsToIso(thread.updatedAt || thread.recencyAt || thread.createdAt);
   return {

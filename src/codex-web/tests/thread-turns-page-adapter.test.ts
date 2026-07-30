@@ -5,6 +5,7 @@ import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 
 import {
   applyTurnSnapshotsToMessages,
+  continuationBoundaryMessageId,
   latestHistoryTurnFromPage,
   mergeThreadTurnMessages,
   threadTurnsPageToMessages,
@@ -70,6 +71,33 @@ describe("thread-turns-page-adapter", () => {
 
     expect(merged.map((message) => message.content)).toEqual(["first", "second", "third"]);
     expect(merged.map((message) => message.id)).toEqual(["user-1", "user-2", "user-3"]);
+  });
+
+  it("append 合并时同一 turn 的 assistant 输出只保留一次", () => {
+    const thread = createThread();
+    const historical = threadTurnsPageToMessages(thread, [
+      createTurnWithAssistant("turn-1", "user-1", "agent-1", "final answer", 10),
+    ]).find((message) => message.role === "assistant")!;
+    const live = {
+      ...historical,
+      id: "temp-assistant-1",
+      content: "final answer from notification",
+    };
+
+    const merged = mergeThreadTurnMessages([historical], [live], "append");
+
+    expect(merged).toEqual([historical]);
+  });
+
+  it("用父子任务共有的最后一个 turn 定位接续边界", () => {
+    const thread = createThread();
+    const messages = threadTurnsPageToMessages(thread, [
+      createTurnWithAssistant("turn-1", "user-1", "agent-1", "first", 10),
+      createTurnWithAssistant("turn-2", "user-2", "agent-2", "second", 20),
+      createTurnWithAssistant("turn-child", "user-child", "agent-child", "child", 30),
+    ], "asc");
+
+    expect(continuationBoundaryMessageId(messages, ["turn-1", "turn-2"])).toBe("agent-2");
   });
 
   it("desc page 第一项是最新历史 turn", () => {

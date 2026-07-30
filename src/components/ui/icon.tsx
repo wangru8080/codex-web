@@ -6,6 +6,7 @@ export {
   ArrowUUpLeft,
   ArrowUp,
   ArrowElbowDownLeft,
+  ArrowsSplit,
   ArrowsClockwise,
   ArrowsCounterClockwise,
   ArrowSquareOut,

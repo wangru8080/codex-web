@@ -14,8 +14,7 @@ import { MediaPreview } from './MediaPreview';
 import { DiffSummary } from './DiffSummary';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, CaretDown, CaretUp, CaretRight, NotePencil, GitBranch, SpinnerGap } from "@/components/ui/icon";
-import { CodexWebIcon } from "@/components/ui/semantic-icon";
+import { Check, CaretDown, CaretUp, CaretRight, NotePencil, Copy, ArrowsSplit, SpinnerGap } from "@/components/ui/icon";
 import { FileAttachmentDisplay } from './FileAttachmentDisplay';
 import { FileExcerptDisplay } from './FileExcerptDisplay';
 import { parseFileExcerptDisplay } from '@/lib/file-excerpt-reference';
@@ -39,7 +38,7 @@ interface MessageItemProps {
   sessionId?: string;
   canEdit?: boolean;
   onEdit?: (content: string, files: FileAttachment[]) => Promise<boolean>;
-  onContinueInNewTask?: (lastTurnId?: string) => Promise<void>;
+  onContinueInNewTask?: (lastTurnId?: string, sourceMessageId?: string) => Promise<void>;
   /** Whether this is an assistant workspace project */
   isAssistantProject?: boolean;
   /** Assistant name for avatar */
@@ -287,16 +286,16 @@ function CopyButton({ text }: { text: string }) {
   return (
     <Button
       variant="ghost"
-      size="sm"
+      size="icon-xs"
       onClick={handleCopy}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs text-muted-foreground/60 hover:text-muted-foreground h-auto"
+      className="text-muted-foreground/60 hover:text-muted-foreground"
       title="复制"
       aria-label="复制"
     >
       {copied ? (
         <Check size={12} className="text-status-success-foreground" />
       ) : (
-        <CodexWebIcon name="copy" size={12} aria-hidden />
+        <Copy size={12} aria-hidden />
       )}
     </Button>
   );
@@ -654,27 +653,29 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
       })()}
 
       {/* Footer with copy, timestamp and token usage */}
-      <div className={`flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}>
+      <div className={`flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}>
+        <div className="flex items-center gap-0.5">
+          {displayText && <CopyButton text={displayText} />}
+          {!isUser && onContinueInNewTask && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              disabled={isForking}
+              onClick={async () => {
+                setIsForking(true);
+                try { await onContinueInNewTask(message.turn_id, message.id); } finally { setIsForking(false); }
+              }}
+              className="text-muted-foreground/60 hover:text-primary"
+              aria-label={t('message.continueInNewTask' as TranslationKey)}
+              title={t('message.continueInNewTask' as TranslationKey)}
+            >
+              {isForking ? <SpinnerGap size={13} className="animate-spin" /> : <ArrowsSplit size={13} style={{ transform: 'rotate(-90deg)' }} />}
+            </Button>
+          )}
+        </div>
         {!isUser && <span className="text-xs text-muted-foreground/50">{timestamp}</span>}
         {!isUser && tokenUsage && <TokenUsageDisplay usage={tokenUsage} />}
-        {displayText && <CopyButton text={displayText} />}
-        {!isUser && onContinueInNewTask && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={isForking}
-            onClick={async () => {
-              setIsForking(true);
-              try { await onContinueInNewTask(message.turn_id); } finally { setIsForking(false); }
-            }}
-            className="h-auto px-1.5 py-0.5 text-xs text-muted-foreground/60 hover:text-primary"
-            aria-label={t('message.continueInNewTask' as TranslationKey)}
-            title={t('message.continueInNewTask' as TranslationKey)}
-          >
-            {isForking ? <SpinnerGap size={13} className="animate-spin" /> : <GitBranch size={13} />}
-          </Button>
-        )}
         {isUser && canEdit && fileExcerpts.length === 0 && onEdit && (
           <Button
             type="button"

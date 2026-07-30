@@ -11,7 +11,9 @@ describe('聊天虚拟化与流式渲染接线', () => {
     expect(source).toContain("from 'react-virtuoso'");
     expect(source).toContain('firstItemIndex={firstItemIndex}');
     expect(source).toContain("initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}");
-    expect(source).toContain("row.message.id : 'streaming-message'");
+    expect(source).toContain('? row.message.id');
+    expect(source).toContain('? `continued-from:${row.href}`');
+    expect(source).toContain(": 'streaming-message'");
     expect(source).toContain('followOutput');
     expect(source).toContain('atBottomStateChange={handleAtBottomStateChange}');
     expect(source).toContain('totalListHeightChanged={handleTotalListHeightChanged}');

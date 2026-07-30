@@ -16,4 +16,12 @@ describe("聊天消息复制按钮接线", () => {
     expect(source).toContain('aria-label="复制"');
     expect(source).not.toContain('title="Copy"');
   });
+
+  it("使用官方样式的复制和续接图标", () => {
+    expect(source).toContain("<Copy size={12} aria-hidden />");
+    expect(source).toContain("<ArrowsSplit size={13} style={{ transform: 'rotate(-90deg)' }} />");
+    expect(source).not.toContain('<CodexWebIcon name="copy"');
+    expect(source).not.toContain("<GitBranch size={13}");
+    expect(source).not.toContain("<ArrowElbowDownRight size={13}");
+  });
 });

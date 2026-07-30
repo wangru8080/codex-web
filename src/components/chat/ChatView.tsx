@@ -82,6 +82,7 @@ import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort
 import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadTokenUsage';
 import { editedGoalStatus, goalSummaryLines } from '@/codex-web/goal-display-adapter';
 import { selectPlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
+import { mergeThreadTurnMessages } from '@/codex-web/thread-turns-page-adapter';
 import { GoalProgressRow } from './GoalProgressRow';
 import { PlanImplementationPromptBar } from './PlanImplementationPromptBar';
 import {
@@ -139,8 +140,9 @@ interface ChatViewProps {
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
   onAppServerGoalClear?: () => Promise<void>;
-  onContinueInNewTask?: (lastTurnId?: string) => Promise<void>;
+  onContinueInNewTask?: (lastTurnId?: string, sourceMessageId?: string) => Promise<void>;
   continuedFromHref?: string;
+  continuedFromMessageId?: string;
   appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; skills?: readonly SkillInputReference[]; onAccepted?: (threadId: string, turnId: string, files?: readonly FileAttachment[]) => void }) => Promise<AppServerTurnState>;
   appServerSyncedUserMessages?: readonly CrossClientUserMessage[];
   onAppServerUserMessageAccepted?: (event: CrossClientUserMessage) => void;
@@ -196,6 +198,7 @@ export function ChatView({
   onAppServerGoalClear,
   onContinueInNewTask,
   continuedFromHref,
+  continuedFromMessageId,
   appServerSend,
   appServerSyncedUserMessages = [],
   onAppServerUserMessageAccepted,
@@ -731,7 +734,7 @@ export function ChatView({
         created_at: new Date().toISOString(),
         token_usage: null,
       };
-      cappedSetMessages((prev) => [...prev, assistantMessage]);
+      cappedSetMessages((prev) => mergeThreadTurnMessages(prev, [assistantMessage], 'append'));
     }
 
     setAppServerLocalStreaming(false);
@@ -1711,6 +1714,7 @@ export function ChatView({
               onEditUserMessage={handleEditUserMessage}
               onContinueInNewTask={onContinueInNewTask}
               continuedFromHref={continuedFromHref}
+              continuedFromMessageId={continuedFromMessageId}
             />
           </PerformanceProfiler>
       {/* End-of-turn terminal reason chip (only shown when stream is not active) */}

@@ -72,13 +72,25 @@ export function mergeThreadTurnMessages(
   const candidates = placement === "prepend" ? [...incoming, ...existing] : [...existing, ...incoming];
 
   for (const message of candidates) {
-    const key = message.id || `${message.session_id}:${message.role}:${message.created_at}:${message.content}`;
+    const key = message.role === "assistant" && message.turn_id
+      ? `${message.session_id}:${message.role}:${message.turn_id}`
+      : message.id || `${message.session_id}:${message.role}:${message.created_at}:${message.content}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(message);
   }
 
   return result;
+}
+
+export function continuationBoundaryMessageId(
+  messages: Message[],
+  parentTurnIds: readonly string[],
+): string | undefined {
+  const parentTurns = new Set(parentTurnIds);
+  return [...messages].reverse().find((message) =>
+    message.role === "assistant" && !!message.turn_id && parentTurns.has(message.turn_id)
+  )?.id;
 }
 
 export function applyTurnSnapshotsToMessages(

@@ -17,6 +17,7 @@ import { SPECIES_IMAGE_URL, EGG_IMAGE_URL, RARITY_BG_GRADIENT, type Species, typ
 import {
   INITIAL_VIRTUAL_FIRST_ITEM_INDEX,
   classifyMessageWindowChange,
+  continuationMarkerIndex,
   nextVirtualFirstItemIndex,
 } from './message-list-virtualization';
 
@@ -159,12 +160,14 @@ interface MessageListProps {
   assistantName?: string;
   editableUserMessageId?: string | null;
   onEditUserMessage?: (content: string, files: FileAttachment[]) => Promise<boolean>;
-  onContinueInNewTask?: (lastTurnId?: string) => Promise<void>;
+  onContinueInNewTask?: (lastTurnId?: string, sourceMessageId?: string) => Promise<void>;
   continuedFromHref?: string;
+  continuedFromMessageId?: string;
 }
 
 type MessageListRow =
   | { type: 'message'; message: Message; rewindSdkUuid?: string }
+  | { type: 'continued-from'; href: string }
   | { type: 'streaming' };
 
 type MessageListContext = {
@@ -173,8 +176,6 @@ type MessageListContext = {
   loadEarlierLabel: string;
   loadingLabel: string;
   onLoadMore: () => void;
-  continuedFromHref?: string;
-  continuedFromLabel: string;
 };
 
 const VirtualListHeader = ({ context }: { context: MessageListContext }) => context.hasMore ? (
@@ -188,20 +189,6 @@ const VirtualListHeader = ({ context }: { context: MessageListContext }) => cont
     >
       {context.loadingMore ? context.loadingLabel : context.loadEarlierLabel}
     </Button>
-  </div>
-) : null;
-
-const VirtualListFooter = ({ context }: { context: MessageListContext }) => context.continuedFromHref ? (
-  <div className="flex items-center gap-4 pb-6 pt-1">
-    <div className="h-px flex-1 bg-border/70" />
-    <a
-      href={context.continuedFromHref}
-      className="inline-flex items-center gap-2 text-sm text-blue-600 transition-colors hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
-    >
-      <GitBranch size={16} aria-hidden />
-      {context.continuedFromLabel}
-    </a>
-    <div className="h-px flex-1 bg-border/70" />
   </div>
 ) : null;
 
@@ -227,7 +214,6 @@ const VirtualListItems = forwardRef<
 
 const VIRTUAL_LIST_COMPONENTS: Components<MessageListRow, MessageListContext> = {
   Header: VirtualListHeader,
-  Footer: VirtualListFooter,
   Scroller: VirtualListScroller,
   List: VirtualListItems,
 };
@@ -276,6 +262,7 @@ export function MessageList({
   onEditUserMessage,
   onContinueInNewTask,
   continuedFromHref,
+  continuedFromMessageId,
 }: MessageListProps) {
   const { t } = useTranslation();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -300,8 +287,14 @@ export function MessageList({
       }
       return { type: 'message', message, rewindSdkUuid };
     });
+    const markerIndex = continuedFromHref
+      ? continuationMarkerIndex(messages.map((message) => message.id), continuedFromMessageId)
+      : -1;
+    if (continuedFromHref && markerIndex >= 0) {
+      messageRows.splice(markerIndex, 0, { type: 'continued-from', href: continuedFromHref });
+    }
     return showStreamingMessage ? [...messageRows, { type: 'streaming' }] : messageRows;
-  }, [messages, rewindPoints, sessionId, showStreamingMessage]);
+  }, [continuedFromHref, continuedFromMessageId, messages, rewindPoints, sessionId, showStreamingMessage]);
 
   const listContext = useMemo<MessageListContext>(() => ({
     hasMore: !!hasMore,
@@ -309,9 +302,7 @@ export function MessageList({
     loadEarlierLabel: t('messageList.loadEarlier'),
     loadingLabel: t('messageList.loading'),
     onLoadMore: handleLoadMore,
-    continuedFromHref,
-    continuedFromLabel: t('chat.continuedFrom' as TranslationKey),
-  }), [continuedFromHref, handleLoadMore, hasMore, loadingMore, t]);
+  }), [handleLoadMore, hasMore, loadingMore, t]);
 
   const pinInitialBottom = useCallback(() => {
     if (!initialBottomLockRef.current) return;
@@ -471,7 +462,11 @@ export function MessageList({
         data={rows}
         context={listContext}
         components={VIRTUAL_LIST_COMPONENTS}
-        computeItemKey={(_index, row) => row.type === 'message' ? row.message.id : 'streaming-message'}
+        computeItemKey={(_index, row) => row.type === 'message'
+          ? row.message.id
+          : row.type === 'continued-from'
+            ? `continued-from:${row.href}`
+            : 'streaming-message'}
         firstItemIndex={firstItemIndex}
         initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}
         followOutput
@@ -498,6 +493,18 @@ export function MessageList({
                 <RewindButton sessionId={sessionId} userMessageId={row.rewindSdkUuid} />
               )}
             </div>
+        ) : row.type === 'continued-from' ? (
+          <div className="flex items-center gap-4 pb-6 pt-1" data-continued-from-row>
+            <div className="h-px flex-1 bg-border/70" />
+            <a
+              href={row.href}
+              className="inline-flex items-center gap-2 text-sm text-blue-600 transition-colors hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              <GitBranch size={16} aria-hidden />
+              {t('chat.continuedFrom' as TranslationKey)}
+            </a>
+            <div className="h-px flex-1 bg-border/70" />
+          </div>
         ) : (
           <div className="pb-6" data-streaming-message-row>
           <PerformanceProfiler id="StreamingMessage">

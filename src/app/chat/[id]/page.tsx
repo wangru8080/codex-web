@@ -25,9 +25,14 @@ import {
   preserveMessagesAfterPaginationFailure,
 } from '@/codex-web/history-pagination-state';
 import { resolveHistoryTurnTarget } from '@/codex-web/history-turn-routing';
-import { threadToChatSession, threadToMessages } from '@/codex-web/thread-history-adapter';
+import {
+  nextForkedThreadName,
+  threadToChatSession,
+  threadToMessages,
+} from '@/codex-web/thread-history-adapter';
 import {
   applyTurnSnapshotsToMessages,
+  continuationBoundaryMessageId,
   latestHistoryTurnFromPage,
   mergeThreadTurnMessages,
   threadTurnsPageToMessages,
@@ -38,6 +43,10 @@ import { modelSettingsFromResume } from '@/codex-web/thread-model-settings';
 import { latestInProgressTurnId } from '@/codex-web/resumed-turn-hydration';
 import { readDefaultPanelPreference } from '@/lib/app-preferences';
 import { threadRollbackToMessages } from '@/codex-web/thread-rollback';
+import {
+  continuationReferenceStorageKey,
+  parseContinuationReference,
+} from '@/codex-web/continuation-reference';
 
 function safeDecodeSessionId(id: string): string {
   try {
@@ -82,6 +91,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [turnsNextCursor, setTurnsNextCursor] = useState<string | null>(null);
   const [latestHistoryTurn, setLatestHistoryTurn] = useState<LatestHistoryTurn | null>(null);
   const [paginationNotice, setPaginationNotice] = useState<{ message: string; description?: string } | null>(null);
+  const [continuedFromMessageId, setContinuedFromMessageId] = useState<string>();
   const { setWorkingDirectory, setSessionId, setSessionTitle: setPanelSessionTitle, setFileTreeOpen } = usePanel();
   const connectionData = useAppServerSelector((state) => state.connection.data);
   const turnSnapshots = useAppServerSelector((state) => state.turnSnapshots);
@@ -93,9 +103,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const threadTokenUsageByThreadId = useAppServerSelector((state) => state.threadTokenUsageByThreadId);
   const latestCrossClientThreadRollback = useAppServerSelector((state) => state.latestCrossClientThreadRollback);
   const models = useAppServerSelector((state) => state.models);
+  const threads = useAppServerSelector((state) => state.threads);
   const {
     readThread,
     listThreadTurns,
+    setThreadName,
     resumeThread,
     forkThread,
     sendOneTurn,
@@ -146,6 +158,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setTurnsNextCursor(null);
     setLatestHistoryTurn(null);
     setPaginationNotice(null);
+    setContinuedFromMessageId(undefined);
     setSessionInfoLoaded(false);
 
     let cancelled = false;
@@ -157,6 +170,29 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         setLoading(false);
       }
       return () => { cancelled = true; };
+    }
+
+    async function resolveContinuationBoundary(
+      parentThreadId: string,
+      childMessages: Message[],
+    ): Promise<string | undefined> {
+      let cursor: string | null = null;
+      do {
+        const parentPage = await listThreadTurns({
+          threadId: parentThreadId,
+          cursor,
+          limit: 100,
+          sortDirection: "desc",
+          itemsView: "full",
+        });
+        const messageId = continuationBoundaryMessageId(
+          childMessages,
+          parentPage.data.map((turn) => turn.id),
+        );
+        if (messageId) return messageId;
+        cursor = parentPage.nextCursor;
+      } while (cursor);
+      return undefined;
     }
 
     async function loadSessionAndMessages() {
@@ -175,6 +211,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         setResumedModel(resumedSettings.model);
         setSessionModel(resumedSettings.model);
         setSessionEffort(resumedSettings.effort);
+        let loadedMessages: Message[] = [];
         try {
           const turnsPage = await listThreadTurns({
             threadId: id,
@@ -184,15 +221,14 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             itemsView: "full",
           });
           if (cancelled) return;
-          setMessages(
-            threadTurnsPageToMessages(
-              response.thread,
-              turnsPage.data,
-              "desc",
-              turnSnapshotsRef.current,
-              { omitAssistantTurnId: resumedLiveTurnId },
-            ),
+          loadedMessages = threadTurnsPageToMessages(
+            response.thread,
+            turnsPage.data,
+            "desc",
+            turnSnapshotsRef.current,
+            { omitAssistantTurnId: resumedLiveTurnId },
           );
+          setMessages(loadedMessages);
           setLatestHistoryTurn(
             latestHistoryTurnFromPage(
               turnsPage.data,
@@ -221,6 +257,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             result.messages,
             turnSnapshotsRef.current,
           );
+          loadedMessages = snapshotMessages;
           setLatestHistoryTurn(
             latestHistoryTurnFromPage(
               fallbackThread.turns,
@@ -234,6 +271,24 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           setPaginationNotice(historyPaginationFailureNotice(pageError));
           if (result.unsupportedItemCount > 0) {
             console.info(`Phase 5A 暂未渲染 ${result.unsupportedItemCount} 个历史工具 item`);
+          }
+        }
+        if (response.thread.forkedFromId) {
+          const savedReference = parseContinuationReference(
+            localStorage.getItem(continuationReferenceStorageKey(response.thread.id)),
+          );
+          if (savedReference?.parentThreadId === response.thread.forkedFromId) {
+            setContinuedFromMessageId(savedReference.parentMessageId);
+          } else {
+            try {
+              const boundaryMessageId = await resolveContinuationBoundary(
+                response.thread.forkedFromId,
+                loadedMessages,
+              );
+              if (!cancelled) setContinuedFromMessageId(boundaryMessageId);
+            } catch (boundaryError) {
+              console.info('无法定位接续任务边界', boundaryError);
+            }
           }
         }
       } catch (err) {
@@ -387,11 +442,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     models?.data.data.find((model) => !model.hidden)?.id ||
     '';
   const canResumeAppServerThread = isAppServerThread && !!sessionWorkingDirectory;
-  const forkSourceMessageId = appServerThread?.forkedFromId
-    ? [...messages].reverse().find((message) => message.role === 'assistant')?.id
-    : undefined;
   const continuedFromHref = appServerThread?.forkedFromId
-    ? `/chat/${encodeURIComponent(appServerThread.forkedFromId)}${forkSourceMessageId ? `#msg-${encodeURIComponent(forkSourceMessageId)}` : ''}`
+    ? `/chat/${encodeURIComponent(appServerThread.forkedFromId)}${continuedFromMessageId ? `#msg-${encodeURIComponent(continuedFromMessageId)}` : ''}`
     : undefined;
 
   return (
@@ -423,8 +475,27 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         appServerRemoteRollback={appServerRemoteRollback}
         onAppServerUserMessageAccepted={publishCrossClientUserMessage}
         continuedFromHref={continuedFromHref}
-        onContinueInNewTask={connectionData === 'connected' ? async (lastTurnId) => {
+        continuedFromMessageId={continuedFromMessageId}
+        onContinueInNewTask={connectionData === 'connected' ? async (lastTurnId, sourceMessageId) => {
           const response = await forkThread({ threadId: resumedThreadId || id, lastTurnId });
+          const sourceThread = appServerThread
+            ?? threads?.data.data.find((thread) => thread.id === (resumedThreadId || id));
+          if (sourceThread) {
+            await setThreadName({
+              threadId: response.thread.id,
+              name: nextForkedThreadName(sourceThread, threads?.data.data ?? [sourceThread]),
+            });
+          }
+          if (lastTurnId && sourceMessageId) {
+            localStorage.setItem(
+              continuationReferenceStorageKey(response.thread.id),
+              JSON.stringify({
+                parentThreadId: resumedThreadId || id,
+                parentMessageId: sourceMessageId,
+                lastTurnId,
+              }),
+            );
+          }
           router.push(`/chat/${encodeURIComponent(response.thread.id)}`);
         } : undefined}
         onAppServerRequestResponse={(input) =>

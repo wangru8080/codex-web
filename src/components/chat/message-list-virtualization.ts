@@ -42,6 +42,15 @@ export function nextVirtualFirstItemIndex(
   return change.type === 'prepend' ? current - change.count : current;
 }
 
+export function continuationMarkerIndex(
+  messageIds: readonly string[],
+  afterMessageId?: string,
+): number {
+  if (!afterMessageId) return -1;
+  const messageIndex = messageIds.indexOf(afterMessageId);
+  return messageIndex < 0 ? -1 : messageIndex + 1;
+}
+
 function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }

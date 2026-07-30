@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 
-import { threadToChatSession, threadToMessages } from "../thread-history-adapter";
+import {
+  nextForkedThreadName,
+  threadToChatSession,
+  threadToMessages,
+} from "../thread-history-adapter";
 import { TOOL_OUTPUT_DISPLAY_BYTE_LIMIT } from "../tool-output-display";
 import {
   buildFileExcerptPrompt,
@@ -47,6 +51,37 @@ describe("thread-history-adapter", () => {
       provider_id: "codex_account",
       runtime_pin: "codex_runtime",
     });
+  });
+
+  it("为同项目的分叉任务分配连续标题序号", () => {
+    const source = createThread();
+
+    expect(nextForkedThreadName(source, [source])).toBe("修复测试 (2)");
+    expect(nextForkedThreadName(source, [
+      source,
+      { ...source, id: "thread-2", name: "修复测试 (2)" },
+      { ...source, id: "thread-3", name: "修复测试 (3)" },
+    ])).toBe("修复测试 (4)");
+  });
+
+  it("从已编号任务继续分叉时沿用基础标题", () => {
+    const source = { ...createThread(), id: "thread-2", name: "修复测试 (2)" };
+    const base = { ...createThread(), id: "thread-1" };
+
+    expect(nextForkedThreadName(source, [
+      base,
+      source,
+      { ...source, id: "thread-3", name: "修复测试 (3)" },
+    ])).toBe("修复测试 (4)");
+  });
+
+  it("忽略其他项目的同名任务且不误拆自然数字后缀", () => {
+    const source = { ...createThread(), name: "版本 (2026)" };
+
+    expect(nextForkedThreadName(source, [
+      source,
+      { ...source, id: "other", cwd: "/repo/other", name: "版本 (2026) (9)" },
+    ])).toBe("版本 (2026) (2)");
   });
 
   it("把历史 turn 中的 user/assistant item 映射为消息", () => {
