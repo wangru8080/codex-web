@@ -252,6 +252,7 @@ function createMessage(
   return {
     id: itemId,
     session_id: thread.id,
+    turn_id: turn.id,
     role,
     content,
     created_at: secondsToIso(role === "user" ? turn.startedAt : turn.completedAt || turn.startedAt),

@@ -31,6 +31,7 @@ import type { ThreadReadResponse } from "@/codex/protocol/generated/v2/ThreadRea
 import type { ThreadRollbackParams } from "@/codex/protocol/generated/v2/ThreadRollbackParams";
 import type { ThreadRollbackResponse } from "@/codex/protocol/generated/v2/ThreadRollbackResponse";
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
+import type { ThreadForkResponse } from "@/codex/protocol/generated/v2/ThreadForkResponse";
 import type { ThreadSetNameParams } from "@/codex/protocol/generated/v2/ThreadSetNameParams";
 import type { ThreadSetNameResponse } from "@/codex/protocol/generated/v2/ThreadSetNameResponse";
 import type { ThreadUnarchiveResponse } from "@/codex/protocol/generated/v2/ThreadUnarchiveResponse";
@@ -166,6 +167,7 @@ export type ResumeThreadParams = {
   model?: string;
   permissionProfile?: PermissionProfile;
 };
+export type ForkThreadParams = { threadId: string; lastTurnId?: string | null };
 
 export type SendTurnInThreadParams = {
   threadId: string;
@@ -184,6 +186,7 @@ export type AppServerActions = {
   startThread: (params: StartThreadParams) => Promise<ThreadStartResponse>;
   sendOneTurn: (params: SendOneTurnParams) => Promise<AppServerTurnState>;
   resumeThread: (params: ResumeThreadParams) => Promise<ThreadResumeResponse>;
+  forkThread: (params: ForkThreadParams) => Promise<ThreadForkResponse>;
   sendTurnInThread: (params: SendTurnInThreadParams) => Promise<AppServerTurnState>;
   rollbackThread: (params: ThreadRollbackParams) => Promise<ThreadRollbackResponse>;
   interruptTurn: (params?: InterruptTurnParams) => Promise<void>;
@@ -1084,6 +1087,18 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, []);
 
+  const forkThread = useCallback(async ({ threadId, lastTurnId }: ForkThreadParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    const response = (await client.request("thread/fork", {
+      threadId,
+      lastTurnId: lastTurnId ?? null,
+      threadSource: "codex_web",
+    })) as ThreadForkResponse;
+    void refreshThreads().catch(() => undefined);
+    return response;
+  }, [refreshThreads]);
+
   const sendTurnInThread = useCallback(async ({ threadId, content, files, cwd, model, effort, mode, permissionProfile = "request_approval", onAccepted, skills }: SendTurnInThreadParams) => {
     const client = clientRef.current;
     if (!client) {
@@ -1278,6 +1293,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       startThread,
       sendOneTurn,
       resumeThread,
+      forkThread,
       sendTurnInThread,
       rollbackThread,
       interruptTurn,
@@ -1321,7 +1337,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       logoutAccount,
       publishCrossClientUserMessage,
     }),
-    [startThread, sendOneTurn, resumeThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
+    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
   );
 
   return (

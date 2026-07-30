@@ -14,7 +14,7 @@ import { MediaPreview } from './MediaPreview';
 import { DiffSummary } from './DiffSummary';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, CaretDown, CaretUp, CaretRight, NotePencil } from "@/components/ui/icon";
+import { Check, CaretDown, CaretUp, CaretRight, NotePencil, GitBranch, SpinnerGap } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { FileAttachmentDisplay } from './FileAttachmentDisplay';
 import { FileExcerptDisplay } from './FileExcerptDisplay';
@@ -39,6 +39,7 @@ interface MessageItemProps {
   sessionId?: string;
   canEdit?: boolean;
   onEdit?: (content: string, files: FileAttachment[]) => Promise<boolean>;
+  onContinueInNewTask?: (lastTurnId?: string) => Promise<void>;
   /** Whether this is an assistant workspace project */
   isAssistantProject?: boolean;
   /** Assistant name for avatar */
@@ -321,7 +322,7 @@ function TokenUsageDisplay({ usage }: { usage: TokenUsage }) {
 
 const COLLAPSE_HEIGHT = 300;
 
-export const MessageItem = memo(function MessageItem({ message, sessionId, canEdit = false, onEdit, isAssistantProject, assistantName }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({ message, sessionId, canEdit = false, onEdit, onContinueInNewTask, isAssistantProject, assistantName }: MessageItemProps) {
   const isUser = message.role === 'user';
   const { t } = useTranslation();
 
@@ -331,6 +332,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const [isForking, setIsForking] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Preview wiring for DiffSummary (Phase 2.3). Clicking a previewable row
@@ -656,6 +658,23 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
         {!isUser && <span className="text-xs text-muted-foreground/50">{timestamp}</span>}
         {!isUser && tokenUsage && <TokenUsageDisplay usage={tokenUsage} />}
         {displayText && <CopyButton text={displayText} />}
+        {!isUser && onContinueInNewTask && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={isForking}
+            onClick={async () => {
+              setIsForking(true);
+              try { await onContinueInNewTask(message.turn_id); } finally { setIsForking(false); }
+            }}
+            className="h-auto px-1.5 py-0.5 text-xs text-muted-foreground/60 hover:text-primary"
+            aria-label={t('message.continueInNewTask' as TranslationKey)}
+            title={t('message.continueInNewTask' as TranslationKey)}
+          >
+            {isForking ? <SpinnerGap size={13} className="animate-spin" /> : <GitBranch size={13} />}
+          </Button>
+        )}
         {isUser && canEdit && fileExcerpts.length === 0 && onEdit && (
           <Button
             type="button"

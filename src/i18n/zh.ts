@@ -1753,6 +1753,8 @@ const zh: Record<TranslationKey, string> = {
   'message.edit.input': '编辑你的问题',
   'message.edit.cancel': '取消',
   'message.edit.send': '发送',
+  'message.continueInNewTask': '在新任务中继续',
+  'chat.continuedFrom': '接续自任务',
   'settings.security': '安全',
   'auth.welcome': '欢迎回来',
   'auth.subtitle': '登录您的账户以继续',

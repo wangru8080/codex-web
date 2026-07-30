@@ -220,6 +220,7 @@ export interface CliToolItem {
 export interface Message {
   id: string;
   session_id: string;
+  turn_id?: string;
   role: 'user' | 'assistant';
   content: string; // JSON string of MessageContentBlock[] for structured content
   created_at: string;

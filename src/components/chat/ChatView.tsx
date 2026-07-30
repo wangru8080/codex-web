@@ -139,6 +139,8 @@ interface ChatViewProps {
   onAppServerGoalStatusChange?: (status: ThreadGoalStatus) => Promise<void>;
   onAppServerGoalEdit?: (objective: string, status: ThreadGoalStatus, tokenBudget: number | null) => Promise<void>;
   onAppServerGoalClear?: () => Promise<void>;
+  onContinueInNewTask?: (lastTurnId?: string) => Promise<void>;
+  continuedFromHref?: string;
   appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; skills?: readonly SkillInputReference[]; onAccepted?: (threadId: string, turnId: string, files?: readonly FileAttachment[]) => void }) => Promise<AppServerTurnState>;
   appServerSyncedUserMessages?: readonly CrossClientUserMessage[];
   onAppServerUserMessageAccepted?: (event: CrossClientUserMessage) => void;
@@ -192,6 +194,8 @@ export function ChatView({
   onAppServerGoalStatusChange,
   onAppServerGoalEdit,
   onAppServerGoalClear,
+  onContinueInNewTask,
+  continuedFromHref,
   appServerSend,
   appServerSyncedUserMessages = [],
   onAppServerUserMessageAccepted,
@@ -721,6 +725,7 @@ export function ChatView({
       const assistantMessage: Message = {
         id: 'temp-assistant-' + Date.now(),
         session_id: appServerTurn.threadId || activeSessionId,
+        turn_id: appServerTurn.turnId,
         role: 'assistant',
         content: assistantContent,
         created_at: new Date().toISOString(),
@@ -1704,6 +1709,8 @@ export function ChatView({
               assistantName={assistantName}
               editableUserMessageId={editableUserMessageId}
               onEditUserMessage={handleEditUserMessage}
+              onContinueInNewTask={onContinueInNewTask}
+              continuedFromHref={continuedFromHref}
             />
           </PerformanceProfiler>
       {/* End-of-turn terminal reason chip (only shown when stream is not active) */}

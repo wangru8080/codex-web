@@ -1778,6 +1778,8 @@ const en = {
   'message.edit.input': 'Edit your message',
   'message.edit.cancel': 'Cancel',
   'message.edit.send': 'Send',
+  'message.continueInNewTask': 'Continue in new task',
+  'chat.continuedFrom': 'Continued from task',
   'settings.security': 'Security',
   'auth.welcome': 'Welcome back',
   'auth.subtitle': 'Sign in to your account to continue',

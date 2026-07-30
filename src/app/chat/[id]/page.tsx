@@ -97,6 +97,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     readThread,
     listThreadTurns,
     resumeThread,
+    forkThread,
     sendOneTurn,
     sendTurnInThread,
     rollbackThread,
@@ -386,6 +387,12 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     models?.data.data.find((model) => !model.hidden)?.id ||
     '';
   const canResumeAppServerThread = isAppServerThread && !!sessionWorkingDirectory;
+  const forkSourceMessageId = appServerThread?.forkedFromId
+    ? [...messages].reverse().find((message) => message.role === 'assistant')?.id
+    : undefined;
+  const continuedFromHref = appServerThread?.forkedFromId
+    ? `/chat/${encodeURIComponent(appServerThread.forkedFromId)}${forkSourceMessageId ? `#msg-${encodeURIComponent(forkSourceMessageId)}` : ''}`
+    : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -415,6 +422,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         appServerSyncedUserMessages={appServerSyncedUserMessages}
         appServerRemoteRollback={appServerRemoteRollback}
         onAppServerUserMessageAccepted={publishCrossClientUserMessage}
+        continuedFromHref={continuedFromHref}
+        onContinueInNewTask={connectionData === 'connected' ? async (lastTurnId) => {
+          const response = await forkThread({ threadId: resumedThreadId || id, lastTurnId });
+          router.push(`/chat/${encodeURIComponent(response.thread.id)}`);
+        } : undefined}
         onAppServerRequestResponse={(input) =>
           appServerRequest
             ? respondToServerRequest(input, appServerRequest.requestId)

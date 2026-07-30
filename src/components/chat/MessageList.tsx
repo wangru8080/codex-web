@@ -4,7 +4,7 @@ import { forwardRef, useRef, useEffect, useLayoutEffect, useState, useCallback, 
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { Virtuoso, type Components, type VirtuosoHandle } from 'react-virtuoso';
-import { ArrowDown } from '@phosphor-icons/react';
+import { ArrowDown, GitBranch } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import type { FileAttachment, Message, MessageContentBlock } from '@/types';
 import type { AppServerRetryStatus } from '@/codex-web/turn-reducer';
@@ -159,6 +159,8 @@ interface MessageListProps {
   assistantName?: string;
   editableUserMessageId?: string | null;
   onEditUserMessage?: (content: string, files: FileAttachment[]) => Promise<boolean>;
+  onContinueInNewTask?: (lastTurnId?: string) => Promise<void>;
+  continuedFromHref?: string;
 }
 
 type MessageListRow =
@@ -171,6 +173,8 @@ type MessageListContext = {
   loadEarlierLabel: string;
   loadingLabel: string;
   onLoadMore: () => void;
+  continuedFromHref?: string;
+  continuedFromLabel: string;
 };
 
 const VirtualListHeader = ({ context }: { context: MessageListContext }) => context.hasMore ? (
@@ -184,6 +188,20 @@ const VirtualListHeader = ({ context }: { context: MessageListContext }) => cont
     >
       {context.loadingMore ? context.loadingLabel : context.loadEarlierLabel}
     </Button>
+  </div>
+) : null;
+
+const VirtualListFooter = ({ context }: { context: MessageListContext }) => context.continuedFromHref ? (
+  <div className="flex items-center gap-4 pb-6 pt-1">
+    <div className="h-px flex-1 bg-border/70" />
+    <a
+      href={context.continuedFromHref}
+      className="inline-flex items-center gap-2 text-sm text-blue-600 transition-colors hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+    >
+      <GitBranch size={16} aria-hidden />
+      {context.continuedFromLabel}
+    </a>
+    <div className="h-px flex-1 bg-border/70" />
   </div>
 ) : null;
 
@@ -209,6 +227,7 @@ const VirtualListItems = forwardRef<
 
 const VIRTUAL_LIST_COMPONENTS: Components<MessageListRow, MessageListContext> = {
   Header: VirtualListHeader,
+  Footer: VirtualListFooter,
   Scroller: VirtualListScroller,
   List: VirtualListItems,
 };
@@ -255,6 +274,8 @@ export function MessageList({
   assistantName,
   editableUserMessageId,
   onEditUserMessage,
+  onContinueInNewTask,
+  continuedFromHref,
 }: MessageListProps) {
   const { t } = useTranslation();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -288,7 +309,9 @@ export function MessageList({
     loadEarlierLabel: t('messageList.loadEarlier'),
     loadingLabel: t('messageList.loading'),
     onLoadMore: handleLoadMore,
-  }), [handleLoadMore, hasMore, loadingMore, t]);
+    continuedFromHref,
+    continuedFromLabel: t('chat.continuedFrom' as TranslationKey),
+  }), [continuedFromHref, handleLoadMore, hasMore, loadingMore, t]);
 
   const pinInitialBottom = useCallback(() => {
     if (!initialBottomLockRef.current) return;
@@ -466,6 +489,7 @@ export function MessageList({
                   sessionId={sessionId}
                   canEdit={row.message.id === editableUserMessageId}
                   onEdit={row.message.id === editableUserMessageId ? onEditUserMessage : undefined}
+                  onContinueInNewTask={onContinueInNewTask}
                   isAssistantProject={isAssistantProject}
                   assistantName={assistantName}
                 />
