@@ -26,7 +26,7 @@ import {
 } from '@/codex-web/history-pagination-state';
 import { resolveHistoryTurnTarget } from '@/codex-web/history-turn-routing';
 import {
-  nextForkedThreadName,
+  nextForkedThreadNameFromList,
   threadToChatSession,
   threadToMessages,
 } from '@/codex-web/thread-history-adapter';
@@ -109,6 +109,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const threads = useAppServerSelector((state) => state.threads);
   const {
     readThread,
+    listThreads,
     listThreadTurns,
     setThreadName,
     resumeThread,
@@ -516,10 +517,10 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           const sourceThread = appServerThread
             ?? threads?.data.data.find((thread) => thread.id === (resumedThreadId || id));
           await completeContinuationFork({
-            rename: sourceThread ? () => setThreadName({
-              threadId: response.thread.id,
-              name: nextForkedThreadName(sourceThread, threads?.data.data ?? [sourceThread]),
-            }).then(() => undefined) : undefined,
+            rename: sourceThread ? async () => {
+              const name = await nextForkedThreadNameFromList(sourceThread, listThreads);
+              await setThreadName({ threadId: response.thread.id, name });
+            } : undefined,
             saveReference: lastTurnId && sourceMessageId ? () => localStorage.setItem(
               continuationReferenceStorageKey(response.thread.id),
               JSON.stringify({

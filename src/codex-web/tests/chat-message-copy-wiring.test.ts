@@ -29,4 +29,8 @@ describe("聊天消息复制按钮接线", () => {
     expect(source).toContain("catch { showToast({ type: 'error', message: t('error.sessionCreateFailed' as TranslationKey) }); }");
     expect(source).toContain("finally { setIsForking(false); }");
   });
+
+  it("只有带真实 turn_id 的助手消息才显示续接按钮", () => {
+    expect(source).toContain("!isUser && message.turn_id && onContinueInNewTask");
+  });
 });

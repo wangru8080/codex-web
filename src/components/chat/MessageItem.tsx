@@ -656,7 +656,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
       <div className={`flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 ${isUser ? 'justify-end' : ''}`}>
         <div className="flex items-center gap-0.5">
           {displayText && <CopyButton text={displayText} />}
-          {!isUser && onContinueInNewTask && (
+          {!isUser && message.turn_id && onContinueInNewTask && (
             <Button
               type="button"
               variant="ghost"

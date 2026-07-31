@@ -1,5 +1,7 @@
 import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 import type { ThreadItem } from "@/codex/protocol/generated/v2/ThreadItem";
+import type { ThreadListParams } from "@/codex/protocol/generated/v2/ThreadListParams";
+import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
 import type { Turn } from "@/codex/protocol/generated/v2/Turn";
 import type { ChatSession, FileAttachment, Message } from "@/types";
 import {
@@ -47,6 +49,35 @@ export function nextForkedThreadName(sourceThread: Thread, threads: readonly Thr
   }
 
   return `${baseTitle} (${highestSequence + 1})`;
+}
+
+export async function nextForkedThreadNameFromList(
+  sourceThread: Thread,
+  listThreads: (params: ThreadListParams) => Promise<ThreadListResponse>,
+): Promise<string> {
+  const sourceTitle = threadTitle(sourceThread);
+  const searchTerm = sourceTitle.match(/^(.*) \(([2-9]\d*)\)$/)?.[1] ?? sourceTitle;
+  const threads: Thread[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+
+  do {
+    const response = await listThreads({
+      archived: false,
+      cursor,
+      cwd: sourceThread.cwd,
+      limit: 100,
+      searchTerm,
+      sortDirection: "desc",
+      sortKey: "recency_at",
+    });
+    threads.push(...response.data);
+    cursor = response.nextCursor;
+    if (cursor && seenCursors.has(cursor)) break;
+    if (cursor) seenCursors.add(cursor);
+  } while (cursor);
+
+  return nextForkedThreadName(sourceThread, threads);
 }
 
 export function threadToChatSession(thread: Thread): ChatSession {

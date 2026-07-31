@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Thread } from "@/codex/protocol/generated/v2/Thread";
 
 import {
   nextForkedThreadName,
+  nextForkedThreadNameFromList,
   threadToChatSession,
   threadToMessages,
 } from "../thread-history-adapter";
@@ -82,6 +83,46 @@ describe("thread-history-adapter", () => {
       source,
       { ...source, id: "other", cwd: "/repo/other", name: "版本 (2026) (9)" },
     ])).toBe("版本 (2026) (2)");
+  });
+
+  it("分页读取同项目全部匹配任务后计算标题序号", async () => {
+    const source = { ...createThread(), id: "thread-2", name: "修复测试 (2)" };
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      ...source,
+      id: `thread-${index + 1}`,
+      name: index === 0 ? "修复测试" : `修复测试 (${index + 1})`,
+    }));
+    const listThreads = vi.fn()
+      .mockResolvedValueOnce({ data: firstPage, nextCursor: "page-2", backwardsCursor: null })
+      .mockResolvedValueOnce({
+        data: [{ ...source, id: "thread-51", name: "修复测试 (51)" }],
+        nextCursor: null,
+        backwardsCursor: null,
+      });
+
+    await expect(nextForkedThreadNameFromList(source, listThreads)).resolves.toBe("修复测试 (52)");
+    expect(listThreads).toHaveBeenNthCalledWith(1, {
+      archived: false,
+      cursor: null,
+      cwd: "/repo/web",
+      limit: 100,
+      searchTerm: "修复测试",
+      sortDirection: "desc",
+      sortKey: "recency_at",
+    });
+    expect(listThreads).toHaveBeenNthCalledWith(2, expect.objectContaining({ cursor: "page-2" }));
+  });
+
+  it("thread/list 返回重复游标时停止分页", async () => {
+    const source = createThread();
+    const listThreads = vi.fn().mockResolvedValue({
+      data: [source],
+      nextCursor: "repeated",
+      backwardsCursor: null,
+    });
+
+    await expect(nextForkedThreadNameFromList(source, listThreads)).resolves.toBe("修复测试 (2)");
+    expect(listThreads).toHaveBeenCalledTimes(2);
   });
 
   it("把历史 turn 中的 user/assistant item 映射为消息", () => {
