@@ -102,4 +102,30 @@ describe("mergeCrossClientUserMessages", () => {
 
     expect(mergeCrossClientUserMessages(existing, events).map((entry) => entry.id)).toEqual(["1", "2"]);
   });
+
+  it("历史已包含同一 Turn 时不追加临时消息，但保留不同 Turn 的相同内容", () => {
+    const existing = [{ ...message("real-user"), turn_id: "turn-1", content: "重复内容" }];
+    const sameTurn = readCrossClientUserMessage({
+      ...notification("1"),
+      params: {
+        ...notification("1").params,
+        message: { ...message("temp-user-turn-1"), content: "重复内容" },
+      },
+    });
+    const nextTurn = readCrossClientUserMessage({
+      ...notification("2"),
+      params: {
+        ...notification("2").params,
+        message: { ...message("temp-user-turn-2"), content: "重复内容" },
+      },
+    });
+    const events = [sameTurn, nextTurn].filter(
+      (event): event is NonNullable<typeof event> => event !== null,
+    );
+
+    expect(mergeCrossClientUserMessages(existing, events).map((entry) => entry.id)).toEqual([
+      "real-user",
+      "temp-user-turn-2",
+    ]);
+  });
 });

@@ -93,15 +93,27 @@ export function mergeCrossClientUserMessages(
   incoming: readonly CrossClientUserMessage[],
 ): Message[] {
   const knownIds = new Set(current.map((message) => message.id));
+  const historicalUserTurnIds = new Set(
+    current
+      .filter((message) => message.role === "user" && message.turn_id)
+      .map((message) => message.turn_id),
+  );
   const appended = incoming
-    .map((event) => event.message)
-    .filter((message) => {
+    .filter((event) => {
+      const message = event.message;
       if (knownIds.has(message.id)) {
+        return false;
+      }
+      if (
+        message.id === `temp-user-${event.turnId}` &&
+        historicalUserTurnIds.has(event.turnId)
+      ) {
         return false;
       }
       knownIds.add(message.id);
       return true;
-    });
+    })
+    .map((event) => event.message);
 
   return appended.length > 0 ? [...current, ...appended] : current;
 }
