@@ -10,7 +10,7 @@ describe('聊天虚拟化与流式渲染接线', () => {
     const source = read('src/components/chat/MessageList.tsx');
     expect(source).toContain("from 'react-virtuoso'");
     expect(source).toContain('firstItemIndex={firstItemIndex}');
-    expect(source).toContain("initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}");
+    expect(source).toContain('initialTopMostItemIndex={initialTopMostItemIndex}');
     expect(source).toContain('? row.message.id');
     expect(source).toContain('? `continued-from:${row.href}`');
     expect(source).toContain(": 'streaming-message'");
@@ -33,6 +33,20 @@ describe('聊天虚拟化与流式渲染接线', () => {
     const source = read('src/components/chat/MessageList.tsx');
     expect(source).toContain('nextVirtualFirstItemIndex');
     expect(source).not.toContain('scrollIntoView({ block:');
+  });
+
+  it('接续深链禁用底部锁定并使用 Virtuoso 定位目标消息', () => {
+    const messageList = read('src/components/chat/MessageList.tsx');
+    const chatView = read('src/components/chat/ChatView.tsx');
+    const page = read('src/app/chat/[id]/page.tsx');
+
+    expect(messageList).toContain('targetMessageVirtualIndex');
+    expect(messageList).toContain("{ index: targetVirtualIndex, align: 'center' as const }");
+    expect(messageList).toContain('if (targetMessageId) return;');
+    expect(chatView).toContain('targetMessageId={targetMessageId}');
+    expect(page).toContain("searchParams.get('continuationMessage')");
+    expect(page).toContain("readThread(id, { includeTurns: true })");
+    expect(page).toContain('needsContinuationTargetHistory');
   });
 
   it('展示快照按帧合并，terminal effect 继续读取原始 Turn', () => {

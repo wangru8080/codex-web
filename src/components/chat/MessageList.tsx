@@ -19,6 +19,7 @@ import {
   classifyMessageWindowChange,
   continuationMarkerIndex,
   nextVirtualFirstItemIndex,
+  targetMessageVirtualIndex,
 } from './message-list-virtualization';
 
 /**
@@ -163,6 +164,7 @@ interface MessageListProps {
   onContinueInNewTask?: (lastTurnId?: string, sourceMessageId?: string) => Promise<void>;
   continuedFromHref?: string;
   continuedFromMessageId?: string;
+  targetMessageId?: string;
 }
 
 type MessageListRow =
@@ -263,6 +265,7 @@ export function MessageList({
   onContinueInNewTask,
   continuedFromHref,
   continuedFromMessageId,
+  targetMessageId,
 }: MessageListProps) {
   const { t } = useTranslation();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -304,6 +307,15 @@ export function MessageList({
     onLoadMore: handleLoadMore,
   }), [handleLoadMore, hasMore, loadingMore, t]);
 
+  const targetVirtualIndex = targetMessageVirtualIndex(
+    messages.map((message) => message.id),
+    targetMessageId,
+    continuedFromMessageId,
+  );
+  const initialTopMostItemIndex = targetVirtualIndex === undefined
+    ? { index: 'LAST' as const, align: 'end' as const }
+    : { index: targetVirtualIndex, align: 'center' as const };
+
   const pinInitialBottom = useCallback(() => {
     if (!initialBottomLockRef.current) return;
     virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' });
@@ -315,6 +327,7 @@ export function MessageList({
   }, []);
 
   useLayoutEffect(() => {
+    if (targetMessageId) return;
     if (rows.length === 0 || initialBottomLockSessionRef.current === sessionId) return;
     initialBottomLockSessionRef.current = sessionId;
     initialBottomLockRef.current = true;
@@ -323,7 +336,7 @@ export function MessageList({
     }
     const frame = window.requestAnimationFrame(pinInitialBottom);
     return () => window.cancelAnimationFrame(frame);
-  }, [pinInitialBottom, rows.length, sessionId]);
+  }, [pinInitialBottom, rows.length, sessionId, targetMessageId]);
 
   const handleAtBottomStateChange = useCallback((nextIsAtBottom: boolean) => {
     isAtBottomRef.current = nextIsAtBottom;
@@ -468,7 +481,7 @@ export function MessageList({
             ? `continued-from:${row.href}`
             : 'streaming-message'}
         firstItemIndex={firstItemIndex}
-        initialTopMostItemIndex={{ index: 'LAST', align: 'end' }}
+        initialTopMostItemIndex={initialTopMostItemIndex}
         followOutput
         atBottomThreshold={48}
         atBottomStateChange={handleAtBottomStateChange}

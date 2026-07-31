@@ -23,11 +23,11 @@ describe("窗口重开后的实时 Turn 历史去重", () => {
     expect(latestInProgressTurnId([])).toBeNull();
   });
 
-  it("历史页把 resume active turn id 同时传给分页和 fallback 转换", () => {
+  it("历史页把 resume active turn id 传给分页、fallback 和深链转换", () => {
     expect(historyPage).toContain(
       "const resumedLiveTurnId = latestInProgressTurnId(resume.thread.turns)",
     );
-    expect(historyPage.match(/omitAssistantTurnId: resumedLiveTurnId/g)).toHaveLength(2);
+    expect(historyPage.match(/omitAssistantTurnId: resumedLiveTurnId/g)).toHaveLength(3);
   });
 });
 

@@ -44,7 +44,10 @@ import { latestInProgressTurnId } from '@/codex-web/resumed-turn-hydration';
 import { readDefaultPanelPreference } from '@/lib/app-preferences';
 import { threadRollbackToMessages } from '@/codex-web/thread-rollback';
 import {
+  completeContinuationFork,
+  continuationParentHref,
   continuationReferenceStorageKey,
+  needsContinuationTargetHistory,
   parseContinuationReference,
 } from '@/codex-web/continuation-reference';
 
@@ -123,6 +126,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   } = useAppServerActions();
   const ws = useWorkspaceSidebarOptional();
   const targetFilePath = searchParams.get('file') || undefined;
+  const targetMessageId = searchParams.get('continuationMessage') || undefined;
   const compactViewport = useCompactViewport();
   const { t } = useTranslation();
   const defaultPanelAppliedRef = useRef(false);
@@ -273,6 +277,34 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             console.info(`Phase 5A 暂未渲染 ${result.unsupportedItemCount} 个历史工具 item`);
           }
         }
+        if (needsContinuationTargetHistory(
+          loadedMessages.map((message) => message.id),
+          targetMessageId,
+        )) {
+          try {
+            const fullResponse = await readThread(id, { includeTurns: true });
+            if (cancelled) return;
+            const result = threadToMessages(fullResponse.thread, {
+              omitAssistantTurnId: resumedLiveTurnId,
+            });
+            loadedMessages = applyTurnSnapshotsToMessages(
+              fullResponse.thread,
+              result.messages,
+              turnSnapshotsRef.current,
+            );
+            setAppServerThread(fullResponse.thread);
+            setMessages(loadedMessages);
+            setHasMore(false);
+            setTurnsNextCursor(null);
+            setLatestHistoryTurn(latestHistoryTurnFromPage(
+              fullResponse.thread.turns,
+              "asc",
+              "app-server.thread/read",
+            ));
+          } catch (targetError) {
+            setPaginationNotice(historyPaginationFailureNotice(targetError));
+          }
+        }
         if (response.thread.forkedFromId) {
           const savedReference = parseContinuationReference(
             localStorage.getItem(continuationReferenceStorageKey(response.thread.id)),
@@ -324,7 +356,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     loadSessionAndMessages();
 
     return () => { cancelled = true; };
-  }, [connectionData, id, readThread, listThreadTurns, resumeThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t]);
+  }, [connectionData, id, readThread, listThreadTurns, resumeThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t, targetMessageId]);
 
   // Auto-open file tree when jumping from a file search result
   useEffect(() => {
@@ -443,13 +475,15 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     '';
   const canResumeAppServerThread = isAppServerThread && !!sessionWorkingDirectory;
   const continuedFromHref = appServerThread?.forkedFromId
-    ? `/chat/${encodeURIComponent(appServerThread.forkedFromId)}${continuedFromMessageId ? `#msg-${encodeURIComponent(continuedFromMessageId)}` : ''}`
+    ? continuedFromMessageId
+      ? continuationParentHref(appServerThread.forkedFromId, continuedFromMessageId)
+      : `/chat/${encodeURIComponent(appServerThread.forkedFromId)}`
     : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ChatView
-        key={id}
+        key={`${id}:${targetMessageId ?? ''}`}
         sessionId={id}
         initialMessages={messages}
         initialHasMore={hasMore}
@@ -476,27 +510,27 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         onAppServerUserMessageAccepted={publishCrossClientUserMessage}
         continuedFromHref={continuedFromHref}
         continuedFromMessageId={continuedFromMessageId}
+        targetMessageId={targetMessageId}
         onContinueInNewTask={connectionData === 'connected' ? async (lastTurnId, sourceMessageId) => {
           const response = await forkThread({ threadId: resumedThreadId || id, lastTurnId });
           const sourceThread = appServerThread
             ?? threads?.data.data.find((thread) => thread.id === (resumedThreadId || id));
-          if (sourceThread) {
-            await setThreadName({
+          await completeContinuationFork({
+            rename: sourceThread ? () => setThreadName({
               threadId: response.thread.id,
               name: nextForkedThreadName(sourceThread, threads?.data.data ?? [sourceThread]),
-            });
-          }
-          if (lastTurnId && sourceMessageId) {
-            localStorage.setItem(
+            }).then(() => undefined) : undefined,
+            saveReference: lastTurnId && sourceMessageId ? () => localStorage.setItem(
               continuationReferenceStorageKey(response.thread.id),
               JSON.stringify({
                 parentThreadId: resumedThreadId || id,
                 parentMessageId: sourceMessageId,
                 lastTurnId,
               }),
-            );
-          }
-          router.push(`/chat/${encodeURIComponent(response.thread.id)}`);
+            ) : undefined,
+            navigate: () => router.push(`/chat/${encodeURIComponent(response.thread.id)}`),
+            onPostProcessError: (postProcessError) => console.warn('新任务后处理失败', postProcessError),
+          });
         } : undefined}
         onAppServerRequestResponse={(input) =>
           appServerRequest

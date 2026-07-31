@@ -24,4 +24,9 @@ describe("聊天消息复制按钮接线", () => {
     expect(source).not.toContain("<GitBranch size={13}");
     expect(source).not.toContain("<ArrowElbowDownRight size={13}");
   });
+
+  it("创建新任务失败时显示错误且恢复按钮状态", () => {
+    expect(source).toContain("catch { showToast({ type: 'error', message: t('error.sessionCreateFailed' as TranslationKey) }); }");
+    expect(source).toContain("finally { setIsForking(false); }");
+  });
 });

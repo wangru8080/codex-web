@@ -143,6 +143,7 @@ interface ChatViewProps {
   onContinueInNewTask?: (lastTurnId?: string, sourceMessageId?: string) => Promise<void>;
   continuedFromHref?: string;
   continuedFromMessageId?: string;
+  targetMessageId?: string;
   appServerSend?: (params: { content: string; files?: readonly FileAttachment[]; cwd: string; model?: string; effort?: ReasoningEffort; mode?: string; permissionProfile?: PermissionProfile; skills?: readonly SkillInputReference[]; onAccepted?: (threadId: string, turnId: string, files?: readonly FileAttachment[]) => void }) => Promise<AppServerTurnState>;
   appServerSyncedUserMessages?: readonly CrossClientUserMessage[];
   onAppServerUserMessageAccepted?: (event: CrossClientUserMessage) => void;
@@ -199,6 +200,7 @@ export function ChatView({
   onContinueInNewTask,
   continuedFromHref,
   continuedFromMessageId,
+  targetMessageId,
   appServerSend,
   appServerSyncedUserMessages = [],
   onAppServerUserMessageAccepted,
@@ -1715,6 +1717,7 @@ export function ChatView({
               onContinueInNewTask={onContinueInNewTask}
               continuedFromHref={continuedFromHref}
               continuedFromMessageId={continuedFromMessageId}
+              targetMessageId={targetMessageId}
             />
           </PerformanceProfiler>
       {/* End-of-turn terminal reason chip (only shown when stream is not active) */}

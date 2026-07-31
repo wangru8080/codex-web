@@ -51,6 +51,19 @@ export function continuationMarkerIndex(
   return messageIndex < 0 ? -1 : messageIndex + 1;
 }
 
+export function targetMessageVirtualIndex(
+  messageIds: readonly string[],
+  targetMessageId: string | undefined,
+  continuedFromMessageId?: string,
+): number | undefined {
+  if (!targetMessageId) return undefined;
+  const messageIndex = messageIds.indexOf(targetMessageId);
+  if (messageIndex < 0) return undefined;
+  const markerIndex = continuationMarkerIndex(messageIds, continuedFromMessageId);
+  const markerOffset = markerIndex >= 0 && markerIndex <= messageIndex ? 1 : 0;
+  return messageIndex + markerOffset;
+}
+
 function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }

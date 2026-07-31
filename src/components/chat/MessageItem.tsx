@@ -664,7 +664,9 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
               disabled={isForking}
               onClick={async () => {
                 setIsForking(true);
-                try { await onContinueInNewTask(message.turn_id, message.id); } finally { setIsForking(false); }
+                try { await onContinueInNewTask(message.turn_id, message.id); }
+                catch { showToast({ type: 'error', message: t('error.sessionCreateFailed' as TranslationKey) }); }
+                finally { setIsForking(false); }
               }}
               className="text-muted-foreground/60 hover:text-primary"
               aria-label={t('message.continueInNewTask' as TranslationKey)}

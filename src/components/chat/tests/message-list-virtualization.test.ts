@@ -4,6 +4,7 @@ import {
   classifyMessageWindowChange,
   continuationMarkerIndex,
   nextVirtualFirstItemIndex,
+  targetMessageVirtualIndex,
 } from '../message-list-virtualization';
 
 describe('消息虚拟窗口变化', () => {
@@ -36,5 +37,11 @@ describe('接续任务边界', () => {
   it('找不到继承消息时不插入标记', () => {
     expect(continuationMarkerIndex(['m1'], 'missing')).toBe(-1);
     expect(continuationMarkerIndex(['m1'], undefined)).toBe(-1);
+  });
+
+  it('把目标消息转换为 Virtuoso 相对行索引', () => {
+    expect(targetMessageVirtualIndex(['m1', 'm2', 'm3'], 'm2')).toBe(1);
+    expect(targetMessageVirtualIndex(['m1', 'm2', 'm3'], 'm2', 'm1')).toBe(2);
+    expect(targetMessageVirtualIndex(['m1'], 'missing')).toBeUndefined();
   });
 });

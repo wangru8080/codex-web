@@ -5,6 +5,7 @@ export type ContinuationReference = {
 };
 
 const STORAGE_PREFIX = 'codex-web:continuation-reference:';
+const TARGET_MESSAGE_PARAM = 'continuationMessage';
 
 export function continuationReferenceStorageKey(childThreadId: string): string {
   return `${STORAGE_PREFIX}${childThreadId}`;
@@ -23,4 +24,42 @@ export function parseContinuationReference(value: string | null): ContinuationRe
   } catch {
     return null;
   }
+}
+
+export function continuationParentHref(parentThreadId: string, parentMessageId: string): string {
+  const query = new URLSearchParams({ [TARGET_MESSAGE_PARAM]: parentMessageId });
+  return `/chat/${encodeURIComponent(parentThreadId)}?${query}#msg-${encodeURIComponent(parentMessageId)}`;
+}
+
+export function needsContinuationTargetHistory(
+  messageIds: readonly string[],
+  targetMessageId?: string,
+): boolean {
+  return !!targetMessageId && !messageIds.includes(targetMessageId);
+}
+
+type CompleteContinuationForkOptions = {
+  rename?: () => Promise<void>;
+  saveReference?: () => void;
+  navigate: () => void;
+  onPostProcessError?: (error: unknown) => void;
+};
+
+export async function completeContinuationFork({
+  rename,
+  saveReference,
+  navigate,
+  onPostProcessError,
+}: CompleteContinuationForkOptions): Promise<void> {
+  try {
+    await rename?.();
+  } catch (error) {
+    onPostProcessError?.(error);
+  }
+  try {
+    saveReference?.();
+  } catch (error) {
+    onPostProcessError?.(error);
+  }
+  navigate();
 }
