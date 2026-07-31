@@ -127,13 +127,17 @@ openssl rand -hex 32
 
 这里的 `CODEX_WEB_LOGIN_PASSWORD` 只是未导出的临时 Shell 变量，多用户 broker 服务本身不读取它。哈希使用随机盐，因此同一个密码每次生成的字符串通常不同，但都可以验证该密码。
 
-3. 创建共享组、配置目录和 Web 状态目录。共享组只允许普通 Web 服务访问 root broker 的 Unix socket；登录用户不需要加入该组：
+3. 创建共享组、配置目录、socket 目录和 Web 状态目录。共享组只允许普通 Web 服务访问 root broker 的 Unix socket；`WEB_USER` 需要加入该组，`users.json` 中映射的登录用户不需要加入：
 
 ```bash
 getent group codex-web-runtime >/dev/null || sudo groupadd --system codex-web-runtime
+sudo usermod -aG codex-web-runtime "$WEB_USER"
 sudo install -d -o root -g root -m 0750 /etc/codex-web
+sudo install -d -o root -g codex-web-runtime -m 2750 /run/codex-web
 sudo install -d -o "$WEB_USER" -g codex-web-runtime -m 0700 "$WEB_STATE"
 ```
+
+`2750` 的 setgid 位使 root 创建的 socket 自动继承 `codex-web-runtime` 组。`WEB_USER` 加组后需要重新登录，再用 `id` 确认其组列表包含 `codex-web-runtime`。
 
 4. 安装 [`users.example.json`](deploy/systemd/users.example.json)，再编辑为实际配置：
 
@@ -213,60 +217,41 @@ sudo stat -c '%U %G %a %n' /etc/codex-web/users.json
 
 第一条命令应无输出，第二条命令应无报错，第三条命令应显示 `root root 600`。
 
-5. 安装两个 systemd 单元：
+5. 在 root 登录终端直接启动 runtime broker。保持该终端运行：
 
 ```bash
-sudo install -o root -g root -m 0644 deploy/systemd/codex-web-runtime.service /etc/systemd/system/codex-web-runtime.service
-sudo install -o root -g root -m 0644 deploy/systemd/codex-web.service /etc/systemd/system/codex-web.service
-sudoedit /etc/systemd/system/codex-web-runtime.service
-sudoedit /etc/systemd/system/codex-web.service
+NODE_BIN_DIR="$(dirname "$(readlink -f "$(command -v node)")")"
+export PATH="$NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+codex-web runtime serve \
+  --config /etc/codex-web/users.json \
+  --socket /run/codex-web/runtime-broker.sock
 ```
 
-`codex-web-runtime.service` 以 root 运行，只读取 `users.json`、验证登录并按目标 UID 启动 app-server。至少核对以下内容：
-
-```ini
-[Service]
-User=root
-Group=codex-web-runtime
-UMask=0007
-Environment=PATH=<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-RuntimeDirectory=codex-web
-RuntimeDirectoryMode=0750
-ExecStart=<codex-web-bin> runtime serve --config /etc/codex-web/users.json --socket /run/codex-web/runtime-broker.sock
-```
-
-`codex-web.service` 以普通用户运行，提供 HTTP 页面和 WebSocket，并通过共享组访问 broker socket：
-
-```ini
-[Service]
-User=<web-user>
-Group=codex-web-runtime
-WorkingDirectory=/home/<web-user>
-Environment=PATH=<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=CODEX_WEB_RUNTIME_BROKER_SOCKET=/run/codex-web/runtime-broker.sock
-Environment=CODEX_HOME=/home/<web-user>/.config/codex-web-state
-Environment=CODEX_WEB_NEXT_HOST=127.0.0.1
-Environment=CODEX_WEB_PUBLIC_HOST=<public-host>
-Environment=PORT=3001
-EnvironmentFile=-/etc/codex-web/web.env
-ExecStart=<codex-web-bin> serve
-```
-
-反向代理部署保留 `CODEX_WEB_NEXT_HOST=127.0.0.1`；直接监听所有网卡时改为 `0.0.0.0`。`CODEX_WEB_PUBLIC_HOST` 必须填写浏览器实际访问的域名或 IP。`web.env` 是可选覆盖文件，前缀 `-` 表示文件不存在也能启动。多用户模式不设置 `CODEX_WEB_LOGIN_EMAIL`、`CODEX_WEB_LOGIN_PASSWORD` 或 `CODEX_WEB_SESSION_SECRET`。
-
-6. 验证单元文件并启动服务：
+broker 必须由 root 启动。正常启动后会显示监听的 socket 路径；确认 socket 所属组和权限为 `codex-web-runtime`、`0660`：
 
 ```bash
-sudo systemd-analyze verify /etc/systemd/system/codex-web-runtime.service /etc/systemd/system/codex-web.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now codex-web-runtime.service codex-web.service
-systemctl status codex-web-runtime.service codex-web.service
-ls -ld /run/codex-web
 ls -l /run/codex-web/runtime-broker.sock
-journalctl -u codex-web-runtime.service -u codex-web.service -n 100 --no-pager
 ```
 
-`/run/codex-web` 由 systemd 的 `RuntimeDirectory` 创建，`runtime-broker.sock` 由 runtime 创建，均不需要手动创建。未登录时不会启动用户 app-server。
+6. 重新登录 `WEB_USER`，在该普通用户的终端直接启动 Web。保持该终端运行：
+
+```bash
+id
+NODE_BIN_DIR="$(dirname "$(readlink -f "$(command -v node)")")"
+export PATH="$NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export CODEX_WEB_RUNTIME_BROKER_SOCKET=/run/codex-web/runtime-broker.sock
+export CODEX_WEB_PUBLIC_HOST="codex.example.com"
+codex-web serve \
+  --host 0.0.0.0 \
+  --port 3001 \
+  --codex-home "$HOME/.config/codex-web-state"
+```
+
+直接访问服务器端口时保留 `--host 0.0.0.0`；使用本机反向代理时改为 `--host 127.0.0.1`。`CODEX_WEB_PUBLIC_HOST` 必须填写浏览器实际访问的域名或 IP。多用户模式不设置 `CODEX_WEB_LOGIN_EMAIL`、`CODEX_WEB_LOGIN_PASSWORD` 或 `CODEX_WEB_SESSION_SECRET`。
+
+浏览器打开 `http://<public-host>:3001`。未登录时不会启动用户 app-server；用户首次建立 WebSocket bridge 时，broker 才根据 `users.json` 以对应 OS 用户启动 app-server。
+
+两个终端中的 `Ctrl+C` 会停止对应进程。服务器重启后 `/run/codex-web` 会消失，需要重新执行第 3 步中的 socket 目录创建命令。需要后台常驻、开机启动和异常重启时，再使用仓库提供的 [`codex-web-runtime.service`](deploy/systemd/codex-web-runtime.service) 与 [`codex-web.service`](deploy/systemd/codex-web.service) 模板。
 
 #### Broker 配置参考
 
