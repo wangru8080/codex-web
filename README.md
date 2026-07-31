@@ -278,6 +278,12 @@ npm install --global @wangru8080/codex-web --registry=https://registry.npmjs.org
 
 ## 快速开始
 
+### 0. 安装codex
+
+```bash
+npm install -g @openai/codex
+```
+
 ### 1. 生成 Web 会话密钥
 
 只生成一次，并将结果保存在服务端的安全配置中：
