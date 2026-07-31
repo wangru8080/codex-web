@@ -93,7 +93,7 @@ Codex Web 和 runtime 是两个常驻进程。登录本身不会创建 app-serve
 
 #### Linux 快速部署
 
-以下步骤使用通用示例值，不包含当前机器的真实用户、地址或路径。先按目标服务器修改并执行这一组变量，后续 Shell 命令可以直接复制：
+以下步骤使用通用示例：
 
 ```bash
 WEB_USER="codexweb"
@@ -252,6 +252,68 @@ codex-web serve \
 浏览器打开 `http://<public-host>:3001`。未登录时不会启动用户 app-server；用户首次建立 WebSocket bridge 时，broker 才根据 `users.json` 以对应 OS 用户启动 app-server。
 
 两个终端中的 `Ctrl+C` 会停止对应进程。服务器重启后 `/run/codex-web` 会消失，需要重新执行第 3 步中的 socket 目录创建命令。需要后台常驻、开机启动和异常重启时，再使用仓库提供的 [`codex-web-runtime.service`](deploy/systemd/codex-web-runtime.service) 与 [`codex-web.service`](deploy/systemd/codex-web.service) 模板。
+
+#### Linux systemd 后台部署
+
+如果需要开机启动、自动重启和统一日志，可以使用仓库提供的两个 systemd 单元。它们仍然启动同样的两个 `codex-web` 进程：runtime 以 root 运行，Web 以普通用户运行。
+
+1. 安装配置文件和 service 模板：
+
+```bash
+getent group codex-web-runtime >/dev/null || sudo groupadd --system codex-web-runtime
+sudo install -d -o root -g root -m 0750 /etc/codex-web
+sudo install -o root -g root -m 0600 deploy/systemd/users.example.json /etc/codex-web/users.json
+sudo install -o root -g root -m 0644 deploy/systemd/codex-web-runtime.service /etc/systemd/system/codex-web-runtime.service
+sudo install -o root -g root -m 0644 deploy/systemd/codex-web.service /etc/systemd/system/codex-web.service
+sudoedit /etc/codex-web/users.json
+sudoedit /etc/systemd/system/codex-web-runtime.service
+sudoedit /etc/systemd/system/codex-web.service
+```
+
+2. 修改 `codex-web-runtime.service` 的实际路径和组名，至少确认：
+
+```ini
+User=root
+Group=codex-web-runtime
+UMask=0007
+Environment=PATH=<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RuntimeDirectory=codex-web
+RuntimeDirectoryMode=0750
+ExecStart=<codex-web-bin> runtime serve --config /etc/codex-web/users.json --socket /run/codex-web/runtime-broker.sock
+```
+
+`<codex-web-bin>` 必须是绝对路径，例如 `command -v codex-web` 的输出。`RuntimeDirectory` 会在服务启动时创建 `/run/codex-web`，不需要手动创建。
+
+3. 修改 `codex-web.service` 的 Web 用户、工作目录、路径和访问地址：
+
+```ini
+User=<web-user>
+Group=codex-web-runtime
+WorkingDirectory=/home/<web-user>
+Environment=PATH=<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=CODEX_WEB_RUNTIME_BROKER_SOCKET=/run/codex-web/runtime-broker.sock
+Environment=CODEX_HOME=/home/<web-user>/.config/codex-web-state
+Environment=CODEX_WEB_NEXT_HOST=127.0.0.1
+Environment=CODEX_WEB_PUBLIC_HOST=<public-host>
+Environment=PORT=3001
+EnvironmentFile=-/etc/codex-web/web.env
+ExecStart=<codex-web-bin> serve
+```
+
+反向代理部署使用 `CODEX_WEB_NEXT_HOST=127.0.0.1`；直接监听所有网卡时改为 `0.0.0.0`。`EnvironmentFile=-...` 表示 `/etc/codex-web/web.env` 可以不存在；多用户模式不要在其中设置 `CODEX_WEB_LOGIN_EMAIL`、`CODEX_WEB_LOGIN_PASSWORD` 或 `CODEX_WEB_SESSION_SECRET`。
+
+4. 检查并启动两个服务：
+
+```bash
+sudo systemd-analyze verify /etc/systemd/system/codex-web-runtime.service /etc/systemd/system/codex-web.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now codex-web-runtime.service codex-web.service
+systemctl status codex-web-runtime.service codex-web.service
+ls -l /run/codex-web/runtime-broker.sock
+journalctl -u codex-web-runtime.service -u codex-web.service -n 100 --no-pager
+```
+
+systemd 会创建 socket 目录，runtime 进程会创建 `runtime-broker.sock`。只有登录用户首次建立 WebSocket bridge 后，才会按 `users.json` 启动对应的 app-server。
 
 #### Broker 配置参考
 
