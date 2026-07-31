@@ -9,7 +9,6 @@ import {
 import { CodexWebIcon, type CodexWebIconName } from "@/components/ui/semantic-icon";
 import { cn } from '@/lib/utils';
 import { Shimmer } from '@/components/ai-elements/shimmer';
-import { useStickToBottomContext } from 'use-stick-to-bottom';
 import { Streamdown } from 'streamdown';
 import { useStreamdownPlugins } from '@/components/ai-elements/streamdown-plugins';
 import type { MediaBlock } from '@/types';
@@ -448,7 +447,6 @@ function ThinkingRow({ content, isStreaming }: { content: string; isStreaming?: 
   // Default open during streaming, collapsed in history
   const [expanded, setExpanded] = useState(!!isStreaming);
   const [hovered, setHovered] = useState(false);
-  const { stopScroll } = useStickToBottomContext();
   const plugins = useStreamdownPlugins(content);
 
   // Extract summary from first **bold** or # heading
@@ -467,8 +465,6 @@ function ThinkingRow({ content, isStreaming }: { content: string; isStreaming?: 
         onClick={() => {
           const willExpand = !expanded;
           setExpanded(willExpand);
-          // Detach from auto-scroll when expanding to prevent page jump
-          if (willExpand) stopScroll();
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}

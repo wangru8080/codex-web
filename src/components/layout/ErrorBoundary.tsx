@@ -26,6 +26,10 @@ const DOM_ERROR_PATTERNS = [
   'is not a child of this node',
 ];
 
+export function isRecoverableDomError(message: string): boolean {
+  return DOM_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
 /* ── Fallback UI (functional, so it can use hooks) ──────────── */
 
 function ErrorFallback({
@@ -91,6 +95,8 @@ export class ErrorBoundary extends React.Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
 > {
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null, domRetries: 0 };
@@ -102,14 +108,21 @@ export class ErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     const msg = error.message || '';
-    const isDomError = DOM_ERROR_PATTERNS.some(p => msg.includes(p));
+    const isDomError = isRecoverableDomError(msg);
 
     // Auto-recover from DOM errors (hydration mismatch, stale node refs)
     // by clearing the error state and letting React re-render cleanly.
     // Max 2 retries to prevent infinite loops.
     if (isDomError && this.state.domRetries < 2) {
-      console.warn("[ErrorBoundary] DOM operation error, auto-recovering:", msg);
-      this.setState(prev => ({ hasError: false, error: null, domRetries: prev.domRetries + 1 }));
+      console.warn("[ErrorBoundary] DOM operation error, scheduling recovery:", msg);
+      this.recoveryTimer = setTimeout(() => {
+        this.recoveryTimer = null;
+        this.setState((prev) => ({
+          hasError: false,
+          error: null,
+          domRetries: prev.domRetries + 1,
+        }));
+      }, 0);
       return;
     }
 
@@ -119,6 +132,10 @@ export class ErrorBoundary extends React.Component<
     import('@sentry/browser').then((Sentry) => {
       Sentry.captureException(error, { contexts: { react: { componentStack: errorInfo.componentStack } } });
     }).catch(() => { /* Sentry not available */ });
+  }
+
+  componentWillUnmount() {
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
   }
 
   handleReset = () => {
