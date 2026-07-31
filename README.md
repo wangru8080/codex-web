@@ -91,14 +91,99 @@ Linux 或 macOS 上可以运行一个非 root Codex Web，并由本机 root runt
 
 Codex Web 和 runtime 是两个常驻进程。登录本身不会创建 app-server；某个用户首次建立 WebSocket bridge 时才启动该用户的 app-server。同一用户的多个浏览器共享一个 app-server，不同用户的 UID、补充组、`HOME`、`CODEX_HOME`、cwd、消息和审批相互隔离。最后一个连接断开后，没有运行中 Turn 时会在宽限期结束后退出；有运行中 Turn 时等待其完成再退出。
 
-broker 配置必须由 root 拥有且权限为 `0600`。生成密码哈希：
+broker 配置必须由 root 拥有且权限为 `0600`。先为用户设置一个独立强密码，再根据这个登录密码生成 scrypt 哈希：
 
 ```bash
-printf '%s' '独立强密码' | codex-web runtime hash-password
+read -r -s -p '设置 Web 登录密码: ' CODEX_WEB_LOGIN_PASSWORD
+printf '\n'
+printf '%s' "$CODEX_WEB_LOGIN_PASSWORD" | codex-web runtime hash-password
+unset CODEX_WEB_LOGIN_PASSWORD
+```
+
+这里的 `CODEX_WEB_LOGIN_PASSWORD` 只是未导出的临时 Shell 变量，多用户 broker 服务本身不读取它。将命令输出的 `scrypt$v1$...` 字符串填入该用户的 `passwordHash`。网页登录时仍输入最初设置的登录密码，不要输入哈希值。哈希使用随机盐，因此同一个密码每次生成的字符串通常不同，但都可以验证该密码。
+
+`sessionSecret` 与登录密码无关，用于签名登录 Session。单独生成并填入配置：
+
+```bash
 openssl rand -hex 32
 ```
 
-Linux 以 [`deploy/systemd/users.example.json`](deploy/systemd/users.example.json) 为配置模板，macOS 以 [`deploy/launchd/users.example.json`](deploy/launchd/users.example.json) 为模板。替换密码哈希与 Session 密钥，并保证每个用户的 `osUser` 和 `home` 与系统账户数据库一致。Linux 普通用户通过固定的 `setpriv` 降权；macOS 普通用户通过固定的 `sudo -n -H -u` 初始化目标账号的主组和补充组，再由 `env -i` 建立干净环境。两种平台都不使用 shell 拼接。允许登录 root 环境时，还必须同时设置全局 `allowRootRuntime: true` 和 root 用户项 `allowRoot: true`，否则 runtime 拒绝启动 UID 0 app-server。
+Linux 以 [`deploy/systemd/users.example.json`](deploy/systemd/users.example.json) 为配置模板，macOS 以 [`deploy/launchd/users.example.json`](deploy/launchd/users.example.json) 为模板。配置文件顶层字段：
+
+| 字段 | 必需 | 说明 |
+|---|---|---|
+| `version` | 是 | 配置格式版本，当前固定为 `1`。 |
+| `sessionSecret` | 是 | Session 签名密钥，至少 32 个字符；使用上面的 `openssl` 命令生成。 |
+| `sessionMaxAgeSeconds` | 否 | Session 固定有效期，默认 `259200` 秒（3 天），允许 `60` 至 `604800` 秒。 |
+| `disconnectGraceMs` | 否 | 同一用户最后一个浏览器连接断开后，空闲 app-server 的退出宽限期；默认 `30000` 毫秒，允许 `0` 至 `600000`。运行中的 Turn 完成后才退出。 |
+| `allowRootRuntime` | 否 | 是否允许配置 root runtime，默认 `false`；仅此开关不能单独授权 root。 |
+| `codexCommand` | 是 | 目标服务器上 `codex` 可执行文件的绝对路径。 |
+| `setprivCommand` | Linux 否 | Linux `setpriv` 的绝对路径，默认 `/usr/bin/setpriv`；macOS 不使用该命令。 |
+| `users` | 是 | 至少包含一个登录用户；每个用户的 `id` 和 `email` 必须唯一。 |
+
+`users` 中每个用户的字段：
+
+| 字段 | 必需 | 说明 |
+|---|---|---|
+| `id` | 是 | broker 内部用户 ID，必须唯一；只能包含字母、数字、下划线和连字符，最长 32 个字符，首字符必须是字母或下划线。 |
+| `email` | 是 | Web 登录邮箱，必须唯一；匹配时忽略大小写。 |
+| `passwordHash` | 是 | 使用 `codex-web runtime hash-password` 生成的 scrypt 哈希；不得填写明文密码。 |
+| `osUser` | 是 | app-server 实际使用的本机系统账号。runtime 从系统账号数据库解析 UID、GID、home 和 shell，不在 JSON 中接受 UID/GID。 |
+| `home` | 是 | `osUser` 的 home 绝对路径，必须与系统账号数据库一致。 |
+| `codexHome` | 是 | 该用户 app-server 使用的 `CODEX_HOME` 绝对路径，账号、配置、会话、MCP、skills 和 approval 状态均来自此目录。 |
+| `cwd` | 是 | 该用户 app-server 的默认工作目录绝对路径。 |
+| `role` | 否 | Web 角色，只允许 `user` 或 `admin`，默认 `user`；`admin` 可管理安全设置，但不代表操作系统 root。 |
+| `enabled` | 否 | 是否允许该账号登录，默认 `true`。 |
+| `allowRoot` | 否 | 是否允许该用户项启动 UID 0 app-server，默认 `false`；仅对 `osUser: "root"` 有效，并且顶层 `allowRootRuntime` 也必须为 `true`。 |
+| `env` | 否 | 传给 app-server 的额外环境变量字符串对象。变量名必须为大写形式；`HOME`、`CODEX_HOME`、`USER`、`SHELL`、`RUST_LOG`、`LD_*`、`DYLD_*` 等受保护变量禁止设置。 |
+
+以下 Linux 示例同时配置一个普通用户和一个 root 用户。两个 `passwordHash` 应分别由各自的登录密码生成；启用 root 意味着其 app-server、命令、文件修改和 MCP 都以 UID 0 运行：
+
+```json
+{
+  "version": 1,
+  "sessionSecret": "请替换为 openssl rand -hex 32 的输出",
+  "sessionMaxAgeSeconds": 259200,
+  "disconnectGraceMs": 30000,
+  "allowRootRuntime": true,
+  "codexCommand": "/usr/local/bin/codex",
+  "setprivCommand": "/usr/bin/setpriv",
+  "users": [
+    {
+      "id": "alice",
+      "email": "alice@example.com",
+      "passwordHash": "请替换为 alice 登录密码生成的 scrypt 哈希",
+      "osUser": "alice",
+      "home": "/home/alice",
+      "codexHome": "/home/alice/.codex",
+      "cwd": "/home/alice/workspace",
+      "role": "user",
+      "enabled": true,
+      "allowRoot": false,
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin"
+      }
+    },
+    {
+      "id": "root",
+      "email": "root@example.com",
+      "passwordHash": "请替换为 root 登录密码生成的 scrypt 哈希",
+      "osUser": "root",
+      "home": "/root",
+      "codexHome": "/root/.codex",
+      "cwd": "/root",
+      "role": "admin",
+      "enabled": true,
+      "allowRoot": true,
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin"
+      }
+    }
+  ]
+}
+```
+
+如果不需要 root，应删除 root 用户项并保持 `allowRootRuntime: false`。替换所有示例值，并保证每个用户的 `osUser` 和 `home` 与系统账户数据库一致。Linux 普通用户通过固定的 `setpriv` 降权；macOS 普通用户通过固定的 `sudo -n -H -u` 初始化目标账号的主组和补充组，再由 `env -i` 建立干净环境。两种平台都不使用 shell 拼接。
 
 #### Linux systemd 部署
 
