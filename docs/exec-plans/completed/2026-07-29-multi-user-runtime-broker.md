@@ -147,7 +147,7 @@
 
 - [x] 更新 esbuild 为两个明确入口并将部署样例纳入 npm package files。
 - [x] Web CLI 检测 broker mode 时不要求单用户登录变量或 runtime `CODEX_HOME`。
-- [x] 将诊断 UI 的真实 `CODEX_HOME`、broker 认证用户与 OS 用户 breadcrumb 转入后续计划，本阶段保持现有诊断 UI。
+- [x] 诊断 UI 展示 app-server initialize 的真实 `CODEX_HOME`、broker 认证用户与 OS 用户 breadcrumb；认证元数据来源为 `web-auth.session`。
 - [x] systemd 样例分别使用非 root Web 用户与 root broker，Unix Socket 仅授权约定 group。
 - [x] 配置样例不包含可用密码、Session secret 或真实账号。
 
@@ -200,7 +200,7 @@
 
 | 路径 | 预期 | 状态 | 证据 |
 |---|---|---|---|
-| legacy 单用户启动 | 行为不变 | 延期 | [后续事项](../deferred/2026-07-29-multi-user-runtime-broker-followups.md) |
+| legacy 单用户启动 | 行为不变 | 已验证 | 隔离 legacy smoke：`initialize`、`model/list`、`account/read`、`thread/list` |
 | 错误多用户凭据 | 统一 401，未创建 runtime | 已验证 | `runtime-broker-server.test.ts`，含伪造来源限速反例 |
 | root broker 启动 rrssnas 与 codex runtime | 两个 app-server，UID/CODEX_HOME 独立，capability 清零 | 已验证 | `/volume2/SSD/codex/Temp/codex-web-multi-user-uid-smoke-5DFEwR/result.json` |
 | 同用户双浏览器 | 共享一个 app-server | 已验证 | `broker-websocket-bridge.test.ts` |

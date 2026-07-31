@@ -367,19 +367,19 @@ Phase 5C 记录：
 | Resume / History | 历史 thread 切换时 active turn 隔离 | Code complete | Phase 5F-B | A thread running 时切到 B thread，不把 A 的 delta、approval 或工具状态显示到 B |
 | Resume / History | `thread/resume` 失败收口 | Code complete | Phase 5F-B | resume 返回错误或 bridge 断开时，composer 恢复可用，消息区显示可见错误，不追加伪 assistant 成功消息 |
 | Resume / History | 历史分页加载 | Code complete | Phase 6A | thread/list 或 thread/read 有分页/截断时，UI 能继续加载且不重复消息 |
-| Resume / History | 历史归档、重命名、删除/清理入口 | 未开始 | Phase 6 | 仅接入官方 app-server 支持的方法；删除类操作必须按项目清理规则另行确认 |
+| Resume / History | 历史归档、重命名、删除/清理入口 | Code complete | Phase 6 | `thread/archive`、`thread/unarchive`、`thread/delete`、重命名 UI 与 `/settings/archived` 已接入并有 wiring 测试；删除操作使用确认对话框 |
 | Approval | 历史会话继续发送时触发 approval | 已完成 | Phase 5E-B | resume 后触发 command/file/permission approval，PermissionPrompt 出现并按官方 schema 返回 response |
 | Approval | approval pending 时 composer 与状态栏 | 已完成 | Phase 5E-B | pending approval 期间 composer 不产生并发 turn；用户 approve/deny 后状态恢复 |
 | Approval | approve / deny 后同一个 turn 继续完成 | 已完成 | Phase 5E-B | approve 后 turn 继续到 completed；deny 后显示官方返回的失败/中断语义 |
 | Approval | 多个 approval 或过期 approval | Code complete | Phase 6C | 多个 server request 不串线；已完成/过期 approval 不再接受重复响应 |
 | Tools | exec / patch / file change / MCP / skill 完整状态映射 | Code complete | Phase 6D | command、fileChange、MCP、dynamic、collab 的 running、success、failed、declined 使用真实 source breadcrumb；interrupted 保持 turn 级状态，不伪造成工具状态 |
-| Tools | 工具结果默认折叠、展开详情 | 部分完成 | Phase 6 | 历史工具和新 turn 工具都默认折叠，展开后展示 stdout、stderr、patch 或 MCP 详情 |
+| Tools | 工具结果默认折叠、展开详情 | Code complete | Phase 6 | 实时与历史工具过程组默认折叠；运行中自动展开；可展开查看 stdout、stderr、patch 和工具详情；`streaming-process-groups.test.ts` 已覆盖反例 |
 | Tools | 大输出与增量输出截断策略 | Code complete | Phase 6B | 大 stdout/stderr 不撑爆页面；截断信息可见，原始输出保留在可诊断来源中 |
 | Interrupt | 运行中 turn 中断 | 已完成 | Phase 5D-B | 点击停止后调用官方中断路径，turn 进入 interrupted 或等价官方状态 |
 | Interrupt | interrupted 后继续下一轮 | 已完成 | Phase 5D-B | 中断后的同一 thread 可以继续发送新 turn，历史消息不丢失 |
 | Interrupt | 页面刷新后恢复 interrupted 状态 | Smoke passed | Phase 6E/6G | 刷新后历史页能从最新历史 turn 显示 interrupted；Phase 6G 已确认 `thread/turns/list` capability 主路径可用，旧 fallback 仅作为稳定降级路径保留 |
-| Diagnostics | app-server transport close 与 pending request fail-fast | 部分完成 | Phase 6 | bridge/app-server 退出时 pending request 快速失败，UI 显示 diagnostics，不长时间挂起 |
-| Diagnostics | 未知 notification 可见诊断 | 部分完成 | Phase 6 | 未知 notification 不静默丢弃，在 diagnostics 中保留 method、source 和摘要 |
+| Diagnostics | app-server transport close 与 pending request fail-fast | Code complete | Phase 6 | WebSocket/app-server 关闭时 pending request 立即 reject，并进入可见 diagnostics；`json-rpc-client.test.ts` 与 browser client 测试已覆盖 |
+| Diagnostics | 未知 notification 可见诊断 | Code complete | Phase 6 | 未知 notification 保留在 diagnostics，面板显示 method、source 和摘要；`app-server-session.test.ts` 已覆盖 |
 | Goal / Plan | 官方 Codex app 等价 UI | Review passed | Phase 6U | Goal 显示为 composer 上方 progress row；Proposed Plan / Updated Plan 显示为消息时间线 cell；`Implement this plan?` 在 composer 附近确认；真实 Plan/Goal 端到端浏览器路径已验证 |
 | E2E / Smoke | 普通消息 vs 工具消息反例 | Smoke passed | Phase 6E | 普通文本消息无工具状态；触发 shell 命令时实时工具 cell 显示 success / failed 状态 |
 | E2E / Smoke | 无 approval vs approval 反例 | 已完成 | Phase 5E-B | 同一轮验证普通消息无 PermissionPrompt，触发权限时才出现 PermissionPrompt |

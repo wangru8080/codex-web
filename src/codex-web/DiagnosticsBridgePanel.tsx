@@ -1,6 +1,20 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import { useAppServerSelector } from "./AppServerProvider";
+
+type AuthUser = {
+  id: string;
+  email: string;
+  osUser: string;
+  home: string;
+  codexHome: string;
+  cwd: string;
+  role: string;
+};
+
+type AuthMeResponse = { user?: AuthUser; source?: string };
 
 export function DiagnosticsBridgePanel() {
   const connection = useAppServerSelector((state) => state.connection);
@@ -8,6 +22,25 @@ export function DiagnosticsBridgePanel() {
   const models = useAppServerSelector((state) => state.models);
   const diagnostics = useAppServerSelector((state) => state.diagnostics);
   const codexHome = initialize?.data.codexHome;
+  const [authUser, setAuthUser] = useState<AuthMeResponse | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    void fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return await response.json() as AuthMeResponse;
+      })
+      .then((response) => {
+        if (!disposed) setAuthUser(response);
+      })
+      .catch(() => {
+        if (!disposed) setAuthUser(null);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   return (
     <section className="flex flex-col gap-4 text-sm">
@@ -22,6 +55,14 @@ export function DiagnosticsBridgePanel() {
       <div className="grid gap-3 sm:grid-cols-2">
         <DiagnosticValue label="模型" value={models ? `${models.data.data.length} 个模型` : "unsupported"} source={models?.source ?? "没有真实来源"} />
         <DiagnosticValue label="诊断条目" value={`${diagnostics.length} 条`} source="web-bridge" />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <DiagnosticValue label="认证用户" value={authUser?.user?.email ?? "unsupported"} source={authUser?.source ?? "没有真实来源"} />
+        <DiagnosticValue label="OS 用户" value={authUser?.user?.osUser ?? "unsupported"} source={authUser?.source ?? "没有真实来源"} />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <DiagnosticValue label="认证用户 CODEX_HOME" value={authUser?.user?.codexHome ?? "unsupported"} source={authUser?.source ?? "没有真实来源"} />
+        <DiagnosticValue label="认证用户 cwd" value={authUser?.user?.cwd ?? "unsupported"} source={authUser?.source ?? "没有真实来源"} />
       </div>
       <div className="rounded-md border border-border bg-background p-3">
         <div className="mb-2 text-xs font-medium text-muted-foreground">Diagnostics</div>

@@ -1196,11 +1196,10 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
         {/* No close button here — the Tab strip's X owns close. */}
       </div>
 
-      {/* Content — dispatch on previewSource.kind. The file branch preserves
-          the pre-Phase-1.5 behavior (fetch via API + render via
-          MediaView/RenderedView/SourceView). inline-html delegates to a
-          sandboxed iframe. inline-jsx / inline-datatable render placeholders
-          that Phase 2.1 / Phase 5.4 will fill in with real renderers. */}
+      {/* Content dispatches on previewSource.kind. File previews preserve the
+          app-server-backed MediaView/RenderedView/SourceView path; inline HTML
+          uses a sandboxed iframe, inline JSX uses SandpackPreview, and inline
+          datatable uses DataTableViewer. */}
       <div className="flex-1 min-h-0 overflow-auto">
         {/* Phase 4: conflict banner — sticks to the top of the content
             region when a file-changed event arrived while the editor
@@ -1612,27 +1611,6 @@ function AgentReferencedConfirm({
           {t("filePreview.external.confirm.cancel")}
         </Button>
       </div>
-    </div>
-  );
-}
-
-/**
- * Placeholder for preview kinds whose real renderer lands in a later Phase.
- *
- * Showing a visible "coming soon" block (rather than null) makes two things
- * observable in Phase 1.5 smoke tests: (1) PanelZone gate actually mounts
- * the panel for inline-* sources (R1 regression detector), and (2) the
- * caller wired up setPreviewSource correctly.
- */
-function InlinePlaceholder({ phase, kind }: { phase: string; kind: string }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-      <p className="text-sm font-medium text-muted-foreground">
-        {kind} preview lands in {phase}
-      </p>
-      <p className="text-xs text-muted-foreground/60">
-        The data channel (PreviewSource → PreviewPanel) is wired; renderer is pending.
-      </p>
     </div>
   );
 }
