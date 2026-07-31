@@ -91,24 +91,186 @@ Linux 或 macOS 上可以运行一个非 root Codex Web，并由本机 root runt
 
 Codex Web 和 runtime 是两个常驻进程。登录本身不会创建 app-server；某个用户首次建立 WebSocket bridge 时才启动该用户的 app-server。同一用户的多个浏览器共享一个 app-server，不同用户的 UID、补充组、`HOME`、`CODEX_HOME`、cwd、消息和审批相互隔离。最后一个连接断开后，没有运行中 Turn 时会在宽限期结束后退出；有运行中 Turn 时等待其完成再退出。
 
-broker 配置必须由 root 拥有且权限为 `0600`。先为用户设置一个独立强密码，再根据这个登录密码生成 scrypt 哈希：
+#### Linux 快速部署
+
+以下步骤使用通用示例值，不包含当前机器的真实用户、地址或路径。先按目标服务器修改并执行这一组变量，后续 Shell 命令可以直接复制：
 
 ```bash
-read -r -s -p '设置 Web 登录密码: ' CODEX_WEB_LOGIN_PASSWORD
+WEB_USER="codexweb"
+USER_A="usera"
+USER_B="userb"
+PUBLIC_HOST="codex.example.com"
+WEB_HOME="/home/$WEB_USER"
+WEB_STATE="$WEB_HOME/.config/codex-web-state"
+NODE_BIN_DIR="$(dirname "$(readlink -f "$(command -v node)")")"
+CODEX_WEB_BIN="$(command -v codex-web)"
+CODEX_BIN="$(command -v codex)"
+```
+
+1. 确认命令和系统用户。Node 必须位于所有服务用户均可访问的公共目录，不能使用 `/root/.nvm/...`：
+
+```bash
+printf 'node bin: %s\ncodex-web: %s\ncodex: %s\n' "$NODE_BIN_DIR" "$CODEX_WEB_BIN" "$CODEX_BIN"
+command -v setpriv
+getent passwd "$WEB_USER" "$USER_A" "$USER_B" root
+```
+
+2. 为三个登录账号分别生成密码哈希。每次输入该账号以后用于网页登录的原始密码，并保存命令输出的 `scrypt$v1$...`；网页登录时仍输入原始密码，不输入哈希。随后生成与登录密码无关的 Session 签名密钥：
+
+```bash
+read -r -s -p '设置该账号的 Web 登录密码: ' CODEX_WEB_LOGIN_PASSWORD
 printf '\n'
 printf '%s' "$CODEX_WEB_LOGIN_PASSWORD" | codex-web runtime hash-password
 unset CODEX_WEB_LOGIN_PASSWORD
-```
-
-这里的 `CODEX_WEB_LOGIN_PASSWORD` 只是未导出的临时 Shell 变量，多用户 broker 服务本身不读取它。将命令输出的 `scrypt$v1$...` 字符串填入该用户的 `passwordHash`。网页登录时仍输入最初设置的登录密码，不要输入哈希值。哈希使用随机盐，因此同一个密码每次生成的字符串通常不同，但都可以验证该密码。
-
-`sessionSecret` 与登录密码无关，用于签名登录 Session。单独生成并填入配置：
-
-```bash
 openssl rand -hex 32
 ```
 
-Linux 以 [`deploy/systemd/users.example.json`](deploy/systemd/users.example.json) 为配置模板，macOS 以 [`deploy/launchd/users.example.json`](deploy/launchd/users.example.json) 为模板。配置文件顶层字段：
+这里的 `CODEX_WEB_LOGIN_PASSWORD` 只是未导出的临时 Shell 变量，多用户 broker 服务本身不读取它。哈希使用随机盐，因此同一个密码每次生成的字符串通常不同，但都可以验证该密码。
+
+3. 创建共享组、配置目录和 Web 状态目录。共享组只允许普通 Web 服务访问 root broker 的 Unix socket；登录用户不需要加入该组：
+
+```bash
+getent group codex-web-runtime >/dev/null || sudo groupadd --system codex-web-runtime
+sudo install -d -o root -g root -m 0750 /etc/codex-web
+sudo install -d -o "$WEB_USER" -g codex-web-runtime -m 0700 "$WEB_STATE"
+```
+
+4. 安装 [`users.example.json`](deploy/systemd/users.example.json)，再编辑为实际配置：
+
+```bash
+sudo install -o root -g root -m 0600 deploy/systemd/users.example.json /etc/codex-web/users.json
+sudoedit /etc/codex-web/users.json
+```
+
+下面是两个普通用户和一个 root 用户的完整结构。分别替换三个 `passwordHash`、`sessionSecret`、邮箱、系统用户和路径；允许 root 意味着其命令、文件修改和 MCP 均以 UID 0 运行：
+
+```json
+{
+  "version": 1,
+  "sessionSecret": "<session-secret>",
+  "sessionMaxAgeSeconds": 259200,
+  "disconnectGraceMs": 30000,
+  "allowRootRuntime": true,
+  "codexCommand": "<codex-bin>",
+  "setprivCommand": "/usr/bin/setpriv",
+  "users": [
+    {
+      "id": "usera",
+      "email": "usera@example.com",
+      "passwordHash": "<user-a-password-hash>",
+      "osUser": "<user-a>",
+      "home": "/home/<user-a>",
+      "codexHome": "/home/<user-a>/.codex",
+      "cwd": "/home/<user-a>",
+      "role": "user",
+      "enabled": true,
+      "allowRoot": false,
+      "env": {
+        "PATH": "<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      }
+    },
+    {
+      "id": "userb",
+      "email": "userb@example.com",
+      "passwordHash": "<user-b-password-hash>",
+      "osUser": "<user-b>",
+      "home": "/home/<user-b>",
+      "codexHome": "/home/<user-b>/.codex",
+      "cwd": "/home/<user-b>",
+      "role": "user",
+      "enabled": true,
+      "allowRoot": false,
+      "env": {
+        "PATH": "<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      }
+    },
+    {
+      "id": "root",
+      "email": "root@example.com",
+      "passwordHash": "<root-password-hash>",
+      "osUser": "root",
+      "home": "/root",
+      "codexHome": "/root/.codex",
+      "cwd": "/root",
+      "role": "admin",
+      "enabled": true,
+      "allowRoot": true,
+      "env": {
+        "PATH": "<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      }
+    }
+  ]
+}
+```
+
+确认没有遗漏占位符，并验证 JSON、所有者和权限：
+
+```bash
+sudo grep -nE '<[^>]+>' /etc/codex-web/users.json
+sudo jq empty /etc/codex-web/users.json
+sudo stat -c '%U %G %a %n' /etc/codex-web/users.json
+```
+
+第一条命令应无输出，第二条命令应无报错，第三条命令应显示 `root root 600`。
+
+5. 安装两个 systemd 单元：
+
+```bash
+sudo install -o root -g root -m 0644 deploy/systemd/codex-web-runtime.service /etc/systemd/system/codex-web-runtime.service
+sudo install -o root -g root -m 0644 deploy/systemd/codex-web.service /etc/systemd/system/codex-web.service
+sudoedit /etc/systemd/system/codex-web-runtime.service
+sudoedit /etc/systemd/system/codex-web.service
+```
+
+`codex-web-runtime.service` 以 root 运行，只读取 `users.json`、验证登录并按目标 UID 启动 app-server。至少核对以下内容：
+
+```ini
+[Service]
+User=root
+Group=codex-web-runtime
+UMask=0007
+Environment=PATH=<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RuntimeDirectory=codex-web
+RuntimeDirectoryMode=0750
+ExecStart=<codex-web-bin> runtime serve --config /etc/codex-web/users.json --socket /run/codex-web/runtime-broker.sock
+```
+
+`codex-web.service` 以普通用户运行，提供 HTTP 页面和 WebSocket，并通过共享组访问 broker socket：
+
+```ini
+[Service]
+User=<web-user>
+Group=codex-web-runtime
+WorkingDirectory=/home/<web-user>
+Environment=PATH=<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=CODEX_WEB_RUNTIME_BROKER_SOCKET=/run/codex-web/runtime-broker.sock
+Environment=CODEX_HOME=/home/<web-user>/.config/codex-web-state
+Environment=CODEX_WEB_NEXT_HOST=127.0.0.1
+Environment=CODEX_WEB_PUBLIC_HOST=<public-host>
+Environment=PORT=3001
+EnvironmentFile=-/etc/codex-web/web.env
+ExecStart=<codex-web-bin> serve
+```
+
+反向代理部署保留 `CODEX_WEB_NEXT_HOST=127.0.0.1`；直接监听所有网卡时改为 `0.0.0.0`。`CODEX_WEB_PUBLIC_HOST` 必须填写浏览器实际访问的域名或 IP。`web.env` 是可选覆盖文件，前缀 `-` 表示文件不存在也能启动。多用户模式不设置 `CODEX_WEB_LOGIN_EMAIL`、`CODEX_WEB_LOGIN_PASSWORD` 或 `CODEX_WEB_SESSION_SECRET`。
+
+6. 验证单元文件并启动服务：
+
+```bash
+sudo systemd-analyze verify /etc/systemd/system/codex-web-runtime.service /etc/systemd/system/codex-web.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now codex-web-runtime.service codex-web.service
+systemctl status codex-web-runtime.service codex-web.service
+ls -ld /run/codex-web
+ls -l /run/codex-web/runtime-broker.sock
+journalctl -u codex-web-runtime.service -u codex-web.service -n 100 --no-pager
+```
+
+`/run/codex-web` 由 systemd 的 `RuntimeDirectory` 创建，`runtime-broker.sock` 由 runtime 创建，均不需要手动创建。未登录时不会启动用户 app-server。
+
+#### Broker 配置参考
+
+配置文件顶层字段：
 
 | 字段 | 必需 | 说明 |
 |---|---|---|
@@ -136,102 +298,6 @@ Linux 以 [`deploy/systemd/users.example.json`](deploy/systemd/users.example.jso
 | `enabled` | 否 | 是否允许该账号登录，默认 `true`。 |
 | `allowRoot` | 否 | 是否允许该用户项启动 UID 0 app-server，默认 `false`；仅对 `osUser: "root"` 有效，并且顶层 `allowRootRuntime` 也必须为 `true`。 |
 | `env` | 否 | 传给 app-server 的额外环境变量字符串对象。变量名必须为大写形式；`HOME`、`CODEX_HOME`、`USER`、`SHELL`、`RUST_LOG`、`LD_*`、`DYLD_*` 等受保护变量禁止设置。 |
-
-以下 Linux 示例同时配置一个普通用户和一个 root 用户。两个 `passwordHash` 应分别由各自的登录密码生成；启用 root 意味着其 app-server、命令、文件修改和 MCP 都以 UID 0 运行：
-
-```json
-{
-  "version": 1,
-  "sessionSecret": "请替换为 openssl rand -hex 32 的输出",
-  "sessionMaxAgeSeconds": 259200,
-  "disconnectGraceMs": 30000,
-  "allowRootRuntime": true,
-  "codexCommand": "/usr/local/bin/codex",
-  "setprivCommand": "/usr/bin/setpriv",
-  "users": [
-    {
-      "id": "alice",
-      "email": "alice@example.com",
-      "passwordHash": "请替换为 alice 登录密码生成的 scrypt 哈希",
-      "osUser": "alice",
-      "home": "/home/alice",
-      "codexHome": "/home/alice/.codex",
-      "cwd": "/home/alice/workspace",
-      "role": "user",
-      "enabled": true,
-      "allowRoot": false,
-      "env": {
-        "PATH": "/usr/local/bin:/usr/bin:/bin"
-      }
-    },
-    {
-      "id": "root",
-      "email": "root@example.com",
-      "passwordHash": "请替换为 root 登录密码生成的 scrypt 哈希",
-      "osUser": "root",
-      "home": "/root",
-      "codexHome": "/root/.codex",
-      "cwd": "/root",
-      "role": "admin",
-      "enabled": true,
-      "allowRoot": true,
-      "env": {
-        "PATH": "/usr/local/bin:/usr/bin:/bin"
-      }
-    }
-  ]
-}
-```
-
-如果不需要 root，应删除 root 用户项并保持 `allowRootRuntime: false`。替换所有示例值，并保证每个用户的 `osUser` 和 `home` 与系统账户数据库一致。Linux 普通用户通过固定的 `setpriv` 降权；macOS 普通用户通过固定的 `sudo -n -H -u` 初始化目标账号的主组和补充组，再由 `env -i` 建立干净环境。两种平台都不使用 shell 拼接。
-
-#### Linux systemd 部署
-
-仓库提供两个 systemd 样例：
-
-- [`codex-web-runtime.service`](deploy/systemd/codex-web-runtime.service)：以 root 运行 runtime broker，仅监听权限为 `0660` 的 Unix socket。
-- [`codex-web.service`](deploy/systemd/codex-web.service)：以普通用户运行 Web，通过 `codex-web-runtime` 组访问 socket。
-
-两个服务使用同一个 `codex-web` CLI：Web 执行 `codex-web serve`，runtime broker 执行 `codex-web runtime serve`。原有 `codex-web --host ... --port ...` 单用户命令继续兼容。安装前应按实际 npm 全局 bin 路径、Web 用户、工作目录、监听地址和反向代理地址调整样例。多用户 Web 进程只需要 `CODEX_WEB_RUNTIME_BROKER_SOCKET`，不需要读取用户密码哈希、broker Session secret 或用户的 Codex 凭据。移除该变量并恢复 `CODEX_WEB_LOGIN_*` 后即可回到单用户模式。
-
-部署前先确认命令位置：
-
-```bash
-command -v codex-web
-command -v codex
-command -v setpriv
-```
-
-创建共享组并安装配置模板；共享组已存在时跳过创建：
-
-```bash
-getent group codex-web-runtime >/dev/null || sudo groupadd --system codex-web-runtime
-sudo install -d -o root -g root -m 0750 /etc/codex-web
-sudo install -o root -g root -m 0600 deploy/systemd/users.example.json /etc/codex-web/users.json
-sudoedit /etc/codex-web/users.json
-```
-
-在配置中为每个登录账号填写唯一的 `id`、登录邮箱、密码哈希、Linux 用户、home、`CODEX_HOME` 和 cwd。`codexCommand`、`setprivCommand`、用户 home 和 cwd 都必须使用目标服务器上的绝对路径。runtime 配置必须由 root 拥有且权限为 `0600`，多用户 Web 进程不能读取它。
-
-安装 systemd 单元后，根据目标服务器修改其中的 `User`、`WorkingDirectory`、`ExecStart`、监听地址和端口：
-
-```bash
-sudo install -o root -g root -m 0644 deploy/systemd/codex-web-runtime.service /etc/systemd/system/codex-web-runtime.service
-sudo install -o root -g root -m 0644 deploy/systemd/codex-web.service /etc/systemd/system/codex-web.service
-sudoedit /etc/systemd/system/codex-web-runtime.service
-sudoedit /etc/systemd/system/codex-web.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now codex-web-runtime.service codex-web.service
-```
-
-检查两个常驻服务及其日志：
-
-```bash
-systemctl status codex-web-runtime.service codex-web.service
-journalctl -u codex-web-runtime.service -u codex-web.service -f
-```
-
-runtime socket 由 systemd 的 `RuntimeDirectory` 和 runtime 进程创建，不需要手动创建。未登录时不会启动任何用户 app-server。
 
 #### macOS launchd 部署
 

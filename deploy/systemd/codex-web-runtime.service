@@ -8,6 +8,7 @@ Type=simple
 User=root
 Group=codex-web-runtime
 UMask=0007
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RuntimeDirectory=codex-web
 RuntimeDirectoryMode=0750
 ExecStart=/usr/local/bin/codex-web runtime serve --config /etc/codex-web/users.json --socket /run/codex-web/runtime-broker.sock
