@@ -112,7 +112,7 @@ if (!brokerSocket) console.log(`Codex app-server PID: ${legacyAppServerPid ?? "�
 else console.log(`Codex Web runtime broker: ${brokerSocket}`);
 console.log(`Codex Web 应用目录: ${paths.applicationRoot}`);
 console.log(`Codex Web 工作目录: ${paths.workingDirectory}`);
-console.log(`Codex Web CODEX_HOME: ${process.env.CODEX_HOME ?? "由登录用户的 runtime 决定"}`);
+console.log(`Codex Web 状态目录: ${process.env.CODEX_WEB_STATE ?? process.env.CODEX_HOME ?? "未单独设置"}`);
 
 let closing = false;
 process.on("SIGINT", () => void shutdown(0));

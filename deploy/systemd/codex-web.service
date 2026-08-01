@@ -10,7 +10,7 @@ Group=codex-web-runtime
 WorkingDirectory=/home/codex/workspace/codex-web
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=CODEX_WEB_RUNTIME_BROKER_SOCKET=/run/codex-web/runtime-broker.sock
-Environment=CODEX_HOME=/home/codex/.config/codex-web-state
+Environment=CODEX_WEB_STATE=/home/codex/.config/codex-web-state
 Environment=CODEX_WEB_NEXT_HOST=127.0.0.1
 Environment=CODEX_WEB_PUBLIC_HOST=127.0.0.1
 Environment=PORT=3001

@@ -89,7 +89,7 @@ Linux 或 macOS 上可以运行一个非 root Codex Web，并由本机 root runt
                      └─> app-server（<linux-user-b>）
 ```
 
-Codex Web 和 runtime 是两个常驻进程。登录本身不会创建 app-server；某个用户首次建立 WebSocket bridge 时才启动该用户的 app-server。同一用户的多个浏览器共享一个 app-server，不同用户的 UID、补充组、`HOME`、`CODEX_HOME`、cwd、消息和审批相互隔离。最后一个连接断开后，没有运行中 Turn 时会在宽限期结束后退出；有运行中 Turn 时等待其完成再退出。
+Codex Web 和 runtime 是两个常驻进程。登录本身不会创建 app-server；某个用户首次建立 WebSocket bridge 时才启动该用户的 app-server。同一用户的多个浏览器共享一个 app-server，不同用户的 UID、补充组、`HOME`、`CODEX_HOME`、cwd、消息和审批相互隔离。Web 服务自己的持久状态使用 `CODEX_WEB_STATE`，不与用户的 Codex home 混用。最后一个连接断开后，没有运行中 Turn 时会在宽限期结束后退出；有运行中 Turn 时等待其完成再退出。
 
 #### Linux 快速部署
 
@@ -241,10 +241,9 @@ NODE_BIN_DIR="$(dirname "$(readlink -f "$(command -v node)")")"
 export PATH="$NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export CODEX_WEB_RUNTIME_BROKER_SOCKET=/run/codex-web/runtime-broker.sock
 export CODEX_WEB_PUBLIC_HOST="codex.example.com"
-codex-web serve \
-  --host 0.0.0.0 \
-  --port 3001 \
-  --codex-home "$HOME/.config/codex-web-state"
+CODEX_WEB_STATE="$HOME/.config/codex-web-state" codex-web serve \
+    --host 0.0.0.0 \
+    --port 3001
 ```
 
 直接访问服务器端口时保留 `--host 0.0.0.0`；使用本机反向代理时改为 `--host 127.0.0.1`。`CODEX_WEB_PUBLIC_HOST` 必须填写浏览器实际访问的域名或 IP。多用户模式不设置 `CODEX_WEB_LOGIN_EMAIL`、`CODEX_WEB_LOGIN_PASSWORD` 或 `CODEX_WEB_SESSION_SECRET`。
@@ -292,7 +291,7 @@ Group=codex-web-runtime
 WorkingDirectory=/home/<web-user>
 Environment=PATH=<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=CODEX_WEB_RUNTIME_BROKER_SOCKET=/run/codex-web/runtime-broker.sock
-Environment=CODEX_HOME=/home/<web-user>/.config/codex-web-state
+Environment=CODEX_WEB_STATE=/home/<web-user>/.config/codex-web-state
 Environment=CODEX_WEB_NEXT_HOST=127.0.0.1
 Environment=CODEX_WEB_PUBLIC_HOST=<public-host>
 Environment=PORT=3001
@@ -580,27 +579,29 @@ runtime serve 必需参数：
 | `CODEX_WEB_LOGIN_EMAIL` | Web 登录邮箱 | 单用户模式 |
 | `CODEX_WEB_LOGIN_PASSWORD` | Web 登录密码 | 单用户模式 |
 | `CODEX_WEB_SESSION_SECRET` | Web 会话签名密钥，至少 32 个字符 | 单用户模式 |
-| `CODEX_HOME` | 单用户 app-server 的配置目录；多用户模式下只用于 Web 自身状态 | 否 |
+| `CODEX_HOME` | 单用户 app-server 的 Codex 配置目录 | 否 |
+| `CODEX_WEB_STATE` | Web 自身状态目录（例如 Turnstile 配置）；多用户模式推荐设置 | 否 |
 | `PORT` | HTTP 端口 | 否 |
 | `CODEX_WEB_NEXT_HOST` | 监听地址 | 否 |
 | `CODEX_WEB_PUBLIC_HOST` | `--open` 使用的公开主机名 | 否 |
 | `CODEX_WEB_RUNTIME_BROKER_SOCKET` | 启用多用户模式的 Unix socket 绝对路径；与单用户登录变量二选一 | 多用户模式 |
 
-## CODEX_HOME 与工作目录
+## Codex 路径与工作目录
 
 Codex Web 使用三个彼此独立的路径：
 
 - 安装目录：保存 Codex Web 的 `.next`、主题和 CLI 资源。
 - 工作目录：执行 `codex-web` 时所在的目录，会作为 app-server 的 cwd。
 - `CODEX_HOME`：保存 Codex 账户、配置、历史会话、MCP 和 Skills。
+- `CODEX_WEB_STATE`：保存 Web 自身状态，不承载用户的 Codex 会话；未设置时单用户模式回退到 `CODEX_HOME`。
 
-`CODEX_HOME` 的优先级为：
+单用户模式下，`CODEX_HOME` 的优先级为：
 
 1. `--codex-home <路径>`
 2. 环境变量 `CODEX_HOME`
 3. 当前用户的 `~/.codex`
 
-如果已经设置 `CODEX_HOME`，通常不需要再传 `--codex-home`。只有临时切换到另一个 Codex 环境时才需要命令行参数。
+如果已经设置 `CODEX_HOME`，通常不需要再传 `--codex-home`。只有临时切换到另一个 Codex 环境时才需要命令行参数。多用户模式下，用户 app-server 的 `CODEX_HOME` 由 `users.json` 的 `codexHome` 指定；Web 进程本身使用 `CODEX_WEB_STATE`。
 
 ## 登录与安全
 
@@ -624,7 +625,7 @@ codex-web serve --host 0.0.0.0 --port 3001
 登录后打开“设置 -> 安全”可以启用 Turnstile。配置保存在：
 
 ```text
-${CODEX_HOME}/codex-web/turnstile.json
+${CODEX_WEB_STATE:-$CODEX_HOME}/codex-web/turnstile.json
 ```
 
 私密密钥不会返回浏览器。启用后，每次登录都需要服务端向 Cloudflare Siteverify 验证一次性 token。
@@ -663,6 +664,7 @@ cd codex-web
 npm install
 
 export CODEX_HOME="${TMPDIR:-/tmp}/codex-web-dev-home"
+export CODEX_WEB_STATE="${TMPDIR:-/tmp}/codex-web-state"
 export CODEX_WEB_LOGIN_EMAIL="dev@example.com"
 export CODEX_WEB_LOGIN_PASSWORD="<开发环境独立密码>"
 export CODEX_WEB_SESSION_SECRET="<至少32个字符的开发环境固定密钥>"
@@ -670,7 +672,7 @@ export CODEX_WEB_SESSION_SECRET="<至少32个字符的开发环境固定密钥>"
 npm run dev
 ```
 
-建议为开发和测试使用独立 `CODEX_HOME`，避免读取或修改日常使用环境中的账号、配置、会话、MCP、Skills 和审批状态。
+建议为开发和测试分别使用独立的 `CODEX_HOME` 和 `CODEX_WEB_STATE`，避免读取或修改日常使用环境中的 Codex 账号、配置、会话、MCP、Skills、审批状态或 Web 配置。
 
 常用验证命令：
 

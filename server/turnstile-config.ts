@@ -21,9 +21,9 @@ export const EMPTY_TURNSTILE_CONFIG: TurnstileConfig = {
 };
 
 export function turnstileConfigPath(env = process.env): string {
-  const codexHome = env.CODEX_HOME?.trim();
-  if (!codexHome) throw new Error("CODEX_HOME 未设置，无法读取 Turnstile 配置");
-  return join(codexHome, "codex-web", "turnstile.json");
+  const webState = env.CODEX_WEB_STATE?.trim() || env.CODEX_HOME?.trim();
+  if (!webState) throw new Error("CODEX_WEB_STATE 未设置，无法读取 Turnstile 配置");
+  return join(webState, "codex-web", "turnstile.json");
 }
 
 export async function readTurnstileConfig(env = process.env): Promise<TurnstileConfig> {

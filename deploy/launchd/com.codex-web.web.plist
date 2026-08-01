@@ -17,7 +17,7 @@
   <string>/Users/Shared/CodexWeb/workspace</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>CODEX_HOME</key>
+    <key>CODEX_WEB_STATE</key>
     <string>/Users/Shared/CodexWeb/web-state</string>
     <key>CODEX_WEB_NEXT_HOST</key>
     <string>127.0.0.1</string>
