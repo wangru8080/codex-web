@@ -808,12 +808,17 @@ export interface SkillDefinition {
 
 export interface MarketplaceSkill {
   id: string;
+  package?: string;        // 规范包名，例如 "owner/repo@skill"
   skillId: string;      // e.g. "git-commit"
   name: string;
   installs: number;
   source: string;       // e.g. "owner/repo"
   isInstalled?: boolean;
   installedAt?: string;
+  sourceType?: string;
+  installUrl?: string;
+  url?: string;
+  isDuplicate?: boolean;
 }
 
 export interface SkillLockFile {

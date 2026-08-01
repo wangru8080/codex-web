@@ -25,10 +25,11 @@ import { cn } from "@/lib/utils";
 import type { MarketplaceSkill } from "@/types";
 
 interface MarketplaceBrowserProps {
+  cwd?: string;
   onInstalled: () => void;
 }
 
-export function MarketplaceBrowser({ onInstalled }: MarketplaceBrowserProps) {
+export function MarketplaceBrowser({ cwd, onInstalled }: MarketplaceBrowserProps) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<MarketplaceSkill[]>([]);
@@ -88,6 +89,7 @@ export function MarketplaceBrowser({ onInstalled }: MarketplaceBrowserProps) {
     return (
       <MarketplaceSkillDetail
         skill={openSkill}
+        cwd={cwd}
         onBack={() => setOpenSkill(null)}
         onInstallComplete={handleInstallComplete}
       />

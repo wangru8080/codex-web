@@ -11,6 +11,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import type { MarketplaceSkill } from "@/types";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+type InstallScope = "global" | "project";
 
 /**
  * Marketplace skill detail — inline panel rendered inside the
@@ -27,12 +30,14 @@ import type { MarketplaceSkill } from "@/types";
 
 interface MarketplaceSkillDetailProps {
   skill: MarketplaceSkill;
+  cwd?: string;
   onBack: () => void;
   onInstallComplete: () => void;
 }
 
 export function MarketplaceSkillDetail({
   skill,
+  cwd,
   onBack,
   onInstallComplete,
 }: MarketplaceSkillDetailProps) {
@@ -41,6 +46,7 @@ export function MarketplaceSkillDetail({
   const [progressAction, setProgressAction] = useState<"install" | "uninstall">("install");
   const [readme, setReadme] = useState<string | null>(null);
   const [readmeLoading, setReadmeLoading] = useState(true);
+  const [installScope, setInstallScope] = useState<InstallScope>("global");
 
   useEffect(() => {
     let cancelled = false;
@@ -171,10 +177,31 @@ export function MarketplaceSkillDetail({
             {t("skills.uninstall")}
           </Button>
         ) : (
-          <Button size="sm" className="gap-1.5" onClick={handleInstall}>
-            <CodexWebIcon name="download" size="sm" aria-hidden />
-            {t("skills.install")}
-          </Button>
+          <div className="flex w-full items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-xs text-muted-foreground shrink-0">{t("skills.installScope")}</span>
+              <Tabs value={installScope} onValueChange={(value) => setInstallScope(value as InstallScope)}>
+                <TabsList size="sm" aria-label={t("skills.installScope")} className="border border-border/70 bg-muted/70">
+                  <TabsTrigger
+                    value="global"
+                    className="data-[state=active]:!bg-primary data-[state=active]:!text-primary-foreground data-[state=active]:!border-primary data-[state=active]:shadow-sm"
+                  >
+                    {t("skills.installScope.global")}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="project"
+                    className="data-[state=active]:!bg-primary data-[state=active]:!text-primary-foreground data-[state=active]:!border-primary data-[state=active]:shadow-sm"
+                  >
+                    {t("skills.installScope.project")}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+            <Button size="sm" className="gap-1.5" onClick={handleInstall}>
+              <CodexWebIcon name="download" size="sm" aria-hidden />
+              {t("skills.install")}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -183,7 +210,10 @@ export function MarketplaceSkillDetail({
         onOpenChange={setShowProgress}
         action={progressAction}
         source={skill.source}
+        skillId={skill.skillId}
         skillName={skill.name}
+        scope={installScope}
+        cwd={cwd}
         onComplete={onInstallComplete}
       />
     </div>

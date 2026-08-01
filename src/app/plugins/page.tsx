@@ -218,6 +218,7 @@ export default function ExtensionsPage() {
       <MarketplaceDialog
         open={marketplaceOpen}
         onOpenChange={setMarketplaceOpen}
+        cwd={cwd}
         onInstalled={() => skillsRef.current?.refresh()}
       />
 
@@ -310,10 +311,12 @@ function CurrentTabToolbar({
 function MarketplaceDialog({
   open,
   onOpenChange,
+  cwd,
   onInstalled,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  cwd?: string;
   onInstalled: () => void;
 }) {
   const { t } = useTranslation();
@@ -333,7 +336,7 @@ function MarketplaceDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 min-h-0 overflow-hidden">
-          <MarketplaceBrowser onInstalled={onInstalled} />
+          <MarketplaceBrowser cwd={cwd} onInstalled={onInstalled} />
         </div>
       </DialogContent>
     </Dialog>

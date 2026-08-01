@@ -17,7 +17,10 @@ interface InstallProgressDialogProps {
   onOpenChange: (open: boolean) => void;
   action: "install" | "uninstall";
   source: string;
+  skillId?: string;
   skillName: string;
+  scope?: "global" | "project";
+  cwd?: string;
   onComplete: () => void;
 }
 
@@ -28,7 +31,10 @@ export function InstallProgressDialog({
   onOpenChange,
   action,
   source,
+  skillId,
   skillName,
+  scope = "global",
+  cwd,
   onComplete,
 }: InstallProgressDialogProps) {
   const { t } = useTranslation();
@@ -52,8 +58,8 @@ export function InstallProgressDialog({
 
       const body =
         action === "install"
-          ? { source, global: true }
-          : { skill: skillName, global: true };
+          ? { source, skillId: skillId || skillName, scope, cwd }
+          : { skillId: skillId || skillName };
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -110,7 +116,7 @@ export function InstallProgressDialog({
         setLogs((prev) => [...prev, (err as Error).message]);
       }
     }
-  }, [action, source, skillName]);
+  }, [action, source, skillName, skillId, scope, cwd]);
 
   useEffect(() => {
     if (open) {
