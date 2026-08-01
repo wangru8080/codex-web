@@ -1,6 +1,6 @@
 {
   "name": "@wangru8080/codex-web",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "基于 Codex app-server 的浏览器 Web 工作台",
   "license": "UNLICENSED",
   "repository": {
@@ -26,6 +26,8 @@
     ".next/server/",
     ".next/static/",
     "dist/cli/codex-web.mjs",
+    "dist/skills-marketplace-search.mjs",
+    "dist/skills-cli.mjs",
     "dist/start-next-with-bridge.mjs",
     "deploy/",
     "next.config.mjs",

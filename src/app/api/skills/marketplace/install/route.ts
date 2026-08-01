@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import path from "node:path";
+import path, { resolve as resolvePath } from "node:path";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -109,9 +109,18 @@ export function runSkillsCommand(args: string[], cwd?: string): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const child = spawn(process.env.NPX_BIN || "npx", args, {
-        env: { ...process.env, DISABLE_TELEMETRY: "1" },
-        cwd,
+      const script = [
+        process.env.CODEX_WEB_APP_ROOT && resolvePath(process.env.CODEX_WEB_APP_ROOT, "dist/skills-cli.mjs"),
+        resolvePath(process.cwd(), "dist/skills-cli.mjs"),
+        resolvePath(process.cwd(), "scripts/skills-cli.mjs"),
+      ].find((candidate): candidate is string => Boolean(candidate && existsSync(/*turbopackIgnore: true*/ candidate)));
+      if (!script) {
+        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify("缺少 skills CLI 模块")}\n\n`));
+        controller.close();
+        return;
+      }
+      const child = spawn(process.execPath, [script, ...args], {
+        env: { ...process.env, SKILLS_CLI_CWD: cwd || "" },
         stdio: ["ignore", "pipe", "pipe"],
       });
       const write = (event: string, data: string) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));

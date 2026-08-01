@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { existsSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { spawn } from "node:child_process";
 
 import { mapSkillsShSkill, SKILLS_SH_API, SKILLS_SH_PUBLIC_API } from "@/lib/skills-marketplace";
@@ -49,34 +51,29 @@ export async function GET(request: NextRequest) {
 function fallbackCliSearch(query: string, limit: number, upstreamError = "Skills.sh 不可用"): Promise<Response> {
   if (!query) return Promise.resolve(NextResponse.json({ error: upstreamError }, { status: 502 }));
   return new Promise((resolve) => {
-    const child = spawn(process.env.NPX_BIN || "npx", ["--yes", "skills", "find", query], {
+    const script = [
+      process.env.CODEX_WEB_APP_ROOT && resolvePath(process.env.CODEX_WEB_APP_ROOT, "dist/skills-marketplace-search.mjs"),
+      resolvePath(process.cwd(), "dist/skills-marketplace-search.mjs"),
+      resolvePath(process.cwd(), "scripts/skills-marketplace-search.mjs"),
+    ].find((candidate): candidate is string => Boolean(candidate && existsSync(/*turbopackIgnore: true*/ candidate)));
+    if (!script) {
+      resolve(NextResponse.json({ error: `${upstreamError}; 缺少 skills CLI fallback 模块` }, { status: 502 }));
+      return;
+    }
+    const child = spawn(process.execPath, [script, query, String(limit)], {
       env: { ...process.env, DISABLE_TELEMETRY: "1", FORCE_COLOR: "0" },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "ignore"],
     });
     let output = "";
     child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
-    child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
     child.on("close", (code) => {
-      const skills = parseCliSearch(output, limit);
+      let payload: { skills?: unknown[]; error?: string } = {};
+      try { payload = JSON.parse(output) as typeof payload; } catch { /* 使用统一错误响应 */ }
+      const skills = Array.isArray(payload.skills) ? payload.skills : [];
       resolve(skills.length > 0
         ? NextResponse.json({ skills, source: "skills.cli.find" })
-        : NextResponse.json({ error: `${upstreamError}; skills CLI 退出码 ${code ?? "unknown"}` }, { status: 502 }));
+        : NextResponse.json({ error: `${upstreamError}; ${payload.error || `skills CLI 退出码 ${code ?? "unknown"}`}` }, { status: 502 }));
     });
     child.on("error", () => resolve(NextResponse.json({ error: upstreamError }, { status: 502 })));
   });
-}
-
-function parseCliSearch(output: string, limit: number) {
-  const lines = output.replace(/\x1B\[[0-9;]*m/g, "").split("\n");
-  return lines.map((line) => line.trim().match(/^([a-zA-Z0-9_.-]+\/[^\s@]+)@([^\s]+)$/))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .slice(0, limit)
-    .map((match) => ({
-      id: `${match[1]}/${match[2]}`,
-      package: `${match[1]}@${match[2]}`,
-      skillId: match[2],
-      name: match[2],
-      installs: 0,
-      source: match[1],
-    }));
 }
