@@ -65,11 +65,11 @@ export function NewChatProjectSelector({
     <div
       data-testid="new-chat-project-selector"
       data-current-project={currentProject || undefined}
-      className="relative z-10 mx-4 mb-[-12px]"
+      className="relative z-10 mx-7 mb-[-8px]"
     >
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverAnchor asChild>
-          <div className="flex min-h-10 items-center rounded-t-2xl border border-b-0 border-border/60 bg-muted/70 px-3 text-sm shadow-sm">
+          <div className="flex min-h-10 items-center rounded-2xl bg-muted/70 px-3 text-sm">
             {currentProject ? (
               <>
                 <button
