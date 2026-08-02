@@ -3,7 +3,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Message, MessagesResponse, FileAttachment, SessionStreamSnapshot, MentionRef, PermissionProfile, SkillInputReference } from '@/types';
-import { MessageList } from './MessageList';
+import { MessageList, type ModelSwitch } from './MessageList';
+import { readModelSwitches, writeModelSwitches } from '@/lib/model-switch-storage';
 import { NewChatWelcome } from './NewChatWelcome';
 import { TerminalReasonChip } from './TerminalReasonChip';
 import { RateLimitBanner } from './RateLimitBanner';
@@ -307,6 +308,10 @@ export function ChatView({
   }, [appServerSyncedUserMessages, cappedSetMessages]);
   const [mode, setMode] = useState<string>(initialMode || 'code');
   const [currentModel, setCurrentModel] = useState(() => modelName || (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') : null) || 'sonnet');
+  const currentModelRef = useRef(currentModel);
+  const modelSwitchSequenceRef = useRef(0);
+  const modelSwitchStorageReadyRef = useRef(false);
+  const [modelSwitches, setModelSwitches] = useState<ModelSwitch[]>([]);
   // providerId='' is a LEGITIMATE historic env-mode session value — only
   // fall back to localStorage when the prop wasn't supplied at all
   // (undefined). Treating '' as falsy here would let localStorage's
@@ -325,7 +330,24 @@ export function ChatView({
   // valid env-mode session value (Codex P1 review) — guard with
   // `!== undefined` rather than truthiness so an env session prop can
   // overwrite a localStorage-seeded non-empty currentProviderId.
-  useEffect(() => { if (modelName) setCurrentModel(modelName); }, [modelName]);
+  useEffect(() => {
+    if (!modelName) return;
+    currentModelRef.current = modelName;
+    setCurrentModel(modelName);
+  }, [modelName]);
+  useEffect(() => {
+    const stored = readModelSwitches(localStorage, activeSessionId);
+    modelSwitchSequenceRef.current = stored.length;
+    modelSwitchStorageReadyRef.current = false;
+    setModelSwitches(stored);
+  }, [activeSessionId]);
+  useEffect(() => {
+    if (!modelSwitchStorageReadyRef.current) {
+      modelSwitchStorageReadyRef.current = true;
+      return;
+    }
+    writeModelSwitches(localStorage, activeSessionId, modelSwitches);
+  }, [activeSessionId, modelSwitches]);
   useEffect(() => { setSelectedEffort(initialEffort ?? undefined); }, [initialEffort]);
   useEffect(() => { if (providerId !== undefined) setCurrentProviderId(providerId); }, [providerId]);
 
@@ -641,6 +663,22 @@ export function ChatView({
     }
   }, [settingsLocked, activeSessionId]);
 
+  const handleModelChange = useCallback((model: string, recordSwitch = true) => {
+    const previousModel = currentModelRef.current;
+    if (previousModel === model) return;
+    currentModelRef.current = model;
+    setCurrentModel(model);
+    if (recordSwitch) {
+      setModelSwitches((current) => [...current, {
+        id: `model-switch-${++modelSwitchSequenceRef.current}`,
+        from: previousModel,
+        to: model,
+        afterMessageId: messages.at(-1)?.id ?? null,
+        afterTurnId: messages.at(-1)?.turn_id ?? null,
+      }]);
+    }
+  }, [messages]);
+
   const handleProviderModelChange = useCallback((
     newProviderId: string,
     model: string,
@@ -648,7 +686,7 @@ export function ChatView({
   ) => {
     if (settingsLocked) return;
     setCurrentProviderId(newProviderId);
-    setCurrentModel(model);
+    handleModelChange(model, !opts?.isAuto);
     // Phase 6 P0 (2026-05-15) — only persist to the session row on a
     // MANUAL user pick. An auto-correct fallback (when the saved
     // model isn't in the active runtime's compatible set) must NOT
@@ -671,7 +709,7 @@ export function ChatView({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, provider_id: newProviderId }),
     }).catch(() => {});
-  }, [activeSessionId, appServerThreadId, onAppServerModelChange, settingsLocked]);
+  }, [activeSessionId, appServerThreadId, handleModelChange, onAppServerModelChange, settingsLocked]);
 
   const handleEffortChange = useCallback((effort: string | undefined) => {
     setSelectedEffort(effort);
@@ -885,7 +923,7 @@ export function ChatView({
         break;
       case 'switch_to_sonnet':
         if (!lastUserMessage) return;
-        setCurrentModel('sonnet');
+        handleModelChange('sonnet');
         setTimeout(() => sendMessageRef.current?.(lastUserMessage), 50);
         break;
       case 'continue_max_turns':
@@ -907,7 +945,7 @@ export function ChatView({
         }).catch(() => {});
         break;
     }
-  }, [router, t]);
+  }, [handleModelChange, router, t]);
 
   // Entry point from the chip. Destructive actions route through confirm
   // dialog; non-destructive ones run immediately. (CONFIRM_REQUIRED hoisted
@@ -1591,7 +1629,7 @@ export function ChatView({
   // session-less landing). Covers "clicked + on a project" and
   // "clicked + in the assistant workspace" — both create an empty
   // session and land here.
-  const isNewChat = messages.length === 0 && !isStreaming;
+  const isNewChat = messages.length === 0 && !isStreaming && modelSwitches.length === 0;
   const appServerBanner = appServerErrorBanner ?? appServerNotice ?? null;
 
   return (
@@ -1664,7 +1702,7 @@ export function ChatView({
               isStreaming={isStreaming}
               sessionId={activeSessionId}
               modelName={currentModel}
-              onModelChange={settingsLocked ? undefined : setCurrentModel}
+              onModelChange={settingsLocked ? undefined : handleModelChange}
               providerId={currentProviderId}
               permissionProfile={permissionProfile}
               onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}
@@ -1718,6 +1756,7 @@ export function ChatView({
               continuedFromHref={continuedFromHref}
               continuedFromMessageId={continuedFromMessageId}
               targetMessageId={targetMessageId}
+              modelSwitches={modelSwitches}
             />
           </PerformanceProfiler>
       {/* End-of-turn terminal reason chip (only shown when stream is not active) */}
@@ -1862,7 +1901,7 @@ export function ChatView({
             if (lastUserMessage) {
               setPendingTerminalAction({ actionId: 'switch_to_sonnet', lastUserMessage });
             } else {
-              setCurrentModel('sonnet');
+              handleModelChange('sonnet');
             }
           }}
           onDismiss={() => setRateLimitDismissed(true)}
@@ -1952,7 +1991,7 @@ export function ChatView({
         isStreaming={isStreaming}
         sessionId={activeSessionId}
         modelName={currentModel}
-        onModelChange={settingsLocked ? undefined : setCurrentModel}
+        onModelChange={settingsLocked ? undefined : handleModelChange}
         providerId={currentProviderId}
         permissionProfile={permissionProfile}
         onPermissionChange={settingsLocked ? undefined : handlePermissionProfileChange}

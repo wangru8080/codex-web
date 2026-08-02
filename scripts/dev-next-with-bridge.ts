@@ -52,6 +52,7 @@ const bridgePort =
 const bridgeUrl = brokerSocket
   ? `ws://${publicHost}:${bridgePort}/codex-bridge`
   : `ws://${publicHost}:${bridgePort}?token=${legacyBridgeToken}`;
+process.env.CODEX_WEB_BRIDGE_URL = bridgeUrl;
 console.log(`Codex Web bridge: ${bridgeUrl}`);
 if (!brokerSocket) console.log(`Codex app-server PID: ${legacyAppServerPid ?? "未知"}`);
 else console.log(`Codex Web runtime broker: ${brokerSocket}`);

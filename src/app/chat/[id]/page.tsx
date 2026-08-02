@@ -565,6 +565,9 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             threadId: resumedThreadId || id,
             model,
           });
+          // 同步历史会话的本地发送目标，避免下一轮复用恢复会话时记录的旧模型。
+          setResumedModel(model);
+          setSessionModel(model);
         } : undefined}
         onAppServerEffortChange={canResumeAppServerThread ? async (effort) => {
           await updateThreadModelSettings({

@@ -4,8 +4,9 @@ import { forwardRef, useRef, useEffect, useLayoutEffect, useState, useCallback, 
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { Virtuoso, type Components, type VirtuosoHandle } from 'react-virtuoso';
-import { ArrowDown, GitBranch } from '@phosphor-icons/react';
+import { ArrowDown, Cube, GitBranch, Info } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { FileAttachment, Message, MessageContentBlock } from '@/types';
 import type { AppServerRetryStatus } from '@/codex-web/turn-reducer';
 import { ConversationEmptyState } from '@/components/ai-elements/conversation';
@@ -21,6 +22,9 @@ import {
   nextVirtualFirstItemIndex,
   targetMessageVirtualIndex,
 } from './message-list-virtualization';
+import { modelSwitchFollowsMessage, type ModelSwitch } from '@/lib/model-switch-storage';
+
+export type { ModelSwitch } from '@/lib/model-switch-storage';
 
 /**
  * Rewind button shown on user messages that have file checkpoints.
@@ -165,11 +169,40 @@ interface MessageListProps {
   continuedFromHref?: string;
   continuedFromMessageId?: string;
   targetMessageId?: string;
+  modelSwitches?: ModelSwitch[];
+}
+
+function ModelSwitchDivider({ change }: { change: ModelSwitch }) {
+  return (
+    <div className="flex items-center gap-3 pb-6 pt-1 text-xs text-muted-foreground" data-model-switch-row>
+      <div className="h-px flex-1 bg-border/70" />
+      <div className="inline-flex min-w-0 items-center gap-2">
+        <Cube size={15} weight="regular" aria-hidden />
+        <span className="truncate">模型已从 {change.from} 更改为 {change.to}.</span>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label="模型切换说明"
+              className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <Info size={14} aria-hidden />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 rounded-lg p-3 text-xs leading-5" side="top">
+            在对话中途切换模型会降低性能表现。背景信息可能会自动压缩。
+          </PopoverContent>
+        </Popover>
+      </div>
+      <div className="h-px flex-1 bg-border/70" />
+    </div>
+  );
 }
 
 type MessageListRow =
   | { type: 'message'; message: Message; rewindSdkUuid?: string }
   | { type: 'continued-from'; href: string }
+  | { type: 'model-switch'; change: ModelSwitch }
   | { type: 'streaming' };
 
 type MessageListContext = {
@@ -266,6 +299,7 @@ export function MessageList({
   continuedFromHref,
   continuedFromMessageId,
   targetMessageId,
+  modelSwitches = [],
 }: MessageListProps) {
   const { t } = useTranslation();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -280,7 +314,10 @@ export function MessageList({
 
   const rows = useMemo<MessageListRow[]>(() => {
     let userIndex = 0;
-    const messageRows = messages.map<MessageListRow>((message) => {
+    const messageRows: MessageListRow[] = [];
+    const pendingAtStart = modelSwitches.filter((change) => change.afterMessageId === null);
+    messageRows.push(...pendingAtStart.map((change) => ({ type: 'model-switch' as const, change })));
+    messages.forEach((message, messageIndex) => {
       let rewindSdkUuid: string | undefined;
       if (message.role === 'user') {
         if (sessionId && userIndex < rewindPoints.length) {
@@ -288,8 +325,16 @@ export function MessageList({
         }
         userIndex += 1;
       }
-      return { type: 'message', message, rewindSdkUuid };
+      messageRows.push({ type: 'message', message, rewindSdkUuid });
+      for (const change of modelSwitches) {
+        if (modelSwitchFollowsMessage(change, message, messageIndex, messages)) {
+          messageRows.push({ type: 'model-switch', change });
+        }
+      }
     });
+    messageRows.push(...modelSwitches
+      .filter((change) => change.afterMessageId !== null && !messages.some((message, index) => modelSwitchFollowsMessage(change, message, index, messages)))
+      .map((change) => ({ type: 'model-switch' as const, change })));
     const markerIndex = continuedFromHref
       ? continuationMarkerIndex(messages.map((message) => message.id), continuedFromMessageId)
       : -1;
@@ -297,7 +342,7 @@ export function MessageList({
       messageRows.splice(markerIndex, 0, { type: 'continued-from', href: continuedFromHref });
     }
     return showStreamingMessage ? [...messageRows, { type: 'streaming' }] : messageRows;
-  }, [continuedFromHref, continuedFromMessageId, messages, rewindPoints, sessionId, showStreamingMessage]);
+  }, [continuedFromHref, continuedFromMessageId, messages, modelSwitches, rewindPoints, sessionId, showStreamingMessage]);
 
   const listContext = useMemo<MessageListContext>(() => ({
     hasMore: !!hasMore,
@@ -313,7 +358,9 @@ export function MessageList({
     continuedFromMessageId,
   );
   const initialTopMostItemIndex = targetVirtualIndex === undefined
-    ? { index: 'LAST' as const, align: 'end' as const }
+    ? modelSwitches.length > 0
+      ? { index: 0, align: 'start' as const }
+      : { index: 'LAST' as const, align: 'end' as const }
     : { index: targetVirtualIndex, align: 'center' as const };
 
   const pinInitialBottom = useCallback(() => {
@@ -413,7 +460,15 @@ export function MessageList({
     return () => window.cancelAnimationFrame(frame);
   }, [processBlocks, showStreamingMessage, streamingContent, streamingThinkingContent, streamingToolOutput, toolResults, toolUses]);
 
-  if (messages.length === 0 && !isStreaming) {
+  useEffect(() => {
+    if (rows.length === 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [rows.length]);
+
+  if (messages.length === 0 && !isStreaming && modelSwitches.length === 0) {
     if (isAssistantProject) {
       // Assistant workspace — show buddy or egg welcome
       const buddyInfo = typeof globalThis !== 'undefined'
@@ -463,6 +518,60 @@ export function MessageList({
     );
   }
 
+  if (modelSwitches.length > 0) {
+    const fallbackRows: Array<{ type: 'message'; message: Message } | { type: 'model-switch'; change: ModelSwitch }> = [];
+    messages.forEach((message, messageIndex) => {
+      fallbackRows.push({ type: 'message', message });
+      for (const change of modelSwitches) {
+        if (modelSwitchFollowsMessage(change, message, messageIndex, messages)) fallbackRows.push({ type: 'model-switch', change });
+      }
+    });
+    fallbackRows.push(...modelSwitches
+      .filter((change) => change.afterMessageId === null || !messages.some((message, index) => modelSwitchFollowsMessage(change, message, index, messages)))
+      .map((change) => ({ type: 'model-switch' as const, change })));
+
+    return (
+      <div className="relative min-h-0 flex-1 overflow-y-auto" data-virtualized-message-list data-message-count={messages.length}>
+        <div className="mx-auto w-full max-w-3xl px-4 py-6">
+          {fallbackRows.map((row) => row.type === 'message' ? (
+            <div key={row.message.id} className="group pb-6" data-message-row>
+              <MessageItem
+                message={row.message}
+                sessionId={sessionId}
+                canEdit={row.message.id === editableUserMessageId}
+                onEdit={row.message.id === editableUserMessageId ? onEditUserMessage : undefined}
+                onContinueInNewTask={onContinueInNewTask}
+                isAssistantProject={isAssistantProject}
+                assistantName={assistantName}
+              />
+            </div>
+          ) : (
+            <ModelSwitchDivider key={`model-switch:${row.change.id}`} change={row.change} />
+          ))}
+          {showStreamingMessage && (
+            <div className="pb-6" data-streaming-message-row>
+              <StreamingMessage
+                content={streamingContent}
+                isStreaming={isStreaming}
+                sessionId={sessionId}
+                startedAt={startedAt ?? 0}
+                toolUses={toolUses}
+                toolResults={toolResults}
+                streamingToolOutput={streamingToolOutput}
+                thinkingContent={streamingThinkingContent}
+                processBlocks={processBlocks}
+                planBlocks={planBlocks}
+                statusText={statusText}
+                retryStatus={retryStatus}
+                onForceStop={onForceStop}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="relative min-h-0 flex-1"
@@ -470,6 +579,7 @@ export function MessageList({
       data-message-count={messages.length}
     >
       <Virtuoso<MessageListRow, MessageListContext>
+        key={`message-list:${modelSwitches.length}`}
         ref={virtuosoRef}
         className="h-full"
         data={rows}
@@ -479,6 +589,8 @@ export function MessageList({
           ? row.message.id
           : row.type === 'continued-from'
             ? `continued-from:${row.href}`
+            : row.type === 'model-switch'
+              ? `model-switch:${row.change.id}`
             : 'streaming-message'}
         firstItemIndex={firstItemIndex}
         initialTopMostItemIndex={initialTopMostItemIndex}
@@ -516,6 +628,29 @@ export function MessageList({
               <GitBranch size={16} aria-hidden />
               {t('chat.continuedFrom' as TranslationKey)}
             </a>
+            <div className="h-px flex-1 bg-border/70" />
+          </div>
+        ) : row.type === 'model-switch' ? (
+          <div className="flex items-center gap-3 pb-6 pt-1 text-xs text-muted-foreground" data-model-switch-row>
+            <div className="h-px flex-1 bg-border/70" />
+            <div className="inline-flex min-w-0 items-center gap-2">
+              <Cube size={15} weight="regular" aria-hidden />
+              <span className="truncate">模型已从 {row.change.from} 更改为 {row.change.to}.</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="模型切换说明"
+                    className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <Info size={14} aria-hidden />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 rounded-lg p-3 text-xs leading-5" side="top">
+                  在对话中途切换模型会降低性能表现。背景信息可能会自动压缩。
+                </PopoverContent>
+              </Popover>
+            </div>
             <div className="h-px flex-1 bg-border/70" />
           </div>
         ) : (

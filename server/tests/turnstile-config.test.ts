@@ -16,13 +16,14 @@ const configured: TurnstileConfig = {
 describe("Turnstile 配置", () => {
   it("优先使用独立的 Web 状态目录", () => {
     expect(turnstileConfigPath({
+      NODE_ENV: "test",
       CODEX_WEB_STATE: "/srv/codex-web-state",
       CODEX_HOME: "/home/user/.codex",
     })).toBe("/srv/codex-web-state/codex-web/turnstile.json");
   });
 
   it("兼容未设置 Web 状态目录的单用户配置", () => {
-    expect(turnstileConfigPath({ CODEX_HOME: "/home/user/.codex" }))
+    expect(turnstileConfigPath({ NODE_ENV: "test", CODEX_HOME: "/home/user/.codex" }))
       .toBe("/home/user/.codex/codex-web/turnstile.json");
   });
 
