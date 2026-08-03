@@ -33,9 +33,15 @@ import {
   formatRelativeTime,
   groupSessionsByProject,
   loadCollapsedProjects,
+  loadPinnedProjects,
+  loadPinnedSessions,
+  partitionPinnedSidebar,
   saveCollapsedProjects,
+  savePinnedProjects,
+  savePinnedSessions,
   COLLAPSED_INITIALIZED_KEY,
 } from "./chat-list-utils";
+import type { ProjectGroup } from "./chat-list-utils";
 import type { ChatSession } from "@/types";
 
 interface ChatListPanelProps {
@@ -66,6 +72,13 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
     () => loadCollapsedProjects()
   );
+  const [pinnedProjects, setPinnedProjects] = useState<Set<string>>(
+    () => loadPinnedProjects()
+  );
+  const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(
+    () => loadPinnedSessions()
+  );
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [hoveredFolder, setHoveredFolder] = useState<string | null>(null);
   // CodexWeb 只保留项目维度的会话列表。
   const [projectsCollapsed, setProjectsCollapsed] = useState(false);
@@ -92,6 +105,26 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
       if (next.has(wd)) next.delete(wd);
       else next.add(wd);
       saveCollapsedProjects(next);
+      return next;
+    });
+  }, []);
+
+  const togglePinnedProject = useCallback((workingDirectory: string) => {
+    setPinnedProjects((previous) => {
+      const next = new Set(previous);
+      if (next.has(workingDirectory)) next.delete(workingDirectory);
+      else next.add(workingDirectory);
+      savePinnedProjects(next);
+      return next;
+    });
+  }, []);
+
+  const togglePinnedSession = useCallback((sessionId: string) => {
+    setPinnedSessions((previous) => {
+      const next = new Set(previous);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      savePinnedSessions(next);
       return next;
     });
   }, []);
@@ -239,6 +272,11 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
     return groupSessionsByProject(filteredSessions, workingDirectory);
   }, [filteredSessions, workingDirectory]);
 
+  const sidebarGroups = useMemo(
+    () => partitionPinnedSidebar(projectGroups, pinnedProjects, pinnedSessions),
+    [pinnedProjects, pinnedSessions, projectGroups],
+  );
+
   // Auto-collapse: only expand the project with the most recent session activity.
   // Runs on first use AND whenever the project list changes (new projects added).
   useEffect(() => {
@@ -272,6 +310,101 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
   const navItems: Array<{ href: string; label: string; icon: CodexWebIconName }> = [
     { href: "/plugins", label: t('nav.plugins' as TranslationKey), icon: "plugin" },
   ];
+
+  const renderSessionItem = (session: ChatSession, showPinShortcut = false) => {
+    const isActive = pathname === `/chat/${session.id}`;
+    const isReadOnly = !!session.read_only || session.origin === 'codex_rollout';
+    return (
+      <SessionListItem
+        key={session.id}
+        session={session}
+        isActive={isActive}
+        isHovered={hoveredSession === session.id}
+        isArchiving={archivingSession === session.id}
+        isSessionStreaming={activeStreamingSessions.has(session.id) || streamingSessionId === session.id}
+        needsApproval={pendingApprovalSessionIds.has(session.id) || pendingApprovalSessionId === session.id}
+        readOnly={isReadOnly}
+        canManage={!!session.codex_thread_id}
+        isPinned={pinnedSessions.has(session.id)}
+        showPinShortcut={showPinShortcut}
+        isWorkspace={false}
+        formatRelativeTime={formatRelativeTime}
+        t={t}
+        onMouseEnter={() => setHoveredSession(session.id)}
+        onMouseLeave={() => setHoveredSession(null)}
+        onArchive={handleArchiveSession}
+        onRename={handleRenameSession}
+        onTogglePin={togglePinnedSession}
+      />
+    );
+  };
+
+  const renderProjectGroup = (group: ProjectGroup, isPinned: boolean) => {
+    const isCollapsed = collapsedProjects.has(group.workingDirectory);
+    const isFolderHovered = hoveredFolder === group.workingDirectory;
+    const isSessionsExpanded = expandedSessionGroups.has(group.workingDirectory);
+    const shouldTruncate = group.sessions.length > SESSION_TRUNCATE_LIMIT;
+    let visibleSessions = group.sessions;
+    if (shouldTruncate && !isSessionsExpanded) {
+      const truncated = group.sessions.slice(0, SESSION_TRUNCATE_LIMIT);
+      const activeSession = group.sessions.find((session) => pathname === `/chat/${session.id}`);
+      if (activeSession && !truncated.includes(activeSession)) truncated.push(activeSession);
+      visibleSessions = truncated;
+    }
+    const hiddenCount = group.sessions.length - visibleSessions.length;
+
+    return (
+      <div key={group.workingDirectory || "__no_project"}>
+        <ProjectGroupHeader
+          workingDirectory={group.workingDirectory}
+          displayName={group.displayName}
+          isCollapsed={isCollapsed}
+          isFolderHovered={isFolderHovered}
+          isWorkspace={false}
+          hideCaret
+          isPinned={isPinned}
+          onToggle={() => toggleProject(group.workingDirectory)}
+          onTogglePin={togglePinnedProject}
+          onMouseEnter={() => setHoveredFolder(group.workingDirectory)}
+          onMouseLeave={() => setHoveredFolder(null)}
+          onCreateSession={(event) => handleCreateSessionInProject(event, group.workingDirectory)}
+          onRemoveProject={handleRemoveProject}
+        />
+
+        <AnimatePresence initial={false}>
+          {!isCollapsed && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div className="flex flex-col">
+                {visibleSessions.map((session) => renderSessionItem(session))}
+                {shouldTruncate && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSessionGroups((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(group.workingDirectory)) next.delete(group.workingDirectory);
+                      else next.add(group.workingDirectory);
+                      return next;
+                    })}
+                    className="w-full py-1.5 pl-3 text-left text-xs font-semibold text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors"
+                  >
+                    {isSessionsExpanded
+                      ? t('chatList.showLess' as TranslationKey)
+                      : t('chatList.showMore' as TranslationKey, { count: String(hiddenCount) })}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
 
   // Phase 7c-B — surface chrome (data-platform-sidebar attribute, bg
   // token, backdrop-filter, overflow-hidden, width inset) moved to
@@ -337,9 +470,48 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
         </div>
       </div>
 
-      {/* Sectioned list: 项目 */}
+      {/* Sectioned list: 置顶 / 项目 */}
       <ScrollArea className="flex-1 min-h-0 [&>[data-slot=scroll-area-viewport]>div]:!block">
         <div className="flex flex-col pb-3">
+
+          {(sidebarGroups.pinnedSessions.length > 0 || sidebarGroups.pinnedProjects.length > 0) && (
+            <div className="px-2 pt-2 pb-1">
+              <button
+                type="button"
+                aria-expanded={!pinnedCollapsed}
+                aria-label={t((pinnedCollapsed ? 'chatList.expandPinned' : 'chatList.collapsePinned') as TranslationKey)}
+                onClick={() => setPinnedCollapsed((collapsed) => !collapsed)}
+                className={cn(
+                  "flex w-full items-center gap-1 px-3 h-7 cursor-pointer select-none rounded-xl",
+                  "transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                )}
+              >
+                <span className="text-[13px] font-semibold text-sidebar-foreground/55">
+                  {t('chatList.pinned' as TranslationKey)}
+                </span>
+                <span className="text-muted-foreground/80">
+                  {pinnedCollapsed ? <CaretRight size={12} /> : <CaretDown size={12} />}
+                </span>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {!pinnedCollapsed && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <div className="flex flex-col">
+                      {sidebarGroups.pinnedSessions.map((session) => renderSessionItem(session, true))}
+                      {sidebarGroups.pinnedProjects.map((group) => renderProjectGroup(group, true))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* ─── 项目 section ─── */}
           <div
@@ -391,12 +563,13 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
 
                     {/* Project folders — truncate when more than PROJECT_LIST_TRUNCATE_LIMIT */}
                     {(() => {
-                      const projectsShouldTruncate = projectGroups.length > PROJECT_LIST_TRUNCATE_LIMIT;
-                      let visibleProjects = projectGroups;
+                      const regularProjects = sidebarGroups.regularProjects;
+                      const projectsShouldTruncate = regularProjects.length > PROJECT_LIST_TRUNCATE_LIMIT;
+                      let visibleProjects = regularProjects;
                       if (projectsShouldTruncate && !projectListExpanded) {
-                        const truncated = projectGroups.slice(0, PROJECT_LIST_TRUNCATE_LIMIT);
+                        const truncated = regularProjects.slice(0, PROJECT_LIST_TRUNCATE_LIMIT);
                         // Always include the project containing the currently active session
-                        const activeProject = projectGroups.find(g =>
+                        const activeProject = regularProjects.find(g =>
                           g.sessions.some(s => pathname === `/chat/${s.id}`)
                         );
                         if (activeProject && !truncated.includes(activeProject)) {
@@ -404,101 +577,10 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
                         }
                         visibleProjects = truncated;
                       }
-                      const projectsHiddenCount = projectGroups.length - visibleProjects.length;
+                      const projectsHiddenCount = regularProjects.length - visibleProjects.length;
                       return (
                         <>
-                          {visibleProjects.map((group) => {
-                      const isCollapsed = collapsedProjects.has(group.workingDirectory);
-                      const isFolderHovered = hoveredFolder === group.workingDirectory;
-                      const isSessionsExpanded = expandedSessionGroups.has(group.workingDirectory);
-                      const shouldTruncate = group.sessions.length > SESSION_TRUNCATE_LIMIT;
-                      let visibleSessions = group.sessions;
-                      if (shouldTruncate && !isSessionsExpanded) {
-                        const truncated = group.sessions.slice(0, SESSION_TRUNCATE_LIMIT);
-                        const activeSession = group.sessions.find(s => pathname === `/chat/${s.id}`);
-                        if (activeSession && !truncated.includes(activeSession)) {
-                          truncated.push(activeSession);
-                        }
-                        visibleSessions = truncated;
-                      }
-                      const hiddenCount = group.sessions.length - visibleSessions.length;
-
-                      return (
-                        <div key={group.workingDirectory || "__no_project"}>
-                          <ProjectGroupHeader
-                            workingDirectory={group.workingDirectory}
-                            displayName={group.displayName}
-                            isCollapsed={isCollapsed}
-                            isFolderHovered={isFolderHovered}
-                            isWorkspace={false}
-                            hideCaret
-                            onToggle={() => toggleProject(group.workingDirectory)}
-                            onMouseEnter={() => setHoveredFolder(group.workingDirectory)}
-                            onMouseLeave={() => setHoveredFolder(null)}
-                            onCreateSession={(e) => handleCreateSessionInProject(e, group.workingDirectory)}
-                            onRemoveProject={handleRemoveProject}
-                          />
-
-                          <AnimatePresence initial={false}>
-                            {!isCollapsed && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 'auto', opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.2, ease: 'easeOut' }}
-                                style={{ overflow: 'hidden' }}
-                              >
-                                <div className="flex flex-col">
-                                  {visibleSessions.map((session) => {
-                                    const isActive = pathname === `/chat/${session.id}`;
-                                    const isReadOnly = !!session.read_only || session.origin === 'codex_rollout';
-                                    return (
-                                      <SessionListItem
-                                        key={session.id}
-                                        session={session}
-                                        isActive={isActive}
-                                        isHovered={hoveredSession === session.id}
-                                        isArchiving={archivingSession === session.id}
-                                        isSessionStreaming={activeStreamingSessions.has(session.id) || streamingSessionId === session.id}
-                                        needsApproval={pendingApprovalSessionIds.has(session.id) || pendingApprovalSessionId === session.id}
-                                        readOnly={isReadOnly}
-                                        canManage={!!session.codex_thread_id}
-                                        isWorkspace={false}
-                                        formatRelativeTime={formatRelativeTime}
-                                        t={t}
-                                        onMouseEnter={() => setHoveredSession(session.id)}
-                                        onMouseLeave={() => setHoveredSession(null)}
-                                        onArchive={handleArchiveSession}
-                                        onRename={handleRenameSession}
-                                      />
-                                    );
-                                  })}
-
-                                  {shouldTruncate && (
-                                    <button
-                                      onClick={() => setExpandedSessionGroups(prev => {
-                                        const next = new Set(prev);
-                                        if (next.has(group.workingDirectory)) {
-                                          next.delete(group.workingDirectory);
-                                        } else {
-                                          next.add(group.workingDirectory);
-                                        }
-                                        return next;
-                                      })}
-                                      className="w-full py-1.5 pl-3 text-left text-xs font-semibold text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors"
-                                    >
-                                      {isSessionsExpanded
-                                        ? t('chatList.showLess' as TranslationKey)
-                                        : t('chatList.showMore' as TranslationKey, { count: String(hiddenCount) })}
-                                    </button>
-                                  )}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      );
-                          })}
+                          {visibleProjects.map((group) => renderProjectGroup(group, false))}
 
                           {/* Project-list show more / show less */}
                           {projectsShouldTruncate && (

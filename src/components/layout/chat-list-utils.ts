@@ -4,6 +4,45 @@ import type { TranslationKey } from "@/i18n";
 
 const COLLAPSED_PROJECTS_KEY = "codepilot:collapsed-projects";
 export const COLLAPSED_INITIALIZED_KEY = "codepilot:collapsed-initialized";
+const PINNED_PROJECTS_KEY = "codex-web:pinned-projects";
+const PINNED_SESSIONS_KEY = "codex-web:pinned-sessions";
+
+function loadStringSet(key: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const value: unknown = JSON.parse(window.localStorage.getItem(key) ?? "[]");
+    if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+      return new Set();
+    }
+    return new Set(value);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveStringSet(key: string, values: ReadonlySet<string>): void {
+  try {
+    window.localStorage.setItem(key, JSON.stringify([...values]));
+  } catch {
+    // 浏览器禁用本地存储时保留当前页面内的置顶状态。
+  }
+}
+
+export function loadPinnedProjects(): Set<string> {
+  return loadStringSet(PINNED_PROJECTS_KEY);
+}
+
+export function savePinnedProjects(projects: ReadonlySet<string>): void {
+  saveStringSet(PINNED_PROJECTS_KEY, projects);
+}
+
+export function loadPinnedSessions(): Set<string> {
+  return loadStringSet(PINNED_SESSIONS_KEY);
+}
+
+export function savePinnedSessions(sessions: ReadonlySet<string>): void {
+  saveStringSet(PINNED_SESSIONS_KEY, sessions);
+}
 
 export function loadCollapsedProjects(): Set<string> {
   if (typeof window === 'undefined') return new Set();
@@ -25,6 +64,45 @@ export interface ProjectGroup {
   displayName: string;
   sessions: ChatSession[];
   latestUpdatedAt: number;
+}
+
+export interface PinnedSidebarGroups {
+  pinnedSessions: ChatSession[];
+  pinnedProjects: ProjectGroup[];
+  regularProjects: ProjectGroup[];
+}
+
+export function partitionPinnedSidebar(
+  projectGroups: ProjectGroup[],
+  pinnedProjectPaths: ReadonlySet<string>,
+  pinnedSessionIds: ReadonlySet<string>,
+): PinnedSidebarGroups {
+  const pinnedProjects = projectGroups.filter((group) =>
+    pinnedProjectPaths.has(group.workingDirectory)
+  );
+  const pinnedProjectSet = new Set(
+    pinnedProjects.map((group) => group.workingDirectory)
+  );
+  const pinnedSessions = projectGroups
+    .filter((group) => !pinnedProjectSet.has(group.workingDirectory))
+    .flatMap((group) => group.sessions.filter((session) => pinnedSessionIds.has(session.id)))
+    .sort(
+      (a, b) =>
+        parseDBDate(b.updated_at).getTime() - parseDBDate(a.updated_at).getTime()
+    );
+  const effectivePinnedSessionIds = new Set(
+    pinnedSessions.map((session) => session.id)
+  );
+  const regularProjects = projectGroups
+    .filter((group) => !pinnedProjectSet.has(group.workingDirectory))
+    .map((group) => {
+      const sessions = group.sessions.filter(
+        (session) => !effectivePinnedSessionIds.has(session.id)
+      );
+      return sessions.length === group.sessions.length ? group : { ...group, sessions };
+    });
+
+  return { pinnedSessions, pinnedProjects, regularProjects };
 }
 
 function codexSessionKey(session: ChatSession): string {

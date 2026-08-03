@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Bell, DotsThree } from "@/components/ui/icon";
+import { Bell, DotsThree, PushPin } from "@/components/ui/icon";
+import { PushPinSlash } from "@phosphor-icons/react";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +14,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { PromptDialog } from "@/components/ui/prompt-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ChatSession } from "@/types";
 import type { TranslationKey } from "@/i18n";
@@ -27,6 +29,8 @@ interface SessionListItemProps {
   needsApproval: boolean;
   readOnly?: boolean;
   canManage?: boolean;
+  isPinned?: boolean;
+  showPinShortcut?: boolean;
   /** Whether this session belongs to the assistant workspace */
   isWorkspace?: boolean;
   formatRelativeTime: (dateStr: string, t: (key: TranslationKey, params?: Record<string, string | number>) => string) => string;
@@ -35,6 +39,7 @@ interface SessionListItemProps {
   onMouseLeave: () => void;
   onArchive: (e: React.MouseEvent, sessionId: string) => void;
   onRename: (sessionId: string, newTitle: string) => void;
+  onTogglePin?: (sessionId: string) => void;
 }
 
 export function SessionListItem({
@@ -46,6 +51,8 @@ export function SessionListItem({
   needsApproval,
   readOnly,
   canManage,
+  isPinned = false,
+  showPinShortcut = isPinned,
   isWorkspace,
   formatRelativeTime,
   t,
@@ -53,6 +60,7 @@ export function SessionListItem({
   onMouseLeave,
   onArchive,
   onRename,
+  onTogglePin,
 }: SessionListItemProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -112,6 +120,31 @@ export function SessionListItem({
           </span>
         </span>
       </Link>
+      {showPinShortcut && onTogglePin && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "absolute right-8 top-1/2 -translate-y-1/2 z-10 flex h-5 w-5 items-center justify-center p-0 text-muted-foreground/70 hover:text-foreground transition-opacity",
+                showActions ? "opacity-100" : "opacity-0 pointer-events-none"
+              )}
+              aria-label={t('chatList.unpinConversation' as TranslationKey)}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onTogglePin(session.id);
+              }}
+            >
+              <PushPin size={14} weight="fill" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {t('chatList.unpinConversation' as TranslationKey)}
+          </TooltipContent>
+        </Tooltip>
+      )}
       {/* Three-dot menu — absolute over the right area */}
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
@@ -128,6 +161,17 @@ export function SessionListItem({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[160px]">
+          {onTogglePin && (
+            <>
+              <DropdownMenuItem onClick={() => onTogglePin(session.id)}>
+                {isPinned
+                  ? <PushPinSlash size={14} />
+                  : <CodexWebIcon name="pin" size="sm" aria-hidden />}
+                <span>{t((isPinned ? 'chatList.unpinConversation' : 'chatList.pinConversation') as TranslationKey)}</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
           {isManageable && (
             <DropdownMenuItem
               onSelect={(e) => {

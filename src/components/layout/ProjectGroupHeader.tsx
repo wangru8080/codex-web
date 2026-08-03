@@ -6,6 +6,7 @@ import {
   FolderMinus,
   DotsThree,
 } from "@/components/ui/icon";
+import { PushPinSlash } from "@phosphor-icons/react";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +35,8 @@ interface ProjectGroupHeaderProps {
   onMouseEnter: () => void;
   onMouseLeave: () => void;
   onCreateSession: (e: React.MouseEvent) => void;
+  isPinned?: boolean;
+  onTogglePin?: (workingDirectory: string) => void;
   onRemoveProject?: (workingDirectory: string) => void;
   assistantName?: string;
   assistantMemoryCount?: number;
@@ -54,6 +57,8 @@ export function ProjectGroupHeader({
   onMouseEnter,
   onMouseLeave,
   onCreateSession,
+  isPinned = false,
+  onTogglePin,
   onRemoveProject,
   assistantName,
   assistantMemoryCount,
@@ -99,6 +104,14 @@ export function ProjectGroupHeader({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+          {onTogglePin && (
+            <DropdownMenuItem onClick={() => onTogglePin(workingDirectory)}>
+              {isPinned
+                ? <PushPinSlash size={14} />
+                : <CodexWebIcon name="pin" size="sm" aria-hidden />}
+              <span>{t((isPinned ? 'chatList.unpinProject' : 'chatList.pinProject') as TranslationKey)}</span>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => {
             // v11 fix — see lib/clipboard.ts for why fire-and-forget
             // Clipboard access can fail after the dropdown loses focus.
