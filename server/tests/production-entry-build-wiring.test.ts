@@ -46,6 +46,7 @@ describe("生产服务入口构建接线", () => {
       files: string[];
     };
     const cliBuilder = readFileSync(resolve(repositoryRoot, "scripts/build-cli.ts"), "utf8");
+    const runtimeCli = readFileSync(resolve(repositoryRoot, "scripts/codex-web-broker-cli.ts"), "utf8");
     const webService = readFileSync(resolve(repositoryRoot, "deploy/systemd/codex-web.service"), "utf8");
     const runtimeService = readFileSync(
       resolve(repositoryRoot, "deploy/systemd/codex-web-runtime.service"),
@@ -68,6 +69,9 @@ describe("生产服务入口构建接线", () => {
     expect(packageJson.files).toContain("dist/cli/codex-web.mjs");
     expect(packageJson.files).not.toContain("dist/cli/");
     expect(cliBuilder).not.toContain('"codex-web-broker"');
+    expect(runtimeCli).toContain("watchRuntimeBrokerConfig");
+    expect(runtimeCli).toContain("broker.reload(");
+    expect(runtimeCli).toContain("继续使用当前配置");
     expect(webService).toContain("Requires=codex-web-runtime.service");
     expect(runtimeService).toContain("/usr/local/bin/codex-web runtime serve");
     expect(runtimeLaunchDaemon).toContain("<string>/usr/local/bin/codex-web</string>");

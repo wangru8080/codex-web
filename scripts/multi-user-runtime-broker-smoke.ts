@@ -7,7 +7,12 @@ import WebSocket from "ws";
 
 import type { AppServerPeer } from "../server/app-server-peer";
 import { RuntimeBrokerClient } from "../server/runtime-broker-client";
-import { parseRuntimeBrokerConfig, type RuntimeBrokerUserConfig } from "../server/runtime-broker-config";
+import {
+  parseRuntimeBrokerConfig,
+  readRuntimeBrokerConfig,
+  type RuntimeBrokerUserConfig,
+} from "../server/runtime-broker-config";
+import { watchRuntimeBrokerConfig } from "../server/runtime-broker-config-watcher";
 import { hashBrokerPassword } from "../server/runtime-broker-password";
 import { createRuntimeBrokerServer } from "../server/runtime-broker-server";
 import type { UserRuntimeServer } from "../server/user-runtime-registry";
@@ -16,13 +21,16 @@ import type { JsonRpcMessage, JsonRpcRequest } from "../src/codex/protocol/json-
 const cdpEndpoint = process.env.CODEX_WEB_CDP_URL ?? "http://192.168.3.12:45737";
 const tempRoot = "/volume2/SSD/codex/Temp";
 const password = `browser-smoke-${Date.now()}`;
+const altPassword = `browser-smoke-alt-${Date.now()}`;
 const runtimeStates = new Map<string, RuntimeState>();
 
 async function main(): Promise<void> {
   const runDirectory = await mkdtemp(join(tempRoot, "codex-web-multi-user-browser-smoke-"));
   await chmod(runDirectory, 0o700);
   const passwordHash = await hashBrokerPassword(password);
-  const config = parseRuntimeBrokerConfig({
+  const altPasswordHash = await hashBrokerPassword(altPassword);
+  const configPath = join(runDirectory, "users.json");
+  const initialConfig = {
     version: 1,
     sessionSecret: "multi-user-browser-smoke-session-secret-2026",
     disconnectGraceMs: 200,
@@ -31,7 +39,9 @@ async function main(): Promise<void> {
       smokeUser("rrssnas", "/home/rrssnas", join(runDirectory, "rrssnas-codex-home"), passwordHash),
       smokeUser("codex", "/home/codex", join(runDirectory, "codex-codex-home"), passwordHash),
     ],
-  });
+  };
+  await writeConfig(configPath, initialConfig, true);
+  const config = await readRuntimeBrokerConfig(configPath);
   const broker = await createRuntimeBrokerServer({
     socketPath: join(runDirectory, "runtime-broker.sock"),
     config,
@@ -39,6 +49,17 @@ async function main(): Promise<void> {
   });
   let web: ChildProcess | null = null;
   let browser: CdpBrowser | null = null;
+  const reloads: string[] = [];
+  const stopWatching = watchRuntimeBrokerConfig({
+    path: configPath,
+    debounceMs: 50,
+    load: () => readRuntimeBrokerConfig(configPath),
+    apply: async (next) => {
+      broker.reload(next, (user) => createRuntime(user));
+      reloads.push("success");
+    },
+    onError: (error) => reloads.push(`error:${error.message}`),
+  });
 
   try {
     const port = await findAvailablePort();
@@ -78,12 +99,70 @@ async function main(): Promise<void> {
     if (runtimeStates.get("codex")?.markers.includes("rrssnas-marker")) throw new Error("rrssnas 消息串入 codex runtime");
     progress("跨用户 WebSocket 消息隔离验证完成");
 
+    const alt = await browser.createPage();
+    await writeFile(configPath, "{ invalid json\n");
+    await waitFor(() => reloads.some((item) => item.startsWith("error:")), 5_000);
+    if (await loginStatus(alt, baseUrl, "rrssnas-alt@example.test", altPassword) !== 401) {
+      throw new Error("无效配置错误地新增了用户");
+    }
+    await sendMarker(rrssnas, "rrssnas-after-invalid-config");
+    await waitFor(() => runtimeStates.get("rrssnas")?.markers.includes("rrssnas-after-invalid-config") === true);
+    if (runtimeStates.get("rrssnas")?.createCount !== 1 || runtimeStates.get("codex")?.createCount !== 1) {
+      throw new Error("无效配置中断了现有 runtime");
+    }
+
+    const altUser = smokeUser(
+      "rrssnas-alt",
+      "/home/rrssnas",
+      join(runDirectory, "rrssnas-alt-codex-home"),
+      altPasswordHash,
+      "rrssnas",
+    );
+    const addReloadCount = reloads.length;
+    await writeConfig(configPath, { ...initialConfig, users: [...initialConfig.users, altUser] });
+    await waitFor(() => reloads.length > addReloadCount && reloads.at(-1) === "success", 5_000);
+    if (await loginStatus(alt, baseUrl, "rrssnas-alt@example.test", password) !== 401) {
+      throw new Error("新增账号错误接受了原账号密码");
+    }
+    const primaryCredentialProbe = await browser.createPage();
+    if (await loginStatus(primaryCredentialProbe, baseUrl, "rrssnas@example.test", altPassword) !== 401) {
+      throw new Error("原账号错误接受了新增账号密码");
+    }
+    await loginInBrowser(alt, baseUrl, "rrssnas-alt@example.test", altPassword);
+    const altIdentity = await readIdentity(alt);
+    assertIdentity(
+      altIdentity,
+      "rrssnas-alt",
+      "/home/rrssnas",
+      join(runDirectory, "rrssnas-alt-codex-home"),
+      "rrssnas",
+    );
+
+    const nextCodexHome = join(runDirectory, "codex-next-codex-home");
+    const nextCodex = smokeUser("codex", "/home/codex", nextCodexHome, passwordHash);
+    const changeReloadCount = reloads.length;
+    await writeConfig(configPath, {
+      ...initialConfig,
+      users: [initialConfig.users[0], nextCodex, altUser],
+    });
+    await waitFor(() => reloads.length > changeReloadCount && reloads.at(-1) === "success", 5_000);
+    await waitFor(() => runtimeStates.get("codex")?.closed === true, 5_000);
+    if (runtimeStates.get("rrssnas")?.createCount !== 1 || runtimeStates.get("rrssnas")?.closed) {
+      throw new Error("codex 配置变化影响了未变化用户 runtime");
+    }
+    await loginInBrowser(codex, baseUrl, "codex@example.test");
+    await waitFor(() => runtimeStates.get("codex")?.createCount === 2, 5_000);
+    const codexNextIdentity = await readIdentity(codex);
+    assertIdentity(codexNextIdentity, "codex", "/home/codex", nextCodexHome);
+    progress("配置热加载无效回退、新增用户和单用户替换验证完成");
+
     await logoutAndLeave(rrssnas);
     await delay(400);
     progress(`rrssnas 第一页面退出后：${runtimeSummary()}`);
     if (runtimeStates.get("rrssnas")?.closed) throw new Error("同用户仍有浏览器连接时 runtime 被提前关闭");
     await logoutAndLeave(rrssnasSecond);
     await logoutAndLeave(codex);
+    await logoutAndLeave(alt);
     progress(`全部页面退出后：${runtimeSummary()}`);
     await waitFor(() => [...runtimeStates.values()].every((state) => state.closed), 5_000);
     progress("退出与 runtime 回收验证完成");
@@ -91,14 +170,22 @@ async function main(): Promise<void> {
     const result = {
       passed: true,
       runDirectory,
-      users: [rrssnasIdentity, codexIdentity],
+      users: [rrssnasIdentity, codexIdentity, altIdentity, codexNextIdentity],
       runtimes: Object.fromEntries([...runtimeStates].map(([id, state]) => [id, {
         createCount: state.createCount,
         markers: state.markers,
         closed: state.closed,
       }])),
       rootUidVerified: false,
-      note: "真实 Chrome 已验证双账号登录与隔离；未使用真实 Codex Home，未验证 sudo/UID 切换。",
+      hotReload: {
+        invalidConfigKeptCurrentRuntime: true,
+        addedUserLoggedInWithoutRestart: true,
+        sameOsUserDifferentCredentialsHotLoaded: true,
+        crossedPasswordsRejected: true,
+        changedUserRuntimeReplaced: true,
+        unchangedUserStayedOnline: true,
+      },
+      note: "真实 Chrome 已验证配置热加载与隔离；未使用真实 Codex Home，未验证 sudo/UID 切换。",
     };
     await writeFile(join(runDirectory, "result.json"), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" });
     console.log(JSON.stringify(result, null, 2));
@@ -110,6 +197,7 @@ async function main(): Promise<void> {
     }, null, 2)}\n`, { flag: "wx" });
     throw error;
   } finally {
+    stopWatching();
     await browser?.close();
     if (web) await stopProcess(web);
     await broker.close();
@@ -121,12 +209,13 @@ function smokeUser(
   home: string,
   codexHome: string,
   passwordHash: string,
+  osUser = id,
 ): Record<string, unknown> {
   return {
     id,
     email: `${id}@example.test`,
     passwordHash,
-    osUser: id,
+    osUser,
     home,
     codexHome,
     cwd: home,
@@ -218,17 +307,37 @@ function startWeb(port: number, socketPath: string, runDirectory: string): Child
   return child;
 }
 
-async function loginInBrowser(client: CdpClient, baseUrl: string, email: string): Promise<void> {
+async function loginInBrowser(
+  client: CdpClient,
+  baseUrl: string,
+  email: string,
+  loginPassword = password,
+): Promise<void> {
   await client.navigate(`${baseUrl}/login`);
   await client.waitFor("Boolean(document.querySelector('[data-testid=web-login-form]'))", 30_000);
   const status = await client.evaluate<number>(`fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: ${JSON.stringify(email)}, password: ${JSON.stringify(password)} }),
+    body: JSON.stringify({ email: ${JSON.stringify(email)}, password: ${JSON.stringify(loginPassword)} }),
   }).then((response) => response.status)`);
   if (status !== 200) throw new Error(`${email} 浏览器登录失败：HTTP ${status}`);
   await client.navigate(`${baseUrl}/chat`);
   await client.waitFor("location.pathname === '/chat'", 30_000);
+}
+
+async function loginStatus(
+  client: CdpClient,
+  baseUrl: string,
+  email: string,
+  loginPassword = password,
+): Promise<number> {
+  await client.navigate(`${baseUrl}/login`);
+  await client.waitFor("Boolean(document.querySelector('[data-testid=web-login-form]'))", 30_000);
+  return await client.evaluate<number>(`fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: ${JSON.stringify(email)}, password: ${JSON.stringify(loginPassword)} }),
+  }).then((response) => response.status)`);
 }
 
 type BrowserIdentity = {
@@ -246,12 +355,20 @@ function assertIdentity(
   id: string,
   home: string,
   codexHome: string,
+  osUser = id,
 ): void {
   if (identity.bridgeUrl !== "/codex-bridge") throw new Error(`${id} bridge URL 不是同源路径`);
-  if (identity.user.id !== id || identity.user.osUser !== id) throw new Error(`${id} broker 身份不匹配`);
+  if (identity.user.id !== id || identity.user.osUser !== osUser) throw new Error(`${id} broker 身份不匹配`);
   if (identity.homeDirectory !== home || identity.user.codexHome !== codexHome) {
     throw new Error(`${id} home 或隔离 CODEX_HOME 不匹配`);
   }
+}
+
+async function writeConfig(path: string, value: object, create = false): Promise<void> {
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, {
+    ...(create ? { flag: "wx" as const } : {}),
+    mode: 0o600,
+  });
 }
 
 async function sendMarker(client: CdpClient, marker: string): Promise<void> {

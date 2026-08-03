@@ -8,6 +8,8 @@ macOS 适配计划：[2026-07-29-macos-multi-user-runtime.md](../exec-plans/comp
 
 延期事项：[2026-07-29-multi-user-runtime-broker-followups.md](../exec-plans/deferred/2026-07-29-multi-user-runtime-broker-followups.md)
 
+配置热加载计划：[2026-08-04-runtime-broker-config-hot-reload.md](../exec-plans/completed/2026-08-04-runtime-broker-config-hot-reload.md)
+
 ## 用户能力
 
 - 一个非 root Codex Web 支持多个静态账号并发登录。
@@ -36,6 +38,12 @@ WebSocket upgrade 先验证远程连接策略、同源 Origin 和 cookie，再 a
 ## 进程生命周期
 
 `UserRuntimeRegistry` 以用户 ID 为键维护 `PersistentAppServer`、浏览器 peer 和 active Turn 集合。`turn/started` 加入 active Turn，`turn/completed` 移除。同用户最后 peer 离开且没有 active Turn 时启动 `disconnectGraceMs` 定时器；重连取消定时器。broker 关闭时立即关闭全部 runtime。
+
+## 配置热加载
+
+runtime CLI 监听 `users.json` 的父目录，因此普通保存和编辑器原子替换都会触发防抖加载。候选配置必须重新通过 root 所有者、`0600` 权限、JSON schema、系统账号 home 和 root 双重授权检查；系统用户全部解析完成后才创建新 runtime factory 并原子提交。任何阶段失败都保留最后有效配置，不影响在线用户，后续有效保存可以恢复。
+
+broker 的认证请求每次读取当前配置快照。新增用户立即可登录；等价用户配置复用现有 runtime。删除、禁用或任一用户字段变化会关闭该用户 peer/runtime，完整用户执行配置参与 Session credential version，因此旧 Cookie 也会失效。`sessionSecret`、`codexCommand`、`setprivCommand` 或 `allowRootRuntime` 变化会淘汰全部当前 runtime；`sessionMaxAgeSeconds` 和 `disconnectGraceMs` 不主动中断在线连接。
 
 ## 部署
 
@@ -77,3 +85,4 @@ macOS 使用 root-owned LaunchDaemon 运行 runtime，并以 `dscacheutil` 查�
 - macOS 多用户真实 Chrome smoke 通过：普通账号与 root 账号使用独立 browser context、`CODEX_HOME` 和 cwd；普通用户由 UID 0 的 sudo launcher 启动实际 UID 501 app-server，root app-server 为 UID 0；同用户第二页面复用同一 runtime，关闭第一个页面不影响第二个页面，最后页面关闭后两个 runtime 均回收。两个隔离环境各返回 7 个模型，未使用真实 Codex Home。证据保留在远端 `/private/tmp/codex-web-macos-smoke-bDaazu/multi-v8-result.json`。
 - macOS 两份 LaunchDaemon 样例已在目标 Mac 使用 `plutil -lint` 通过。验证结束后已确认 Web、runtime、app-server、Chrome 和 Unix socket 均无残留监听；远端隔离目录按约束保留。
 - macOS 适配后的本地全量回归为 149 个测试文件、683 项测试通过；生产 CLI 构建、Linux 单用户真实 app-server smoke 和 npm dry-run 通过。Linux root UID/Chrome smoke 有前述既有通过证据，但本轮因执行沙箱不能取得 root 未重新运行。
+- 2026-08-04 配置热加载回归：全量测试与生产 CLI 构建通过。真实 Chrome 使用生产 runtime/Web CLI 和隔离目录验证无效配置回退、等价配置 PID 不变、运行中为同一 `osUser` 新增不同邮箱/密码/`CODEX_HOME` 账号、密码交叉拒绝、单用户 `CODEX_HOME` 替换和未变化用户持续在线。rrssnas 两个 app-server 均为 UID/GID `1000:10`，codex 热加载前后均为 `1004:100`；退出后进程和 socket 无残留。证据位于 `/volume2/SSD/codex/Temp/codex-web-unified-cli-browser-smoke-FdDug9/result.json`。

@@ -103,6 +103,99 @@ describe("runtime broker server", () => {
     expect(received[0]).toEqual({ id: 1, result: { data: [] } });
     connection.close();
   });
+
+  it("运行中热加载同一系统用户的不同邮箱密码并保留原 runtime", async () => {
+    const passwordHash = await hashBrokerPassword("correct-password");
+    const alicePasswordHash = await hashBrokerPassword("alice-password");
+    const created = vi.fn(() => fakeRuntime());
+    const { socketPath, config } = await fixture(passwordHash);
+    const server = await createRuntimeBrokerServer({ socketPath, config, createRuntime: created });
+    servers.push(server);
+    const client = new RuntimeBrokerClient(socketPath);
+    const login = await client.login("codex@example.com", "correct-password");
+    const connection = await client.attachRuntime(login.token);
+
+    const nextConfig = parseRuntimeBrokerConfig({
+      ...config,
+      users: [
+        config.users[0],
+        {
+          ...config.users[0],
+          id: "alice",
+          email: "alice@example.com",
+          passwordHash: alicePasswordHash,
+        },
+      ],
+    });
+    server.reload(nextConfig, created);
+
+    await expect(client.login("alice@example.com", "correct-password")).rejects.toThrow("邮箱或密码错误");
+    await expect(client.login("codex@example.com", "alice-password")).rejects.toThrow("邮箱或密码错误");
+    await expect(client.login("alice@example.com", "alice-password")).resolves.toMatchObject({
+      user: { id: "alice", osUser: "codex" },
+    });
+    expect(created).toHaveBeenCalledTimes(1);
+    connection.send({ id: 2, method: "thread/list", params: {} });
+    await waitFor(() => created.mock.results[0]?.value.handleClientMessage.mock.calls.length === 1);
+    expect(created.mock.results[0]?.value.handleClientMessage).toHaveBeenCalledTimes(1);
+    connection.close();
+  });
+
+  it("用户配置变化会关闭旧连接并使旧 Session 失效", async () => {
+    const passwordHash = await hashBrokerPassword("correct-password");
+    const created: FakeRuntime[] = [];
+    const { socketPath, config } = await fixture(passwordHash);
+    const server = await createRuntimeBrokerServer({
+      socketPath,
+      config,
+      createRuntime: () => {
+        const runtime = fakeRuntime();
+        created.push(runtime);
+        return runtime;
+      },
+    });
+    servers.push(server);
+    const client = new RuntimeBrokerClient(socketPath);
+    const login = await client.login("codex@example.com", "correct-password");
+    const connection = await client.attachRuntime(login.token);
+    const closed = new Promise<void>((resolve) => connection.onClose(() => resolve()));
+
+    const nextConfig = parseRuntimeBrokerConfig({
+      ...config,
+      users: [{ ...config.users[0], codexHome: "/home/codex/CodexApp-next" }],
+    });
+    server.reload(nextConfig, () => fakeRuntime());
+
+    await closed;
+    expect(created[0]?.close).toHaveBeenCalledTimes(1);
+    await expect(client.verifySession(login.token)).rejects.toThrow("登录已失效");
+  });
+
+  it("sessionSecret 变化会关闭全部在线 runtime", async () => {
+    const passwordHash = await hashBrokerPassword("correct-password");
+    const created: FakeRuntime[] = [];
+    const { socketPath, config } = await fixture(passwordHash);
+    const server = await createRuntimeBrokerServer({
+      socketPath,
+      config,
+      createRuntime: () => {
+        const runtime = fakeRuntime();
+        created.push(runtime);
+        return runtime;
+      },
+    });
+    servers.push(server);
+    const client = new RuntimeBrokerClient(socketPath);
+    const login = await client.login("codex@example.com", "correct-password");
+    const connection = await client.attachRuntime(login.token);
+    const closed = new Promise<void>((resolve) => connection.onClose(() => resolve()));
+
+    server.reload({ ...config, sessionSecret: "abcdef0123456789abcdef0123456789" }, () => fakeRuntime());
+
+    await closed;
+    expect(created[0]?.close).toHaveBeenCalledTimes(1);
+    await expect(client.verifySession(login.token)).rejects.toThrow("登录已失效");
+  });
 });
 
 type FakeRuntime = UserRuntimeServer & {

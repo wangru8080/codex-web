@@ -345,6 +345,18 @@ systemd 会创建 socket 目录，runtime 进程会创建 `runtime-broker.sock`�
 | `allowRoot` | 否 | 是否允许该用户项启动 UID 0 app-server，默认 `false`；仅对 `osUser: "root"` 有效，并且顶层 `allowRootRuntime` 也必须为 `true`。 |
 | `env` | 否 | 传给 app-server 的额外环境变量字符串对象。变量名必须为大写形式；`HOME`、`CODEX_HOME`、`USER`、`SHELL`、`RUST_LOG`、`LD_*`、`DYLD_*` 等受保护变量禁止设置。 |
 
+#### Broker 配置热加载
+
+`codex-web runtime serve` 会监听 `--config` 指向的 `users.json`。保存文件后会重新执行启动时相同的普通文件、所有者、`0600` 权限、字段结构和系统用户校验；候选配置全部有效后才原子切换，不需要重启 runtime 服务，也不需要执行 `systemctl daemon-reload`。
+
+- 新增用户可以立即登录，并在首次连接时启动自己的 app-server。
+- 内容未变化的用户继续使用当前 app-server，运行中的 Turn 不受影响。
+- 删除、禁用或修改用户的邮箱、密码哈希、角色、系统用户、home、`CODEX_HOME`、cwd 或环境变量时，该用户的旧 Session 和在线连接会失效；重新登录后按新配置启动 runtime。
+- 修改 `sessionSecret`、`codexCommand`、`setprivCommand` 或 `allowRootRuntime` 会使全部在线用户失效。修改 `sessionMaxAgeSeconds` 只影响之后签发的 Session。
+- JSON 不完整、权限错误、重复身份或系统用户解析失败时，broker 会记录“配置重载失败”，继续使用最后一份有效配置。修正并再次保存后会自动恢复加载。
+
+建议使用能原子替换目标文件并保持 root 所有者和 `0600` 权限的编辑方式。热加载不会把密码哈希或 Session secret 输出到日志。
+
 #### macOS launchd 部署
 
 仓库提供三个 macOS 样例：

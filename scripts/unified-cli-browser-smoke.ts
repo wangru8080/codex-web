@@ -12,9 +12,21 @@ const nodeCommand = "/volume2/SSD/node-v24.14.0/bin/node";
 const setprivCommand = "/usr/bin/setpriv";
 const sharedGroupId = 133;
 const password = `unified-cli-browser-smoke-${Date.now()}`;
+const altPassword = `unified-cli-browser-smoke-alt-${Date.now()}`;
 
 type SystemUser = { name: string; uid: number; gid: number; home: string };
 type RuntimeIdentity = { pid: number; uid: number; gid: number; codexHome: string; cwd: string };
+type RuntimePaths = { cwd: string; codexHome: string };
+type FixtureUser = {
+  id: string;
+  email: string;
+  passwordHash: string;
+  osUser: string;
+  home: string;
+  codexHome: string;
+  cwd: string;
+  env: { PATH: string };
+};
 
 async function main(): Promise<void> {
   if (process.getuid?.() !== 0) throw new Error("统一 CLI 浏览器 smoke 必须由 root 执行");
@@ -27,16 +39,12 @@ async function main(): Promise<void> {
     ["rrssnas", resolveSystemUser("rrssnas")],
     ["codex", resolveSystemUser("codex")],
   ]);
-  const paths = new Map<string, { cwd: string; codexHome: string }>();
+  const paths = new Map<string, RuntimePaths>();
   for (const user of users.values()) {
-    const cwd = join(runDirectory, `${user.name}-cwd`);
-    const codexHome = join(runDirectory, `${user.name}-codex-home`);
-    await mkdir(cwd, { mode: 0o700 });
-    await mkdir(codexHome, { mode: 0o700 });
-    await chown(cwd, user.uid, user.gid);
-    await chown(codexHome, user.uid, user.gid);
-    paths.set(user.name, { cwd, codexHome });
+    paths.set(user.name, await createRuntimePaths(runDirectory, user.name, user));
   }
+  const rrssnasAltPaths = await createRuntimePaths(runDirectory, "rrssnas-alt", users.get("rrssnas")!);
+  const codexNextPaths = await createRuntimePaths(runDirectory, "codex-next", users.get("codex")!);
 
   const webState = join(runDirectory, "web-state");
   const socketDirectory = join(runDirectory, "run");
@@ -50,23 +58,22 @@ async function main(): Promise<void> {
   await chmod(fixtureCommand, 0o755);
   const configPath = join(runDirectory, "users.json");
   const passwordHash = await hashBrokerPassword(password);
-  await writeFile(configPath, `${JSON.stringify({
+  const altPasswordHash = await hashBrokerPassword(altPassword);
+  const initialUsers = [...users.values()].map((user) => fixtureUser(
+    user.name,
+    user,
+    paths.get(user.name)!,
+    passwordHash,
+  ));
+  const initialConfig = {
     version: 1,
     sessionSecret: "unified-cli-browser-smoke-session-secret-2026",
     disconnectGraceMs: 200,
     codexCommand: fixtureCommand,
     setprivCommand,
-    users: [...users.values()].map((user) => ({
-      id: user.name,
-      email: `${user.name}@example.test`,
-      passwordHash,
-      osUser: user.name,
-      home: user.home,
-      codexHome: paths.get(user.name)!.codexHome,
-      cwd: paths.get(user.name)!.cwd,
-      env: { PATH: "/volume2/SSD/node-v24.14.0/bin:/usr/bin:/bin" },
-    })),
-  }, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    users: initialUsers,
+  };
+  await writeConfig(configPath, initialConfig, true);
 
   const socketPath = join(socketDirectory, "runtime.sock");
   const port = await findAvailablePort();
@@ -152,12 +159,79 @@ async function main(): Promise<void> {
       throw new Error("跨用户 marker 串入另一个 runtime");
     }
 
+    const altPage = await browser.createPage();
+    await writeFile(configPath, "{ invalid json\n");
+    await waitFor(() => childLogs.runtime.join("").includes("配置重载失败"), 5_000);
+    if (await loginStatus(altPage, baseUrl, "rrssnas-alt@example.test", altPassword) !== 401) {
+      throw new Error("无效配置错误地新增了登录用户");
+    }
+    await sendMarker(rrssnasPage, "rrssnas-after-invalid-config");
+    await waitFor(async () => (
+      (await readMarkers(paths.get("rrssnas")!.codexHome)).includes("rrssnas-after-invalid-config")
+    ), 5_000);
+    if (!processExists(rrssnasIdentity.pid) || !processExists(codexIdentity.pid)) {
+      throw new Error("无效配置中断了当前 runtime");
+    }
+
+    const equivalentReloads = reloadSuccessCount(childLogs.runtime);
+    await writeConfig(configPath, initialConfig);
+    await waitFor(() => reloadSuccessCount(childLogs.runtime) > equivalentReloads, 5_000);
+    await sendMarker(codexPage, "codex-after-equivalent-config");
+    await waitFor(async () => (
+      (await readMarkers(paths.get("codex")!.codexHome)).includes("codex-after-equivalent-config")
+    ), 5_000);
+    if (!processExists(rrssnasIdentity.pid) || !processExists(codexIdentity.pid)) {
+      throw new Error("等价配置保存重启了未变化 runtime");
+    }
+
+    const altUser = fixtureUser("rrssnas-alt", users.get("rrssnas")!, rrssnasAltPaths, altPasswordHash);
+    const addUserReloads = reloadSuccessCount(childLogs.runtime);
+    await writeConfig(configPath, { ...initialConfig, users: [...initialUsers, altUser] });
+    await waitFor(() => reloadSuccessCount(childLogs.runtime) > addUserReloads, 5_000);
+    if (await loginStatus(altPage, baseUrl, altUser.email, password) !== 401) {
+      throw new Error("新增账号错误接受了原账号密码");
+    }
+    const primaryCredentialProbe = await browser.createPage();
+    if (await loginStatus(primaryCredentialProbe, baseUrl, "rrssnas@example.test", altPassword) !== 401) {
+      throw new Error("原账号错误接受了新增账号密码");
+    }
+    await login(altPage, baseUrl, altUser.email, altPassword);
+    const altIdentity = await readRuntimeIdentity(rrssnasAltPaths.codexHome);
+    assertIdentity(altIdentity, users.get("rrssnas")!, rrssnasAltPaths);
+    await sendMarker(altPage, "rrssnas-alt-marker");
+
+    const nextCodexUser = fixtureUser("codex", users.get("codex")!, codexNextPaths, passwordHash);
+    const changeUserReloads = reloadSuccessCount(childLogs.runtime);
+    await writeConfig(configPath, {
+      ...initialConfig,
+      users: [initialUsers[0]!, nextCodexUser, altUser],
+    });
+    await waitFor(() => reloadSuccessCount(childLogs.runtime) > changeUserReloads, 5_000);
+    await waitFor(() => !processExists(codexIdentity.pid), 5_000);
+    if (!processExists(rrssnasIdentity.pid) || !processExists(altIdentity.pid)) {
+      throw new Error("修改 codex 配置影响了未变化用户 runtime");
+    }
+    await login(codexPage, baseUrl, nextCodexUser.email);
+    const codexNextIdentity = await readRuntimeIdentity(codexNextPaths.codexHome);
+    assertIdentity(codexNextIdentity, users.get("codex")!, codexNextPaths);
+    await sendMarker(codexPage, "codex-next-home-marker");
+
     await logout(rrssnasPage);
     await delay(500);
     if (!processExists(rrssnasIdentity.pid)) throw new Error("同用户第二页面仍在线时 runtime 被关闭");
     await logout(rrssnasSecond);
     await logout(codexPage);
-    await waitFor(() => !processExists(rrssnasIdentity.pid) && !processExists(codexIdentity.pid), 5_000);
+    await logout(altPage);
+    await waitFor(() => (
+      !processExists(rrssnasIdentity.pid)
+      && !processExists(altIdentity.pid)
+      && !processExists(codexNextIdentity.pid)
+    ), 5_000);
+
+    const finalRrssnasMarkers = await readMarkers(paths.get("rrssnas")!.codexHome);
+    const finalCodexMarkers = await readMarkers(paths.get("codex")!.codexHome);
+    const altMarkers = await readMarkers(rrssnasAltPaths.codexHome);
+    const codexNextMarkers = await readMarkers(codexNextPaths.codexHome);
 
     const resultPath = join(runDirectory, "result.json");
     const result = {
@@ -168,9 +242,26 @@ async function main(): Promise<void> {
         web: "codex-web serve",
       },
       browser: "Chrome 150 CDP",
-      users: { rrssnas: rrssnasIdentity, codex: codexIdentity },
-      markers: { rrssnas: rrssnasMarkers, codex: codexMarkers },
+      users: {
+        rrssnas: rrssnasIdentity,
+        codexBeforeReload: codexIdentity,
+        codexAfterReload: codexNextIdentity,
+        rrssnasAlt: altIdentity,
+      },
+      markers: {
+        rrssnas: finalRrssnasMarkers,
+        codexBeforeReload: finalCodexMarkers,
+        codexAfterReload: codexNextMarkers,
+        rrssnasAlt: altMarkers,
+      },
       sameUserRuntimeReused: true,
+      invalidConfigKeptCurrentRuntime: true,
+      equivalentConfigKeptRuntimePids: true,
+      addedUserLoggedInWithoutRestart: true,
+      sameOsUserDifferentCredentialsHotLoaded: true,
+      crossedPasswordsRejected: true,
+      changedUserRuntimeReplaced: true,
+      unchangedUsersStayedOnline: true,
       runtimesStopped: true,
       realCodexHomeUsed: false,
     };
@@ -191,6 +282,49 @@ async function main(): Promise<void> {
     await stopProcess(web);
     await stopProcess(runtime);
   }
+}
+
+async function createRuntimePaths(
+  runDirectory: string,
+  name: string,
+  user: SystemUser,
+): Promise<RuntimePaths> {
+  const cwd = join(runDirectory, `${name}-cwd`);
+  const codexHome = join(runDirectory, `${name}-codex-home`);
+  await mkdir(cwd, { mode: 0o700 });
+  await mkdir(codexHome, { mode: 0o700 });
+  await chown(cwd, user.uid, user.gid);
+  await chown(codexHome, user.uid, user.gid);
+  return { cwd, codexHome };
+}
+
+function fixtureUser(
+  id: string,
+  user: SystemUser,
+  paths: RuntimePaths,
+  passwordHash: string,
+): FixtureUser {
+  return {
+    id,
+    email: `${id}@example.test`,
+    passwordHash,
+    osUser: user.name,
+    home: user.home,
+    codexHome: paths.codexHome,
+    cwd: paths.cwd,
+    env: { PATH: "/volume2/SSD/node-v24.14.0/bin:/usr/bin:/bin" },
+  };
+}
+
+async function writeConfig(path: string, value: object, create = false): Promise<void> {
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, {
+    ...(create ? { flag: "wx" as const } : {}),
+    mode: 0o600,
+  });
+}
+
+function reloadSuccessCount(logs: string[]): number {
+  return logs.join("").split("已重新加载配置").length - 1;
 }
 
 function resolveSystemUser(name: string): SystemUser {
@@ -217,17 +351,37 @@ function forwardOutput(name: string, child: ChildProcess, logs: string[]): void 
   });
 }
 
-async function login(page: CdpClient, baseUrl: string, email: string): Promise<void> {
+async function login(
+  page: CdpClient,
+  baseUrl: string,
+  email: string,
+  loginPassword = password,
+): Promise<void> {
   await page.navigate(`${baseUrl}/login`);
   await page.waitFor("Boolean(document.querySelector('[data-testid=web-login-form]'))", 30_000);
   const status = await page.evaluate<number>(`fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: ${JSON.stringify(email)}, password: ${JSON.stringify(password)} }),
+    body: JSON.stringify({ email: ${JSON.stringify(email)}, password: ${JSON.stringify(loginPassword)} }),
   }).then((response) => response.status)`);
   if (status !== 200) throw new Error(`${email} 登录失败：HTTP ${status}`);
   await page.navigate(`${baseUrl}/chat`);
   await page.waitFor("location.pathname === '/chat'", 30_000);
+}
+
+async function loginStatus(
+  page: CdpClient,
+  baseUrl: string,
+  email: string,
+  loginPassword = password,
+): Promise<number> {
+  await page.navigate(`${baseUrl}/login`);
+  await page.waitFor("Boolean(document.querySelector('[data-testid=web-login-form]'))", 30_000);
+  return await page.evaluate<number>(`fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: ${JSON.stringify(email)}, password: ${JSON.stringify(loginPassword)} }),
+  }).then((response) => response.status)`);
 }
 
 async function sendMarker(page: CdpClient, marker: string): Promise<void> {

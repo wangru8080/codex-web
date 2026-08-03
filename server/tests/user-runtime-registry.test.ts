@@ -114,6 +114,34 @@ describe("UserRuntimeRegistry", () => {
     vi.advanceTimersByTime(100);
     expect(runtime.close).toHaveBeenCalledTimes(1);
   });
+
+  it("重载时保留未变化用户，仅关闭受影响用户并更新 factory", () => {
+    const firstRuntime = fakeRuntime(() => undefined);
+    const replacementRuntime = fakeRuntime(() => undefined);
+    const otherRuntime = fakeRuntime(() => undefined);
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: (user) => user.id === USER.id ? firstRuntime : otherRuntime,
+    });
+    const unchangedPeer = peer();
+    const changedPeer = peer();
+    registry.attach(USER, unchangedPeer);
+    registry.attach({ ...USER, id: "alice", email: "alice@example.com" }, changedPeer);
+
+    registry.reload({
+      disconnectGraceMs: 250,
+      createRuntime: () => replacementRuntime,
+      affectedUserIds: new Set(["alice"]),
+    });
+
+    expect(firstRuntime.close).not.toHaveBeenCalled();
+    expect(unchangedPeer.close).not.toHaveBeenCalled();
+    expect(otherRuntime.close).toHaveBeenCalledTimes(1);
+    expect(changedPeer.close).toHaveBeenCalledTimes(1);
+    const replacementPeer = peer();
+    registry.attach({ ...USER, id: "alice", email: "alice@example.com" }, replacementPeer);
+    expect(replacementRuntime.attach).toHaveBeenCalledWith(replacementPeer);
+  });
 });
 
 type FakeRuntime = UserRuntimeServer & {

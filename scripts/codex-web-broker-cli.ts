@@ -8,6 +8,7 @@ import {
 } from "../server/runtime-broker-launch";
 import { hashBrokerPassword } from "../server/runtime-broker-password";
 import { readRuntimeBrokerConfig } from "../server/runtime-broker-config";
+import { watchRuntimeBrokerConfig } from "../server/runtime-broker-config-watcher";
 import { createRuntimeBrokerServer } from "../server/runtime-broker-server";
 import { parseCodexWebBrokerArgs } from "./codex-web-broker-options";
 
@@ -29,15 +30,35 @@ export async function runCodexWebRuntimeCli(args: string[]): Promise<void> {
   const platform = resolveRuntimeBrokerPlatform(process.platform);
   if (process.getuid?.() !== 0) throw new Error("serve 必须由 root 启动");
 
-  const config = await readRuntimeBrokerConfig(options.configPath!, { expectedOwnerUid: 0 });
-  const users = await resolveBrokerRuntimeUsers(config);
+  const configPath = options.configPath!;
+  const loadConfig = async () => {
+    const config = await readRuntimeBrokerConfig(configPath, { expectedOwnerUid: 0 });
+    const users = await resolveBrokerRuntimeUsers(config);
+    return { config, users };
+  };
+  const { config, users } = await loadConfig();
   const broker = await createRuntimeBrokerServer({
     socketPath: options.socketPath!,
     config,
     createRuntime: createBrokerRuntimeFactory(config, users, platform),
   });
+  const stopWatching = watchRuntimeBrokerConfig({
+    path: configPath,
+    load: loadConfig,
+    apply: async (next) => {
+      broker.reload(
+        next.config,
+        createBrokerRuntimeFactory(next.config, next.users, platform),
+      );
+      console.log(`Codex Web runtime broker 已重新加载配置 ${configPath}`);
+    },
+    onError: (error) => {
+      console.error(`Codex Web runtime broker 配置重载失败，继续使用当前配置：${error.message}`);
+    },
+  });
   console.log(`Codex Web runtime broker 正在监听 ${broker.socketPath}`);
   const stop = async () => {
+    stopWatching();
     await broker.close();
     process.exitCode = 0;
   };

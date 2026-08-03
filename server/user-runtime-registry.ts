@@ -34,7 +34,13 @@ export class UserRuntimeRegistry {
   private readonly runtimes = new Map<string, RuntimeEntry>();
   private closed = false;
 
-  constructor(private readonly options: RegistryOptions) {}
+  private disconnectGraceMs: number;
+  private createRuntime: RuntimeFactory;
+
+  constructor(options: RegistryOptions) {
+    this.disconnectGraceMs = options.disconnectGraceMs;
+    this.createRuntime = options.createRuntime;
+  }
 
   attach(user: RuntimeBrokerUserConfig, peer: AppServerPeer): { pid: number | undefined } {
     if (this.closed) throw new Error("runtime registry 已关闭");
@@ -44,7 +50,7 @@ export class UserRuntimeRegistry {
       const onNotification = (message: JsonRpcMessage) => this.handleNotification(user.id, message);
       entry = {
         user,
-        server: this.options.createRuntime(user, onNotification),
+        server: this.createRuntime(user, onNotification),
         peers: new Set(),
         activeTurns: new Set(),
         closeTimer: null,
@@ -85,12 +91,23 @@ export class UserRuntimeRegistry {
     return this.runtimes.size;
   }
 
+  reload(options: RegistryOptions & { affectedUserIds: Set<string> }): void {
+    if (this.closed) throw new Error("runtime registry 已关闭");
+    this.disconnectGraceMs = options.disconnectGraceMs;
+    this.createRuntime = options.createRuntime;
+    for (const userId of options.affectedUserIds) {
+      const entry = this.runtimes.get(userId);
+      if (!entry) continue;
+      this.closeEntry(entry, "用户配置已更新");
+      this.runtimes.delete(userId);
+    }
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
     for (const entry of this.runtimes.values()) {
-      if (entry.closeTimer) clearTimeout(entry.closeTimer);
-      entry.server.close();
+      this.closeEntry(entry, "runtime broker 已关闭");
     }
     this.runtimes.clear();
   }
@@ -116,7 +133,16 @@ export class UserRuntimeRegistry {
       if (entry.peers.size > 0 || entry.activeTurns.size > 0 || this.closed) return;
       entry.server.close();
       this.runtimes.delete(entry.user.id);
-    }, this.options.disconnectGraceMs);
+    }, this.disconnectGraceMs);
+  }
+
+  private closeEntry(entry: RuntimeEntry, reason: string): void {
+    if (entry.closeTimer) clearTimeout(entry.closeTimer);
+    entry.closeTimer = null;
+    entry.server.close();
+    for (const peer of entry.peers) peer.close(1012, reason);
+    entry.peers.clear();
+    entry.activeTurns.clear();
   }
 }
 

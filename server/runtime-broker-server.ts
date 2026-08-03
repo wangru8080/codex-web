@@ -24,6 +24,10 @@ type BrokerServerOptions = {
 export type RuntimeBrokerServer = {
   socketPath: string;
   runtimeCount: () => number;
+  reload: (
+    config: RuntimeBrokerConfig,
+    createRuntime: BrokerServerOptions["createRuntime"],
+  ) => void;
   close: () => Promise<void>;
 };
 
@@ -31,15 +35,16 @@ const DUMMY_PASSWORD_HASH = "scrypt$v1$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAA
 
 export async function createRuntimeBrokerServer(options: BrokerServerOptions): Promise<RuntimeBrokerServer> {
   await assertSocketPath(options.socketPath);
+  let config = options.config;
   const registry = new UserRuntimeRegistry({
-    disconnectGraceMs: options.config.disconnectGraceMs,
+    disconnectGraceMs: config.disconnectGraceMs,
     createRuntime: options.createRuntime,
   });
   const sockets = new Set<Socket>();
   const attempts = new LoginAttemptLimiter();
   const server = createServer((socket) => {
     sockets.add(socket);
-    handleSocket(socket, options.config, registry, attempts);
+    handleSocket(socket, () => config, registry, attempts);
     socket.once("close", () => sockets.delete(socket));
   });
   await listen(server, options.socketPath);
@@ -48,6 +53,15 @@ export async function createRuntimeBrokerServer(options: BrokerServerOptions): P
   return {
     socketPath: options.socketPath,
     runtimeCount: () => registry.runtimeCount(),
+    reload: (nextConfig, createRuntime) => {
+      const affectedUserIds = changedRuntimeUserIds(config, nextConfig);
+      config = nextConfig;
+      registry.reload({
+        disconnectGraceMs: nextConfig.disconnectGraceMs,
+        createRuntime,
+        affectedUserIds,
+      });
+    },
     close: async () => {
       registry.close();
       for (const socket of sockets) socket.destroy();
@@ -61,7 +75,7 @@ export async function createRuntimeBrokerServer(options: BrokerServerOptions): P
 
 function handleSocket(
   socket: Socket,
-  config: RuntimeBrokerConfig,
+  getConfig: () => RuntimeBrokerConfig,
   registry: UserRuntimeRegistry,
   attempts: LoginAttemptLimiter,
 ): void {
@@ -76,7 +90,7 @@ function handleSocket(
     handledRequest = true;
     const request = parseRequest(value);
     if (request.type === "attachRuntime") {
-      const user = verifyBrokerSession(request.token, config);
+      const user = verifyBrokerSession(request.token, getConfig());
       if (!user) {
         respondAndEnd(socket, errorResponse("unauthorized", "登录已失效"));
         return;
@@ -93,7 +107,7 @@ function handleSocket(
       peer.activate();
       return;
     }
-    void handleOneShot(request, config, attempts).then(
+    void handleOneShot(request, getConfig(), attempts).then(
       (response) => respondAndEnd(socket, response),
       () => respondAndEnd(socket, errorResponse("unavailable", "runtime broker 请求失败")),
     );
@@ -104,6 +118,46 @@ function handleSocket(
     cleanup();
     if (attached) registry.detach(attached.userId, attached.peer);
   });
+}
+
+function changedRuntimeUserIds(
+  current: RuntimeBrokerConfig,
+  next: RuntimeBrokerConfig,
+): Set<string> {
+  const currentUsers = new Map(current.users.map((user) => [user.id, user]));
+  const nextUsers = new Map(next.users.map((user) => [user.id, user]));
+  if (globalRuntimeKey(current) !== globalRuntimeKey(next)) return new Set(currentUsers.keys());
+  const changed = new Set<string>();
+  for (const [userId, user] of currentUsers) {
+    const replacement = nextUsers.get(userId);
+    if (!replacement || userRuntimeKey(user) !== userRuntimeKey(replacement)) changed.add(userId);
+  }
+  return changed;
+}
+
+function globalRuntimeKey(config: RuntimeBrokerConfig): string {
+  return JSON.stringify([
+    config.sessionSecret,
+    config.allowRootRuntime,
+    config.codexCommand,
+    config.setprivCommand,
+  ]);
+}
+
+function userRuntimeKey(user: RuntimeBrokerUserConfig): string {
+  return JSON.stringify([
+    user.id,
+    user.email,
+    user.passwordHash,
+    user.osUser,
+    user.home,
+    user.codexHome,
+    user.cwd,
+    user.role,
+    user.enabled,
+    user.allowRoot,
+    Object.entries(user.env ?? {}).sort(([left], [right]) => left.localeCompare(right)),
+  ]);
 }
 
 async function handleOneShot(

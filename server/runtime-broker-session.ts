@@ -70,7 +70,19 @@ export function verifyBrokerSession(
 
 function credentialVersion(user: RuntimeBrokerUserConfig, secret: string): string {
   return createHmac("sha256", secret)
-    .update(`${user.id}\0${user.passwordHash}\0${String(user.enabled)}\0${user.role}`)
+    .update(JSON.stringify([
+      user.id,
+      user.email,
+      user.passwordHash,
+      user.osUser,
+      user.home,
+      user.codexHome,
+      user.cwd,
+      user.role,
+      user.enabled,
+      user.allowRoot,
+      Object.entries(user.env ?? {}).sort(([left], [right]) => left.localeCompare(right)),
+    ]))
     .digest("base64url")
     .slice(0, 24);
 }
