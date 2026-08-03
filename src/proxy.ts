@@ -32,7 +32,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export function isPublicWebAuthPath(pathname: string): boolean {
-  return pathname === "/login" || pathname === "/api/auth/config" || pathname === "/api/auth/login";
+  return pathname === "/login" || pathname === "/icon.svg" || pathname === "/api/auth/config" || pathname === "/api/auth/login";
 }
 
 export const config = {

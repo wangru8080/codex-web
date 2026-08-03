@@ -11,6 +11,9 @@ import { renderThemeFamilyCSS } from "@/lib/theme/render-css";
 export const metadata: Metadata = {
   title: "CodexWeb",
   description: "Codex app-server browser workspace",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
 };
 
 export default function RootLayout({

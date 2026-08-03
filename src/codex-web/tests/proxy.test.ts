@@ -15,7 +15,7 @@ vi.mock("@/frontend-preview/mock-api", () => ({
   mockApiResponse,
 }));
 
-import { proxy } from "../../proxy";
+import { isPublicWebAuthPath, proxy } from "../../proxy";
 import { createSessionToken, readWebAuthConfig, WEB_AUTH_COOKIE } from "../../../server/web-auth";
 
 function makeRequest(pathname: string) {
@@ -39,6 +39,10 @@ afterEach(() => {
 });
 
 describe("proxy demo gate", () => {
+  it("公开站点图标资源，避免未登录时被重定向", () => {
+    expect(isPublicWebAuthPath("/icon.svg")).toBe(true);
+  });
+
   it("默认走真实路由，不启用 demo/mock", async () => {
     const response = await proxy(makeRequest("/api/codex/account"));
     expect(mockApiResponse).not.toHaveBeenCalled();
