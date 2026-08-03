@@ -70,6 +70,7 @@ interface McpServerDetailDialogProps {
   onSave: (name: string, server: MCPServer) => void;
   onDelete: (name: string) => void;
   onToggleEnabled?: (name: string, enabled: boolean) => void;
+  readOnly?: boolean;
 }
 
 function getTransportInfo(server: MCPServer | null): { label: string; iconKind: 'wifi' | 'web' | 'disk'; color: string } {
@@ -111,6 +112,7 @@ export function McpServerDetailDialog({
   onSave,
   onDelete,
   onToggleEnabled,
+  readOnly = false,
 }: McpServerDetailDialogProps) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<"detail" | "edit">("detail");
@@ -155,7 +157,7 @@ export function McpServerDetailDialog({
           shrink-0 header / flex-1 body / shrink-0 footer with border-t. */}
       <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-0 overflow-hidden">
         <DialogHeader className="shrink-0">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 pr-10 flex-wrap">
             <DialogTitle className="text-base font-medium font-mono break-all">
               {name}
             </DialogTitle>
@@ -185,7 +187,7 @@ export function McpServerDetailDialog({
                 {t("mcp.toolCount" as TranslationKey).replace("{count}", String(toolCount))}
               </span>
             )}
-            {onToggleEnabled && (
+            {onToggleEnabled && !readOnly && (
               <Switch
                 className="ml-auto"
                 checked={!isDisabled}
@@ -274,7 +276,7 @@ export function McpServerDetailDialog({
         <DialogFooter className="shrink-0 border-t border-border/50 pt-3 mt-2 sm:justify-between">
           {mode === "detail" ? (
             <>
-              <Button
+              {!readOnly && <Button
                 variant="ghost"
                 size="sm"
                 className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
@@ -282,11 +284,11 @@ export function McpServerDetailDialog({
               >
                 <CodexWebIcon name="delete" size="sm" aria-hidden />
                 {t("common.delete")}
-              </Button>
-              <Button size="sm" className="gap-1.5" onClick={() => setMode("edit")}>
+              </Button>}
+              {!readOnly && <Button size="sm" className="gap-1.5" onClick={() => setMode("edit")}>
                 <CodexWebIcon name="edit" size="sm" aria-hidden />
                 {t("common.edit")}
-              </Button>
+              </Button>}
             </>
           ) : (
             <>

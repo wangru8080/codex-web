@@ -122,9 +122,12 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
         const isDisabled = server.enabled === false;
         const toolCount = runtime?.tools?.length ?? 0;
 
+        const source = (server as MCPServer & { _source?: string })._source;
         const commandLine = server.url
           ? server.url
-          : `${server.command} ${server.args?.join(' ') || ''}`;
+          : server.command
+            ? `${server.command} ${server.args?.join(' ') || ''}`
+            : source === 'plugin' ? '由 Codex 插件提供' : '';
 
         return (
           <div
@@ -139,7 +142,9 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
               }
             }}
             aria-label={`${name} — ${typeInfo.label}`}
-            data-source-breadcrumb={startupStatus?.[name]?.source ?? 'app-server.mcpServerStatus/list'}
+            data-source-breadcrumb={source === 'plugin'
+              ? 'app-server.plugin/read'
+              : startupStatus?.[name]?.source ?? 'app-server.mcpServerStatus/list'}
             // Same chrome as built-in cards (rounded-lg + soft border + p-5 + hover wash)
             // so the two MCP card families read as one continuous catalogue.
             className={cn(
@@ -149,7 +154,7 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
           >
             {/* Identity row: switch + name + inline pills (transport / status / tool count) */}
             <div className="flex items-center gap-2 flex-wrap">
-              {onToggleEnabled && (
+              {onToggleEnabled && source !== 'plugin' && (
                 <Switch
                   size="sm"
                   checked={!isDisabled}
@@ -172,6 +177,11 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
                 )}
                 {typeInfo.label}
               </span>
+              {source === 'plugin' && (
+                <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  插件提供
+                </span>
+              )}
               {statusPill ? (
                 <span
                   className={cn(

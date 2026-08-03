@@ -12,5 +12,7 @@ describe("插件目录 app-server actions", () => {
     expect(provider).toContain('client.request("config/value/write"');
     expect(provider).toContain('client.request("config/mcpServer/reload"');
     expect(provider).toContain('client.request("mcpServerStatus/list"');
+    expect(provider).toContain('client.request("plugin/installed"');
+    expect(provider).toContain('client.request("plugin/read"');
   });
 });

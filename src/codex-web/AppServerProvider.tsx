@@ -21,6 +21,10 @@ import type { SkillsConfigWriteResponse } from "@/codex/protocol/generated/v2/Sk
 import type { ListMcpServerStatusParams } from "@/codex/protocol/generated/v2/ListMcpServerStatusParams";
 import type { ListMcpServerStatusResponse } from "@/codex/protocol/generated/v2/ListMcpServerStatusResponse";
 import type { McpServerStatus } from "@/codex/protocol/generated/v2/McpServerStatus";
+import type { PluginInstalledParams } from "@/codex/protocol/generated/v2/PluginInstalledParams";
+import type { PluginInstalledResponse } from "@/codex/protocol/generated/v2/PluginInstalledResponse";
+import type { PluginReadParams } from "@/codex/protocol/generated/v2/PluginReadParams";
+import type { PluginReadResponse } from "@/codex/protocol/generated/v2/PluginReadResponse";
 import type { ConfigWriteResponse } from "@/codex/protocol/generated/v2/ConfigWriteResponse";
 import type { ThreadListParams } from "@/codex/protocol/generated/v2/ThreadListParams";
 import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
@@ -214,6 +218,8 @@ export type AppServerActions = {
   writeMcpServers: (servers: Record<string, MCPServer>) => Promise<ConfigReadResponse>;
   reloadMcpServers: () => Promise<void>;
   listMcpServerStatus: (params?: ListMcpServerStatusParams) => Promise<McpServerStatus[]>;
+  listInstalledPlugins: (params?: PluginInstalledParams) => Promise<PluginInstalledResponse>;
+  readPlugin: (params: PluginReadParams) => Promise<PluginReadResponse>;
   getThreadGoal: (threadId: string) => Promise<ThreadGoalGetResponse>;
   setThreadGoal: (params: ThreadGoalSetParams) => Promise<ThreadGoalSetResponse>;
   clearThreadGoal: (threadId: string) => Promise<ThreadGoalClearResponse>;
@@ -889,6 +895,18 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return data;
   }, []);
 
+  const listInstalledPlugins = useCallback(async (params: PluginInstalledParams = {}) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("plugin/installed", params)) as PluginInstalledResponse;
+  }, []);
+
+  const readPlugin = useCallback(async (params: PluginReadParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("plugin/read", params)) as PluginReadResponse;
+  }, []);
+
   const compactThread = useCallback(async (threadId: string) => {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
@@ -1318,6 +1336,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       writeMcpServers,
       reloadMcpServers,
       listMcpServerStatus,
+      listInstalledPlugins,
+      readPlugin,
       getThreadGoal,
       setThreadGoal,
       clearThreadGoal,
@@ -1337,7 +1357,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       logoutAccount,
       publishCrossClientUserMessage,
     }),
-    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
+    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
   );
 
   return (

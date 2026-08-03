@@ -17,7 +17,7 @@ import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServer
 import { mcpServersFromConfig, mcpServersFromConfigValue, mcpServersToConfigValue } from "@/codex-web/mcp-config-adapter";
 import type { McpServerStatus } from "@/codex/protocol/generated/v2/McpServerStatus";
 
-type MCPServerWithSource = MCPServer & { _source?: string };
+type MCPServerWithSource = MCPServer & { _source?: string; _pluginName?: string };
 
 interface McpManagerProps {
   /**
@@ -58,7 +58,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   ref,
 ) {
   const { t } = useTranslation();
-  const { refreshConfig, writeMcpServers, listMcpServerStatus, reloadMcpServers } = useAppServerActions();
+  const { refreshConfig, writeMcpServers, listMcpServerStatus, reloadMcpServers, listInstalledPlugins, readPlugin } = useAppServerActions();
   const connectionData = useAppServerSelector((state) => state.connection.data);
   const mcpStartupByName = useAppServerSelector((state) => state.mcpStartupByName);
   const [servers, setServers] = useState<Record<string, MCPServerWithSource>>({});
@@ -68,6 +68,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   const [editingServer, setEditingServer] = useState<MCPServer | undefined>();
   const [tab, setTab] = useState<"list" | "json">("list");
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<McpRuntimeStatus[]>([]);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
 
@@ -90,14 +91,44 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   const fetchServers = useCallback(async () => {
     try {
       setError(null);
-      const config = await refreshConfig();
-      setServers(mcpServersFromConfig(config));
+      setWarning(null);
+      const [config, installed] = await Promise.all([refreshConfig(), listInstalledPlugins()]);
+      const configured = mcpServersFromConfig(config);
+      const pluginServers: Record<string, MCPServerWithSource> = {};
+      const pluginErrors: string[] = [];
+      for (const marketplace of installed.marketplaces) {
+        for (const plugin of marketplace.plugins) {
+          if (!plugin.installed || !plugin.enabled) continue;
+          try {
+            const detail = await readPlugin({
+              pluginName: plugin.name,
+              ...(marketplace.path
+                ? { marketplacePath: marketplace.path }
+                : { remoteMarketplaceName: marketplace.name }),
+            });
+            for (const name of detail.plugin.mcpServers) {
+              if (configured[name] || pluginServers[name]) continue;
+              pluginServers[name] = {
+                type: "http",
+                _source: "plugin",
+                _pluginName: plugin.name,
+              } as MCPServerWithSource;
+            }
+          } catch (pluginError) {
+            pluginErrors.push(`${plugin.name}: ${pluginError instanceof Error ? pluginError.message : String(pluginError)}`);
+          }
+        }
+      }
+      setServers({ ...configured, ...pluginServers });
+      if (pluginErrors.length > 0) {
+        setWarning(`部分插件 MCP 无法读取：${pluginErrors.join("；")}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [refreshConfig]);
+  }, [listInstalledPlugins, readPlugin, refreshConfig]);
 
   const fetchRuntimeStatus = useCallback(async () => {
     setRuntimeLoading(true);
@@ -151,7 +182,9 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   // `editingName` is undefined — we infer the rename path from the
   // current servers map instead.
   const persistSave = useCallback(async (originalName: string | undefined, name: string, server: MCPServer) => {
-    const updated: Record<string, MCPServerWithSource> = { ...servers };
+    const updated: Record<string, MCPServerWithSource> = Object.fromEntries(
+      Object.entries(servers).filter(([, server]) => server._source !== "plugin"),
+    );
     if (originalName && originalName !== name) delete updated[originalName];
     updated[name] = server;
     try {
@@ -164,6 +197,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   }, [servers, writeMcpServers, fetchRuntimeStatus]);
 
   const handlePersistentToggle = useCallback(async (name: string, enabled: boolean) => {
+    if (servers[name]?._source === "plugin") return;
     const updated = { ...servers };
     updated[name] = { ...updated[name], enabled };
     setServers(updated);
@@ -178,6 +212,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   }, [servers, fetchServers, fetchRuntimeStatus, writeMcpServers]);
 
   async function handleDelete(name: string) {
+    if (servers[name]?._source === "plugin") return;
     try {
       const updated = { ...servers };
       delete updated[name];
@@ -264,6 +299,11 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
         {error && (
           <div className="rounded-md bg-destructive/10 p-3 mb-4">
             <p className="text-sm text-destructive">{error}</p>
+          </div>
+        )}
+        {warning && (
+          <div className="rounded-md bg-status-warning-muted p-3 mb-4">
+            <p className="text-sm text-status-warning-foreground">{warning}</p>
           </div>
         )}
 
@@ -363,7 +403,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
     // Re-render whenever any of the surfaces below change. We intentionally
     // skip `t` (locale-pinned) and the handler refs (stable enough).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [error, filteredServers, loading, effectiveRuntimeStatus, runtimeLoading, serverCount, filteredServerCount, search, query, mcpStartupByName, handleReload],
+    [error, warning, filteredServers, loading, effectiveRuntimeStatus, runtimeLoading, serverCount, filteredServerCount, search, query, mcpStartupByName, handleReload],
   );
 
   if (isEmbedded) {
@@ -387,6 +427,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
           onSave={(name, server) => persistSave(name, name, server)}
           onDelete={handleDelete}
           onToggleEnabled={handlePersistentToggle}
+          readOnly={detailName ? servers[detailName]?._source === "plugin" : false}
         />
       </>
     );
@@ -476,7 +517,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
             </p>
           )}
           <ConfigEditor
-            value={JSON.stringify(mcpServersToConfigValue(servers), null, 2)}
+            value={JSON.stringify(mcpServersToConfigValue(Object.fromEntries(Object.entries(servers).filter(([, server]) => server._source !== "plugin"))), null, 2)}
             onSave={handleJsonSave}
             saving={jsonSaving}
             label={t('mcp.serverConfig')}
@@ -546,6 +587,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
         onSave={(name, server) => persistSave(name, name, server)}
         onDelete={handleDelete}
         onToggleEnabled={handlePersistentToggle}
+        readOnly={detailName ? servers[detailName]?._source === "plugin" : false}
       />
       </div>
     </div>
