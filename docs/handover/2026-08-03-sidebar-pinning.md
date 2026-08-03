@@ -12,7 +12,7 @@
 - 置顶是浏览器 UI 排序偏好，分别保存在 `codex-web:pinned-projects` 和 `codex-web:pinned-sessions`。
 - 项目置顶后整个项目从普通项目区移到置顶区。
 - 单独置顶会话从所属普通项目中移到置顶区。
-- 项目置顶覆盖内部会话的独立展示，但不会清除会话置顶偏好；取消项目置顶后，原会话置顶会恢复。
+- 项目和会话置顶相互独立；置顶项目中的置顶会话显示在项目上方，并从项目内部移除以避免重复。
 - 过期项目路径、已归档会话 ID 或损坏存储不会产生虚假置顶分组。
 
 ## 代码位置
@@ -32,6 +32,7 @@
 - `npm run test:smoke`：bridge smoke 通过，使用隔离 `CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home`。
 - Chrome CDP 真实浏览器：完成会话置顶、折叠/展开、项目置顶、取消项目置顶、快捷取消会话置顶；console 错误为 0。
 - 截图目录：`/volume2/SSD/codex/Temp/sidebar-pinning-2026-08-03/`。
+- 组合置顶回归：置顶项目内的会话可独立置顶，会话 y=204、项目 y=236、目标 href 仅出现 1 次；截图位于 `/volume2/SSD/codex/Temp/sidebar-pinning-project-session-fix-2026-08-03/`。
 
 ## 剩余边界
 

@@ -77,14 +77,7 @@ export function partitionPinnedSidebar(
   pinnedProjectPaths: ReadonlySet<string>,
   pinnedSessionIds: ReadonlySet<string>,
 ): PinnedSidebarGroups {
-  const pinnedProjects = projectGroups.filter((group) =>
-    pinnedProjectPaths.has(group.workingDirectory)
-  );
-  const pinnedProjectSet = new Set(
-    pinnedProjects.map((group) => group.workingDirectory)
-  );
   const pinnedSessions = projectGroups
-    .filter((group) => !pinnedProjectSet.has(group.workingDirectory))
     .flatMap((group) => group.sessions.filter((session) => pinnedSessionIds.has(session.id)))
     .sort(
       (a, b) =>
@@ -92,6 +85,17 @@ export function partitionPinnedSidebar(
     );
   const effectivePinnedSessionIds = new Set(
     pinnedSessions.map((session) => session.id)
+  );
+  const pinnedProjects = projectGroups
+    .filter((group) => pinnedProjectPaths.has(group.workingDirectory))
+    .map((group) => {
+      const sessions = group.sessions.filter(
+        (session) => !effectivePinnedSessionIds.has(session.id)
+      );
+      return sessions.length === group.sessions.length ? group : { ...group, sessions };
+    });
+  const pinnedProjectSet = new Set(
+    pinnedProjects.map((group) => group.workingDirectory)
   );
   const regularProjects = projectGroups
     .filter((group) => !pinnedProjectSet.has(group.workingDirectory))

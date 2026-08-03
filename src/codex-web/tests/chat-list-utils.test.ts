@@ -94,7 +94,7 @@ describe("partitionPinnedSidebar", () => {
     ]);
   });
 
-  it("项目置顶覆盖内部会话置顶显示且普通项目不重复", () => {
+  it("置顶项目中的置顶会话独立显示且不在项目内重复", () => {
     const session = createSession({ id: "thread-pinned" });
     const groups = groupSessionsByProject([
       session,
@@ -107,10 +107,13 @@ describe("partitionPinnedSidebar", () => {
       new Set([session.id]),
     );
 
-    expect(result.pinnedSessions).toEqual([]);
+    expect(result.pinnedSessions.map((pinnedSession) => pinnedSession.id)).toEqual([
+      session.id,
+    ]);
     expect(result.pinnedProjects.map((group) => group.workingDirectory)).toEqual([
       "/repo/web",
     ]);
+    expect(result.pinnedProjects[0]?.sessions).toEqual([]);
     expect(result.regularProjects.map((group) => group.workingDirectory)).toEqual([
       "/repo/other",
     ]);
