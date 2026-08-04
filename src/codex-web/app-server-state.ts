@@ -37,6 +37,7 @@ export type SourceBreadcrumb =
   | "app-server.thread/turns/list"
   | "app-server.notification"
   | "app-server.serverRequest"
+  | "runtime-broker.presence"
   | "web-bridge";
 
 export type Sourced<T> = {
@@ -51,6 +52,7 @@ export type CodexWebAppServerState = {
   initialize: Sourced<InitializeResponse> | null;
   models: Sourced<ModelListResponse> | null;
   account: Sourced<GetAccountResponse> | null;
+  onlineUsers: Sourced<number> | null;
   accountLoginCompletion: Sourced<AccountLoginCompletedNotification> | null;
   config: Sourced<ConfigReadResponse> | null;
   threads: Sourced<ThreadListResponse> | null;
@@ -78,6 +80,7 @@ export const initialAppServerState: CodexWebAppServerState = {
   initialize: null,
   models: null,
   account: null,
+  onlineUsers: null,
   accountLoginCompletion: null,
   config: null,
   threads: null,

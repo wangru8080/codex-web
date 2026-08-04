@@ -142,6 +142,7 @@ import {
 } from "./cross-client-sync";
 import { reconnectDelayMs } from "./reconnect-policy";
 import { readAccountLoginCompletion } from "./account-login-adapter";
+import { readBrokerPresence } from "./broker-presence";
 
 const AppServerStoreContext = createContext<AppServerStore | null>(null);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -264,6 +265,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       setState((current) => ({
         ...current,
         connection: { source: "web-bridge", data: "reconnecting" },
+        onlineUsers: null,
         pendingApprovals: [],
         pendingApproval: null,
         diagnostics: appendDiagnostic(current.diagnostics, {
@@ -302,6 +304,14 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     });
 
     client.onNotification((notification) => {
+      const onlineUsers = readBrokerPresence(notification);
+      if (onlineUsers !== null) {
+        setState((current) => ({
+          ...current,
+          onlineUsers: { source: "runtime-broker.presence", data: onlineUsers },
+        }));
+        return;
+      }
       const accountLoginCompletion = readAccountLoginCompletion(notification);
       if (notification.method === CROSS_CLIENT_THREAD_ROLLBACK_METHOD) {
         const rollback = readCrossClientThreadRollback(notification);

@@ -1334,6 +1334,7 @@ const en = {
   'topBar.commit': 'Commit All',
   'topBar.push': 'Push',
   'topBar.terminal': 'Terminal',
+  'topBar.onlineUsers': '{count} online',
 
   // ── Dashboard ─────────────────────────────────────────────────
 
@@ -1571,6 +1572,7 @@ const en = {
 
   // messageInput.* — ModeIndicator dropdown descriptions
   'messageInput.modeCodeDesc': 'Run tools, edit files, and execute changes in the current workspace.',
+  'messageInput.noAvailableModel': 'No available model',
   'messageInput.modePlanDesc': 'Discuss and plan without writing files or running tools.',
 
   // nav.*

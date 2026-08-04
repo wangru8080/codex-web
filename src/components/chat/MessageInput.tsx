@@ -478,13 +478,17 @@ function ComposerReasoningModelSelector({
   persistLastModel: boolean;
   disabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const hasAvailableModel = modelOptions.length > 0;
   const effectiveEffort = selectedEffort === 'auto' ? 'high' : selectedEffort;
   const effortLabel = EFFORT_OPTIONS.find((item) => item.value === effectiveEffort)?.label ?? '高';
   const modelLabel = currentModelOption?.label || currentModelValue || modelOptions[0]?.label || '';
-  const modelShortLabel = displayModelShortLabel(modelLabel);
+  const modelShortLabel = hasAvailableModel
+    ? displayModelShortLabel(modelLabel)
+    : t('messageInput.noAvailableModel' as TranslationKey);
 
   useEffect(() => {
     if (!open) return;
@@ -528,7 +532,7 @@ function ComposerReasoningModelSelector({
   return (
     <div className="relative" ref={menuRef}>
       <PromptInputButton
-        disabled={disabled}
+        disabled={disabled || !hasAvailableModel}
         onClick={() => {
           setOpen((prev) => !prev);
           setModelMenuOpen(false);
@@ -536,8 +540,12 @@ function ComposerReasoningModelSelector({
         className="gap-1.5 px-2"
       >
         <span className="text-sm font-medium">{modelShortLabel}</span>
-        <span className="text-sm font-medium text-muted-foreground">{effortLabel}</span>
-        <CaretDown size={12} className="text-muted-foreground" />
+        {hasAvailableModel && (
+          <>
+            <span className="text-sm font-medium text-muted-foreground">{effortLabel}</span>
+            <CaretDown size={12} className="text-muted-foreground" />
+          </>
+        )}
       </PromptInputButton>
 
       {open && (
@@ -1600,7 +1608,7 @@ export const MessageInput = memo(function MessageInput({
     }
   }, [normalizeMentionPath]);
 
-  const currentModelValue = modelName || 'sonnet';
+  const currentModelValue = modelName || '';
   const chatStatus: ChatStatus = isStreaming ? 'streaming' : 'ready';
   const standaloneTurnPlan = !!turnPlan && !fileChangeSummary;
   const wasStandaloneTurnPlanRef = useRef(false);
@@ -1884,6 +1892,7 @@ export const MessageInput = memo(function MessageInput({
                   onModelChange={onModelChange}
                   onProviderModelChange={onProviderModelChange}
                   persistLastModel={!codexOnly}
+                  disabled={disabled}
                 />
                 <FileAwareSubmitButton
                   status={chatStatus}

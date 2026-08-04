@@ -6,6 +6,7 @@ import {
   type JsonRpcId,
   type JsonRpcMessage,
 } from "../src/codex/protocol/json-rpc";
+import { brokerPresenceNotification } from "../src/codex-web/broker-presence";
 
 export type UserRuntimeServer = {
   readonly pid: number | undefined;
@@ -76,9 +77,12 @@ export class UserRuntimeRegistry {
       clearTimeout(entry.closeTimer);
       entry.closeTimer = null;
     }
+    const wasOnline = entry.peers.size > 0;
     const runtimePeer = this.runtimePeer(user.id, peer);
     entry.peers.set(peer, runtimePeer);
     entry.server.attach(runtimePeer);
+    if (!wasOnline) this.broadcastPresence();
+    else if (entry.user.osUser === "root") this.sendPresence(runtimePeer);
     return { pid: entry.server.pid };
   }
 
@@ -89,6 +93,7 @@ export class UserRuntimeRegistry {
     entry.peers.delete(peer);
     entry.pendingTurnStarts.delete(peer);
     entry.server.detach(runtimePeer);
+    if (entry.peers.size === 0) this.broadcastPresence();
     this.scheduleCloseWhenIdle(entry);
   }
 
@@ -130,11 +135,20 @@ export class UserRuntimeRegistry {
     return this.runtimes.size;
   }
 
+  onlineUserCount(): number {
+    let count = 0;
+    for (const entry of this.runtimes.values()) {
+      if (entry.peers.size > 0) count += 1;
+    }
+    return count;
+  }
+
   reload(options: RegistryOptions & {
     affectedUserIds: Set<string>;
     users: RuntimeBrokerUserConfig[];
   }): void {
     if (this.closed) throw new Error("runtime registry 已关闭");
+    const previousOnlineUsers = this.onlineUserCount();
     this.disconnectGraceMs = options.disconnectGraceMs;
     this.maxActiveAppServers = options.maxActiveAppServers;
     this.createRuntime = options.createRuntime;
@@ -149,6 +163,7 @@ export class UserRuntimeRegistry {
       this.closeEntry(entry, "用户配置已更新");
       this.runtimes.delete(userId);
     }
+    if (this.onlineUserCount() !== previousOnlineUsers) this.broadcastPresence();
   }
 
   close(): void {
@@ -226,6 +241,21 @@ export class UserRuntimeRegistry {
     let pending = 0;
     for (const requests of entry.pendingTurnStarts.values()) pending += requests.size;
     return entry.activeTurns.size + pending;
+  }
+
+  private broadcastPresence(): void {
+    const notification = brokerPresenceNotification(this.onlineUserCount());
+    for (const entry of this.runtimes.values()) {
+      if (entry.user.osUser === "root" && entry.peers.size > 0) {
+        entry.server.broadcast(notification);
+      }
+    }
+  }
+
+  private sendPresence(peer: AppServerPeer): void {
+    if (peer.isOpen()) {
+      peer.send(JSON.stringify(brokerPresenceNotification(this.onlineUserCount())));
+    }
   }
 }
 

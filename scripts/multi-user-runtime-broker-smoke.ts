@@ -30,14 +30,20 @@ async function main(): Promise<void> {
   const passwordHash = await hashBrokerPassword(password);
   const altPasswordHash = await hashBrokerPassword(altPassword);
   const configPath = join(runDirectory, "users.json");
+  const rootUser = {
+    ...smokeUser("root", "/root", join(runDirectory, "root-codex-home"), passwordHash),
+    allowRoot: true,
+  };
   const initialConfig = {
     version: 1,
     sessionSecret: "multi-user-browser-smoke-session-secret-2026",
     disconnectGraceMs: 200,
+    allowRootRuntime: true,
     codexCommand: "/fixture/codex",
     users: [
       smokeUser("rrssnas", "/home/rrssnas", join(runDirectory, "rrssnas-codex-home"), passwordHash),
       smokeUser("codex", "/home/codex", join(runDirectory, "codex-codex-home"), passwordHash),
+      rootUser,
     ],
   };
   await writeConfig(configPath, initialConfig, true);
@@ -70,24 +76,46 @@ async function main(): Promise<void> {
     browser = await CdpBrowser.connect(cdpEndpoint);
     const rrssnas = await browser.createPage();
     const codex = await browser.createPage();
+    const root = await browser.createPage();
     const baseUrl = `http://192.168.3.12:${port}`;
     await loginInBrowser(rrssnas, baseUrl, "rrssnas@example.test");
     progress("rrssnas Chrome 页面登录完成");
     await loginInBrowser(codex, baseUrl, "codex@example.test");
     progress("codex Chrome 页面登录完成");
+    await loginInBrowser(root, baseUrl, "root@example.test");
+    progress("root Chrome 页面登录完成");
 
     const rrssnasIdentity = await readIdentity(rrssnas);
     const codexIdentity = await readIdentity(codex);
+    const rootIdentity = await readIdentity(root);
     assertIdentity(rrssnasIdentity, "rrssnas", "/home/rrssnas", join(runDirectory, "rrssnas-codex-home"));
     assertIdentity(codexIdentity, "codex", "/home/codex", join(runDirectory, "codex-codex-home"));
-    await waitFor(() => runtimeStates.size === 2 && [...runtimeStates.values()].every((state) => state.createCount === 1));
-    progress("双账号身份与隔离 CODEX_HOME 验证完成");
+    assertIdentity(rootIdentity, "root", "/root", join(runDirectory, "root-codex-home"));
+    await waitFor(() => runtimeStates.size === 3 && [...runtimeStates.values()].every((state) => state.createCount === 1));
+    await waitForOnlineUsers(root, 3);
+    await assertOnlineUsersHidden(rrssnas);
+    await assertOnlineUsersHidden(codex);
+    await assertNoAvailableModel(root);
+    const screenshot = await root.request<{ data: string }>("Page.captureScreenshot", { format: "png" });
+    await writeFile(join(runDirectory, "root-online-users.png"), Buffer.from(screenshot.data, "base64"), { flag: "wx" });
+    await root.request("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    });
+    await waitForOnlineUsers(root, 3);
+    const mobileScreenshot = await root.request<{ data: string }>("Page.captureScreenshot", { format: "png" });
+    await writeFile(join(runDirectory, "root-online-users-mobile.png"), Buffer.from(mobileScreenshot.data, "base64"), { flag: "wx" });
+    await root.request("Emulation.clearDeviceMetricsOverride");
+    progress("三账号身份、隔离 CODEX_HOME 与 root 在线人数标识验证完成");
 
     const rrssnasSecond = await browser.createPage(rrssnas.contextId, `${baseUrl}/chat`);
     await rrssnasSecond.waitFor("location.pathname === '/chat'", 30_000);
     await waitFor(() => (runtimeStates.get("rrssnas")?.peers.size ?? 0) >= 2);
     if (runtimeStates.get("rrssnas")?.createCount !== 1) throw new Error("同用户浏览器没有复用 runtime");
-    progress("rrssnas 第二页面复用 runtime 验证完成");
+    await waitForOnlineUsers(root, 3);
+    progress("rrssnas 第二页面复用 runtime 且在线人数未重复计数验证完成");
 
     await sendMarker(rrssnas, "rrssnas-marker");
     await sendMarker(codex, "codex-marker");
@@ -109,12 +137,13 @@ async function main(): Promise<void> {
     const limitedUsers = [
       { ...initialConfig.users[0], maxConcurrentTurns: 1 },
       initialConfig.users[1],
+      initialConfig.users[2],
       capacityUser,
     ];
     const limitReloadCount = reloads.length;
     await writeConfig(configPath, {
       ...initialConfig,
-      maxActiveAppServers: 2,
+      maxActiveAppServers: 3,
       users: limitedUsers,
     });
     await waitFor(() => reloads.length > limitReloadCount && reloads.at(-1) === "success", 5_000);
@@ -123,7 +152,7 @@ async function main(): Promise<void> {
     const capacityLogin = await brokerClient.login("capacity@example.test", password);
     await expectFailure(
       () => brokerClient.attachRuntime(capacityLogin.token),
-      "全局活跃 app-server 已达上限（2）",
+      "全局活跃 app-server 已达上限（3）",
     );
     if (runtimeStates.get("rrssnas")?.closed || runtimeStates.get("codex")?.closed) {
       throw new Error("热加载降低全局上限关闭了已有 runtime");
@@ -150,7 +179,9 @@ async function main(): Promise<void> {
     await writeConfig(configPath, { ...initialConfig, users: [...initialConfig.users, capacityUser] });
     await waitFor(() => reloads.length > unlimitedReloadCount && reloads.at(-1) === "success", 5_000);
     const capacityConnection = await brokerClient.attachRuntime(capacityLogin.token);
+    await waitForOnlineUsers(root, 4);
     capacityConnection.close();
+    await waitForOnlineUsers(root, 3);
     await waitFor(() => runtimeStates.get("capacity")?.closed === true, 5_000);
     progress("全局 app-server 与单账号 Turn 限制、释放名额及热加载移除验证完成");
 
@@ -184,6 +215,8 @@ async function main(): Promise<void> {
       throw new Error("原账号错误接受了新增账号密码");
     }
     await loginInBrowser(alt, baseUrl, "rrssnas-alt@example.test", altPassword);
+    await waitForOnlineUsers(root, 4);
+    await assertOnlineUsersHidden(alt);
     const altIdentity = await readIdentity(alt);
     assertIdentity(
       altIdentity,
@@ -198,7 +231,7 @@ async function main(): Promise<void> {
     const changeReloadCount = reloads.length;
     await writeConfig(configPath, {
       ...initialConfig,
-      users: [initialConfig.users[0], nextCodex, altUser],
+      users: [initialConfig.users[0], nextCodex, initialConfig.users[2], altUser],
     });
     await waitFor(() => reloads.length > changeReloadCount && reloads.at(-1) === "success", 5_000);
     await waitFor(() => runtimeStates.get("codex")?.closed === true, 5_000);
@@ -209,15 +242,21 @@ async function main(): Promise<void> {
     await waitFor(() => runtimeStates.get("codex")?.createCount === 2, 5_000);
     const codexNextIdentity = await readIdentity(codex);
     assertIdentity(codexNextIdentity, "codex", "/home/codex", nextCodexHome);
+    await waitForOnlineUsers(root, 4);
     progress("配置热加载无效回退、新增用户和单用户替换验证完成");
 
     await logoutAndLeave(rrssnas);
     await delay(400);
+    await waitForOnlineUsers(root, 4);
     progress(`rrssnas 第一页面退出后：${runtimeSummary()}`);
     if (runtimeStates.get("rrssnas")?.closed) throw new Error("同用户仍有浏览器连接时 runtime 被提前关闭");
     await logoutAndLeave(rrssnasSecond);
+    await waitForOnlineUsers(root, 3);
     await logoutAndLeave(codex);
+    await waitForOnlineUsers(root, 2);
     await logoutAndLeave(alt);
+    await waitForOnlineUsers(root, 1);
+    await logoutAndLeave(root);
     progress(`全部页面退出后：${runtimeSummary()}`);
     await waitFor(() => [...runtimeStates.values()].every((state) => state.closed), 5_000);
     progress("退出与 runtime 回收验证完成");
@@ -225,7 +264,7 @@ async function main(): Promise<void> {
     const result = {
       passed: true,
       runDirectory,
-      users: [rrssnasIdentity, codexIdentity, altIdentity, codexNextIdentity],
+      users: [rrssnasIdentity, codexIdentity, rootIdentity, altIdentity, codexNextIdentity],
       runtimes: Object.fromEntries([...runtimeStates].map(([id, state]) => [id, {
         createCount: state.createCount,
         markers: state.markers,
@@ -242,8 +281,12 @@ async function main(): Promise<void> {
         globalAppServerLimitApplied: true,
         accountTurnLimitApplied: true,
         removingLimitsRestoredCapacity: true,
+        rootPresenceUpdatedWithoutPolling: true,
+        ordinaryUsersCannotSeePresence: true,
+        sameAccountPeersCountOnce: true,
+        unavailableAccountHasNoFakeModel: true,
       },
-      note: "真实 Chrome 已验证配置热加载与隔离；未使用真实 Codex Home，未验证 sudo/UID 切换。",
+      note: "真实 Chrome 已验证配置热加载、隔离与 root 在线人数事件推送；未使用真实 Codex Home，未验证 sudo/UID 切换。",
     };
     await writeFile(join(runDirectory, "result.json"), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" });
     console.log(JSON.stringify(result, null, 2));
@@ -432,6 +475,28 @@ async function loginStatus(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: ${JSON.stringify(email)}, password: ${JSON.stringify(loginPassword)} }),
   }).then((response) => response.status)`);
+}
+
+async function waitForOnlineUsers(client: CdpClient, expected: number): Promise<void> {
+  await client.waitFor(
+    `document.querySelector('[data-online-user-count]')?.getAttribute('data-online-user-count') === ${JSON.stringify(String(expected))}`,
+    30_000,
+  );
+}
+
+async function assertOnlineUsersHidden(client: CdpClient): Promise<void> {
+  const visible = await client.evaluate<boolean>("Boolean(document.querySelector('[data-online-user-count]'))");
+  if (visible) throw new Error("普通账号页面错误显示在线人数标识");
+}
+
+async function assertNoAvailableModel(client: CdpClient): Promise<void> {
+  await client.waitFor(`Array.from(document.querySelectorAll('button')).some((button) => (
+    button.disabled && button.textContent?.trim() === '无可用模型'
+  ))`, 30_000);
+  const hasFakeModel = await client.evaluate<boolean>(`Array.from(document.querySelectorAll('button')).some((button) => (
+    button.textContent?.trim() === 'sonnet 高'
+  ))`);
+  if (hasFakeModel) throw new Error("账号不可用时仍显示静态 sonnet 高");
 }
 
 type BrowserIdentity = {

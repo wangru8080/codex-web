@@ -1315,6 +1315,7 @@ const zh: Record<TranslationKey, string> = {
   'topBar.commit': '提交全部',
   'topBar.push': '推送',
   'topBar.terminal': '终端',
+  'topBar.onlineUsers': '{count} 人在线',
 
   // ── Dashboard ─────────────────────────────────────────────────
 
@@ -1547,6 +1548,7 @@ const zh: Record<TranslationKey, string> = {
 
   // messageInput.* — ModeIndicator dropdown descriptions
   'messageInput.modeCodeDesc': '调用工具、修改文件，并在当前工作区直接执行任务。',
+  'messageInput.noAvailableModel': '无可用模型',
   'messageInput.modePlanDesc': '讨论与规划，不修改文件、不执行工具。',
 
   // nav.*

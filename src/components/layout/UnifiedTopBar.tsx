@@ -7,6 +7,7 @@ import {
   DotsThree,
   Columns,
   ArrowLeft,
+  Users,
 } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useClientPlatform } from '@/hooks/useClientPlatform';
 import { copyWithToast } from "@/lib/clipboard";
 import type { TranslationKey } from "@/i18n";
-import { useAppServerActions } from "@/codex-web/AppServerProvider";
+import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 import { useCompactViewport } from '@/hooks/useCompactViewport';
 
 export function UnifiedTopBar() {
@@ -57,6 +58,7 @@ export function UnifiedTopBar() {
   const { isWindows } = useClientPlatform();
   const pathname = usePathname();
   const { setThreadName, archiveThread } = useAppServerActions();
+  const onlineUsers = useAppServerSelector((state) => state.onlineUsers?.data ?? null);
   const compactViewport = useCompactViewport();
 
   // 新对话和历史对话共用右侧文件树与工作区。
@@ -402,6 +404,27 @@ export function UnifiedTopBar() {
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 {t('workspaceSidebar.toggle' as TranslationKey)}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {onlineUsers !== null && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  role="status"
+                  tabIndex={0}
+                  data-online-user-count={onlineUsers}
+                  aria-label={t('topBar.onlineUsers' as TranslationKey, { count: onlineUsers })}
+                  className="flex h-7 min-w-[62px] shrink-0 items-center justify-center gap-1.5 rounded-full border border-border bg-background/80 px-2 text-xs font-medium tabular-nums text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  <Users size={14} aria-hidden />
+                  <span>{onlineUsers}</span>
+                  <span className="size-2 rounded-full bg-emerald-500" aria-hidden />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {t('topBar.onlineUsers' as TranslationKey, { count: onlineUsers })}
               </TooltipContent>
             </Tooltip>
           )}

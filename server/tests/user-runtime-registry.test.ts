@@ -44,6 +44,83 @@ describe("UserRuntimeRegistry", () => {
     expect(created[1]?.attach).toHaveBeenCalledTimes(1);
   });
 
+  it("在线人数按账号而不是 peer 计数", () => {
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: (_user, onNotification) => fakeRuntime(onNotification),
+    });
+    const first = peer();
+    const second = peer();
+    const other = peer();
+
+    registry.attach(USER, first);
+    registry.attach(USER, second);
+    expect(registry.onlineUserCount()).toBe(1);
+
+    registry.attach({ ...USER, id: "alice", email: "alice@example.com" }, other);
+    expect(registry.onlineUserCount()).toBe(2);
+
+    registry.detach(USER.id, first);
+    expect(registry.onlineUserCount()).toBe(2);
+    registry.detach(USER.id, second);
+    expect(registry.onlineUserCount()).toBe(1);
+  });
+
+  it("presence 只广播给 root，并向 root 的新 peer 发送快照", () => {
+    const runtimes = new Map<string, FakeRuntime>();
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: (user, onNotification) => {
+        const runtime = fakeRuntime(onNotification);
+        runtimes.set(user.id, runtime);
+        return runtime;
+      },
+    });
+    const normalPeer = peer();
+    const rootPeer = peer();
+    const rootSecondPeer = peer();
+    registry.attach(USER, normalPeer);
+    registry.attach({
+      ...USER,
+      id: "root",
+      email: "root@example.com",
+      osUser: "root",
+      role: "admin",
+      allowRoot: true,
+    }, rootPeer);
+
+    expect(runtimes.get(USER.id)?.broadcast).not.toHaveBeenCalled();
+    expect(runtimes.get("root")?.broadcast).toHaveBeenLastCalledWith({
+      method: "bridge/presence/updated",
+      params: { onlineUsers: 2 },
+    });
+
+    registry.attach({
+      ...USER,
+      id: "root",
+      email: "root@example.com",
+      osUser: "root",
+      role: "admin",
+      allowRoot: true,
+    }, rootSecondPeer);
+    expect(rootSecondPeer.send).toHaveBeenCalledWith(expect.stringContaining('"onlineUsers":2'));
+    expect(registry.onlineUserCount()).toBe(2);
+
+    const alicePeer = peer();
+    registry.attach({ ...USER, id: "alice", email: "alice@example.com" }, alicePeer);
+    expect(runtimes.get("root")?.broadcast).toHaveBeenLastCalledWith({
+      method: "bridge/presence/updated",
+      params: { onlineUsers: 3 },
+    });
+    expect(normalPeer.send).not.toHaveBeenCalled();
+
+    registry.detach("alice", alicePeer);
+    expect(runtimes.get("root")?.broadcast).toHaveBeenLastCalledWith({
+      method: "bridge/presence/updated",
+      params: { onlineUsers: 2 },
+    });
+  });
+
   it("跨用户消息不广播，同用户同步消息只广播给同用户 peer", () => {
     const created: FakeRuntime[] = [];
     const registry = new UserRuntimeRegistry({
