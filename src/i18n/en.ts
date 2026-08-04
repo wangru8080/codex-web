@@ -1426,8 +1426,6 @@ const en = {
   'chat.empty.assistant.setup': 'Set Up Assistant',
   'chat.empty.assistant.open': 'Open Assistant',
   'chat.empty.assistant.promo': 'Set up your personal assistant — remembers your preferences, manages schedule, assists creation',
-  'chat.empty.explanation': 'Project Chat works within a codebase folder. Personal Assistant works across all your tasks without a specific project.',
-
   // New-chat welcome — composed as "{salutation}{sep}{question}" by
   // NewChatWelcome.tsx. The salutation reflects time of day; the question
   // pool depends on context (assistant > named project > general). Keep

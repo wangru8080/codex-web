@@ -49,11 +49,6 @@ export function ChatEmptyState({
           </CardFooter>
         </Card>
 
-        {/* Explanation text */}
-        <p className="text-xs text-center text-muted-foreground px-4">
-          {t('chat.empty.explanation')}
-        </p>
-
         {/* Provider setup prompt */}
         {!hasProvider && (
           <div className="space-y-2 text-center">
@@ -70,9 +65,9 @@ export function ChatEmptyState({
 
         {/* Recent projects */}
         {recentProjects && recentProjects.length > 0 && onSelectProject && (
-          <div className="space-y-1.5 text-center">
+          <div className="space-y-2 text-center">
             <p className="text-xs text-muted-foreground">{t('chat.empty.recentProjects')}</p>
-            <div className="flex flex-wrap justify-center gap-1.5">
+            <div className="flex flex-wrap justify-center gap-2">
               {recentProjects.slice(0, 5).map(p => {
                 const name = p.split(/[\\/]/).filter(Boolean).pop() || p;
                 return (
@@ -80,11 +75,12 @@ export function ChatEmptyState({
                     key={p}
                     variant="outline"
                     size="sm"
-                    className="h-6 px-2 text-[11px] font-mono"
+                    className="h-8 max-w-48 rounded-lg bg-background px-3 text-xs font-medium shadow-xs"
                     onClick={() => onSelectProject(p)}
                     title={p}
                   >
-                    {name}
+                    <CodexWebIcon name="folder" size="sm" aria-hidden />
+                    <span className="truncate">{name}</span>
                   </Button>
                 );
               })}

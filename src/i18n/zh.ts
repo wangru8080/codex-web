@@ -1407,8 +1407,6 @@ const zh: Record<TranslationKey, string> = {
   'chat.empty.assistant.setup': '设置助理',
   'chat.empty.assistant.open': '打开助理',
   'chat.empty.assistant.promo': '设置你的个人助理 — 记住你的偏好、管理日程、辅助创作',
-  'chat.empty.explanation': '项目对话在代码目录中工作。个人助理跨所有任务工作，无需特定项目。',
-
   // 新对话欢迎语 — 由 NewChatWelcome.tsx 拼成「{时段问候}{分隔}{问句}」。
   // 问候随时段变化；问句池随上下文切换（助理 > 具名项目 > 通用）。问句不带
   // 时间词（「今天」等由问候承载），避免和问候重复。仅 NewChatWelcome.tsx 使用。
