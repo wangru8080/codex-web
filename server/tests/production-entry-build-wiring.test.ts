@@ -11,6 +11,7 @@ describe("生产服务入口构建接线", () => {
     const packageJson = JSON.parse(
       readFileSync(resolve(repositoryRoot, "package.json"), "utf8"),
     ) as {
+      dependencies: Record<string, string>;
       files: string[];
       scripts: Record<string, string>;
     };
@@ -25,6 +26,7 @@ describe("生产服务入口构建接线", () => {
       "node scripts/build-production-server.mjs",
     );
     expect(packageJson.scripts["build:cli"]).toContain("npm run build:production-server");
+    expect(packageJson.dependencies.next).toBe("16.2.10");
     expect(packageJson.files).toContain("dist/start-next-with-bridge.mjs");
     expect(packageJson.files).toContain("scripts/start-production.mjs");
 
