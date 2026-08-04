@@ -1335,6 +1335,14 @@ const en = {
   'topBar.push': 'Push',
   'topBar.terminal': 'Terminal',
   'topBar.onlineUsers': '{count} online',
+  'topBar.onlineUsersTitle': 'Online accounts',
+  'topBar.onlineUsersSearch': 'Search email, account ID, or Linux user',
+  'topBar.onlineUsersEmpty': 'No matching online accounts',
+  'topBar.onlineUsersLoadFailed': 'Unable to load online accounts',
+  'topBar.onlineUsersLoaded': '{loaded} loaded / {total} results',
+  'topBar.onlineUserActiveTurns': '{count} active tasks',
+  'topBar.onlineUserIdle': 'Idle',
+  'topBar.onlineUserConnections': '{count} connections',
 
   // ── Dashboard ─────────────────────────────────────────────────
 

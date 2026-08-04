@@ -1316,6 +1316,14 @@ const zh: Record<TranslationKey, string> = {
   'topBar.push': '推送',
   'topBar.terminal': '终端',
   'topBar.onlineUsers': '{count} 人在线',
+  'topBar.onlineUsersTitle': '在线账号',
+  'topBar.onlineUsersSearch': '搜索邮箱、账号 ID 或 Linux 用户',
+  'topBar.onlineUsersEmpty': '没有匹配的在线账号',
+  'topBar.onlineUsersLoadFailed': '在线账号加载失败',
+  'topBar.onlineUsersLoaded': '已加载 {loaded} / 共 {total} 个结果',
+  'topBar.onlineUserActiveTurns': '{count} 个任务',
+  'topBar.onlineUserIdle': '空闲',
+  'topBar.onlineUserConnections': '{count} 个连接',
 
   // ── Dashboard ─────────────────────────────────────────────────
 

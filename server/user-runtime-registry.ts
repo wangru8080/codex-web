@@ -5,8 +5,15 @@ import {
   parseJsonRpcMessage,
   type JsonRpcId,
   type JsonRpcMessage,
+  type JsonRpcRequest,
 } from "../src/codex/protocol/json-rpc";
-import { brokerPresenceNotification } from "../src/codex-web/broker-presence";
+import {
+  BROKER_PRESENCE_LIST_METHOD,
+  brokerPresenceNotification,
+  parseBrokerPresenceListParams,
+  type BrokerOnlineUser,
+  type BrokerPresenceListResponse,
+} from "../src/codex-web/broker-presence";
 
 export type UserRuntimeServer = {
   readonly pid: number | undefined;
@@ -101,6 +108,10 @@ export class UserRuntimeRegistry {
     const entry = this.runtimes.get(userId);
     const runtimePeer = entry?.peers.get(peer);
     if (!entry || !runtimePeer) throw new Error("用户 runtime 未连接");
+    if (isPresenceListRequest(message)) {
+      this.handlePresenceListRequest(entry, peer, message);
+      return;
+    }
     if (isBridgeSyncNotification(message)) {
       entry.server.broadcast(message, runtimePeer);
       return;
@@ -243,6 +254,75 @@ export class UserRuntimeRegistry {
     return entry.activeTurns.size + pending;
   }
 
+  private handlePresenceListRequest(
+    entry: RuntimeEntry,
+    peer: AppServerPeer,
+    message: JsonRpcRequest,
+  ): void {
+    if (entry.user.osUser !== "root") {
+      this.sendResponse(peer, {
+        id: message.id,
+        error: { code: -32003, message: "无权查看在线账号" },
+      });
+      return;
+    }
+    try {
+      this.sendResponse(peer, {
+        id: message.id,
+        result: this.onlineUsersPage(message.params),
+      });
+    } catch (error) {
+      this.sendResponse(peer, {
+        id: message.id,
+        error: {
+          code: -32602,
+          message: error instanceof Error ? error.message : "在线账号分页参数无效",
+        },
+      });
+    }
+  }
+
+  private onlineUsersPage(params: unknown): BrokerPresenceListResponse {
+    const { query, limit, cursor } = parseBrokerPresenceListParams(params);
+    const users: BrokerOnlineUser[] = [];
+    for (const entry of this.runtimes.values()) {
+      if (entry.peers.size === 0) continue;
+      const user = {
+        id: entry.user.id,
+        email: entry.user.email,
+        osUser: entry.user.osUser,
+        connections: entry.peers.size,
+        activeTurns: this.turnCount(entry),
+      };
+      if (
+        query
+        && !user.id.toLowerCase().includes(query)
+        && !user.email.toLowerCase().includes(query)
+        && !user.osUser.toLowerCase().includes(query)
+      ) continue;
+      users.push(user);
+    }
+    users.sort(compareOnlineUsers);
+    const cursorUser = cursor ? decodeOnlineUserCursor(cursor) : null;
+    const start = cursorUser
+      ? users.findIndex((user) => compareOnlineUsers(user, cursorUser) > 0)
+      : 0;
+    const pageStart = start < 0 ? users.length : start;
+    const items = users.slice(pageStart, pageStart + limit);
+    const hasMore = pageStart + items.length < users.length;
+    return {
+      total: users.length,
+      items,
+      nextCursor: hasMore && items.length > 0
+        ? encodeOnlineUserCursor(items[items.length - 1]!)
+        : null,
+    };
+  }
+
+  private sendResponse(peer: AppServerPeer, response: JsonRpcMessage): void {
+    if (peer.isOpen()) peer.send(JSON.stringify(response));
+  }
+
   private broadcastPresence(): void {
     const notification = brokerPresenceNotification(this.onlineUserCount());
     for (const entry of this.runtimes.values()) {
@@ -267,8 +347,46 @@ export class RuntimeCapacityError extends Error {
 
 function isTurnStartRequest(
   message: JsonRpcMessage,
-): message is Extract<JsonRpcMessage, { method: string }> & { id: JsonRpcId } {
+): message is JsonRpcRequest & { method: "turn/start" } {
   return "method" in message && message.method === "turn/start" && message.id !== undefined;
+}
+
+function isPresenceListRequest(
+  message: JsonRpcMessage,
+): message is JsonRpcRequest & { method: typeof BROKER_PRESENCE_LIST_METHOD } {
+  return "method" in message
+    && message.method === BROKER_PRESENCE_LIST_METHOD
+    && message.id !== undefined;
+}
+
+function compareOnlineUsers(
+  left: Pick<BrokerOnlineUser, "email" | "id">,
+  right: Pick<BrokerOnlineUser, "email" | "id">,
+): number {
+  if (left.email < right.email) return -1;
+  if (left.email > right.email) return 1;
+  if (left.id < right.id) return -1;
+  if (left.id > right.id) return 1;
+  return 0;
+}
+
+function encodeOnlineUserCursor(user: Pick<BrokerOnlineUser, "email" | "id">): string {
+  return Buffer.from(JSON.stringify([user.email, user.id]), "utf8").toString("base64url");
+}
+
+function decodeOnlineUserCursor(cursor: string): Pick<BrokerOnlineUser, "email" | "id"> {
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    if (
+      !Array.isArray(parsed)
+      || parsed.length !== 2
+      || typeof parsed[0] !== "string"
+      || typeof parsed[1] !== "string"
+    ) throw new Error();
+    return { email: parsed[0], id: parsed[1] };
+  } catch {
+    throw new Error("cursor 无效");
+  }
 }
 
 function readTurnId(params: unknown): string | null {

@@ -7,7 +7,6 @@ import {
   DotsThree,
   Columns,
   ArrowLeft,
-  Users,
 } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
@@ -33,6 +32,7 @@ import { copyWithToast } from "@/lib/clipboard";
 import type { TranslationKey } from "@/i18n";
 import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 import { useCompactViewport } from '@/hooks/useCompactViewport';
+import { OnlineUsersPopover } from "./OnlineUsersPopover";
 
 export function UnifiedTopBar() {
   const {
@@ -409,24 +409,7 @@ export function UnifiedTopBar() {
           )}
 
           {onlineUsers !== null && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  role="status"
-                  tabIndex={0}
-                  data-online-user-count={onlineUsers}
-                  aria-label={t('topBar.onlineUsers' as TranslationKey, { count: onlineUsers })}
-                  className="flex h-7 min-w-[62px] shrink-0 items-center justify-center gap-1.5 rounded-full border border-border bg-background/80 px-2 text-xs font-medium tabular-nums text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                >
-                  <Users size={14} aria-hidden />
-                  <span>{onlineUsers}</span>
-                  <span className="size-2 rounded-full bg-emerald-500" aria-hidden />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                {t('topBar.onlineUsers' as TranslationKey, { count: onlineUsers })}
-              </TooltipContent>
-            </Tooltip>
+            <OnlineUsersPopover onlineUsers={onlineUsers} />
           )}
 
           {isWindows && <div style={{ width: 138 }} className="shrink-0" />}

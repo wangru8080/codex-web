@@ -142,7 +142,12 @@ import {
 } from "./cross-client-sync";
 import { reconnectDelayMs } from "./reconnect-policy";
 import { readAccountLoginCompletion } from "./account-login-adapter";
-import { readBrokerPresence } from "./broker-presence";
+import {
+  BROKER_PRESENCE_LIST_METHOD,
+  readBrokerPresence,
+  type BrokerPresenceListParams,
+  type BrokerPresenceListResponse,
+} from "./broker-presence";
 
 const AppServerStoreContext = createContext<AppServerStore | null>(null);
 const AppServerActionsContext = createContext<AppServerActions | null>(null);
@@ -239,6 +244,7 @@ export type AppServerActions = {
   cancelAccountLogin: (loginId: string) => Promise<CancelLoginAccountResponse>;
   logoutAccount: () => Promise<LogoutAccountResponse>;
   publishCrossClientUserMessage: (event: CrossClientUserMessage) => void;
+  listOnlineUsers: (params: BrokerPresenceListParams) => Promise<BrokerPresenceListResponse>;
 };
 
 export function AppServerProvider({ children }: { children: React.ReactNode }) {
@@ -935,6 +941,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return await client.request("fuzzyFileSearch", params) as FuzzyFileSearchResponse;
   }, []);
 
+  const listOnlineUsers = useCallback(async (params: BrokerPresenceListParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return await client.request(BROKER_PRESENCE_LIST_METHOD, params) as BrokerPresenceListResponse;
+  }, []);
+
   const updateMemorySettings = useCallback(async ({ threadId, useMemories, generateMemories }: { threadId?: string; useMemories: boolean; generateMemories: boolean }) => {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
@@ -1366,8 +1378,9 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       cancelAccountLogin,
       logoutAccount,
       publishCrossClientUserMessage,
+      listOnlineUsers,
     }),
-    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage],
+    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
   );
 
   return (

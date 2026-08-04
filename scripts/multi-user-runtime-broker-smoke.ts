@@ -95,6 +95,17 @@ async function main(): Promise<void> {
     await waitForOnlineUsers(root, 3);
     await assertOnlineUsersHidden(rrssnas);
     await assertOnlineUsersHidden(codex);
+    await assertOnlineUserList(root, [
+      "codex@example.test",
+      "root@example.test",
+      "rrssnas@example.test",
+    ]);
+    await searchOnlineUserList(root, "root", ["root@example.test"]);
+    await searchOnlineUserList(root, "", [
+      "codex@example.test",
+      "root@example.test",
+      "rrssnas@example.test",
+    ]);
     await assertNoAvailableModel(root);
     const screenshot = await root.request<{ data: string }>("Page.captureScreenshot", { format: "png" });
     await writeFile(join(runDirectory, "root-online-users.png"), Buffer.from(screenshot.data, "base64"), { flag: "wx" });
@@ -108,7 +119,7 @@ async function main(): Promise<void> {
     const mobileScreenshot = await root.request<{ data: string }>("Page.captureScreenshot", { format: "png" });
     await writeFile(join(runDirectory, "root-online-users-mobile.png"), Buffer.from(mobileScreenshot.data, "base64"), { flag: "wx" });
     await root.request("Emulation.clearDeviceMetricsOverride");
-    progress("三账号身份、隔离 CODEX_HOME 与 root 在线人数标识验证完成");
+    progress("三账号身份、隔离 CODEX_HOME 与 root 在线账号分页列表验证完成");
 
     const rrssnasSecond = await browser.createPage(rrssnas.contextId, `${baseUrl}/chat`);
     await rrssnasSecond.waitFor("location.pathname === '/chat'", 30_000);
@@ -282,11 +293,14 @@ async function main(): Promise<void> {
         accountTurnLimitApplied: true,
         removingLimitsRestoredCapacity: true,
         rootPresenceUpdatedWithoutPolling: true,
+        rootOnlineAccountListPaginated: true,
+        rootOnlineAccountSearchApplied: true,
+        smallOnlineAccountListUsedSinglePage: true,
         ordinaryUsersCannotSeePresence: true,
         sameAccountPeersCountOnce: true,
         unavailableAccountHasNoFakeModel: true,
       },
-      note: "真实 Chrome 已验证配置热加载、隔离与 root 在线人数事件推送；未使用真实 Codex Home，未验证 sudo/UID 切换。",
+      note: "真实 Chrome 已验证配置热加载、隔离、root 在线人数事件推送与按需分页账号列表；未使用真实 Codex Home，未验证 sudo/UID 切换。",
     };
     await writeFile(join(runDirectory, "result.json"), `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" });
     console.log(JSON.stringify(result, null, 2));
@@ -487,6 +501,45 @@ async function waitForOnlineUsers(client: CdpClient, expected: number): Promise<
 async function assertOnlineUsersHidden(client: CdpClient): Promise<void> {
   const visible = await client.evaluate<boolean>("Boolean(document.querySelector('[data-online-user-count]'))");
   if (visible) throw new Error("普通账号页面错误显示在线人数标识");
+}
+
+async function assertOnlineUserList(client: CdpClient, expectedEmails: string[]): Promise<void> {
+  await client.evaluate<void>("document.querySelector('[data-online-user-count]')?.click()");
+  await client.waitFor("Boolean(document.querySelector('[data-online-user-list]'))", 30_000);
+  await waitForOnlineUserRows(client, expectedEmails);
+  const page = await client.evaluate<{ loaded: string | null; total: string | null }>(`(() => {
+    const footer = document.querySelector('[data-online-user-loaded]');
+    return {
+      loaded: footer?.getAttribute('data-online-user-loaded') ?? null,
+      total: footer?.getAttribute('data-online-user-total') ?? null,
+    };
+  })()`);
+  if (page.loaded !== String(expectedEmails.length) || page.total !== String(expectedEmails.length)) {
+    throw new Error(`在线账号少量分页结果异常：${JSON.stringify(page)}`);
+  }
+}
+
+async function searchOnlineUserList(
+  client: CdpClient,
+  query: string,
+  expectedEmails: string[],
+): Promise<void> {
+  await client.evaluate<void>(`(() => {
+    const input = document.querySelector('[data-online-user-search]');
+    if (!(input instanceof HTMLInputElement)) throw new Error('未找到在线账号搜索框');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, ${JSON.stringify(query)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitForOnlineUserRows(client, expectedEmails);
+}
+
+async function waitForOnlineUserRows(client: CdpClient, expectedEmails: string[]): Promise<void> {
+  await client.waitFor(`(() => {
+    const actual = Array.from(document.querySelectorAll('[data-online-user-email]'))
+      .map((element) => element.getAttribute('data-online-user-email'));
+    return JSON.stringify(actual) === ${JSON.stringify(JSON.stringify(expectedEmails))};
+  })()`, 30_000);
 }
 
 async function assertNoAvailableModel(client: CdpClient): Promise<void> {

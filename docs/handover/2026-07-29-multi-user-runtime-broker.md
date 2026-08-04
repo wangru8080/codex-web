@@ -12,6 +12,8 @@ macOS 适配计划：[2026-07-29-macos-multi-user-runtime.md](../exec-plans/comp
 
 并发限制计划：[2026-08-04-runtime-concurrency-limits.md](../exec-plans/completed/2026-08-04-runtime-concurrency-limits.md)
 
+在线账号分页计划：[2026-08-04-root-online-account-list.md](../exec-plans/completed/2026-08-04-root-online-account-list.md)
+
 ## 用户能力
 
 - 一个非 root Codex Web 支持多个静态账号并发登录。
@@ -34,6 +36,13 @@ Web 与 broker 通过 NDJSON Unix socket 通信：
 - `login`：scrypt 校验并签发 HMAC Session；错误尝试按规范化邮箱限速，不信任客户端可控的代理来源头。
 - `verifySession`：Proxy 与敏感 API 独立验证 Cookie。
 - `attachRuntime`：再次验证 Session，成功后连接切换为双向 JSON-RPC message stream。
+
+runtime stream 另外保留两个仅供 Web bridge 使用的 broker method：
+
+- `bridge/presence/updated`：仅向 `osUser=root` 推送在线账号计数，不携带账号列表。
+- `bridge/presence/list`：仅允许 root 按 `query + limit + cursor` 查询在线账号。默认每页 50 条、最大 100 条，按邮箱与账号 ID 稳定排序；返回邮箱、账号 ID、Linux 用户、连接数和活动 Turn 数，不返回密码、路径或 PID。普通账号直接请求返回 `-32003`。
+
+前端只在 root 点击在线人数标识后请求第一页，滚动到底时按不透明 cursor 续页，搜索由服务端完成。列表使用 `react-virtuoso`，因此配置账号或在线账号规模增大时不会一次创建等量 DOM；少于 50 个在线账号时同一接口在一页返回并令 `nextCursor=null`。
 
 WebSocket upgrade 先验证远程连接策略、同源 Origin 和 cookie，再 attach broker。浏览器不会收到共享 bridge token。legacy 单用户模式继续使用原有环境变量登录和 query token bridge。
 
@@ -93,3 +102,5 @@ macOS 使用 root-owned LaunchDaemon 运行 runtime，并以 `dscacheutil` 查�
 - macOS 适配后的本地全量回归为 149 个测试文件、683 项测试通过；生产 CLI 构建、Linux 单用户真实 app-server smoke 和 npm dry-run 通过。Linux root UID/Chrome smoke 有前述既有通过证据，但本轮因执行沙箱不能取得 root 未重新运行。
 - 2026-08-04 配置热加载回归：全量测试与生产 CLI 构建通过。真实 Chrome 使用生产 runtime/Web CLI 和隔离目录验证无效配置回退、等价配置 PID 不变、运行中为同一 `osUser` 新增不同邮箱/密码/`CODEX_HOME` 账号、密码交叉拒绝、单用户 `CODEX_HOME` 替换和未变化用户持续在线。rrssnas 两个 app-server 均为 UID/GID `1000:10`，codex 热加载前后均为 `1004:100`；退出后进程和 socket 无残留。证据位于 `/volume2/SSD/codex/Temp/codex-web-unified-cli-browser-smoke-FdDug9/result.json`。
 - 2026-08-04 root 在线人数：`UserRuntimeRegistry` 按拥有至少一个 bridge peer 的 broker 用户 ID 计数，通过现有 WebSocket 仅向 `osUser=root` 推送 `bridge/presence/updated`，不增加轮询或后台服务。普通账号收不到数据，同账号多页面只计一次，断线时前端清空旧值。真实 Chrome 验证人数按 `3 → 4 → 3 → 2 → 1` 更新，并完成桌面与 `390×844` 视觉检查；证据位于 `/volume2/SSD/codex/Temp/codex-web-multi-user-browser-smoke-q34VN4/result.json`。
+- 2026-08-04 root 在线账号分页列表：`bridge/presence/list` 的 root-only 权限、默认/最大 limit、非法 cursor、稳定 cursor 续页、服务端搜索、连接数与活动 Turn 数均有定向测试。全量 165 个测试文件、779 项测试和生产 CLI 构建通过。真实 Chrome 在 3 个在线账号下验证点击按需加载、搜索收敛、单页 `nextCursor=null`、普通账号无入口、同账号多页面不重复计数，以及桌面和 `390×844` 视觉布局；证据位于 `/volume2/SSD/codex/Temp/codex-web-multi-user-browser-smoke-T8aQOh/result.json`，未使用真实 Codex Home，未验证 sudo/UID 切换。
+- 2026-08-04 本功能发布前补跑真实 root UID smoke：broker 为 UID/GID `0:0`；`rrssnas` runtime 为 UID/EUID `1000`、GID/EGID `10`、补充组 `10/100/133`；`codex` runtime 为 UID/EUID `1004`、GID/EGID `100`、补充组 `100/133/991`。两者 effective/bounding capability 均清零，跨用户读取被拒绝，使用独立测试 `CODEX_HOME`，记录 PID 与 socket 均已回收。证据位于 `/volume2/SSD/codex/Temp/codex-web-multi-user-uid-smoke-fPndqA/result.json`，`realCodexHomeUsed=false`。

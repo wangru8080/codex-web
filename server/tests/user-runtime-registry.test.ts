@@ -4,6 +4,7 @@ import type { AppServerPeer } from "../app-server-peer";
 import type { RuntimeBrokerUserConfig } from "../runtime-broker-config";
 import { UserRuntimeRegistry, type UserRuntimeServer } from "../user-runtime-registry";
 import type { JsonRpcMessage } from "../../src/codex/protocol/json-rpc";
+import { BROKER_PRESENCE_LIST_METHOD } from "../../src/codex-web/broker-presence";
 
 const USER: RuntimeBrokerUserConfig = {
   id: "codex",
@@ -119,6 +120,115 @@ describe("UserRuntimeRegistry", () => {
       method: "bridge/presence/updated",
       params: { onlineUsers: 2 },
     });
+  });
+
+  it("root 按 cursor 分页、搜索在线账号，少量结果在一页结束", () => {
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: (_user, onNotification) => fakeRuntime(onNotification),
+    });
+    const rootPeer = peer();
+    const rootSecondPeer = peer();
+    const alicePeer = peer();
+    const bobPeer = peer();
+    const rootUser = {
+      ...USER,
+      id: "root",
+      email: "root@example.com",
+      osUser: "root",
+      role: "admin" as const,
+      allowRoot: true,
+    };
+    registry.attach(rootUser, rootPeer);
+    registry.attach(rootUser, rootSecondPeer);
+    registry.attach({ ...USER, id: "alice", email: "alice@example.com" }, alicePeer);
+    registry.attach({ ...USER, id: "bob", email: "bob@example.com" }, bobPeer);
+    registry.handleClientMessage("alice", alicePeer, {
+      id: "turn-1",
+      method: "turn/start",
+      params: {},
+    });
+
+    registry.handleClientMessage("root", rootPeer, {
+      id: "page-1",
+      method: BROKER_PRESENCE_LIST_METHOD,
+      params: { limit: 2 },
+    });
+    const firstPage = sentResult(rootPeer);
+    expect(firstPage).toMatchObject({
+      total: 3,
+      items: [
+        { id: "alice", email: "alice@example.com", connections: 1, activeTurns: 1 },
+        { id: "bob", email: "bob@example.com", connections: 1, activeTurns: 0 },
+      ],
+    });
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+    registry.handleClientMessage("root", rootPeer, {
+      id: "page-2",
+      method: BROKER_PRESENCE_LIST_METHOD,
+      params: { limit: 2, cursor: firstPage.nextCursor },
+    });
+    expect(sentResult(rootPeer)).toEqual({
+      total: 3,
+      items: [{
+        id: "root",
+        email: "root@example.com",
+        osUser: "root",
+        connections: 2,
+        activeTurns: 0,
+      }],
+      nextCursor: null,
+    });
+
+    registry.handleClientMessage("root", rootPeer, {
+      id: "search",
+      method: BROKER_PRESENCE_LIST_METHOD,
+      params: { query: "ROOT", limit: 50 },
+    });
+    expect(sentResult(rootPeer)).toEqual({
+      total: 1,
+      items: [{
+        id: "root",
+        email: "root@example.com",
+        osUser: "root",
+        connections: 2,
+        activeTurns: 0,
+      }],
+      nextCursor: null,
+    });
+
+    registry.handleClientMessage("root", rootPeer, {
+      id: "invalid-cursor",
+      method: BROKER_PRESENCE_LIST_METHOD,
+      params: { cursor: "invalid" },
+    });
+    expect(sentMessage(rootPeer)).toEqual({
+      id: "invalid-cursor",
+      error: { code: -32602, message: "cursor 无效" },
+    });
+  });
+
+  it("普通账号不能查询在线账号列表", () => {
+    const runtime = fakeRuntime(() => undefined);
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: () => runtime,
+    });
+    const client = peer();
+    registry.attach(USER, client);
+
+    registry.handleClientMessage(USER.id, client, {
+      id: 7,
+      method: BROKER_PRESENCE_LIST_METHOD,
+      params: { limit: 50 },
+    });
+
+    expect(sentMessage(client)).toEqual({
+      id: 7,
+      error: { code: -32003, message: "无权查看在线账号" },
+    });
+    expect(runtime.handleClientMessage).not.toHaveBeenCalled();
   });
 
   it("跨用户消息不广播，同用户同步消息只广播给同用户 peer", () => {
@@ -451,5 +561,24 @@ function peer(): AppServerPeer {
     isOpen: () => true,
     send: vi.fn(),
     close: vi.fn(),
+  };
+}
+
+function sentMessage(client: AppServerPeer): Record<string, unknown> {
+  const send = client.send as ReturnType<typeof vi.fn>;
+  const serialized = send.mock.calls.at(-1)?.[0];
+  if (typeof serialized !== "string") throw new Error("peer 未发送 JSON-RPC 消息");
+  return JSON.parse(serialized) as Record<string, unknown>;
+}
+
+function sentResult(client: AppServerPeer): {
+  total: number;
+  items: Array<Record<string, unknown>>;
+  nextCursor: string | null;
+} {
+  return sentMessage(client).result as {
+    total: number;
+    items: Array<Record<string, unknown>>;
+    nextCursor: string | null;
   };
 }
