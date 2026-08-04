@@ -9,7 +9,9 @@
 ## 数据边界
 
 - 会话标题、目录、更新时间和运行状态仍来自 `app-server.thread/list` 及既有 notification reducer。
-- 置顶是浏览器 UI 排序偏好，分别保存在 `codex-web:pinned-projects` 和 `codex-web:pinned-sessions`。
+- 置顶是浏览器 UI 排序偏好，按 `/api/auth/me` 返回的稳定 `user.id` 分区，分别保存在 `codex-web:pinned-projects:<encoded-user-id>` 和 `codex-web:pinned-sessions:<encoded-user-id>`。
+- 身份解析完成前不读取置顶状态，也不开放项目或会话的置顶操作；身份请求失败时保持无置顶状态。
+- 旧版 `codex-web:pinned-projects` 和 `codex-web:pinned-sessions` 全局键不再读取或迁移，避免同一浏览器中后登录的用户继承旧用户偏好。
 - 项目置顶后整个项目从普通项目区移到置顶区。
 - 单独置顶会话从所属普通项目中移到置顶区。
 - 项目和会话置顶相互独立；置顶项目中的置顶会话显示在项目上方，并从项目内部移除以避免重复。
@@ -33,7 +35,9 @@
 - Chrome CDP 真实浏览器：完成会话置顶、折叠/展开、项目置顶、取消项目置顶、快捷取消会话置顶；console 错误为 0。
 - 截图目录：`/volume2/SSD/codex/Temp/sidebar-pinning-2026-08-03/`。
 - 组合置顶回归：置顶项目内的会话可独立置顶，会话 y=204、项目 y=236、目标 href 仅出现 1 次；截图位于 `/volume2/SSD/codex/Temp/sidebar-pinning-project-session-fix-2026-08-03/`。
+- Web 用户隔离回归：定向测试 15 条通过，完整 `npm run test` 退出码 0；真实浏览器验证其他用户键和旧全局键均不显示置顶，当前用户键正常显示，console 错误为 0。
+- 用户隔离截图与验证脚本：`/volume2/SSD/codex/Temp/sidebar-pinning-user-scope-2026-08-04/`。
 
 ## 剩余边界
 
-置顶偏好仅在当前浏览器配置中持久化，不跨浏览器或设备同步。若未来 app-server 提供官方置顶协议，应迁移为协议事实源并保留本地键的一次性兼容读取。
+置顶偏好按 Web 用户隔离，但仍仅在当前浏览器配置中持久化，不跨浏览器或设备同步。若未来 app-server 提供官方置顶协议，应迁移为协议事实源；旧全局键不得恢复兼容读取，避免重新引入跨用户泄漏。

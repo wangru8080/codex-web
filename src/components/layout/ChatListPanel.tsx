@@ -72,18 +72,40 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
     () => loadCollapsedProjects()
   );
-  const [pinnedProjects, setPinnedProjects] = useState<Set<string>>(
-    () => loadPinnedProjects()
-  );
-  const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(
-    () => loadPinnedSessions()
-  );
+  const [pinStorageUserId, setPinStorageUserId] = useState<string | null>(null);
+  const [pinnedProjects, setPinnedProjects] = useState<Set<string>>(new Set());
+  const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(new Set());
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [hoveredFolder, setHoveredFolder] = useState<string | null>(null);
   // CodexWeb 只保留项目维度的会话列表。
   const [projectsCollapsed, setProjectsCollapsed] = useState(false);
   const [projectListExpanded, setProjectListExpanded] = useState(false);
   const PROJECT_LIST_TRUNCATE_LIMIT = 10;
+
+  useEffect(() => {
+    let disposed = false;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Web 用户身份不可用");
+        return response.json() as Promise<{ user?: { id?: unknown } }>;
+      })
+      .then((payload) => {
+        const userId = typeof payload.user?.id === "string" ? payload.user.id.trim() : "";
+        if (!userId || disposed) return;
+        setPinnedProjects(loadPinnedProjects(userId));
+        setPinnedSessions(loadPinnedSessions(userId));
+        setPinStorageUserId(userId);
+      })
+      .catch(() => {
+        if (disposed) return;
+        setPinnedProjects(new Set());
+        setPinnedSessions(new Set());
+        setPinStorageUserId(null);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   const handleFolderSelect = useCallback(async (path: string) => {
     localStorage.setItem('codepilot:last-working-directory', path);
@@ -110,24 +132,26 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
   }, []);
 
   const togglePinnedProject = useCallback((workingDirectory: string) => {
+    if (!pinStorageUserId) return;
     setPinnedProjects((previous) => {
       const next = new Set(previous);
       if (next.has(workingDirectory)) next.delete(workingDirectory);
       else next.add(workingDirectory);
-      savePinnedProjects(next);
+      savePinnedProjects(pinStorageUserId, next);
       return next;
     });
-  }, []);
+  }, [pinStorageUserId]);
 
   const togglePinnedSession = useCallback((sessionId: string) => {
+    if (!pinStorageUserId) return;
     setPinnedSessions((previous) => {
       const next = new Set(previous);
       if (next.has(sessionId)) next.delete(sessionId);
       else next.add(sessionId);
-      savePinnedSessions(next);
+      savePinnedSessions(pinStorageUserId, next);
       return next;
     });
-  }, []);
+  }, [pinStorageUserId]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -334,7 +358,7 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
         onMouseLeave={() => setHoveredSession(null)}
         onArchive={handleArchiveSession}
         onRename={handleRenameSession}
-        onTogglePin={togglePinnedSession}
+        onTogglePin={pinStorageUserId ? togglePinnedSession : undefined}
       />
     );
   };
@@ -364,7 +388,7 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
           hideCaret
           isPinned={isPinned}
           onToggle={() => toggleProject(group.workingDirectory)}
-          onTogglePin={togglePinnedProject}
+          onTogglePin={pinStorageUserId ? togglePinnedProject : undefined}
           onMouseEnter={() => setHoveredFolder(group.workingDirectory)}
           onMouseLeave={() => setHoveredFolder(null)}
           onCreateSession={(event) => handleCreateSessionInProject(event, group.workingDirectory)}

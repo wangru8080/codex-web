@@ -6,6 +6,18 @@ const readSource = (path: string) =>
   readFileSync(resolve(process.cwd(), path), "utf8");
 
 describe("左侧栏置顶接线", () => {
+  it("使用当前 Web 用户 ID 隔离置顶偏好", () => {
+    const panel = readSource("src/components/layout/ChatListPanel.tsx");
+
+    expect(panel).toContain('fetch("/api/auth/me", { cache: "no-store" })');
+    expect(panel).toContain("loadPinnedProjects(userId)");
+    expect(panel).toContain("loadPinnedSessions(userId)");
+    expect(panel).toContain("savePinnedProjects(pinStorageUserId, next)");
+    expect(panel).toContain("savePinnedSessions(pinStorageUserId, next)");
+    expect(panel).toContain("onTogglePin={pinStorageUserId ? togglePinnedProject : undefined}");
+    expect(panel).toContain("onTogglePin={pinStorageUserId ? togglePinnedSession : undefined}");
+  });
+
   it("仅在存在有效置顶内容时渲染可折叠的置顶分组", () => {
     const panel = readSource("src/components/layout/ChatListPanel.tsx");
 

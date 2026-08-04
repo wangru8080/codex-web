@@ -7,6 +7,13 @@ export const COLLAPSED_INITIALIZED_KEY = "codepilot:collapsed-initialized";
 const PINNED_PROJECTS_KEY = "codex-web:pinned-projects";
 const PINNED_SESSIONS_KEY = "codex-web:pinned-sessions";
 
+function scopedPinKey(baseKey: string, userId: string): string | null {
+  const normalizedUserId = userId.trim();
+  return normalizedUserId
+    ? `${baseKey}:${encodeURIComponent(normalizedUserId)}`
+    : null;
+}
+
 function loadStringSet(key: string): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
@@ -28,20 +35,24 @@ function saveStringSet(key: string, values: ReadonlySet<string>): void {
   }
 }
 
-export function loadPinnedProjects(): Set<string> {
-  return loadStringSet(PINNED_PROJECTS_KEY);
+export function loadPinnedProjects(userId: string): Set<string> {
+  const key = scopedPinKey(PINNED_PROJECTS_KEY, userId);
+  return key ? loadStringSet(key) : new Set();
 }
 
-export function savePinnedProjects(projects: ReadonlySet<string>): void {
-  saveStringSet(PINNED_PROJECTS_KEY, projects);
+export function savePinnedProjects(userId: string, projects: ReadonlySet<string>): void {
+  const key = scopedPinKey(PINNED_PROJECTS_KEY, userId);
+  if (key) saveStringSet(key, projects);
 }
 
-export function loadPinnedSessions(): Set<string> {
-  return loadStringSet(PINNED_SESSIONS_KEY);
+export function loadPinnedSessions(userId: string): Set<string> {
+  const key = scopedPinKey(PINNED_SESSIONS_KEY, userId);
+  return key ? loadStringSet(key) : new Set();
 }
 
-export function savePinnedSessions(sessions: ReadonlySet<string>): void {
-  saveStringSet(PINNED_SESSIONS_KEY, sessions);
+export function savePinnedSessions(userId: string, sessions: ReadonlySet<string>): void {
+  const key = scopedPinKey(PINNED_SESSIONS_KEY, userId);
+  if (key) saveStringSet(key, sessions);
 }
 
 export function loadCollapsedProjects(): Set<string> {

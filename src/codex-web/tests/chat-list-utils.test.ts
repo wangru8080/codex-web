@@ -135,26 +135,41 @@ describe("partitionPinnedSidebar", () => {
 });
 
 describe("sidebar pin storage", () => {
-  it("分别持久化项目路径和会话 ID", () => {
+  it("按 Web 用户分别持久化项目路径和会话 ID", () => {
     const storage = memoryStorage();
     vi.stubGlobal("window", { localStorage: storage });
 
-    savePinnedProjects(new Set(["/repo/web"]));
-    savePinnedSessions(new Set(["thread-web"]));
+    savePinnedProjects("root", new Set(["/repo/web"]));
+    savePinnedSessions("root", new Set(["thread-root"]));
+    savePinnedProjects("alice", new Set(["/repo/alice"]));
+    savePinnedSessions("alice", new Set(["thread-alice"]));
 
-    expect(loadPinnedProjects()).toEqual(new Set(["/repo/web"]));
-    expect(loadPinnedSessions()).toEqual(new Set(["thread-web"]));
+    expect(loadPinnedProjects("root")).toEqual(new Set(["/repo/web"]));
+    expect(loadPinnedSessions("root")).toEqual(new Set(["thread-root"]));
+    expect(loadPinnedProjects("alice")).toEqual(new Set(["/repo/alice"]));
+    expect(loadPinnedSessions("alice")).toEqual(new Set(["thread-alice"]));
+  });
+
+  it("忽略旧的全局置顶键避免跨用户继承", () => {
+    const storage = memoryStorage({
+      "codex-web:pinned-projects": JSON.stringify(["/repo/web"]),
+      "codex-web:pinned-sessions": JSON.stringify(["thread-web"]),
+    });
+    vi.stubGlobal("window", { localStorage: storage });
+
+    expect(loadPinnedProjects("alice")).toEqual(new Set());
+    expect(loadPinnedSessions("alice")).toEqual(new Set());
   });
 
   it("存储内容损坏时安全回退为空集合", () => {
     const storage = memoryStorage({
-      "codex-web:pinned-projects": "{bad json",
-      "codex-web:pinned-sessions": JSON.stringify(["thread-web", 42]),
+      "codex-web:pinned-projects:alice%40example.com": "{bad json",
+      "codex-web:pinned-sessions:alice%40example.com": JSON.stringify(["thread-web", 42]),
     });
     vi.stubGlobal("window", { localStorage: storage });
 
-    expect(loadPinnedProjects()).toEqual(new Set());
-    expect(loadPinnedSessions()).toEqual(new Set());
+    expect(loadPinnedProjects("alice@example.com")).toEqual(new Set());
+    expect(loadPinnedSessions("alice@example.com")).toEqual(new Set());
   });
 });
 

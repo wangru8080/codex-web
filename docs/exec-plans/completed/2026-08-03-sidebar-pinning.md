@@ -6,7 +6,7 @@
 
 **目标：** 对齐官方 Codex App，为左侧栏增加项目级和会话级置顶，并在没有有效置顶内容时隐藏整个“置顶”分组。
 
-**架构：** app-server Thread 继续作为会话内容、项目目录与运行状态的事实源；置顶仅是 Web UI 排序偏好，复用现有 `localStorage` 模式。纯函数负责把项目组分割为置顶会话、置顶项目和普通项目，React 组件只负责交互与渲染。
+**架构：** app-server Thread 继续作为会话内容、项目目录与运行状态的事实源；置顶仅是 Web UI 排序偏好，按已认证 Web 用户 ID 写入 `localStorage`。纯函数负责把项目组分割为置顶会话、置顶项目和普通项目，React 组件只负责交互与渲染。
 
 **技术栈：** React 19、TypeScript、Next.js、Vitest、Playwright smoke、浏览器 CDP。
 
@@ -38,7 +38,7 @@
 
 **接口：**
 
-- 产出：`loadPinnedProjects()`、`savePinnedProjects()`、`loadPinnedSessions()`、`savePinnedSessions()`。
+- 产出：接收 Web 用户 ID 的 `loadPinnedProjects()`、`savePinnedProjects()`、`loadPinnedSessions()`、`savePinnedSessions()`。
 - 产出：`partitionPinnedSidebar(projectGroups, pinnedProjects, pinnedSessions)`，返回 `pinnedSessions`、`pinnedProjects`、`regularProjects`。
 
 - [x] 编写失败测试：覆盖项目置顶、会话置顶、项目包含会话时去重、无有效置顶项、存储损坏回退。
@@ -93,6 +93,8 @@
 - 2026-08-03：项目和会话置顶保持独立；置顶项目中的置顶会话显示在项目上方，并从项目内部过滤，确保只出现一次。
 - 2026-08-03：真实浏览器使用已加载隔离 app-server Thread 的现有标签页验证，未注入或伪造会话数据。
 - 2026-08-03：修复置顶项目内会话只切换菜单状态、未独立显示的问题；根因位于 `partitionPinnedSidebar` 的项目优先过滤规则。
+- 2026-08-04：修复同一浏览器中不同 Web 用户共享置顶的问题；存储键按 `/api/auth/me` 返回的稳定 `user.id` 分区，身份解析完成前不开放置顶操作。
+- 2026-08-04：旧版无用户后缀的全局键不迁移、不读取，避免新用户继承之前登录用户的置顶偏好。
 
 ## Smoke Ledger
 
@@ -104,6 +106,9 @@
 | 置顶整个项目 | 项目及会话进入置顶区且普通区不重复 | 通过；`03-project-pinned.png`，普通项目区只保留“新建项目” |
 | 折叠置顶区 | 仅保留“置顶”标题和右向箭头 | 通过；`02-pinned-collapsed.png`，`aria-expanded=false` |
 | 取消置顶 | 内容回到普通项目区；最后一项取消后标题消失 | 通过；两个本地集合均为空，console 错误为 0 |
+| 其他用户置顶同一路径 | 当前用户不显示“置顶”分组 | 通过；标题数量为 0，`03-other-user-ignored-clear.png` |
+| 旧版全局置顶键 | 当前用户不继承旧数据 | 通过；标题数量为 0 |
+| 当前用户置顶同一路径 | 当前用户显示“置顶”分组 | 通过；标题数量为 1，`04-current-user-pinned-clear.png` |
 
 ## 完成状态
 
@@ -120,3 +125,11 @@
 - 菜单反例：独立置顶会话显示“取消置顶聊天”，截图为 `02-session-unpin-menu.png`。
 - console：错误数量为 0。
 - 截图目录：`/volume2/SSD/codex/Temp/sidebar-pinning-project-session-fix-2026-08-03/`。
+
+## 2026-08-04 Web 用户隔离修复验证
+
+- 定向测试：2 个测试文件、15 条测试通过，覆盖 A/B 用户隔离、旧全局键忽略和 UI 身份接线。
+- 完整测试：`npm run test` 退出码 0。
+- 真实浏览器：其他用户键标题数量为 0，旧全局键标题数量为 0，当前用户键标题数量为 1。
+- console：错误数量为 0。
+- 截图与验证脚本目录：`/volume2/SSD/codex/Temp/sidebar-pinning-user-scope-2026-08-04/`。
