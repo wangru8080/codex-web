@@ -35,6 +35,66 @@ describe("runtime broker 配置", () => {
       setprivCommand: "/usr/bin/setpriv",
       users: [{ id: "codex", role: "user", enabled: true, allowRoot: false }],
     });
+    expect(config.maxActiveAppServers).toBeUndefined();
+    expect(config.users[0]?.maxConcurrentTurns).toBeUndefined();
+  });
+
+  it("解析可选并发限制，字段缺失表示无限制", () => {
+    const config = parseRuntimeBrokerConfig({
+      version: 1,
+      sessionSecret: "0123456789abcdef0123456789abcdef",
+      codexCommand: "/usr/local/bin/codex",
+      maxActiveAppServers: 3,
+      users: [{
+        id: "codex",
+        email: "codex@example.com",
+        passwordHash: HASH,
+        osUser: "codex",
+        home: "/home/codex",
+        codexHome: "/home/codex/CodexApp",
+        cwd: "/home/codex/workspace",
+        maxConcurrentTurns: 2,
+      }],
+    });
+
+    expect(config.maxActiveAppServers).toBe(3);
+    expect(config.users[0]?.maxConcurrentTurns).toBe(2);
+  });
+
+  it.each([0, -1, 1.5, "2"])("拒绝无效的全局并发限制 %s", (value) => {
+    expect(() => parseRuntimeBrokerConfig({
+      version: 1,
+      sessionSecret: "0123456789abcdef0123456789abcdef",
+      codexCommand: "/usr/local/bin/codex",
+      maxActiveAppServers: value,
+      users: [{
+        id: "codex",
+        email: "codex@example.com",
+        passwordHash: HASH,
+        osUser: "codex",
+        home: "/home/codex",
+        codexHome: "/home/codex/CodexApp",
+        cwd: "/home/codex/workspace",
+      }],
+    })).toThrow("正整数");
+  });
+
+  it("拒绝无效的账号并发限制", () => {
+    expect(() => parseRuntimeBrokerConfig({
+      version: 1,
+      sessionSecret: "0123456789abcdef0123456789abcdef",
+      codexCommand: "/usr/local/bin/codex",
+      users: [{
+        id: "codex",
+        email: "codex@example.com",
+        passwordHash: HASH,
+        osUser: "codex",
+        home: "/home/codex",
+        codexHome: "/home/codex/CodexApp",
+        cwd: "/home/codex/workspace",
+        maxConcurrentTurns: 0,
+      }],
+    })).toThrow("users[0].maxConcurrentTurns 必须是正整数");
   });
 
   it("拒绝可能影响 root 启动边界的环境变量", () => {

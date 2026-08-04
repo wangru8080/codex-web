@@ -9,7 +9,11 @@ import { verifyBrokerPassword } from "./runtime-broker-password";
 import type { BrokerErrorResponse, BrokerRequest, BrokerResponse } from "./runtime-broker-protocol";
 import { publicBrokerUser } from "./runtime-broker-protocol";
 import { createBrokerSession, verifyBrokerSession } from "./runtime-broker-session";
-import { UserRuntimeRegistry, type UserRuntimeServer } from "./user-runtime-registry";
+import {
+  RuntimeCapacityError,
+  UserRuntimeRegistry,
+  type UserRuntimeServer,
+} from "./user-runtime-registry";
 import type { JsonRpcMessage } from "../src/codex/protocol/json-rpc";
 
 type BrokerServerOptions = {
@@ -38,6 +42,7 @@ export async function createRuntimeBrokerServer(options: BrokerServerOptions): P
   let config = options.config;
   const registry = new UserRuntimeRegistry({
     disconnectGraceMs: config.disconnectGraceMs,
+    maxActiveAppServers: config.maxActiveAppServers,
     createRuntime: options.createRuntime,
   });
   const sockets = new Set<Socket>();
@@ -58,8 +63,10 @@ export async function createRuntimeBrokerServer(options: BrokerServerOptions): P
       config = nextConfig;
       registry.reload({
         disconnectGraceMs: nextConfig.disconnectGraceMs,
+        maxActiveAppServers: nextConfig.maxActiveAppServers,
         createRuntime,
         affectedUserIds,
+        users: nextConfig.users,
       });
     },
     close: async () => {
@@ -96,7 +103,16 @@ function handleSocket(
         return;
       }
       const peer = new BufferedSocketPeer(socket);
-      const runtime = registry.attach(user, peer);
+      let runtime: { pid: number | undefined };
+      try {
+        runtime = registry.attach(user, peer);
+      } catch (error) {
+        if (error instanceof RuntimeCapacityError) {
+          respondAndEnd(socket, errorResponse("unavailable", error.message));
+          return;
+        }
+        throw error;
+      }
       attached = { userId: user.id, peer };
       writeJsonLine(socket, {
         ok: true,
@@ -196,7 +212,7 @@ class BufferedSocketPeer implements AppServerPeer {
   constructor(private readonly socket: Socket) {}
 
   isOpen(): boolean {
-    return !this.socket.destroyed && this.socket.writable;
+    return !this.socket.destroyed && !this.socket.writableEnded && this.socket.writable;
   }
 
   send(serialized: string): void {
@@ -204,7 +220,7 @@ class BufferedSocketPeer implements AppServerPeer {
       this.pending.push(serialized);
       return;
     }
-    this.socket.write(`${serialized}\n`);
+    if (this.isOpen()) this.socket.write(`${serialized}\n`);
   }
 
   close(): void {
@@ -213,7 +229,9 @@ class BufferedSocketPeer implements AppServerPeer {
 
   activate(): void {
     this.active = true;
-    for (const serialized of this.pending.splice(0)) this.socket.write(`${serialized}\n`);
+    for (const serialized of this.pending.splice(0)) {
+      if (this.isOpen()) this.socket.write(`${serialized}\n`);
+    }
   }
 }
 
@@ -272,7 +290,7 @@ function errorResponse(code: BrokerErrorResponse["code"], error: string): Broker
 }
 
 function respondAndEnd(socket: Socket, response: BrokerResponse): void {
-  if (socket.destroyed) return;
+  if (socket.destroyed || socket.writableEnded || !socket.writable) return;
   writeJsonLine(socket, response);
   socket.end();
 }

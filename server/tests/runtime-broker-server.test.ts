@@ -196,6 +196,36 @@ describe("runtime broker server", () => {
     expect(created[0]?.close).toHaveBeenCalledTimes(1);
     await expect(client.verifySession(login.token)).rejects.toThrow("登录已失效");
   });
+
+  it("全局 app-server 上限通过 broker 返回明确错误", async () => {
+    const passwordHash = await hashBrokerPassword("correct-password");
+    const { socketPath, config } = await fixture(passwordHash);
+    const limitedConfig = parseRuntimeBrokerConfig({
+      ...config,
+      maxActiveAppServers: 1,
+      users: [
+        config.users[0],
+        { ...config.users[0], id: "alice", email: "alice@example.com" },
+      ],
+    });
+    const created = vi.fn(() => fakeRuntime());
+    const server = await createRuntimeBrokerServer({
+      socketPath,
+      config: limitedConfig,
+      createRuntime: created,
+    });
+    servers.push(server);
+    const client = new RuntimeBrokerClient(socketPath);
+    const firstLogin = await client.login("codex@example.com", "correct-password");
+    const secondLogin = await client.login("alice@example.com", "correct-password");
+    const firstConnection = await client.attachRuntime(firstLogin.token);
+
+    await expect(client.attachRuntime(secondLogin.token))
+      .rejects.toThrow("全局活跃 app-server 已达上限（1）");
+    await expect(client.attachRuntime(firstLogin.token)).resolves.toMatchObject({ user: { id: "codex" } });
+    expect(created).toHaveBeenCalledTimes(1);
+    firstConnection.close();
+  });
 });
 
 type FakeRuntime = UserRuntimeServer & {

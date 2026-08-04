@@ -154,6 +154,7 @@ sudoedit /etc/codex-web/users.json
   "sessionSecret": "<session-secret>",
   "sessionMaxAgeSeconds": 259200,
   "disconnectGraceMs": 30000,
+  "maxActiveAppServers": 8,
   "allowRootRuntime": true,
   "codexCommand": "<codex-bin>",
   "setprivCommand": "/usr/bin/setpriv",
@@ -169,6 +170,7 @@ sudoedit /etc/codex-web/users.json
       "role": "user",
       "enabled": true,
       "allowRoot": false,
+      "maxConcurrentTurns": 2,
       "env": {
         "PATH": "<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       }
@@ -199,6 +201,7 @@ sudoedit /etc/codex-web/users.json
       "role": "admin",
       "enabled": true,
       "allowRoot": true,
+      "maxConcurrentTurns": 1,
       "env": {
         "PATH": "<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       }
@@ -324,6 +327,7 @@ systemd 会创建 socket 目录，runtime 进程会创建 `runtime-broker.sock`�
 | `sessionSecret` | 是 | Session 签名密钥，至少 32 个字符；使用上面的 `openssl` 命令生成。 |
 | `sessionMaxAgeSeconds` | 否 | Session 固定有效期，默认 `259200` 秒（3 天），允许 `60` 至 `604800` 秒。 |
 | `disconnectGraceMs` | 否 | 同一用户最后一个浏览器连接断开后，空闲 app-server 的退出宽限期；默认 `30000` 毫秒，允许 `0` 至 `600000`。运行中的 Turn 完成后才退出。 |
+| `maxActiveAppServers` | 否 | 全局同时保留的用户 app-server 上限，必须为正整数；不配置表示无限制。达到上限时已有账号仍可复用自己的 app-server，新账号暂时不能创建 app-server。 |
 | `allowRootRuntime` | 否 | 是否允许配置 root runtime，默认 `false`；仅此开关不能单独授权 root。 |
 | `codexCommand` | 是 | 目标服务器上 `codex` 可执行文件的绝对路径。 |
 | `setprivCommand` | Linux 否 | Linux `setpriv` 的绝对路径，默认 `/usr/bin/setpriv`；macOS 不使用该命令。 |
@@ -343,6 +347,7 @@ systemd 会创建 socket 目录，runtime 进程会创建 `runtime-broker.sock`�
 | `role` | 否 | Web 角色，只允许 `user` 或 `admin`，默认 `user`；`admin` 可管理安全设置，但不代表操作系统 root。 |
 | `enabled` | 否 | 是否允许该账号登录，默认 `true`。 |
 | `allowRoot` | 否 | 是否允许该用户项启动 UID 0 app-server，默认 `false`；仅对 `osUser: "root"` 有效，并且顶层 `allowRootRuntime` 也必须为 `true`。 |
+| `maxConcurrentTurns` | 否 | 该账号在全部浏览器连接和 Thread 中合计允许的并发 Turn 上限，必须为正整数；不配置表示无限制。 |
 | `env` | 否 | 传给 app-server 的额外环境变量字符串对象。变量名必须为大写形式；`HOME`、`CODEX_HOME`、`USER`、`SHELL`、`RUST_LOG`、`LD_*`、`DYLD_*` 等受保护变量禁止设置。 |
 
 #### Broker 配置热加载
@@ -351,6 +356,7 @@ systemd 会创建 socket 目录，runtime 进程会创建 `runtime-broker.sock`�
 
 - 新增用户可以立即登录，并在首次连接时启动自己的 app-server。
 - 内容未变化的用户继续使用当前 app-server，运行中的 Turn 不受影响。
+- 修改 `maxActiveAppServers` 或 `maxConcurrentTurns` 会立即更新限制，但不会使 Session 失效、重启 app-server 或中断已有 Turn。降低限制后只拒绝新的超限创建或 `turn/start`；提高或移除限制后立即恢复接收。
 - 删除、禁用或修改用户的邮箱、密码哈希、角色、系统用户、home、`CODEX_HOME`、cwd 或环境变量时，该用户的旧 Session 和在线连接会失效；重新登录后按新配置启动 runtime。
 - 修改 `sessionSecret`、`codexCommand`、`setprivCommand` 或 `allowRootRuntime` 会使全部在线用户失效。修改 `sessionMaxAgeSeconds` 只影响之后签发的 Session。
 - JSON 不完整、权限错误、重复身份或系统用户解析失败时，broker 会记录“配置重载失败”，继续使用最后一份有效配置。修正并再次保存后会自动恢复加载。

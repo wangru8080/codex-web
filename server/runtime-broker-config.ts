@@ -17,6 +17,7 @@ export type RuntimeBrokerUserConfig = {
   role: RuntimeBrokerRole;
   enabled: boolean;
   allowRoot: boolean;
+  maxConcurrentTurns?: number;
 };
 
 export type RuntimeBrokerConfig = {
@@ -24,6 +25,7 @@ export type RuntimeBrokerConfig = {
   sessionSecret: string;
   sessionMaxAgeSeconds: number;
   disconnectGraceMs: number;
+  maxActiveAppServers?: number;
   allowRootRuntime: boolean;
   codexCommand: string;
   setprivCommand: string;
@@ -58,6 +60,10 @@ export function parseRuntimeBrokerConfig(value: unknown): RuntimeBrokerConfig {
     600_000,
     "disconnectGraceMs",
   );
+  const maxActiveAppServers = optionalPositiveInteger(
+    input.maxActiveAppServers,
+    "maxActiveAppServers",
+  );
   if (!Array.isArray(input.users) || input.users.length === 0) {
     throw new Error("users 必须包含至少一个用户");
   }
@@ -78,6 +84,10 @@ export function parseRuntimeBrokerConfig(value: unknown): RuntimeBrokerConfig {
     const allowRoot = booleanValue(user.allowRoot, false, `users[${index}].allowRoot`);
     const enabled = booleanValue(user.enabled, true, `users[${index}].enabled`);
     const env = environmentVariables(user.env, `users[${index}].env`);
+    const maxConcurrentTurns = optionalPositiveInteger(
+      user.maxConcurrentTurns,
+      `users[${index}].maxConcurrentTurns`,
+    );
 
     if (ids.has(id) || emails.has(email)) throw new Error(`users[${index}] 存在重复 id 或 email`);
     ids.add(id);
@@ -98,6 +108,7 @@ export function parseRuntimeBrokerConfig(value: unknown): RuntimeBrokerConfig {
       role,
       enabled,
       allowRoot,
+      maxConcurrentTurns,
     } satisfies RuntimeBrokerUserConfig;
   });
 
@@ -106,11 +117,20 @@ export function parseRuntimeBrokerConfig(value: unknown): RuntimeBrokerConfig {
     sessionSecret,
     sessionMaxAgeSeconds,
     disconnectGraceMs,
+    maxActiveAppServers,
     allowRootRuntime,
     codexCommand,
     setprivCommand,
     users,
   };
+}
+
+function optionalPositiveInteger(value: unknown, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new Error(`${name} 必须是正整数；不配置表示无限制`);
+  }
+  return value as number;
 }
 
 const PROTECTED_ENVIRONMENT_VARIABLES = new Set([

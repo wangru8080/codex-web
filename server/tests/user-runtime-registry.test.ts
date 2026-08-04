@@ -67,7 +67,7 @@ describe("UserRuntimeRegistry", () => {
     });
 
     expect(created[0]?.broadcast).toHaveBeenCalledTimes(1);
-    expect(created[0]?.broadcast).toHaveBeenCalledWith(expect.any(Object), first);
+    expect(created[0]?.broadcast).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));
     expect(created[1]?.broadcast).not.toHaveBeenCalled();
   });
 
@@ -132,6 +132,7 @@ describe("UserRuntimeRegistry", () => {
       disconnectGraceMs: 250,
       createRuntime: () => replacementRuntime,
       affectedUserIds: new Set(["alice"]),
+      users: [USER, { ...USER, id: "alice", email: "alice@example.com" }],
     });
 
     expect(firstRuntime.close).not.toHaveBeenCalled();
@@ -140,7 +141,212 @@ describe("UserRuntimeRegistry", () => {
     expect(changedPeer.close).toHaveBeenCalledTimes(1);
     const replacementPeer = peer();
     registry.attach({ ...USER, id: "alice", email: "alice@example.com" }, replacementPeer);
-    expect(replacementRuntime.attach).toHaveBeenCalledWith(replacementPeer);
+    expect(replacementRuntime.attach).toHaveBeenCalledWith(expect.any(Object));
+  });
+
+  it("全局上限只阻止新 runtime，已有账号仍可重连", () => {
+    const created: FakeRuntime[] = [];
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      maxActiveAppServers: 1,
+      createRuntime: (_user, onNotification) => {
+        const runtime = fakeRuntime(onNotification);
+        created.push(runtime);
+        return runtime;
+      },
+    });
+    registry.attach(USER, peer());
+
+    expect(() => registry.attach(USER, peer())).not.toThrow();
+    expect(() => registry.attach(
+      { ...USER, id: "alice", email: "alice@example.com" },
+      peer(),
+    )).toThrow("全局活跃 app-server 已达上限（1）");
+    expect(created).toHaveLength(1);
+  });
+
+  it("未配置全局上限时不限制 runtime 数量", () => {
+    const created = vi.fn(() => fakeRuntime(() => undefined));
+    const registry = new UserRuntimeRegistry({ disconnectGraceMs: 100, createRuntime: created });
+
+    registry.attach(USER, peer());
+    registry.attach({ ...USER, id: "alice", email: "alice@example.com" }, peer());
+
+    expect(created).toHaveBeenCalledTimes(2);
+  });
+
+  it("热加载降低全局上限不关闭已有 runtime，只阻止新建", () => {
+    const created = vi.fn(() => fakeRuntime(() => undefined));
+    const registry = new UserRuntimeRegistry({ disconnectGraceMs: 100, createRuntime: created });
+    const first = peer();
+    registry.attach(USER, first);
+
+    registry.reload({
+      disconnectGraceMs: 100,
+      maxActiveAppServers: 1,
+      createRuntime: created,
+      affectedUserIds: new Set(),
+      users: [USER, { ...USER, id: "alice", email: "alice@example.com" }],
+    });
+
+    expect(created.mock.results[0]?.value.close).not.toHaveBeenCalled();
+    expect(() => registry.attach(USER, peer())).not.toThrow();
+    expect(() => registry.attach(
+      { ...USER, id: "alice", email: "alice@example.com" },
+      peer(),
+    )).toThrow("全局活跃 app-server 已达上限（1）");
+  });
+
+  it("单账号并发上限覆盖多个 peer，并在 Turn 完成后释放名额", () => {
+    let notify: (message: JsonRpcMessage) => void = () => undefined;
+    const runtime = fakeRuntime(() => undefined);
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: (_user, onNotification) => {
+        notify = onNotification;
+        return runtime;
+      },
+    });
+    const user = { ...USER, maxConcurrentTurns: 1 };
+    const first = peer();
+    const second = peer();
+    registry.attach(user, first);
+    registry.attach(user, second);
+
+    registry.handleClientMessage(user.id, first, { id: 1, method: "turn/start", params: {} });
+    registry.handleClientMessage(user.id, second, { id: 2, method: "turn/start", params: {} });
+
+    expect(runtime.handleClientMessage).toHaveBeenCalledTimes(1);
+    expect(second.send).toHaveBeenCalledWith(expect.stringContaining("账号并发 Turn 已达上限"));
+
+    const runtimePeer = runtime.attach.mock.calls[0]?.[0];
+    runtimePeer?.send(JSON.stringify({ id: 1, result: { turn: { id: "turn-1" } } }));
+    notify({ method: "turn/completed", params: { turn: { id: "turn-1" } } });
+    registry.handleClientMessage(user.id, second, { id: 3, method: "turn/start", params: {} });
+    expect(runtime.handleClientMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("turn/start 失败后释放预占名额", () => {
+    const runtime = fakeRuntime(() => undefined);
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: () => runtime,
+    });
+    const user = { ...USER, maxConcurrentTurns: 1 };
+    const client = peer();
+    registry.attach(user, client);
+
+    registry.handleClientMessage(user.id, client, { id: 1, method: "turn/start", params: {} });
+    const runtimePeer = runtime.attach.mock.calls[0]?.[0];
+    runtimePeer?.send(JSON.stringify({ id: 1, error: { code: -32602, message: "请求无效" } }));
+    registry.handleClientMessage(user.id, client, { id: 2, method: "turn/start", params: {} });
+
+    expect(runtime.handleClientMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("未配置账号上限时允许多个并发 turn/start", () => {
+    const runtime = fakeRuntime(() => undefined);
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: () => runtime,
+    });
+    const client = peer();
+    registry.attach(USER, client);
+
+    registry.handleClientMessage(USER.id, client, { id: 1, method: "turn/start", params: {} });
+    registry.handleClientMessage(USER.id, client, { id: 2, method: "turn/start", params: {} });
+
+    expect(runtime.handleClientMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("不同账号分别计算 Turn 并发名额", () => {
+    const runtimes = new Map<string, FakeRuntime>();
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: (user) => {
+        const runtime = fakeRuntime(() => undefined);
+        runtimes.set(user.id, runtime);
+        return runtime;
+      },
+    });
+    const firstUser = { ...USER, maxConcurrentTurns: 1 };
+    const secondUser = {
+      ...USER,
+      id: "alice",
+      email: "alice@example.com",
+      maxConcurrentTurns: 1,
+    };
+    const first = peer();
+    const second = peer();
+    registry.attach(firstUser, first);
+    registry.attach(secondUser, second);
+
+    registry.handleClientMessage(firstUser.id, first, { id: 1, method: "turn/start", params: {} });
+    registry.handleClientMessage(secondUser.id, second, { id: 1, method: "turn/start", params: {} });
+
+    expect(runtimes.get(firstUser.id)?.handleClientMessage).toHaveBeenCalledTimes(1);
+    expect(runtimes.get(secondUser.id)?.handleClientMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("热加载降低账号上限不终止已有 Turn，只阻止新请求", () => {
+    const runtime = fakeRuntime(() => undefined);
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: () => runtime,
+    });
+    const originalUser = { ...USER, maxConcurrentTurns: 2 };
+    const client = peer();
+    registry.attach(originalUser, client);
+    registry.handleClientMessage(USER.id, client, { id: 1, method: "turn/start", params: {} });
+    registry.handleClientMessage(USER.id, client, { id: 2, method: "turn/start", params: {} });
+
+    registry.reload({
+      disconnectGraceMs: 100,
+      createRuntime: () => runtime,
+      affectedUserIds: new Set(),
+      users: [{ ...USER, maxConcurrentTurns: 1 }],
+    });
+    registry.handleClientMessage(USER.id, client, { id: 3, method: "turn/start", params: {} });
+
+    expect(runtime.close).not.toHaveBeenCalled();
+    expect(runtime.handleClientMessage).toHaveBeenCalledTimes(2);
+    expect(client.send).toHaveBeenCalledWith(expect.stringContaining("账号并发 Turn 已达上限（1）"));
+  });
+
+  it("热加载账号限制不关闭 runtime，并立即应用提高和移除限制", () => {
+    const runtime = fakeRuntime(() => undefined);
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      maxActiveAppServers: 1,
+      createRuntime: () => runtime,
+    });
+    const limitedUser = { ...USER, maxConcurrentTurns: 1 };
+    const first = peer();
+    const second = peer();
+    registry.attach(limitedUser, first);
+    registry.attach(limitedUser, second);
+    registry.handleClientMessage(USER.id, first, { id: 1, method: "turn/start", params: {} });
+
+    const raisedUser = { ...USER, maxConcurrentTurns: 2 };
+    registry.reload({
+      disconnectGraceMs: 100,
+      maxActiveAppServers: 2,
+      createRuntime: () => runtime,
+      affectedUserIds: new Set(),
+      users: [raisedUser],
+    });
+    registry.handleClientMessage(USER.id, second, { id: 2, method: "turn/start", params: {} });
+
+    registry.reload({
+      disconnectGraceMs: 100,
+      createRuntime: () => runtime,
+      affectedUserIds: new Set(),
+      users: [USER],
+    });
+    registry.handleClientMessage(USER.id, second, { id: 3, method: "turn/start", params: {} });
+
+    expect(runtime.close).not.toHaveBeenCalled();
+    expect(runtime.handleClientMessage).toHaveBeenCalledTimes(3);
   });
 });
 

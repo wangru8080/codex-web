@@ -10,6 +10,8 @@ macOS 适配计划：[2026-07-29-macos-multi-user-runtime.md](../exec-plans/comp
 
 配置热加载计划：[2026-08-04-runtime-broker-config-hot-reload.md](../exec-plans/completed/2026-08-04-runtime-broker-config-hot-reload.md)
 
+并发限制计划：[2026-08-04-runtime-concurrency-limits.md](../exec-plans/completed/2026-08-04-runtime-concurrency-limits.md)
+
 ## 用户能力
 
 - 一个非 root Codex Web 支持多个静态账号并发登录。
@@ -37,13 +39,17 @@ WebSocket upgrade 先验证远程连接策略、同源 Origin 和 cookie，再 a
 
 ## 进程生命周期
 
-`UserRuntimeRegistry` 以用户 ID 为键维护 `PersistentAppServer`、浏览器 peer 和 active Turn 集合。`turn/started` 加入 active Turn，`turn/completed` 移除。同用户最后 peer 离开且没有 active Turn 时启动 `disconnectGraceMs` 定时器；重连取消定时器。broker 关闭时立即关闭全部 runtime。
+`UserRuntimeRegistry` 以用户 ID 为键维护 `PersistentAppServer`、浏览器 peer 和 active Turn 集合。可选的顶层 `maxActiveAppServers` 限制全局用户 runtime 数；可选的用户级 `maxConcurrentTurns` 限制该账号全部 peer 和 Thread 的并发 Turn。两个字段缺失都表示无限制。broker 在转发 `turn/start` 前预占名额，再按响应与 `turn/started`、`turn/completed` 事件更新状态，避免多个 peer 同时请求绕过限制。
+
+`turn/started` 加入 active Turn，`turn/completed` 移除。同用户最后 peer 离开且没有 active 或待确认 Turn 时启动 `disconnectGraceMs` 定时器；重连取消定时器。broker 关闭时立即关闭全部 runtime。
 
 ## 配置热加载
 
 runtime CLI 监听 `users.json` 的父目录，因此普通保存和编辑器原子替换都会触发防抖加载。候选配置必须重新通过 root 所有者、`0600` 权限、JSON schema、系统账号 home 和 root 双重授权检查；系统用户全部解析完成后才创建新 runtime factory 并原子提交。任何阶段失败都保留最后有效配置，不影响在线用户，后续有效保存可以恢复。
 
-broker 的认证请求每次读取当前配置快照。新增用户立即可登录；等价用户配置复用现有 runtime。删除、禁用或任一用户字段变化会关闭该用户 peer/runtime，完整用户执行配置参与 Session credential version，因此旧 Cookie 也会失效。`sessionSecret`、`codexCommand`、`setprivCommand` 或 `allowRootRuntime` 变化会淘汰全部当前 runtime；`sessionMaxAgeSeconds` 和 `disconnectGraceMs` 不主动中断在线连接。
+broker 的认证请求每次读取当前配置快照。新增用户立即可登录；等价用户配置复用现有 runtime。删除、禁用或修改身份、凭据、角色或 runtime 执行字段会关闭该用户 peer/runtime，相应执行配置参与 Session credential version，因此旧 Cookie 也会失效。`sessionSecret`、`codexCommand`、`setprivCommand` 或 `allowRootRuntime` 变化会淘汰全部当前 runtime；`sessionMaxAgeSeconds` 和 `disconnectGraceMs` 不主动中断在线连接。
+
+`maxActiveAppServers` 和 `maxConcurrentTurns` 是调度策略，不参与 Session credential version 或 runtime 身份比较。热加载降低限制不会终止已有 runtime 或 Turn，只会阻止后续超限请求；提高或移除限制立即生效。
 
 ## 部署
 

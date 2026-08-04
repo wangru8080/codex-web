@@ -45,7 +45,7 @@ async function main(): Promise<void> {
   const broker = await createRuntimeBrokerServer({
     socketPath: join(runDirectory, "runtime-broker.sock"),
     config,
-    createRuntime: (user) => createRuntime(user),
+    createRuntime: (user, onNotification) => createRuntime(user, onNotification),
   });
   let web: ChildProcess | null = null;
   let browser: CdpBrowser | null = null;
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
     debounceMs: 50,
     load: () => readRuntimeBrokerConfig(configPath),
     apply: async (next) => {
-      broker.reload(next, (user) => createRuntime(user));
+      broker.reload(next, (user, onNotification) => createRuntime(user, onNotification));
       reloads.push("success");
     },
     onError: (error) => reloads.push(`error:${error.message}`),
@@ -98,6 +98,61 @@ async function main(): Promise<void> {
     if (runtimeStates.get("rrssnas")?.markers.includes("codex-marker")) throw new Error("codex 消息串入 rrssnas runtime");
     if (runtimeStates.get("codex")?.markers.includes("rrssnas-marker")) throw new Error("rrssnas 消息串入 codex runtime");
     progress("跨用户 WebSocket 消息隔离验证完成");
+
+    const capacityUser = smokeUser(
+      "capacity",
+      "/home/codex",
+      join(runDirectory, "capacity-codex-home"),
+      passwordHash,
+      "codex",
+    );
+    const limitedUsers = [
+      { ...initialConfig.users[0], maxConcurrentTurns: 1 },
+      initialConfig.users[1],
+      capacityUser,
+    ];
+    const limitReloadCount = reloads.length;
+    await writeConfig(configPath, {
+      ...initialConfig,
+      maxActiveAppServers: 2,
+      users: limitedUsers,
+    });
+    await waitFor(() => reloads.length > limitReloadCount && reloads.at(-1) === "success", 5_000);
+
+    const brokerClient = new RuntimeBrokerClient(broker.socketPath);
+    const capacityLogin = await brokerClient.login("capacity@example.test", password);
+    await expectFailure(
+      () => brokerClient.attachRuntime(capacityLogin.token),
+      "全局活跃 app-server 已达上限（2）",
+    );
+    if (runtimeStates.get("rrssnas")?.closed || runtimeStates.get("codex")?.closed) {
+      throw new Error("热加载降低全局上限关闭了已有 runtime");
+    }
+
+    const limitedLogin = await brokerClient.login("rrssnas@example.test", password);
+    const limitedConnection = await brokerClient.attachRuntime(limitedLogin.token);
+    const limitedMessages: JsonRpcMessage[] = [];
+    limitedConnection.onMessage((message) => limitedMessages.push(message));
+    limitedConnection.send({ id: 100, method: "turn/start", params: { smokeHold: true } });
+    await waitFor(() => runtimeStates.get("rrssnas")?.heldTurn?.id === 100, 5_000);
+    limitedConnection.send({ id: 101, method: "turn/start", params: {} });
+    await waitFor(() => limitedMessages.some((message) => (
+      !("method" in message) && message.id === 101 && message.error?.data !== undefined
+    )), 5_000);
+    completeHeldTurn("rrssnas");
+    limitedConnection.send({ id: 102, method: "turn/start", params: {} });
+    await waitFor(() => limitedMessages.some((message) => (
+      !("method" in message) && message.id === 102 && message.result !== undefined
+    )), 5_000);
+    limitedConnection.close();
+
+    const unlimitedReloadCount = reloads.length;
+    await writeConfig(configPath, { ...initialConfig, users: [...initialConfig.users, capacityUser] });
+    await waitFor(() => reloads.length > unlimitedReloadCount && reloads.at(-1) === "success", 5_000);
+    const capacityConnection = await brokerClient.attachRuntime(capacityLogin.token);
+    capacityConnection.close();
+    await waitFor(() => runtimeStates.get("capacity")?.closed === true, 5_000);
+    progress("全局 app-server 与单账号 Turn 限制、释放名额及热加载移除验证完成");
 
     const alt = await browser.createPage();
     await writeFile(configPath, "{ invalid json\n");
@@ -184,6 +239,9 @@ async function main(): Promise<void> {
         crossedPasswordsRejected: true,
         changedUserRuntimeReplaced: true,
         unchangedUserStayedOnline: true,
+        globalAppServerLimitApplied: true,
+        accountTurnLimitApplied: true,
+        removingLimitsRestoredCapacity: true,
       },
       note: "真实 Chrome 已验证配置热加载与隔离；未使用真实 Codex Home，未验证 sudo/UID 切换。",
     };
@@ -228,14 +286,20 @@ type RuntimeState = {
   peers: Set<AppServerPeer>;
   markers: string[];
   closed: boolean;
+  notify: (message: JsonRpcMessage) => void;
+  heldTurn?: { peer: AppServerPeer; id: string | number };
 };
 
-function createRuntime(user: RuntimeBrokerUserConfig): UserRuntimeServer {
+function createRuntime(
+  user: RuntimeBrokerUserConfig,
+  onNotification: (message: JsonRpcMessage) => void,
+): UserRuntimeServer {
   const state: RuntimeState = {
     createCount: (runtimeStates.get(user.id)?.createCount ?? 0) + 1,
     peers: new Set(),
     markers: [],
     closed: false,
+    notify: onNotification,
   };
   runtimeStates.set(user.id, state);
   return {
@@ -267,7 +331,37 @@ function handleFixtureMessage(
     const marker = readMarker(request.params);
     if (marker) state.markers.push(marker);
   }
+  if (request.method === "turn/start" && readSmokeHold(request.params)) {
+    state.heldTurn = { peer, id: request.id };
+    return;
+  }
   peer.send(JSON.stringify({ id: request.id, result: fixtureResult(user, request.method) }));
+}
+
+function completeHeldTurn(userId: string): void {
+  const state = runtimeStates.get(userId);
+  const held = state?.heldTurn;
+  if (!state || !held) throw new Error(`${userId} 没有待完成的 Turn`);
+  delete state.heldTurn;
+  const turn = { id: `smoke-turn-${held.id}` };
+  held.peer.send(JSON.stringify({ id: held.id, result: { turn } }));
+  state.notify({ method: "turn/started", params: { turn } });
+  state.notify({ method: "turn/completed", params: { turn } });
+}
+
+function readSmokeHold(params: unknown): boolean {
+  return Boolean(params && typeof params === "object" && "smokeHold" in params
+    && (params as { smokeHold?: unknown }).smokeHold === true);
+}
+
+async function expectFailure(action: () => Promise<unknown>, expected: string): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes(expected)) return;
+    throw error;
+  }
+  throw new Error(`预期操作失败：${expected}`);
 }
 
 function fixtureResult(user: RuntimeBrokerUserConfig, method: string): unknown {
