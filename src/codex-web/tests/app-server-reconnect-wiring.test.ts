@@ -25,7 +25,10 @@ describe("app-server 断线重连接线", () => {
   it("重连 bootstrap 完成后历史页重新执行 thread/resume", () => {
     expect(provider).toContain('client.request("initialize"');
     expect(provider).toContain('client.request(\n      "thread/resume"');
-    expect(historyPage).toContain("const resume = await resumeThread({ threadId: id })");
+    expect(historyPage).toContain("const resume = await resumeThread({");
+    expect(historyPage).toContain("threadId: id,");
+    expect(historyPage).toContain("model: savedPreference?.model");
+    expect(historyPage).toContain("permissionProfile: savedPreference?.permissionProfile");
     expect(historyPage).toContain("useAppServerSelector((state) => state.connection.data)");
     expect(historyPage).toContain("connectionData !== 'connected'");
   });

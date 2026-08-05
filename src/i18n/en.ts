@@ -1165,6 +1165,7 @@ const en = {
   'messageInput.effort.high': 'High',
   'messageInput.effort.xhigh': 'XHigh',
   'messageInput.effort.max': 'Max',
+  'messageInput.effort.ultra': 'Ultra',
 
   // ── SDK Capabilities: Terminal Reason (Phase 1 of agent-sdk-0-2-111) ──
   'terminal.completed': 'Completed',

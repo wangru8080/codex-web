@@ -1146,6 +1146,7 @@ const zh: Record<TranslationKey, string> = {
   'messageInput.effort.high': '高',
   'messageInput.effort.xhigh': '极高',
   'messageInput.effort.max': '最大',
+  'messageInput.effort.ultra': '超高',
 
   // ── SDK Capabilities: Terminal Reason (Phase 1 of agent-sdk-0-2-111) ──
   'terminal.completed': '已完成',

@@ -311,6 +311,7 @@ function ComposerPermissionSelector({
 }) {
   const { t } = useTranslation();
   const [localChoice, setLocalChoice] = useState<PermissionChoice['id']>('request_approval');
+  const [menuOpen, setMenuOpen] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
   const [pendingChoice, setPendingChoice] = useState<PermissionChoice['id'] | null>(null);
 
@@ -361,7 +362,8 @@ function ComposerPermissionSelector({
     if (disabled || !onPermissionChange) return;
     if (choice.profile === 'full_access' && permissionProfile !== 'full_access') {
       setPendingChoice(choice.id);
-      setShowWarning(true);
+      setMenuOpen(false);
+      window.requestAnimationFrame(() => setShowWarning(true));
       return;
     }
     void applyChoice(choice);
@@ -374,9 +376,14 @@ function ComposerPermissionSelector({
     if (choice) void applyChoice(choice);
   }, [applyChoice, choices, pendingChoice]);
 
+  const handleWarningOpenChange = useCallback((open: boolean) => {
+    setShowWarning(open);
+    if (!open) setPendingChoice(null);
+  }, []);
+
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <PromptInputButton disabled={disabled || !onPermissionChange} className="gap-1.5 px-2">
             <span className="text-muted-foreground">{activeChoice.icon}</span>
@@ -409,7 +416,7 @@ function ComposerPermissionSelector({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <AlertDialog open={showWarning} onOpenChange={setShowWarning}>
+      <AlertDialog open={showWarning} onOpenChange={handleWarningOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>完全访问权限</AlertDialogTitle>
@@ -439,13 +446,6 @@ type ComposerModelOption = {
   supportedEffortLevels?: string[];
 };
 
-const EFFORT_OPTIONS = [
-  { value: 'low', label: '轻度' },
-  { value: 'medium', label: '中' },
-  { value: 'high', label: '高' },
-  { value: 'xhigh', label: '极高' },
-] as const;
-
 function displayModelShortLabel(label: string): string {
   const cleaned = label.replace(/^gpt[-\s]?/i, '').replace(/^GPT[-\s]?/, '');
   return cleaned || label;
@@ -454,6 +454,7 @@ function displayModelShortLabel(label: string): string {
 function ComposerReasoningModelSelector({
   selectedEffort,
   onEffortChange,
+  effortOptions,
   currentModelOption,
   currentModelValue,
   currentProviderIdValue,
@@ -465,6 +466,7 @@ function ComposerReasoningModelSelector({
 }: {
   selectedEffort: string;
   onEffortChange: (effort: string) => void;
+  effortOptions: Array<{ value: string; label: string }>;
   currentModelOption?: ComposerModelOption;
   currentModelValue: string;
   currentProviderIdValue: string;
@@ -484,7 +486,7 @@ function ComposerReasoningModelSelector({
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const hasAvailableModel = modelOptions.length > 0;
   const effectiveEffort = selectedEffort === 'auto' ? 'high' : selectedEffort;
-  const effortLabel = EFFORT_OPTIONS.find((item) => item.value === effectiveEffort)?.label ?? '高';
+  const effortLabel = effortOptions.find((item) => item.value === effectiveEffort)?.label ?? effectiveEffort;
   const modelLabel = currentModelOption?.label || currentModelValue || modelOptions[0]?.label || '';
   const modelShortLabel = hasAvailableModel
     ? displayModelShortLabel(modelLabel)
@@ -551,8 +553,8 @@ function ComposerReasoningModelSelector({
       {open && (
         <div className="absolute bottom-full right-0 z-50 mb-2 w-[260px] rounded-2xl border bg-popover p-1.5 shadow-[var(--shadow-diffuse)]">
           <div className="px-2.5 pb-1.5 pt-1 text-xs font-semibold text-muted-foreground/65">推理</div>
-          <div className="space-y-0.5">
-            {EFFORT_OPTIONS.map((option) => (
+          <div className="space-y-0.5" data-source-breadcrumb="app-server.model/list">
+            {effortOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
@@ -1609,6 +1611,11 @@ export const MessageInput = memo(function MessageInput({
   }, [normalizeMentionPath]);
 
   const currentModelValue = modelName || '';
+  const effortOptions = (currentModelOption?.supportedEffortLevels ?? []).map((value) => {
+    const key = `messageInput.effort.${value}` as TranslationKey;
+    const label = t(key);
+    return { value, label: label === key ? value : label };
+  });
   const chatStatus: ChatStatus = isStreaming ? 'streaming' : 'ready';
   const standaloneTurnPlan = !!turnPlan && !fileChangeSummary;
   const wasStandaloneTurnPlanRef = useRef(false);
@@ -1632,7 +1639,7 @@ export const MessageInput = memo(function MessageInput({
   // `bg-background/80`; macOS profile drops alpha so vibrancy shows
   // through the composer hood.
   return (
-    <div className="bg-[var(--platform-surface-bar)] backdrop-blur-lg px-4 pt-2 pb-1">
+    <div className="relative z-20 bg-[var(--platform-surface-bar)] backdrop-blur-lg px-4 pt-2 pb-1">
       <div className="mx-auto w-full max-w-3xl">
         {(fileChangeSummary || turnPlan) && (
           <div
@@ -1701,8 +1708,8 @@ export const MessageInput = memo(function MessageInput({
               )}
 
               {commandPanel === 'reasoning' && (
-                <div className="space-y-1">
-                  {EFFORT_OPTIONS.map((option) => (
+                <div className="space-y-1" data-source-breadcrumb="app-server.model/list">
+                  {effortOptions.map((option) => (
                     <button key={option.value} type="button" className="flex w-full items-center rounded-lg px-3 py-2 text-left text-sm hover:bg-accent" onClick={() => { setSelectedEffort(option.value); setCommandPanel(null); }}>
                       {option.label}{selectedEffort === option.value && <Check size={18} className="ml-auto" />}
                     </button>
@@ -1885,6 +1892,7 @@ export const MessageInput = memo(function MessageInput({
                 <ComposerReasoningModelSelector
                   selectedEffort={selectedEffort}
                   onEffortChange={setSelectedEffort}
+                  effortOptions={effortOptions}
                   currentModelOption={currentModelOption}
                   currentModelValue={currentModelValue}
                   currentProviderIdValue={currentProviderIdValue}

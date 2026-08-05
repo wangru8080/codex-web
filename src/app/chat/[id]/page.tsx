@@ -40,6 +40,11 @@ import {
 import type { Thread } from '@/codex/protocol/generated/v2/Thread';
 import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
 import { modelSettingsFromResume } from '@/codex-web/thread-model-settings';
+import { permissionProfileFromRuntimeSettings } from '@/codex-web/thread-permission-settings';
+import {
+  readThreadRuntimePreference,
+  writeThreadRuntimePreference,
+} from '@/codex-web/thread-runtime-preferences';
 import { latestInProgressTurnId } from '@/codex-web/resumed-turn-hydration';
 import { readDefaultPanelPreference } from '@/lib/app-preferences';
 import { threadRollbackToMessages } from '@/codex-web/thread-rollback';
@@ -207,15 +212,38 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         setAppServerThread(response.thread);
         const session = threadToChatSession(response.thread);
         applySession(session);
-        const resume = await resumeThread({ threadId: id });
+        const savedPreference = readThreadRuntimePreference(localStorage, id);
+        const resume = await resumeThread({
+          threadId: id,
+          cwd: response.thread.cwd,
+          model: savedPreference?.model,
+          permissionProfile: savedPreference?.permissionProfile,
+        });
         if (cancelled) return;
         const resumedLiveTurnId = latestInProgressTurnId(resume.thread.turns);
         const resumedSettings = modelSettingsFromResume(resume);
+        const resumedPermissionProfile = savedPreference?.permissionProfile
+          ?? permissionProfileFromRuntimeSettings(resume);
+        if (savedPreference?.effort && savedPreference.effort !== resumedSettings.effort) {
+          await updateThreadModelSettings({
+            threadId: resume.thread.id,
+            effort: savedPreference.effort,
+          });
+          if (cancelled) return;
+        }
         setResumedThreadId(resume.thread.id);
         setResumedCwd(resume.cwd);
         setResumedModel(resumedSettings.model);
         setSessionModel(resumedSettings.model);
-        setSessionEffort(resumedSettings.effort);
+        setSessionEffort(savedPreference?.effort ?? resumedSettings.effort);
+        setSessionPermissionProfile(resumedPermissionProfile);
+        writeThreadRuntimePreference(localStorage, resume.thread.id, {
+          model: resumedSettings.model,
+          ...(savedPreference?.effort ?? resumedSettings.effort
+            ? { effort: savedPreference?.effort ?? resumedSettings.effort ?? undefined }
+            : {}),
+          permissionProfile: resumedPermissionProfile,
+        });
         let loadedMessages: Message[] = [];
         try {
           const turnsPage = await listThreadTurns({
@@ -347,7 +375,6 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
       setPanelSessionTitle(session.title || t('chat.newConversation'));
       setSessionProviderId(session.provider_id || '');
       setSessionRuntimePin(session.runtime_pin || '');
-      setSessionPermissionProfile(session.permission_profile || 'request_approval');
       setSessionMode((session.mode as 'code' | 'plan') || 'code');
       setSessionHasSummary(!!session.context_summary);
       setSessionReadOnly(!!session.read_only);
@@ -357,7 +384,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     loadSessionAndMessages();
 
     return () => { cancelled = true; };
-  }, [connectionData, id, readThread, listThreadTurns, resumeThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t, targetMessageId]);
+  }, [connectionData, id, readThread, listThreadTurns, resumeThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t, targetMessageId, updateThreadModelSettings]);
 
   // Auto-open file tree when jumping from a file search result
   useEffect(() => {
@@ -412,6 +439,13 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     if (!settings) return;
     setSessionModel(settings.model);
     setSessionEffort(settings.effort);
+    const permissionProfile = permissionProfileFromRuntimeSettings(settings);
+    setSessionPermissionProfile(permissionProfile);
+    writeThreadRuntimePreference(localStorage, threadId, {
+      model: settings.model,
+      ...(settings.effort ? { effort: settings.effort } : {}),
+      permissionProfile,
+    });
   }, [threadSettingsByThreadId, id, resumedThreadId]);
 
   if (loading || !sessionInfoLoaded) {
@@ -559,6 +593,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             cwd: threadCwd,
             permissionProfile,
           });
+          writeThreadRuntimePreference(localStorage, threadId, { permissionProfile });
         } : undefined}
         onAppServerModelChange={canResumeAppServerThread ? async (model) => {
           await updateThreadModelSettings({
@@ -568,12 +603,14 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           // 同步历史会话的本地发送目标，避免下一轮复用恢复会话时记录的旧模型。
           setResumedModel(model);
           setSessionModel(model);
+          writeThreadRuntimePreference(localStorage, resumedThreadId || id, { model });
         } : undefined}
         onAppServerEffortChange={canResumeAppServerThread ? async (effort) => {
           await updateThreadModelSettings({
             threadId: resumedThreadId || id,
             effort,
           });
+          writeThreadRuntimePreference(localStorage, resumedThreadId || id, { effort });
         } : undefined}
         onAppServerGoalSet={canResumeAppServerThread ? async (objective) => {
           await setThreadGoal({
@@ -655,7 +692,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             setSessionModel(turnModel);
           }
 
-          return sendTurnInThread({
+          const acceptedTurn = await sendTurnInThread({
             threadId,
             content,
             files,
@@ -666,6 +703,12 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             permissionProfile,
             onAccepted,
           });
+          writeThreadRuntimePreference(localStorage, threadId, {
+            model: turnModel,
+            ...(effort ? { effort } : {}),
+            permissionProfile,
+          });
+          return acceptedTurn;
         } : undefined}
         appServerClearContextAndSend={canResumeAppServerThread ? async (content, effort) => {
           const acceptedTurn = await sendOneTurn({
@@ -676,6 +719,11 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             permissionProfile: sessionPermissionProfile,
           });
           if (acceptedTurn.threadId) {
+            writeThreadRuntimePreference(localStorage, acceptedTurn.threadId, {
+              model: resumedModel || sessionModel || defaultAppServerModel,
+              ...(effort ? { effort } : {}),
+              permissionProfile: sessionPermissionProfile,
+            });
             router.push(`/chat/${encodeURIComponent(acceptedTurn.threadId)}`);
           }
         } : undefined}

@@ -38,6 +38,11 @@ import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalS
 import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
 import { resolveNewChatModelDefaults } from '@/codex-web/new-chat-model-defaults';
 import {
+  permissionProfileFromRuntimeSettings,
+  resolveNewChatPermissionDefault,
+} from '@/codex-web/thread-permission-settings';
+import { writeThreadRuntimePreference } from '@/codex-web/thread-runtime-preferences';
+import {
   deriveCodexWebToolState,
   type CodexWebToolResultInfo,
   type CodexWebToolUseInfo,
@@ -277,6 +282,7 @@ function NewChatPageInner() {
           cwd: workingDir,
           permissionProfile: next,
         });
+        writeThreadRuntimePreference(localStorage, createdSessionId, { permissionProfile: next });
       }
       setPermissionProfile(next);
     } catch (error) {
@@ -336,6 +342,7 @@ function NewChatPageInner() {
     setCurrentProviderId(DEFAULT_CODEX_PROVIDER_ID);
     setCurrentModel(defaults?.model ?? '');
     setSelectedEffort(defaults?.effort);
+    setPermissionProfile(resolveNewChatPermissionDefault(config?.data));
     setNoCompatibleProvider(!defaults);
     setInvalidDefault(null);
     setModelReady(true);
@@ -440,8 +447,8 @@ function NewChatPageInner() {
   }, [appServerApproval, setPendingApprovalSessionId]);
 
   useEffect(() => {
-    applyNewChatModelDefaults();
-  }, [applyNewChatModelDefaults]);
+    if (!createdSessionId) applyNewChatModelDefaults();
+  }, [applyNewChatModelDefaults, createdSessionId]);
 
   useEffect(() => {
     if (!createdSessionId) return;
@@ -449,17 +456,26 @@ function NewChatPageInner() {
     if (!settings) return;
     setCurrentModel(settings.model);
     setSelectedEffort(settings.effort ?? undefined);
+    const nextPermissionProfile = permissionProfileFromRuntimeSettings(settings);
+    setPermissionProfile(nextPermissionProfile);
+    writeThreadRuntimePreference(localStorage, createdSessionId, {
+      model: settings.model,
+      ...(settings.effort ? { effort: settings.effort } : {}),
+      permissionProfile: nextPermissionProfile,
+    });
   }, [threadSettingsByThreadId, createdSessionId]);
 
   const handleThreadModelChange = useCallback((model: string) => {
     setCurrentModel(model);
     if (!createdSessionId) return;
-    void updateThreadModelSettings({ threadId: createdSessionId, model }).catch((error) => {
-      setErrorBanner({
-        message: '模型更新失败',
-        description: error instanceof Error ? error.message : String(error),
+    void updateThreadModelSettings({ threadId: createdSessionId, model })
+      .then(() => writeThreadRuntimePreference(localStorage, createdSessionId, { model }))
+      .catch((error) => {
+        setErrorBanner({
+          message: '模型更新失败',
+          description: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
   }, [createdSessionId, updateThreadModelSettings]);
 
   const handleThreadEffortChange = useCallback((effort: string | undefined) => {
@@ -468,12 +484,14 @@ function NewChatPageInner() {
     void updateThreadModelSettings({
       threadId: createdSessionId,
       effort: effort as ReasoningEffort,
-    }).catch((error) => {
-      setErrorBanner({
-        message: '推理等级更新失败',
-        description: error instanceof Error ? error.message : String(error),
+    })
+      .then(() => writeThreadRuntimePreference(localStorage, createdSessionId, { effort: effort as ReasoningEffort }))
+      .catch((error) => {
+        setErrorBanner({
+          message: '推理等级更新失败',
+          description: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
   }, [createdSessionId, updateThreadModelSettings]);
 
   // 初始化工作目录，并通过 app-server 验证目录仍然存在。
@@ -782,6 +800,15 @@ function NewChatPageInner() {
               },
             });
 
+        if (acceptedTurn.threadId) {
+          writeThreadRuntimePreference(localStorage, acceptedTurn.threadId, {
+            model: currentModel,
+            ...(selectedEffort && selectedEffort !== 'auto'
+              ? { effort: selectedEffort as ReasoningEffort }
+              : {}),
+            permissionProfile,
+          });
+        }
         accepted = true;
         if (initialSkillKeyRef.current) setConsumedSkillKey(initialSkillKeyRef.current);
         // #4/#5 — clear the persisted composer draft at accept. The imminent
@@ -926,6 +953,19 @@ function NewChatPageInner() {
             });
             threadId = response.thread.id;
             setCreatedSessionId(threadId);
+            if (selectedEffort && selectedEffort !== 'auto') {
+              await updateThreadModelSettings({
+                threadId,
+                effort: selectedEffort as ReasoningEffort,
+              });
+            }
+            writeThreadRuntimePreference(localStorage, threadId, {
+              model: currentModel,
+              ...(selectedEffort && selectedEffort !== 'auto'
+                ? { effort: selectedEffort as ReasoningEffort }
+                : {}),
+              permissionProfile,
+            });
           }
           await setThreadGoal({ threadId, objective: action, status: 'active' });
         } catch (error) {
@@ -969,7 +1009,7 @@ function NewChatPageInner() {
       default:
         sendFirstMessage(command);
     }
-  }, [appServerGoal, createdSessionId, currentModel, handleGoalClear, handleGoalEdit, handleGoalStatusChange, mode, modelReady, sendFirstMessage, setThreadGoal, startThread, t, workingDir]);
+  }, [appServerGoal, createdSessionId, currentModel, handleGoalClear, handleGoalEdit, handleGoalStatusChange, mode, modelReady, permissionProfile, selectedEffort, sendFirstMessage, setThreadGoal, startThread, t, updateThreadModelSettings, workingDir]);
 
   // New-chat layout (2026-05-21): when there are no messages and no
   // streaming, replace the bottom-pinned composer + top scrolling
