@@ -156,6 +156,7 @@ const en = {
   'settings.configTitle': 'Custom config.toml settings',
   'settings.configDescription': 'Edit your configuration to customize agent behavior',
   'settings.configRefreshDescription': 'Refresh the browser after editing to apply changes',
+  'settings.configDocs': 'Documentation',
   'settings.configFile': 'config.toml',
   'settings.configOpen': 'Open config.toml',
   'settings.configCancel': 'Cancel',

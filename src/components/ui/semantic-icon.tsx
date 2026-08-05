@@ -134,6 +134,7 @@ export type CodexWebIconName =
   // Navigation
   | 'overview'
   | 'settings'
+  | 'config'
   | 'appearance'
   | 'health'
   | 'usage'
@@ -228,6 +229,12 @@ export type CodexWebIconName =
 // here to avoid pulling its private types.
 type HugeiconsSvg = ComponentProps<typeof HugeiconsIcon>['icon'];
 
+const ConfigIcon = [
+  ...Shield01Icon,
+  ["path", { d: "M8.5 8.5L11 11L8.5 13.5", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.5", key: "config-prompt" }],
+  ["path", { d: "M12.5 14H16", stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.5", key: "config-underscore" }],
+] as HugeiconsSvg;
+
 /**
  * Phase 0 → Phase 1 semantic map.
  *
@@ -245,6 +252,7 @@ const SEMANTIC_MAP: Record<CodexWebIconName, HugeiconsSvg> = {
   // Navigation
   overview: DashboardCircleEditIcon,
   settings: Settings02Icon,
+  config: ConfigIcon,
   appearance: PaintBoardIcon,
   health: HeartCheckIcon,
   usage: Analytics02Icon,

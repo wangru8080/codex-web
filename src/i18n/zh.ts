@@ -153,6 +153,7 @@ const zh: Record<TranslationKey, string> = {
   'settings.configTitle': '自定义 config.toml 设置',
   'settings.configDescription': '编辑你的配置以自定义代理行为',
   'settings.configRefreshDescription': '编辑后请刷新浏览器以应用更改',
+  'settings.configDocs': '文档',
   'settings.configFile': 'config.toml',
   'settings.configOpen': '打开 config.toml',
   'settings.configCancel': '取消',

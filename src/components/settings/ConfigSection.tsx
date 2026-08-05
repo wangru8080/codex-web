@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { SettingsCard } from "@/components/patterns/SettingsCard";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
@@ -84,7 +85,18 @@ export function ConfigSection() {
           <div className="min-w-0 space-y-1">
             <p className="font-medium">{t("settings.configFile")}</p>
             <p className="text-sm text-muted-foreground">{t("settings.configDescription")}</p>
-            <p className="text-sm text-muted-foreground">{t("settings.configRefreshDescription")}</p>
+            <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+              <span>{t("settings.configRefreshDescription")}</span>
+              <a
+                href="https://learn.chatgpt.com/docs/config-file/config-basic"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 hover:text-foreground"
+              >
+                {t("settings.configDocs")}
+                <CodexWebIcon name="external" size="sm" aria-hidden />
+              </a>
+            </p>
           </div>
           <Button
             type="button"
