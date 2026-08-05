@@ -17,6 +17,8 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 import { utf8FromBase64, utf8ToBase64 } from "@/codex-web/app-server-files";
 
+const CONFIG_DOCS_URL = "https://learn.chatgpt.com/docs/config-file/config-basic";
+
 function configPath(codexHome: string, platformFamily: string): string {
   const separator = platformFamily === "windows" || codexHome.includes("\\") ? "\\" : "/";
   return `${codexHome.replace(/[\\/]+$/, "")}${separator}config.toml`;
@@ -74,8 +76,11 @@ export function ConfigSection() {
     <div className="mx-auto max-w-4xl space-y-8">
       <div>
         <h2 className="text-xl font-semibold tracking-tight">{t("settings.config")}</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {t("settings.configDescription")} · {t("settings.configRefreshDescription")}
+        <p className="mt-2 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+          <span>{t("settings.configPageDescription")}</span>
+          <a href={CONFIG_DOCS_URL} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+            {t("settings.configLearnMore")}
+          </a>
         </p>
       </div>
 
@@ -88,7 +93,7 @@ export function ConfigSection() {
             <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
               <span>{t("settings.configRefreshDescription")}</span>
               <a
-                href="https://learn.chatgpt.com/docs/config-file/config-basic"
+                href={CONFIG_DOCS_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 hover:text-foreground"
