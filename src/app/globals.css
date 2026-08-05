@@ -442,6 +442,16 @@
   background-color: transparent !important;
 }
 
+/* 浅色主题下终端背景接近全局选区色，单独提高拖选区域的对比度。 */
+[data-language="bash"] ::selection,
+[data-language="sh"] ::selection,
+[data-language="shell"] ::selection,
+[data-language="zsh"] ::selection,
+[data-language="console"] ::selection,
+[data-language="terminal"] ::selection {
+  background: color-mix(in oklch, var(--terminal-foreground) 35%, transparent);
+}
+
 /*
  * CodeMirror isolation — Phase 4 (POC 0.4 path C).
  *
