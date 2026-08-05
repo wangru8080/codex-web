@@ -4,6 +4,8 @@ import { memo, useRef, useState, useCallback, useEffect, useMemo, type KeyboardE
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import {
   PromptInput,
   PromptInputBody,
@@ -38,9 +40,11 @@ import type { FileAttachment, MentionRef, PermissionProfile, SkillInputReference
 import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadTokenUsage';
 import type { McpServerStatus } from '@/codex/protocol/generated/v2/McpServerStatus';
 import type { GetAccountRateLimitsResponse } from '@/codex/protocol/generated/v2/GetAccountRateLimitsResponse';
+import type { HookMetadata } from '@/codex/protocol/generated/v2/HookMetadata';
 import type { TurnFileChangeSummary } from '@/codex-web/file-change-summary';
 import type { ComposerTurnPlan as ComposerTurnPlanData } from '@/codex-web/composer-turn-plan';
 import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
+import { buildHookTrustEdit, hookNeedsReview } from '@/codex-web/hooks-config';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { ContextWindowIndicator } from './ContextWindowIndicator';
 import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, FileExcerptCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
@@ -678,6 +682,7 @@ export const MessageInput = memo(function MessageInput({
   const { t } = useTranslation();
   const appServer = useAppServerActions();
   const config = useAppServerSelector((state) => state.config);
+  const appServerConnection = useAppServerSelector((state) => state.connection.data);
   const resolvedAttachmentsAccept = attachmentsAccept ?? '';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Run Checkpoint bypass — Round 2 (2026-04-30). When the banner's
@@ -700,6 +705,8 @@ export const MessageInput = memo(function MessageInput({
   const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]);
   const [reviewBranch, setReviewBranch] = useState('main');
   const [rateLimits, setRateLimits] = useState<GetAccountRateLimitsResponse | null>(null);
+  const [pendingHooks, setPendingHooks] = useState<HookMetadata[]>([]);
+  const [trustingHooks, setTrustingHooks] = useState(false);
   const memoriesConfig = config?.data.config.memories as Record<string, unknown> | undefined;
   const [useMemories, setUseMemories] = useState(() => memoriesConfig?.use_memories !== false);
   const [generateMemories, setGenerateMemories] = useState(() => memoriesConfig?.generate_memories !== false);
@@ -709,6 +716,36 @@ export const MessageInput = memo(function MessageInput({
     setUseMemories(memoriesConfig.use_memories !== false);
     setGenerateMemories(memoriesConfig.generate_memories !== false);
   }, [memoriesConfig]);
+
+  const refreshPendingHooks = useCallback(async () => {
+    if (appServerConnection !== 'connected') {
+      setPendingHooks([]);
+      return;
+    }
+    try {
+      const response = await appServer.listHooks({
+        cwds: workingDirectory ? [workingDirectory] : [],
+      });
+      setPendingHooks((response.data[0]?.hooks ?? []).filter(hookNeedsReview));
+    } catch {
+      setPendingHooks([]);
+    }
+  }, [appServer, appServerConnection, workingDirectory]);
+
+  useEffect(() => {
+    void refreshPendingHooks();
+  }, [refreshPendingHooks, config?.data]);
+
+  const trustAllPendingHooks = useCallback(async () => {
+    if (pendingHooks.length === 0) return;
+    setTrustingHooks(true);
+    try {
+      await appServer.writeConfigEdits([buildHookTrustEdit(pendingHooks)]);
+      await refreshPendingHooks();
+    } finally {
+      setTrustingHooks(false);
+    }
+  }, [appServer, pendingHooks, refreshPendingHooks]);
   const [planPromptActive, setPlanPromptActive] = useState(false);
   // Track the last `initialValue` we've reconciled so the warm-navigation
   // sync below fires only when the prop ACTUALLY transitions (not on every
@@ -1661,6 +1698,24 @@ export const MessageInput = memo(function MessageInput({
               onExpandedChange={(expanded) => setComposerActivityPanel(expanded ? 'tasks' : null)}
               variant={standaloneTurnPlan ? 'standalone' : 'compact'}
             />
+          </div>
+        )}
+        {pendingHooks.length > 0 && (
+          <div
+            className="mb-2 flex min-h-10 items-center gap-3 rounded-xl border border-status-warning-border bg-status-warning-muted px-3 py-2 text-xs text-status-warning-foreground"
+            data-testid="composer-hooks-review"
+            data-source-breadcrumb="app-server.hooks/list"
+          >
+            <CodexWebIcon name="warning" className="text-status-warning-foreground" aria-hidden />
+            <span className="min-w-0 flex-1 font-medium">
+              {t('settings.hooksPendingReview', { count: pendingHooks.length })}
+            </span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => void trustAllPendingHooks()} disabled={trustingHooks}>
+              {t('settings.hooksTrustAll')}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" asChild>
+              <a href="/settings/hooks">{t('settings.hooksReview')}</a>
+            </Button>
           </div>
         )}
         <div className="relative">

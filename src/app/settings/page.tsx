@@ -13,6 +13,7 @@ const SECTION_HASH_TO_PATH: Record<string, string> = {
   codex: "/settings/codex",
   general: "/settings/general",
   config: "/settings/config",
+  hooks: "/settings/hooks",
   appearance: "/settings/appearance",
   providers: "/settings/codex",
   models: "/settings/codex",

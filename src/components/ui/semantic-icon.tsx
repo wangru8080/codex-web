@@ -121,6 +121,7 @@ import {
   MoreHorizontalCircle01Icon,
   StethoscopeIcon,
   CloudUploadIcon,
+  AnchorIcon,
 } from '@hugeicons/core-free-icons';
 import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
@@ -135,6 +136,7 @@ export type CodexWebIconName =
   | 'overview'
   | 'settings'
   | 'config'
+  | 'hook'
   | 'appearance'
   | 'health'
   | 'usage'
@@ -253,6 +255,7 @@ const SEMANTIC_MAP: Record<CodexWebIconName, HugeiconsSvg> = {
   overview: DashboardCircleEditIcon,
   settings: Settings02Icon,
   config: ConfigIcon,
+  hook: AnchorIcon,
   appearance: PaintBoardIcon,
   health: HeartCheckIcon,
   usage: Analytics02Icon,

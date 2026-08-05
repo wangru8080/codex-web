@@ -33,4 +33,9 @@ describe("新聊天项目选择竞态", () => {
     expect(page).toMatch(/handleSelectProject[\s\S]*workingDirectorySelectionVersionRef\.current \+= 1/);
     expect(page).toMatch(/handleClearProject[\s\S]*workingDirectorySelectionVersionRef\.current \+= 1/);
   });
+
+  it("会把全局 PanelContext 的项目同步到新对话发送状态", () => {
+    expect(page).toContain("workingDirectory: panelWorkingDirectory");
+    expect(page).toContain("if (panelWorkingDirectory !== workingDir) setWorkingDir(panelWorkingDirectory);");
+  });
 });

@@ -109,7 +109,7 @@ function NewChatPageInner() {
   // user event, so the accept-time consume always sees the live prefill.
   const prefillTextRef = useRef(prefillText);
   useEffect(() => { prefillTextRef.current = prefillText; }, [prefillText]);
-  const { setPendingApprovalSessionId, setWorkingDirectory } = usePanel();
+  const { setPendingApprovalSessionId, setWorkingDirectory, workingDirectory: panelWorkingDirectory } = usePanel();
   const latestCrossClientUserMessage = useAppServerSelector((state) => state.latestCrossClientUserMessage);
   const crossClientUserMessagesByThreadId = useAppServerSelector((state) => state.crossClientUserMessagesByThreadId);
   const activeTurn = useAppServerSelector((state) => state.activeTurn);
@@ -181,6 +181,13 @@ function NewChatPageInner() {
   useEffect(() => {
     setWorkingDirectory(workingDir);
   }, [setWorkingDirectory, workingDir]);
+
+  // 项目选择器位于 AppShell，并先更新共享的 PanelContext。
+  // 让新对话发送前的校验与共享项目选择保持同步。
+  useEffect(() => {
+    if (!panelWorkingDirectory || workingDirectoryClearedRef.current) return;
+    if (panelWorkingDirectory !== workingDir) setWorkingDir(panelWorkingDirectory);
+  }, [panelWorkingDirectory, workingDir]);
 
   const hasSendableProviderForCurrentRuntime = useMemo(() => {
     if (!modelReady) return true; // 仍在加载时不闪现空状态。

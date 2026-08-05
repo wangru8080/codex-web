@@ -18,6 +18,8 @@ import type { SkillsListParams } from "@/codex/protocol/generated/v2/SkillsListP
 import type { SkillsListResponse } from "@/codex/protocol/generated/v2/SkillsListResponse";
 import type { SkillsConfigWriteParams } from "@/codex/protocol/generated/v2/SkillsConfigWriteParams";
 import type { SkillsConfigWriteResponse } from "@/codex/protocol/generated/v2/SkillsConfigWriteResponse";
+import type { HooksListParams } from "@/codex/protocol/generated/v2/HooksListParams";
+import type { HooksListResponse } from "@/codex/protocol/generated/v2/HooksListResponse";
 import type { ListMcpServerStatusParams } from "@/codex/protocol/generated/v2/ListMcpServerStatusParams";
 import type { ListMcpServerStatusResponse } from "@/codex/protocol/generated/v2/ListMcpServerStatusResponse";
 import type { McpServerStatus } from "@/codex/protocol/generated/v2/McpServerStatus";
@@ -221,6 +223,7 @@ export type AppServerActions = {
   ) => Promise<() => Promise<void>>;
   listSkills: (params: SkillsListParams) => Promise<SkillsListResponse>;
   setSkillEnabled: (params: SkillsConfigWriteParams) => Promise<SkillsConfigWriteResponse>;
+  listHooks: (params: HooksListParams) => Promise<HooksListResponse>;
   refreshConfig: (cwd?: string) => Promise<ConfigReadResponse>;
   writeConfigEdits: (edits: ConfigEdit[]) => Promise<ConfigReadResponse>;
   writeMcpServers: (servers: Record<string, MCPServer>) => Promise<ConfigReadResponse>;
@@ -862,6 +865,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return (await client.request("skills/config/write", params)) as SkillsConfigWriteResponse;
   }, []);
 
+  const listHooks = useCallback(async (params: HooksListParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("hooks/list", params)) as HooksListResponse;
+  }, []);
+
   const refreshConfig = useCallback(async (cwd?: string) => {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
@@ -1357,6 +1366,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       watchFileSystem,
       listSkills,
       setSkillEnabled,
+      listHooks,
       refreshConfig,
       writeConfigEdits,
       writeMcpServers,
@@ -1384,7 +1394,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       publishCrossClientUserMessage,
       listOnlineUsers,
     }),
-    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
+    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, listHooks, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
   );
 
   return (
