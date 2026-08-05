@@ -8,6 +8,7 @@ import {
   fileDocumentBytesFromResponse,
   filePreviewFromResponse,
   utf8ToBase64,
+  utf8FromBase64,
 } from "../app-server-files";
 
 describe("app-server 文件适配器", () => {
@@ -79,5 +80,10 @@ describe("app-server 文件适配器", () => {
   it("把新建 Markdown 的 UTF-8 内容编码为 Base64", () => {
     const content = "# 中文笔记\n\n";
     expect(utf8ToBase64(content)).toBe(Buffer.from(content).toString("base64"));
+  });
+
+  it("可以把 UTF-8 Base64 内容还原为文本", () => {
+    const content = "# 中文配置\nmodel = \"gpt-5.6\"";
+    expect(utf8FromBase64(utf8ToBase64(content))).toBe(content);
   });
 });

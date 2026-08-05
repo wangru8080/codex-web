@@ -98,6 +98,10 @@ export function utf8ToBase64(content: string): string {
   return btoa(binary);
 }
 
+export function utf8FromBase64(dataBase64: string): string {
+  return new TextDecoder("utf-8").decode(fileBytesFromResponse({ dataBase64 }));
+}
+
 function decodedBase64Size(dataBase64: string): number {
   const normalized = dataBase64.replace(/\s/g, "");
   const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;

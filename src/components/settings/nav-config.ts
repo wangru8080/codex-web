@@ -10,6 +10,7 @@ import type { TranslationKey } from "@/i18n";
 export type SettingsSection =
   | "codex"
   | "general"
+  | "config"
   | "security"
   | "appearance"
   | "archived"
@@ -29,6 +30,7 @@ export interface SettingsNavItem {
 export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   { id: "codex", label: "Codex", icon: "runtime", href: "/settings/codex", i18nKey: "settings.codex" as TranslationKey },
   { id: "general", label: "General", icon: "settings", href: "/settings/general", i18nKey: "settings.general" as TranslationKey },
+  { id: "config", label: "Config", icon: "permission", href: "/settings/config", i18nKey: "settings.config" as TranslationKey },
   { id: "security", label: "Security", icon: "settings", href: "/settings/security", i18nKey: "settings.security" as TranslationKey },
   { id: "appearance", label: "Appearance", icon: "appearance", href: "/settings/appearance", i18nKey: "settings.appearance" as TranslationKey },
   { id: "about", label: "About", icon: "about", href: "/settings/about", i18nKey: "settings.about" as TranslationKey },
