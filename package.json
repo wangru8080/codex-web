@@ -56,6 +56,7 @@
     "test:smoke:legacy": "tsx scripts/legacy-runtime-smoke.ts",
     "test:smoke:user-input": "tsx scripts/user-input-server-request-smoke.ts",
     "test:smoke:permissions": "tsx scripts/permission-policy-smoke.ts",
+    "test:smoke:config-runtime": "tsx scripts/config-runtime-hot-reload-smoke.ts",
     "test:e2e:permissions": "tsx scripts/permission-policy-tool-e2e.ts",
     "test:smoke:goal-plan": "tsx scripts/goal-plan-plus-smoke.ts",
     "test:smoke:multi-user": "tsx scripts/multi-user-runtime-broker-smoke.ts",

@@ -60,6 +60,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   const { t } = useTranslation();
   const { refreshConfig, writeMcpServers, listMcpServerStatus, reloadMcpServers, listInstalledPlugins, readPlugin } = useAppServerActions();
   const connectionData = useAppServerSelector((state) => state.connection.data);
+  const extensionRevision = useAppServerSelector((state) => state.mcpRevision + state.pluginsRevision);
   const mcpStartupByName = useAppServerSelector((state) => state.mcpStartupByName);
   const [servers, setServers] = useState<Record<string, MCPServerWithSource>>({});
   const [loading, setLoading] = useState(true);
@@ -146,7 +147,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
     if (connectionData !== "connected") return;
     void fetchServers();
     void fetchRuntimeStatus();
-  }, [connectionData, fetchServers, fetchRuntimeStatus]);
+  }, [connectionData, extensionRevision, fetchServers, fetchRuntimeStatus]);
 
   const handleReload = useCallback(async () => {
     await reloadMcpServers();
@@ -190,11 +191,10 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
     try {
       await writeMcpServers(updated);
       setServers(updated);
-      await fetchRuntimeStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [servers, writeMcpServers, fetchRuntimeStatus]);
+  }, [servers, writeMcpServers]);
 
   const handlePersistentToggle = useCallback(async (name: string, enabled: boolean) => {
     if (servers[name]?._source === "plugin") return;
@@ -203,13 +203,12 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
     setServers(updated);
     try {
       await writeMcpServers(updated);
-      await fetchRuntimeStatus();
     } catch (err) {
       console.error('Failed to toggle MCP server:', err);
       // Revert on failure
       fetchServers();
     }
-  }, [servers, fetchServers, fetchRuntimeStatus, writeMcpServers]);
+  }, [servers, fetchServers, writeMcpServers]);
 
   async function handleDelete(name: string) {
     if (servers[name]?._source === "plugin") return;
@@ -237,7 +236,6 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
       const next = mcpServersFromConfigValue(parsed);
       await writeMcpServers(next);
       setServers(next);
-      await fetchRuntimeStatus();
     } catch (err) {
       console.error("Failed to save MCP config:", err);
     } finally {

@@ -1,4 +1,5 @@
 import type { ConfigReadResponse } from "@/codex/protocol/generated/v2/ConfigReadResponse";
+import type { JsonValue } from "@/codex/protocol/generated/serde_json/JsonValue";
 import type { MCPServer } from "@/types";
 
 type UnknownRecord = Record<string, unknown>;
@@ -29,13 +30,13 @@ export function mcpServersFromConfigValue(rawServers: Record<string, unknown>): 
   return servers;
 }
 
-export function mcpServersToConfigValue(servers: Record<string, MCPServer>): Record<string, UnknownRecord> {
-  const result: Record<string, UnknownRecord> = {};
+export function mcpServersToConfigValue(servers: Record<string, MCPServer>): Record<string, JsonValue> {
+  const result: Record<string, JsonValue> = {};
   for (const [name, server] of Object.entries(servers)) {
     const { type: _type, headers, ...rest } = server;
     const allowed = Object.fromEntries(
-      Object.entries(rest).filter(([key, value]) => MCP_CONFIG_KEYS.has(key) && value !== null && value !== undefined),
-    );
+      Object.entries(rest).filter(([key, value]) => MCP_CONFIG_KEYS.has(key) && value !== null && isJsonValue(value)),
+    ) as Record<string, JsonValue>;
     result[name] = {
       ...allowed,
       ...(headers && Object.keys(headers).length ? { http_headers: headers } : {}),
@@ -60,4 +61,10 @@ function readRecord(value: unknown): UnknownRecord {
 function isStringRecord(value: unknown): value is Record<string, string> {
   const record = readRecord(value);
   return Object.keys(record).length > 0 && Object.values(record).every((item) => typeof item === "string");
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return typeof value === "object" && Object.values(value).every(isJsonValue);
 }

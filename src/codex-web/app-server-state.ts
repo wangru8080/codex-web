@@ -65,6 +65,8 @@ export type CodexWebAppServerState = {
   goalsByThreadId: Record<string, Sourced<ThreadGoal>>;
   threadTokenUsageByThreadId: Record<string, Sourced<ThreadTokenUsage>>;
   skillsRevision: number;
+  mcpRevision: number;
+  pluginsRevision: number;
   mcpStartupByName: Record<string, Sourced<McpServerStatusUpdatedNotification>>;
   planImplementationPromptByThreadId: Record<string, Sourced<PlanImplementationPrompt>>;
   pendingApprovals: AppServerPendingRequest[];
@@ -93,6 +95,8 @@ export const initialAppServerState: CodexWebAppServerState = {
   goalsByThreadId: {},
   threadTokenUsageByThreadId: {},
   skillsRevision: 0,
+  mcpRevision: 0,
+  pluginsRevision: 0,
   mcpStartupByName: {},
   planImplementationPromptByThreadId: {},
   pendingApprovals: [],

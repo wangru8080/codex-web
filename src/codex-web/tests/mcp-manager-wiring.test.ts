@@ -19,6 +19,8 @@ describe("MCP manager app-server wiring", () => {
     expect(manager).toContain("部分插件 MCP 无法读取");
     expect(manager).toContain("reloadMcpServers");
     expect(manager).toContain("useAppServerSelector((state) => state.connection.data)");
+    expect(manager).toContain("state.mcpRevision + state.pluginsRevision");
+    expect(manager).toContain("extensionRevision");
     expect(manager).toContain('connectionData !== "connected"');
     expect(manager).not.toContain("/api/plugins/mcp");
     expect(list).not.toContain("/api/plugins/mcp");

@@ -25,7 +25,7 @@ import type { PluginInstalledParams } from "@/codex/protocol/generated/v2/Plugin
 import type { PluginInstalledResponse } from "@/codex/protocol/generated/v2/PluginInstalledResponse";
 import type { PluginReadParams } from "@/codex/protocol/generated/v2/PluginReadParams";
 import type { PluginReadResponse } from "@/codex/protocol/generated/v2/PluginReadResponse";
-import type { ConfigWriteResponse } from "@/codex/protocol/generated/v2/ConfigWriteResponse";
+import type { ConfigEdit } from "@/codex/protocol/generated/v2/ConfigEdit";
 import type { ThreadListParams } from "@/codex/protocol/generated/v2/ThreadListParams";
 import type { ThreadListResponse } from "@/codex/protocol/generated/v2/ThreadListResponse";
 import type { ThreadArchiveResponse } from "@/codex/protocol/generated/v2/ThreadArchiveResponse";
@@ -128,6 +128,7 @@ import { reduceThreadSettingsNotification } from "./thread-settings-adapter";
 import { reduceThreadTokenUsageNotification } from "./thread-token-usage-adapter";
 import { reduceMcpStartupNotification } from "./mcp-startup-adapter";
 import { mcpServersToConfigValue } from "./mcp-config-adapter";
+import { applyConfigRuntimeEdits } from "./config-runtime-refresh";
 import { buildThreadModelSettingsUpdate } from "./thread-model-settings";
 import { withReasoningEffort } from "./turn-start-request";
 import { buildAppServerTurnInput } from "./turn-input";
@@ -221,6 +222,7 @@ export type AppServerActions = {
   listSkills: (params: SkillsListParams) => Promise<SkillsListResponse>;
   setSkillEnabled: (params: SkillsConfigWriteParams) => Promise<SkillsConfigWriteResponse>;
   refreshConfig: (cwd?: string) => Promise<ConfigReadResponse>;
+  writeConfigEdits: (edits: ConfigEdit[]) => Promise<ConfigReadResponse>;
   writeMcpServers: (servers: Record<string, MCPServer>) => Promise<ConfigReadResponse>;
   reloadMcpServers: () => Promise<void>;
   listMcpServerStatus: (params?: ListMcpServerStatusParams) => Promise<McpServerStatus[]>;
@@ -877,22 +879,28 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     await client.request("config/mcpServer/reload");
   }, []);
 
-  const writeMcpServers = useCallback(async (servers: Record<string, MCPServer>) => {
+  const writeConfigEdits = useCallback(async (edits: ConfigEdit[]) => {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
-    await client.request("config/value/write", {
-      keyPath: "mcp_servers",
-      value: mcpServersToConfigValue(servers),
-      mergeStrategy: "replace",
-    }) as ConfigWriteResponse;
-    await client.request("config/mcpServer/reload");
-    const config = await readEffectiveConfig(client);
+    const { config, plan } = await applyConfigRuntimeEdits(
+      (method, params) => client.request(method, params),
+      edits,
+    );
     setState((current) => ({
       ...current,
       config: { source: "app-server.config/read", data: config },
+      mcpRevision: current.mcpRevision + Number(plan.refreshMcp),
+      pluginsRevision: current.pluginsRevision + Number(plan.refreshPlugins),
+      skillsRevision: current.skillsRevision + Number(plan.refreshSkills),
     }));
     return config;
   }, []);
+
+  const writeMcpServers = useCallback(async (servers: Record<string, MCPServer>) => {
+    return writeConfigEdits([
+      { keyPath: "mcp_servers", value: mcpServersToConfigValue(servers), mergeStrategy: "replace" },
+    ]);
+  }, [writeConfigEdits]);
 
   const listMcpServerStatus = useCallback(async (params: ListMcpServerStatusParams = {}) => {
     const client = clientRef.current;
@@ -950,19 +958,14 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const updateMemorySettings = useCallback(async ({ threadId, useMemories, generateMemories }: { threadId?: string; useMemories: boolean; generateMemories: boolean }) => {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
-    await client.request("config/batchWrite", {
-      edits: [
-        { keyPath: "memories.use_memories", value: useMemories, mergeStrategy: "replace" },
-        { keyPath: "memories.generate_memories", value: generateMemories, mergeStrategy: "replace" },
-      ],
-      reloadUserConfig: true,
-    });
+    await writeConfigEdits([
+      { keyPath: "memories.use_memories", value: useMemories, mergeStrategy: "replace" },
+      { keyPath: "memories.generate_memories", value: generateMemories, mergeStrategy: "replace" },
+    ]);
     if (threadId) {
       await client.request("thread/memoryMode/set", { threadId, enabled: generateMemories });
     }
-    const config = await readEffectiveConfig(client);
-    setState((current) => ({ ...current, config: { source: "app-server.config/read", data: config } }));
-  }, []);
+  }, [writeConfigEdits]);
 
   const readAccountRateLimits = useCallback(async () => {
     const client = clientRef.current;
@@ -1355,6 +1358,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       listSkills,
       setSkillEnabled,
       refreshConfig,
+      writeConfigEdits,
       writeMcpServers,
       reloadMcpServers,
       listMcpServerStatus,
@@ -1380,7 +1384,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       publishCrossClientUserMessage,
       listOnlineUsers,
     }),
-    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
+    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
   );
 
   return (
