@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
@@ -213,9 +213,12 @@ async function main(): Promise<void> {
 
   await waitForPrompt(cdp, "item/tool/requestUserInput");
   await assert(cdp, `document.querySelector('[data-testid="request-user-input-auto-resolution-countdown"]') === null`, "autoResolutionMs 为空时不应显示倒计时");
-  await assert(cdp, `document.querySelector('[data-testid="request-user-input-submit"]')?.disabled === true`, "未回答时提交按钮应禁用");
+  await assert(cdp, `document.querySelector('[data-testid="request-user-input-close"]') !== null`, "结构化提问应显示关闭按钮");
+  await assert(cdp, `document.querySelector('[data-testid="request-user-input-skip"]') !== null`, "结构化提问应显示跳过按钮");
+  await assert(cdp, `document.querySelector('[data-testid="request-user-input-submit"]') === null`, "选项问题不应显示通用提交按钮");
+  await captureScreenshot(cdp, "12-request-user-input.png");
   await clickButtonByText(cdp, "Production");
-  await assert(cdp, `document.querySelector('[data-testid="request-user-input-submit"]')?.disabled === true`, "部分回答时提交按钮应保持禁用");
+  await assert(cdp, `document.querySelector('[data-testid="request-user-input-submit"]')?.disabled === true`, "自由输入为空时确认按钮应禁用");
   await setInput(cdp, 'input[type="password"]', "smoke-secret");
   await click(cdp, '[data-testid="request-user-input-submit"]');
   expectEqual(await fake.waitForResponse("input-1"), {
@@ -224,6 +227,10 @@ async function main(): Promise<void> {
       token: { answers: ["smoke-secret"] },
     },
   }, "requestUserInput response");
+
+  await waitForPrompt(cdp, "item/tool/requestUserInput");
+  await click(cdp, '[data-testid="request-user-input-skip"]');
+  expectEqual(await fake.waitForResponse("input-skip"), { answers: {} }, "requestUserInput skip response");
 
   await waitForPrompt(cdp, "mcpServer/elicitation/request");
   await assert(cdp, `document.querySelector('[data-testid="request-user-input-auto-resolution-countdown"]') === null`, "MCP 表单不应启用 requestUserInput 倒计时");
@@ -260,14 +267,16 @@ async function main(): Promise<void> {
   await assert(cdp, `document.querySelector('[data-testid="request-user-input-auto-resolution-countdown"]') === null`, "自动处理静默期不应显示倒计时");
   await advanceBrowserClock(cdp, 60_000);
   await waitFor(cdp, `document.querySelector('[data-testid="request-user-input-auto-resolution-countdown"]') !== null`, 3_000);
-  await clickButtonByText(cdp, "Keep waiting");
+  await assert(cdp, `document.querySelector('[data-testid="request-user-input-auto-resolution-countdown"]')?.querySelector('svg') !== null`, "可见倒计时应在标题栏显示时钟图标");
+  await click(cdp, '[data-testid="request-user-input-other"]');
   await waitFor(cdp, `document.querySelector('[data-testid="request-user-input-auto-resolution-countdown"]') === null`, 3_000);
   await advanceBrowserClock(cdp, 120_000);
   await delay(1_200);
   if (fake.hasResponse("auto-snooze")) throw new Error("用户交互后不应自动响应 requestUserInput");
+  await setInput(cdp, '[data-testid="request-user-input-custom-answer"]', "Continue manually");
   await click(cdp, '[data-testid="request-user-input-submit"]');
   expectEqual(await fake.waitForResponse("auto-snooze"), {
-    answers: { action: { answers: ["Keep waiting"] } },
+    answers: { action: { answers: ["Continue manually"] } },
   }, "snoozed requestUserInput response");
 
   await waitForPrompt(cdp, "item/tool/requestUserInput");
@@ -281,7 +290,7 @@ async function main(): Promise<void> {
   await assert(cdp, `!document.body.innerText.includes("不应显示的跨线程问题")`, "跨 thread 请求不应显示");
   await assert(cdp, `document.querySelector("textarea")?.disabled === false`, "其他 thread 的 pending request 不应禁用当前 composer");
 
-  console.log("用户输入 server request smoke 通过：表单响应、自动处理、FIFO、跨 thread、文件变更统计与右侧 diff 反例均符合预期");
+  console.log("用户输入 server request smoke 通过：官方样式表单、跳过、倒计时、自动处理、FIFO、跨 thread、文件变更统计与右侧 diff 反例均符合预期");
   } finally {
     cdp?.close();
     if (target) await fetch(`${cdpBaseUrl}/json/close/${target.id}`).catch(() => undefined);
@@ -566,6 +575,17 @@ function smokeRequests(): unknown[] {
       },
     },
     {
+      id: "input-skip",
+      method: "item/tool/requestUserInput",
+      params: {
+        threadId,
+        turnId: "turn-1",
+        itemId: "skip-item",
+        autoResolutionMs: null,
+        questions: [{ id: "skip", header: "Skip", question: "Skip this question?", isOther: true, isSecret: false, options: [{ label: "Answer", description: "Do not skip" }] }],
+      },
+    },
+    {
       id: "mcp-accept",
       method: "mcpServer/elicitation/request",
       params: {
@@ -608,7 +628,7 @@ function smokeRequests(): unknown[] {
         turnId: "turn-1",
         itemId: "auto-snooze-item",
         autoResolutionMs: 240_000,
-        questions: [{ id: "action", header: "Action", question: "Pause automatic handling?", isOther: false, isSecret: false, options: [{ label: "Keep waiting", description: "Pause the timer" }] }],
+        questions: [{ id: "action", header: "Action", question: "Pause automatic handling?", isOther: true, isSecret: false, options: [{ label: "Keep waiting", description: "Submit immediately" }] }],
       },
     },
     {
@@ -626,16 +646,22 @@ function smokeRequests(): unknown[] {
 }
 
 function startNext(port: number, bridgeUrl: string): ChildProcess {
-  const child = spawn(resolve(process.cwd(), "node_modules/.bin/next"), ["dev", "-H", "0.0.0.0", "-p", String(port)], {
+  const mode = process.env.CODEX_SMOKE_NEXT_MODE === "start" ? "start" : "dev";
+  const nextBin = resolve(process.cwd(), "node_modules/.bin/next");
+  const env = {
+    ...process.env,
+    CODEX_WEB_DEMO: "1",
+    NEXT_PUBLIC_CODEX_BRIDGE_URL: bridgeUrl,
+    CODEX_WEB_LOGIN_EMAIL: webAuth.email,
+    CODEX_WEB_LOGIN_PASSWORD: webAuth.password,
+    CODEX_WEB_SESSION_SECRET: webAuth.sessionSecret,
+  };
+  if (mode === "start") {
+    execFileSync(nextBin, ["build"], { cwd: process.cwd(), env, stdio: "inherit" });
+  }
+  const child = spawn(nextBin, [mode, "-H", "0.0.0.0", "-p", String(port)], {
     cwd: process.cwd(),
-    env: {
-      ...process.env,
-      CODEX_WEB_DEMO: "1",
-      NEXT_PUBLIC_CODEX_BRIDGE_URL: bridgeUrl,
-      CODEX_WEB_LOGIN_EMAIL: webAuth.email,
-      CODEX_WEB_LOGIN_PASSWORD: webAuth.password,
-      CODEX_WEB_SESSION_SECRET: webAuth.sessionSecret,
-    },
+    env,
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout?.on("data", (data) => debug(`[next stdout] ${String(data).trimEnd()}`));

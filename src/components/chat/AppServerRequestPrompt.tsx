@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowSquareOut } from '@phosphor-icons/react';
+import { ArrowRight, Clock3, Pencil, X } from 'lucide-react';
 
 import type {
   AppServerPendingRequest,
@@ -71,7 +72,12 @@ function AppServerUserInputPrompt({
 
   return (
     <section
-      className="mx-auto max-h-[55vh] w-full max-w-3xl overflow-y-auto border-t border-border bg-background px-4 py-4"
+      className={cn(
+        'mx-auto mb-2 max-h-[55vh] w-[calc(100%-1rem)] max-w-3xl overflow-y-auto bg-background',
+        request.method === 'item/tool/requestUserInput'
+          ? 'rounded-lg border border-border/70 shadow-[var(--shadow-diffuse)]'
+          : 'border-t border-border px-4 py-4',
+      )}
       aria-label={t('serverRequest.title')}
       data-testid="app-server-request-prompt"
       data-request-method={request.method}
@@ -81,7 +87,11 @@ function AppServerUserInputPrompt({
       ) : (
         <McpElicitationForm request={request} disabled={submitting} onSubmit={submit} />
       )}
-      {error && <p className="mt-3 text-xs text-destructive" role="alert">{error}</p>}
+      {error && (
+        <p className={cn('text-xs text-destructive', request.method === 'item/tool/requestUserInput' ? 'mx-6 mb-3' : 'mt-3')} role="alert">
+          {error}
+        </p>
+      )}
     </section>
   );
 }
@@ -98,7 +108,8 @@ function ToolUserInputForm({
   const { t } = useTranslation();
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
-  const [customActive, setCustomActive] = useState<Record<string, boolean>>({});
+  const [customActive, setCustomActive] = useState(false);
+  const [questionIndex, setQuestionIndex] = useState(0);
   const [autoResolutionSnoozed, setAutoResolutionSnoozed] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const startedAtMsRef = useRef(nowMs);
@@ -129,117 +140,158 @@ function ToolUserInputForm({
     }
   };
 
-  const responseDraft = useMemo(() => {
-    const next = { ...answers };
-    for (const question of request.params.questions) {
-      if (customActive[question.id]) {
-        next[question.id] = [customAnswers[question.id] ?? ''];
-      }
-    }
-    return next;
-  }, [answers, customActive, customAnswers, request.params.questions]);
+  const question = request.params.questions[questionIndex];
+  const isLastQuestion = questionIndex === request.params.questions.length - 1;
 
-  const complete = request.params.questions.length > 0 && request.params.questions.every((question) =>
-    (responseDraft[question.id] ?? []).some((answer) => answer.trim().length > 0),
-  );
+  const answerQuestion = (value: string) => {
+    if (!question || disabled || !value.trim()) return;
+    const nextAnswers = { ...answers, [question.id]: [value] };
+    if (isLastQuestion) {
+      onSubmit(buildToolUserInputResponseInput(request.params, nextAnswers));
+      return;
+    }
+    setAnswers(nextAnswers);
+    setCustomActive(false);
+    setQuestionIndex((current) => current + 1);
+  };
+
+  const skip = () => onSubmit({ type: 'userInput', answers: {} });
 
   return (
     <div
-      className="space-y-4"
       onPointerDownCapture={snoozeAutoResolution}
       onKeyDownCapture={snoozeAutoResolution}
       onPasteCapture={snoozeAutoResolution}
       onChangeCapture={snoozeAutoResolution}
     >
-      <div>
-        <p className="text-sm font-medium">{t('serverRequest.userInput.title')}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{t('serverRequest.userInput.description')}</p>
+      <header className="flex min-h-16 items-start gap-3 px-4 py-4 sm:px-6">
+        <div className="min-w-0 flex-1">
+          {request.params.questions.length > 1 && question && (
+            <p className="mb-1 text-xs text-muted-foreground">
+              {question.header} · {questionIndex + 1}/{request.params.questions.length}
+            </p>
+          )}
+          <h2 className="text-base font-semibold leading-6">
+            {question?.question ?? t('serverRequest.userInput.title')}
+          </h2>
+        </div>
         {autoResolutionTiming.phase === 'visibleCountdown' && (
-          <p className="mt-1 text-xs text-destructive" data-testid="request-user-input-auto-resolution-countdown">
+          <div
+            className="mt-0.5 flex shrink-0 items-center gap-1.5 text-xs font-medium text-destructive"
+            data-testid="request-user-input-auto-resolution-countdown"
+            role="status"
+          >
+            <Clock3 className="size-3.5" aria-hidden="true" />
             {t('serverRequest.userInput.autoResolutionCountdown', {
               remaining: formatAutoResolutionRemaining(autoResolutionTiming.remainingMs),
             })}
-          </p>
+          </div>
         )}
-      </div>
-      {request.params.questions.map((question) => {
-        const selected = answers[question.id]?.[0];
-        const showCustom = customActive[question.id] || !question.options?.length;
-        return (
-          <fieldset key={question.id} className="space-y-2" disabled={disabled}>
-            <legend className="text-sm font-medium">
-              <span className="mr-2 text-[11px] text-muted-foreground">{question.header}</span>
-              {question.question}
-            </legend>
-            {!!question.options?.length && (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {question.options.map((option) => (
-                  <button
-                    key={option.label}
-                    type="button"
-                    className={cn(
-                      'min-h-14 rounded-md border px-3 py-2 text-left transition-colors',
-                      selected === option.label && !customActive[question.id]
-                        ? 'border-primary bg-primary/10'
-                        : 'border-border bg-background hover:bg-muted',
-                    )}
-                    aria-pressed={selected === option.label && !customActive[question.id]}
-                    onClick={() => {
-                      snoozeAutoResolution();
-                      setAnswers((current) => ({ ...current, [question.id]: [option.label] }));
-                      setCustomActive((current) => ({ ...current, [question.id]: false }));
-                    }}
-                  >
-                    <span className="block text-sm font-medium">{option.label}</span>
-                    <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
-                  </button>
-                ))}
-                {question.isOther && (
-                  <button
-                    type="button"
-                    className={cn(
-                      'min-h-14 rounded-md border px-3 py-2 text-left text-sm transition-colors',
-                      customActive[question.id]
-                        ? 'border-primary bg-primary/10'
-                        : 'border-border bg-background hover:bg-muted',
-                    )}
-                    aria-pressed={!!customActive[question.id]}
-                    onClick={() => {
-                      snoozeAutoResolution();
-                      setCustomActive((current) => ({ ...current, [question.id]: true }));
-                    }}
-                  >
-                    {t('serverRequest.other')}
-                  </button>
+        <button
+          type="button"
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label={t('common.close')}
+          disabled={disabled}
+          data-testid="request-user-input-close"
+          onClick={skip}
+        >
+          <X className="size-4" aria-hidden="true" />
+        </button>
+      </header>
+
+      {question && (
+        <fieldset className="px-3 pb-2 sm:px-4" disabled={disabled}>
+          <legend className="sr-only">{question.question}</legend>
+          <div className="space-y-1">
+            {question.options?.map((option, optionIndex) => (
+              <button
+                key={option.label}
+                type="button"
+                className={cn(
+                  'group flex min-h-14 w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-muted',
+                  optionIndex === 0 && 'bg-muted/80',
                 )}
-              </div>
-            )}
-            {showCustom && (
-              <Input
-                type={question.isSecret ? 'password' : 'text'}
-                value={customAnswers[question.id] ?? ''}
-                placeholder={t('serverRequest.answerPlaceholder')}
-                aria-label={question.question}
-                autoComplete="off"
-                onChange={(event) => {
+                onClick={() => answerQuestion(option.label)}
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-sm text-muted-foreground">
+                  {optionIndex + 1}
+                </span>
+                <span className="min-w-0 flex-1 sm:flex sm:items-baseline sm:gap-3">
+                  <span className="block text-sm font-medium text-foreground">{option.label}</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-muted-foreground sm:mt-0">{option.description}</span>
+                </span>
+                <ArrowRight
+                  className={cn('size-5 shrink-0 text-muted-foreground transition-opacity', optionIndex === 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}
+                  aria-hidden="true"
+                />
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      <footer className="flex min-h-14 items-center gap-2 border-t border-border/60 px-4 py-2 sm:px-6">
+        {question?.isOther || !question?.options?.length ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Pencil className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            {customActive || !question?.options?.length ? (
+              <>
+                <Input
+                  className="h-9 border-0 px-0 shadow-none focus-visible:ring-0"
+                  type={question?.isSecret ? 'password' : 'text'}
+                  value={question ? customAnswers[question.id] ?? '' : ''}
+                  placeholder={t('serverRequest.answerPlaceholder')}
+                  aria-label={question?.question ?? t('serverRequest.answerPlaceholder')}
+                  autoComplete="off"
+                  autoFocus
+                  disabled={disabled || !question}
+                  data-testid="request-user-input-custom-answer"
+                  onChange={(event) => {
+                    if (!question) return;
+                    setCustomAnswers((current) => ({ ...current, [question.id]: event.target.value }));
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' || !question) return;
+                    event.preventDefault();
+                    answerQuestion(customAnswers[question.id] ?? '');
+                  }}
+                />
+                <button
+                  type="button"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  aria-label={t('serverRequest.submit')}
+                  disabled={disabled || !question || !(customAnswers[question.id] ?? '').trim()}
+                  data-testid="request-user-input-submit"
+                  onClick={() => answerQuestion(customAnswers[question.id] ?? '')}
+                >
+                  <ArrowRight className="size-4" aria-hidden="true" />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="min-w-0 flex-1 truncate text-left text-sm text-muted-foreground hover:text-foreground"
+                data-testid="request-user-input-other"
+                onClick={() => {
                   snoozeAutoResolution();
-                  const value = event.target.value;
-                  setCustomAnswers((current) => ({ ...current, [question.id]: value }));
-                  setCustomActive((current) => ({ ...current, [question.id]: true }));
+                  setCustomActive(true);
                 }}
-              />
+              >
+                {t('serverRequest.otherPrompt')}
+              </button>
             )}
-          </fieldset>
-        );
-      })}
-      <Button
-        size="sm"
-        disabled={disabled || !complete}
-        data-testid="request-user-input-submit"
-        onClick={() => onSubmit(buildToolUserInputResponseInput(request.params, responseDraft))}
-      >
-        {disabled ? t('serverRequest.submitting') : t('serverRequest.submit')}
-      </Button>
+          </div>
+        ) : <div className="flex-1" />}
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={disabled}
+          data-testid="request-user-input-skip"
+          onClick={skip}
+        >
+          {t('serverRequest.skip')}
+        </Button>
+      </footer>
     </div>
   );
 }
