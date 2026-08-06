@@ -423,12 +423,7 @@ function NewChatPageInner() {
     setLivePlanPromptTurnKey(finalKey);
     const assistantContent = appServerTerminalTurnToMessageContent(appServerTurn);
 
-    if (appServerTurn.status === 'failed') {
-      setErrorBanner({
-        message: 'Codex 处理失败',
-        description: appServerTurn.errorMessage || undefined,
-      });
-    } else if (assistantContent) {
+    if (assistantContent) {
       const assistantMessage: Message = {
         id: 'temp-assistant-' + Date.now(),
         session_id: appServerTurn.threadId || createdSessionId || '',

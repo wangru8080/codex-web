@@ -771,12 +771,7 @@ export function ChatView({
     setLivePlanPromptTurnKey(finalKey);
     const assistantContent = appServerTerminalTurnToMessageContent(appServerTurn);
 
-    if (appServerTurn.status === 'failed') {
-      setAppServerErrorBanner({
-        message: 'Codex 发送失败',
-        description: appServerTurn.errorMessage || undefined,
-      });
-    } else if (assistantContent) {
+    if (assistantContent) {
       const assistantMessage: Message = {
         id: 'temp-assistant-' + Date.now(),
         session_id: appServerTurn.threadId || activeSessionId,

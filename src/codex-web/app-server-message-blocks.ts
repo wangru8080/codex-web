@@ -15,6 +15,8 @@ type TurnItemsToMessageContentArgs = {
   assistantText?: string;
   durationMs?: number;
   interrupted?: boolean;
+  errorMessage?: string;
+  errorSourceBreadcrumb?: "app-server.turn/completed" | "app-server.error";
   reasoningText?: string;
   planBlocks?: MessageContentBlock[];
   toolOutputs?: Record<string, string>;
@@ -29,6 +31,8 @@ export function appServerTurnToMessageContent(turn: AppServerTurnState): string 
     assistantText: turn.assistantText,
     durationMs: turn.durationMs,
     interrupted: turn.status === "interrupted",
+    errorMessage: turn.status === "failed" ? turn.errorMessage : undefined,
+    errorSourceBreadcrumb: turn.errorSourceBreadcrumb ?? undefined,
     reasoningText: turn.reasoningText,
     planBlocks: turn.planBlocks,
     toolOutputs: turn.toolOutputs,
@@ -41,13 +45,14 @@ export function appServerTurnToMessageContent(turn: AppServerTurnState): string 
 export function appServerTerminalTurnToMessageContent(
   turn: AppServerTurnState,
 ): string | null {
-  if (turn.status !== "completed" && turn.status !== "interrupted") return null;
+  if (turn.status !== "completed" && turn.status !== "failed" && turn.status !== "interrupted") return null;
   if (
-    turn.status !== "interrupted" &&
     !turn.assistantText.trim() &&
     !turn.reasoningText.trim() &&
     turn.items.length === 0 &&
-    turn.planBlocks.length === 0
+    turn.planBlocks.length === 0 &&
+    !turn.errorMessage.trim() &&
+    turn.status !== "interrupted"
   ) {
     return null;
   }
@@ -60,6 +65,8 @@ export function appServerTurnToMessageBlocks(turn: AppServerTurnState): MessageC
     assistantText: turn.assistantText,
     durationMs: turn.durationMs,
     interrupted: turn.status === "interrupted",
+    errorMessage: turn.status === "failed" ? turn.errorMessage : undefined,
+    errorSourceBreadcrumb: turn.errorSourceBreadcrumb ?? undefined,
     reasoningText: turn.reasoningText,
     planBlocks: turn.planBlocks,
     toolOutputs: turn.toolOutputs,
@@ -98,14 +105,6 @@ export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): M
   const finalAgentMessage = selectFinalAgentMessage(args.items);
   const finalText = finalAgentMessage?.text.trim() || args.assistantText?.trim() || "";
   let processCount = 0;
-
-  if (args.interrupted) {
-    blocks.push({
-      type: "codex_interrupted",
-      ...(typeof args.durationMs === "number" ? { elapsed_ms: args.durationMs } : {}),
-      sourceBreadcrumb: "app-server.turn/completed",
-    });
-  }
 
   if (reasoningText) {
     blocks.push({ type: "thinking", thinking: reasoningText });
@@ -190,6 +189,22 @@ export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): M
 
   if (finalText) {
     blocks.push({ type: "text", text: finalText });
+  }
+
+  // 终态信息必须追加在已有输出之后，避免中断或错误掩盖部分回答。
+  if (args.interrupted) {
+    blocks.push({
+      type: "codex_interrupted",
+      ...(typeof args.durationMs === "number" ? { elapsed_ms: args.durationMs } : {}),
+      sourceBreadcrumb: "app-server.turn/completed",
+    });
+  }
+  if (args.errorMessage?.trim()) {
+    blocks.push({
+      type: "codex_error",
+      message: args.errorMessage.trim(),
+      sourceBreadcrumb: args.errorSourceBreadcrumb ?? "app-server.turn/completed",
+    });
   }
 
   return blocks;

@@ -143,6 +143,7 @@ describe("reduceAppServerTurnNotification", () => {
       reasoningText: "先确认上下文。",
       durationMs: 3000,
       errorMessage: "",
+      errorSourceBreadcrumb: null,
     });
     expect(state.items).toHaveLength(1);
   });
@@ -186,6 +187,7 @@ describe("reduceAppServerTurnNotification", () => {
 
     expect(state.status).toBe("failed");
     expect(state.errorMessage).toBe("模型不可用");
+    expect(state.errorSourceBreadcrumb).toBe("app-server.error");
     expect(state.retryStatus).toBeNull();
   });
 

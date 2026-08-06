@@ -264,6 +264,7 @@ export type MessageContentBlock =
   | { type: 'thinking'; thinking: string }
   | { type: 'codex_summary'; elapsed_ms?: number; process_count?: number }
   | { type: 'codex_interrupted'; elapsed_ms?: number; sourceBreadcrumb: 'app-server.turn/completed' }
+  | { type: 'codex_error'; message: string; sourceBreadcrumb: 'app-server.turn/completed' | 'app-server.error' }
   | { type: 'codex_process_text'; text: string }
   | {
       type: 'codex_context_compaction';

@@ -14,7 +14,7 @@ import { MediaPreview } from './MediaPreview';
 import { DiffSummary } from './DiffSummary';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, CaretDown, CaretUp, CaretRight, NotePencil, Copy, ArrowsSplit, SpinnerGap } from "@/components/ui/icon";
+import { Check, CaretDown, CaretUp, CaretRight, NotePencil, Copy, ArrowsSplit, SpinnerGap, Info } from "@/components/ui/icon";
 import { Target } from '@phosphor-icons/react';
 import { FileAttachmentDisplay } from './FileAttachmentDisplay';
 import { FileExcerptDisplay } from './FileExcerptDisplay';
@@ -69,6 +69,7 @@ type AssistantRenderPart =
   | { type: 'text'; text: string; variant: 'process' | 'final' }
   | { type: 'tools'; tools: ToolBlock[] }
   | Extract<MessageContentBlock, { type: 'codex_interrupted' }>
+  | Extract<MessageContentBlock, { type: 'codex_error' }>
   | Extract<MessageContentBlock, { type: 'codex_context_compaction' }>
   | { type: 'proposed_plan'; text: string; sourceBreadcrumb: string };
 
@@ -126,6 +127,7 @@ function parseToolBlocks(content: string): {
         process_count?: number;
         media?: MediaBlock[];
         sourceBreadcrumb?: string;
+        message?: string;
         explanation?: string | null;
         steps?: Array<{ step?: string; status?: string }>;
         progress?: { completed?: number; total?: number } | null;
@@ -152,6 +154,15 @@ function parseToolBlocks(content: string): {
             type: 'codex_interrupted',
             elapsed_ms: typeof block.elapsed_ms === 'number' ? block.elapsed_ms : undefined,
             sourceBreadcrumb: 'app-server.turn/completed',
+          });
+        } else if (block.type === 'codex_error' && block.message) {
+          flushPendingTools();
+          renderParts.push({
+            type: 'codex_error',
+            message: block.message,
+            sourceBreadcrumb: block.sourceBreadcrumb === 'app-server.error'
+              ? 'app-server.error'
+              : 'app-server.turn/completed',
           });
         } else if (
           block.type === 'codex_context_compaction' &&
@@ -469,6 +480,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
   );
   const planParts = renderParts.filter((part) => part.type === 'proposed_plan');
   const interruptedParts = renderParts.filter((part) => part.type === 'codex_interrupted');
+  const errorParts = renderParts.filter((part) => part.type === 'codex_error');
   const finalParts = renderParts.filter((part) => part.type === 'text' && part.variant === 'final');
   const renderAssistantPart = (part: AssistantRenderPart, index: number) => {
     if (part.type === 'tools') {
@@ -511,6 +523,18 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
           data-interrupted-source={part.sourceBreadcrumb}
         >
           你在 {seconds}秒 后停止了
+        </div>
+      );
+    }
+    if (part.type === 'codex_error') {
+      return (
+        <div
+          key={`assistant-error-${index}`}
+          className="mb-4 flex min-h-12 items-center gap-3 rounded-2xl border border-border bg-background px-4 py-3 text-sm text-foreground shadow-sm whitespace-pre-wrap break-words"
+          data-error-source={part.sourceBreadcrumb}
+        >
+          <Info size={18} className="shrink-0 text-muted-foreground" aria-hidden />
+          {part.message}
         </div>
       );
     }
@@ -597,7 +621,6 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
 
         {!isUser && (
           <>
-            {interruptedParts.map((part, index) => renderAssistantPart(part, index))}
             {hasAssistantProcess && (
               <ProcessCollapseGroup
                 elapsedMs={elapsedMs}
@@ -620,7 +643,9 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
                 {finalParts.map((part, index) => renderAssistantPart(part, index))}
               </div>
             )}
-            {finalParts.length === 0 && planParts.length === 0 && interruptedParts.length === 0 && !hasAssistantProcess && (
+            {errorParts.map((part, index) => renderAssistantPart(part, index))}
+            {interruptedParts.map((part, index) => renderAssistantPart(part, index))}
+            {finalParts.length === 0 && planParts.length === 0 && interruptedParts.length === 0 && errorParts.length === 0 && !hasAssistantProcess && (
               <div className="contents" data-assistant-final-answer data-answer-complete="true">
                 {renderParts.map((part, index) => renderAssistantPart(part, index))}
               </div>

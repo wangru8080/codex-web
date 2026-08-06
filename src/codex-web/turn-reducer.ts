@@ -36,6 +36,7 @@ export type AppServerTurnState = {
   mcpProgress: Record<string, string>;
   contextCompactionStatusById: Record<string, "inProgress" | "completed">;
   errorMessage: string;
+  errorSourceBreadcrumb: "app-server.turn/completed" | "app-server.error" | null;
   retryStatus: AppServerRetryStatus | null;
 };
 
@@ -59,6 +60,7 @@ export const initialAppServerTurnState: AppServerTurnState = {
   mcpProgress: {},
   contextCompactionStatusById: {},
   errorMessage: "",
+  errorSourceBreadcrumb: null,
   retryStatus: null,
 };
 
@@ -319,6 +321,7 @@ export function reduceAppServerTurnNotification(
         startedAtMs: turnStartedAtMs(turn.startedAt) ?? state.startedAtMs,
         durationMs: readFiniteNumber(turn.durationMs) ?? state.durationMs,
         errorMessage: readTurnErrorMessage(turn.error),
+        errorSourceBreadcrumb: readTurnErrorMessage(turn.error) ? "app-server.turn/completed" : null,
       };
     }
 
@@ -347,6 +350,7 @@ export function reduceAppServerTurnNotification(
         ...state,
         status: "failed",
         errorMessage: message,
+        errorSourceBreadcrumb: "app-server.error",
         retryStatus: null,
       };
     }

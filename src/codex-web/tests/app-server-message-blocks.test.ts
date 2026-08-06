@@ -218,12 +218,12 @@ describe("app-server-message-blocks", () => {
     };
 
     expect(JSON.parse(appServerTerminalTurnToMessageContent(turn)!)).toEqual([
+      { type: "text", text: "已经输出的部分回答。" },
       {
         type: "codex_interrupted",
         elapsed_ms: 46_000,
         sourceBreadcrumb: "app-server.turn/completed",
       },
-      { type: "text", text: "已经输出的部分回答。" },
     ]);
   });
 
@@ -243,7 +243,7 @@ describe("app-server-message-blocks", () => {
     ]);
   });
 
-  it("完成回合继续保存正文，失败回合不保存为助手消息", () => {
+  it("完成和失败回合都保留正文，失败信息追加在正文后", () => {
     const completed = {
       ...createAcceptedTurnState("thread-1", "turn-1"),
       status: "completed" as const,
@@ -252,10 +252,18 @@ describe("app-server-message-blocks", () => {
     const failed = {
       ...completed,
       status: "failed" as const,
+      errorMessage: "Selected model is at capacity.",
     };
 
     expect(appServerTerminalTurnToMessageContent(completed)).toBe("完整回答。");
-    expect(appServerTerminalTurnToMessageContent(failed)).toBeNull();
+    expect(JSON.parse(appServerTerminalTurnToMessageContent(failed)!)).toEqual([
+      { type: "text", text: "完整回答。" },
+      {
+        type: "codex_error",
+        message: "Selected model is at capacity.",
+        sourceBreadcrumb: "app-server.turn/completed",
+      },
+    ]);
   });
 
   it("新会话与历史会话都使用终态内容适配器且不再写入固定中断提示", () => {
