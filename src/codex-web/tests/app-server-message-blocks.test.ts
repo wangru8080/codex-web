@@ -214,18 +214,33 @@ describe("app-server-message-blocks", () => {
       ...createAcceptedTurnState("thread-1", "turn-1"),
       status: "interrupted" as const,
       assistantText: "已经输出的部分回答。",
+      durationMs: 46_000,
     };
 
-    expect(appServerTerminalTurnToMessageContent(turn)).toBe("已经输出的部分回答。");
+    expect(JSON.parse(appServerTerminalTurnToMessageContent(turn)!)).toEqual([
+      {
+        type: "codex_interrupted",
+        elapsed_ms: 46_000,
+        sourceBreadcrumb: "app-server.turn/completed",
+      },
+      { type: "text", text: "已经输出的部分回答。" },
+    ]);
   });
 
-  it("中断时没有任何输出就不新增助手消息", () => {
+  it("中断时没有正文也保留来自 turn/completed 的停止耗时", () => {
     const turn = {
       ...createAcceptedTurnState("thread-1", "turn-1"),
       status: "interrupted" as const,
+      durationMs: 25_000,
     };
 
-    expect(appServerTerminalTurnToMessageContent(turn)).toBeNull();
+    expect(JSON.parse(appServerTerminalTurnToMessageContent(turn)!)).toEqual([
+      {
+        type: "codex_interrupted",
+        elapsed_ms: 25_000,
+        sourceBreadcrumb: "app-server.turn/completed",
+      },
+    ]);
   });
 
   it("完成回合继续保存正文，失败回合不保存为助手消息", () => {

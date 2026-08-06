@@ -170,6 +170,7 @@ interface MessageListProps {
   continuedFromMessageId?: string;
   targetMessageId?: string;
   modelSwitches?: ModelSwitch[];
+  goalMessageIds?: ReadonlySet<string>;
 }
 
 function ModelSwitchDivider({ change }: { change: ModelSwitch }) {
@@ -300,6 +301,7 @@ export function MessageList({
   continuedFromMessageId,
   targetMessageId,
   modelSwitches = [],
+  goalMessageIds,
 }: MessageListProps) {
   const { t } = useTranslation();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -543,6 +545,7 @@ export function MessageList({
                 onContinueInNewTask={onContinueInNewTask}
                 isAssistantProject={isAssistantProject}
                 assistantName={assistantName}
+                isGoalMessage={goalMessageIds?.has(row.message.id)}
               />
             </div>
           ) : (
@@ -612,6 +615,7 @@ export function MessageList({
                   onContinueInNewTask={onContinueInNewTask}
                   isAssistantProject={isAssistantProject}
                   assistantName={assistantName}
+                  isGoalMessage={goalMessageIds?.has(row.message.id)}
                 />
               </PerformanceProfiler>
               {row.rewindSdkUuid && sessionId && !isStreaming && (

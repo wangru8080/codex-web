@@ -14,6 +14,7 @@ import { NewChatWelcome } from '@/components/chat/NewChatWelcome';
 import { NewChatProjectSelector } from '@/components/chat/NewChatProjectSelector';
 import { RunCheckpoint } from '@/components/chat/RunCheckpoint';
 import { GoalProgressRow } from '@/components/chat/GoalProgressRow';
+import { GoalEditDialog } from '@/components/chat/GoalEditDialog';
 import { PlanImplementationPromptBar } from '@/components/chat/PlanImplementationPromptBar';
 import { ErrorBanner } from '@/components/ui/error-banner';
 import { buildCheckpoints } from '@/lib/run-checkpoint';
@@ -32,7 +33,7 @@ import {
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import { selectActiveTurnByThreadIds } from '@/codex-web/active-turns-adapter';
 import { getExistingNewChatThreadId } from '@/codex-web/new-chat-turn-routing';
-import { editedGoalStatus, goalSummaryLines } from '@/codex-web/goal-display-adapter';
+import { editedGoalStatus, goalSummaryLines, updateGoalStatusWithTurnControl } from '@/codex-web/goal-display-adapter';
 import { selectPlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
 import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
@@ -138,6 +139,9 @@ function NewChatPageInner() {
   } = useAppServerActions();
   const { t } = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [goalMessageIds, setGoalMessageIds] = useState<Set<string>>(() => new Set());
+  const [goalEditOpen, setGoalEditOpen] = useState(false);
+  const [goalMutationPending, setGoalMutationPending] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingThinkingContent, setStreamingThinkingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -358,6 +362,8 @@ function NewChatPageInner() {
   const resetLocalNewChatState = useCallback(() => {
     setCreatedSessionId(undefined);
     setMessages([]);
+    setGoalMessageIds(new Set());
+    setGoalEditOpen(false);
     setStreamingContent('');
     setStreamingThinkingContent('');
     setIsStreaming(false);
@@ -609,10 +615,14 @@ function NewChatPageInner() {
 
   const stopStreaming = useCallback(() => {
     if (appServerTurn?.threadId) {
-      void interruptTurn({
+      const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
+      const pauseGoal = goal?.status === 'active'
+        ? setThreadGoal({ threadId: goal.threadId, status: 'paused' })
+        : Promise.resolve();
+      void pauseGoal.then(() => interruptTurn({
         threadId: appServerTurn.threadId,
         turnId: appServerTurn.turnId,
-      }).catch((error) => {
+      })).catch((error) => {
         const errMsg = error instanceof Error ? error.message : 'Unknown error';
         setErrorBanner({ message: 'Codex 中断失败', description: errMsg });
       });
@@ -621,7 +631,7 @@ function NewChatPageInner() {
 
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
-  }, [appServerTurn, interruptTurn]);
+  }, [appServerTurn, createdSessionId, goalsByThreadId, interruptTurn, setThreadGoal]);
 
   const handlePermissionResponse = useCallback(async (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => {
     if (appServerPermission && appServerApproval) {
@@ -681,37 +691,60 @@ function NewChatPageInner() {
     setPendingApprovalSessionId('');
   }, [appServerApproval, respondToServerRequest, setPendingApprovalSessionId]);
 
-  const handleGoalStatusChange = useCallback((status: ThreadGoalStatus) => {
+  const handleGoalStatusChange = useCallback(async (status: ThreadGoalStatus) => {
     const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
     if (!goal) return;
-    void setThreadGoal({ threadId: goal.threadId, status }).catch((error) => {
-      setErrorBanner({ message: 'Goal update failed', description: error instanceof Error ? error.message : String(error) });
-    });
-  }, [goalsByThreadId, createdSessionId, setThreadGoal]);
+    setGoalMutationPending(true);
+    try {
+      await updateGoalStatusWithTurnControl({
+        status,
+        turnStatus: appServerTurn?.status,
+        updateGoal: (nextStatus) => setThreadGoal({ threadId: goal.threadId, status: nextStatus }),
+        interruptTurn: appServerTurn?.threadId
+          ? () => interruptTurn({ threadId: appServerTurn.threadId, turnId: appServerTurn.turnId })
+          : undefined,
+      });
+    } catch (error) {
+      setErrorBanner({ message: '目标更新失败', description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setGoalMutationPending(false);
+    }
+  }, [appServerTurn, createdSessionId, goalsByThreadId, interruptTurn, setThreadGoal]);
 
   const handleGoalEdit = useCallback(() => {
     const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
     if (!goal) return;
-    const objective = window.prompt('Edit goal', goal.objective);
-    if (objective === null) return;
-    const trimmed = objective.trim();
-    if (!trimmed) return;
-    void setThreadGoal({
-      threadId: goal.threadId,
-      objective: trimmed,
-      status: editedGoalStatus(goal.status),
-      tokenBudget: goal.tokenBudget,
-    }).catch((error) => {
-      setErrorBanner({ message: 'Goal update failed', description: error instanceof Error ? error.message : String(error) });
-    });
+    setGoalEditOpen(true);
   }, [goalsByThreadId, createdSessionId, setThreadGoal]);
+
+  const handleGoalSave = useCallback(async (objective: string) => {
+    const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
+    if (!goal) return;
+    setGoalMutationPending(true);
+    try {
+      await setThreadGoal({
+        threadId: goal.threadId,
+        objective,
+        status: editedGoalStatus(goal.status),
+        tokenBudget: goal.tokenBudget,
+      });
+      setGoalEditOpen(false);
+    } catch (error) {
+      setErrorBanner({ message: '目标更新失败', description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setGoalMutationPending(false);
+    }
+  }, [createdSessionId, goalsByThreadId, setThreadGoal]);
 
   const handleGoalClear = useCallback(() => {
     const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
     if (!goal) return;
-    void clearThreadGoal(goal.threadId).catch((error) => {
-      setErrorBanner({ message: 'Goal clear failed', description: error instanceof Error ? error.message : String(error) });
-    });
+    setGoalMutationPending(true);
+    void clearThreadGoal(goal.threadId)
+      .catch((error) => {
+        setErrorBanner({ message: '目标清除失败', description: error instanceof Error ? error.message : String(error) });
+      })
+      .finally(() => setGoalMutationPending(false));
   }, [goalsByThreadId, clearThreadGoal, createdSessionId]);
 
   const sendFirstMessage = useCallback(
@@ -925,11 +958,11 @@ function NewChatPageInner() {
         return;
       }
       if (action === 'pause') {
-        handleGoalStatusChange('paused');
+        void handleGoalStatusChange('paused');
         return;
       }
       if (action === 'resume') {
-        handleGoalStatusChange('active');
+        void handleGoalStatusChange('active');
         return;
       }
       if (action === 'clear') {
@@ -975,6 +1008,16 @@ function NewChatPageInner() {
             });
           }
           await setThreadGoal({ threadId, objective: action, status: 'active' });
+          const goalMessageId = `goal-user-${Date.now()}`;
+          setMessages((current) => [...current, {
+            id: goalMessageId,
+            session_id: threadId,
+            role: 'user',
+            content: action,
+            created_at: new Date().toISOString(),
+            token_usage: null,
+          }]);
+          setGoalMessageIds((current) => new Set(current).add(goalMessageId));
         } catch (error) {
           setErrorBanner({
             message: 'Goal update failed',
@@ -1106,7 +1149,9 @@ function NewChatPageInner() {
           key="composer-goal-progress"
           goal={appServerGoal.data}
           sourceBreadcrumb={appServerGoal.source}
-          disabled={isStreaming}
+          turnStatus={appServerTurn?.status}
+          turnStartedAtMs={streamingStartedAtRef.current}
+          pending={goalMutationPending}
           onStatusChange={handleGoalStatusChange}
           onEdit={handleGoalEdit}
           onClear={handleGoalClear}
@@ -1204,6 +1249,7 @@ function NewChatPageInner() {
               statusText={statusText}
               retryStatus={appServerTurn?.retryStatus}
               startedAt={streamingStartedAtRef.current}
+              goalMessageIds={goalMessageIds}
             />
           </PerformanceProfiler>
           {composerStack}
@@ -1213,6 +1259,13 @@ function NewChatPageInner() {
         open={folderPickerOpen}
         onOpenChange={setFolderPickerOpen}
         onSelect={handleFolderPickerSelect}
+      />
+      <GoalEditDialog
+        open={goalEditOpen}
+        objective={appServerGoal?.data.objective ?? ''}
+        pending={goalMutationPending}
+        onOpenChange={setGoalEditOpen}
+        onSave={handleGoalSave}
       />
     </div>
   );

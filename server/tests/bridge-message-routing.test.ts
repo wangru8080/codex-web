@@ -12,6 +12,17 @@ describe("appServerMessageDelivery", () => {
     expect(appServerMessageDelivery({ id: 7, result: { ok: true } })).toBe("owner");
   });
 
+  it("向所有窗口广播目标更新与清除 notification", () => {
+    expect(appServerMessageDelivery({
+      method: "thread/goal/updated",
+      params: { threadId: "thread-1", goal: { threadId: "thread-1", status: "active" } },
+    })).toBe("broadcast");
+    expect(appServerMessageDelivery({
+      method: "thread/goal/cleared",
+      params: { threadId: "thread-1" },
+    })).toBe("broadcast");
+  });
+
   it("把带 id 的 app-server request 识别为需要公共路由的请求", () => {
     expect(appServerMessageDelivery({
       id: "approval-1",

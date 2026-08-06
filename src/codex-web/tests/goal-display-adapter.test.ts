@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ThreadGoal } from "@/codex/protocol/generated/v2/ThreadGoal";
 import type { ThreadGoalStatus } from "@/codex/protocol/generated/v2/ThreadGoalStatus";
@@ -11,6 +11,9 @@ import {
   goalProgressLabel,
   goalStatusLabel,
   goalSummaryLines,
+  liveGoalElapsedSeconds,
+  shouldInterruptForGoalPause,
+  updateGoalStatusWithTurnControl,
 } from "../goal-display-adapter";
 
 describe("goal-display-adapter", () => {
@@ -81,6 +84,92 @@ describe("goal-display-adapter", () => {
     expect(editedGoalStatus("paused")).toBe("paused");
     expect(editedGoalStatus("budgetLimited")).toBe("active");
     expect(editedGoalStatus("complete")).toBe("active");
+  });
+
+  it("只在 active goal 的运行中 turn 上实时累计耗时", () => {
+    const activeGoal = goal("active", { timeUsedSeconds: 8 });
+    expect(liveGoalElapsedSeconds({
+      goal: activeGoal,
+      observedAtMs: 2_000,
+      turnStartedAtMs: 1_000,
+      nowMs: 7_000,
+      turnStatus: "running",
+    })).toBe(13);
+    expect(liveGoalElapsedSeconds({
+      goal: goal("paused", { timeUsedSeconds: 8 }),
+      observedAtMs: 2_000,
+      turnStartedAtMs: 1_000,
+      nowMs: 7_000,
+      turnStatus: "running",
+    })).toBe(8);
+    expect(liveGoalElapsedSeconds({
+      goal: activeGoal,
+      observedAtMs: 2_000,
+      turnStartedAtMs: 1_000,
+      nowMs: 7_000,
+      turnStatus: "completed",
+    })).toBe(8);
+  });
+
+  it("运行中暂停目标需要中断 turn，空闲暂停和恢复不需要", () => {
+    expect(shouldInterruptForGoalPause("paused", "running")).toBe(true);
+    expect(shouldInterruptForGoalPause("paused", "starting")).toBe(true);
+    expect(shouldInterruptForGoalPause("paused", "completed")).toBe(false);
+    expect(shouldInterruptForGoalPause("active", "running")).toBe(false);
+  });
+
+  it("目标状态更新失败时不调用 interrupt", async () => {
+    const updateGoal = vi.fn().mockRejectedValue(new Error("goal update failed"));
+    const interruptTurn = vi.fn();
+
+    await expect(updateGoalStatusWithTurnControl({
+      status: "paused",
+      turnStatus: "running",
+      updateGoal,
+      interruptTurn,
+    })).rejects.toThrow("goal update failed");
+    expect(interruptTurn).not.toHaveBeenCalled();
+  });
+
+  it("目标暂停成功但 interrupt 失败时保留明确的调用顺序并向上抛错", async () => {
+    const calls: string[] = [];
+    const updateGoal = vi.fn(async (status: ThreadGoalStatus) => {
+      calls.push(`goal:${status}`);
+    });
+    const interruptTurn = vi.fn(async () => {
+      calls.push("interrupt");
+      throw new Error("interrupt failed");
+    });
+
+    await expect(updateGoalStatusWithTurnControl({
+      status: "paused",
+      turnStatus: "running",
+      updateGoal,
+      interruptTurn,
+    })).rejects.toThrow("interrupt failed");
+    expect(calls).toEqual(["goal:paused", "interrupt"]);
+  });
+
+  it("非运行中 turn 和恢复目标只更新 goal", async () => {
+    const updateGoal = vi.fn(async () => undefined);
+    const interruptTurn = vi.fn(async () => undefined);
+
+    await updateGoalStatusWithTurnControl({
+      status: "paused",
+      turnStatus: "completed",
+      updateGoal,
+      interruptTurn,
+    });
+    await updateGoalStatusWithTurnControl({
+      status: "active",
+      turnStatus: "running",
+      updateGoal,
+      interruptTurn,
+    });
+
+    expect(updateGoal).toHaveBeenNthCalledWith(1, "paused");
+    expect(updateGoal).toHaveBeenNthCalledWith(2, "active");
+    expect(interruptTurn).not.toHaveBeenCalled();
   });
 });
 

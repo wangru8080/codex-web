@@ -15,6 +15,7 @@ import { DiffSummary } from './DiffSummary';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, CaretDown, CaretUp, CaretRight, NotePencil, Copy, ArrowsSplit, SpinnerGap } from "@/components/ui/icon";
+import { Target } from '@phosphor-icons/react';
 import { FileAttachmentDisplay } from './FileAttachmentDisplay';
 import { FileExcerptDisplay } from './FileExcerptDisplay';
 import { parseFileExcerptDisplay } from '@/lib/file-excerpt-reference';
@@ -43,6 +44,7 @@ interface MessageItemProps {
   isAssistantProject?: boolean;
   /** Assistant name for avatar */
   assistantName?: string;
+  isGoalMessage?: boolean;
 }
 
 interface ToolBlock {
@@ -66,6 +68,7 @@ interface PairedTool {
 type AssistantRenderPart =
   | { type: 'text'; text: string; variant: 'process' | 'final' }
   | { type: 'tools'; tools: ToolBlock[] }
+  | Extract<MessageContentBlock, { type: 'codex_interrupted' }>
   | Extract<MessageContentBlock, { type: 'codex_context_compaction' }>
   | { type: 'proposed_plan'; text: string; sourceBreadcrumb: string };
 
@@ -143,6 +146,13 @@ function parseToolBlocks(content: string): {
           if (typeof block.process_count === 'number' && Number.isFinite(block.process_count)) {
             processCount = block.process_count;
           }
+        } else if (block.type === 'codex_interrupted') {
+          flushPendingTools();
+          renderParts.push({
+            type: 'codex_interrupted',
+            elapsed_ms: typeof block.elapsed_ms === 'number' ? block.elapsed_ms : undefined,
+            sourceBreadcrumb: 'app-server.turn/completed',
+          });
         } else if (
           block.type === 'codex_context_compaction' &&
           (block.status === 'inProgress' || block.status === 'completed')
@@ -321,7 +331,7 @@ function TokenUsageDisplay({ usage }: { usage: TokenUsage }) {
 
 const COLLAPSE_HEIGHT = 300;
 
-export const MessageItem = memo(function MessageItem({ message, sessionId, canEdit = false, onEdit, onContinueInNewTask, isAssistantProject, assistantName }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({ message, sessionId, canEdit = false, onEdit, onContinueInNewTask, isAssistantProject, assistantName, isGoalMessage = false }: MessageItemProps) {
   const isUser = message.role === 'user';
   const { t } = useTranslation();
 
@@ -458,6 +468,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
     (part.type === 'text' && part.variant === 'process')
   );
   const planParts = renderParts.filter((part) => part.type === 'proposed_plan');
+  const interruptedParts = renderParts.filter((part) => part.type === 'codex_interrupted');
   const finalParts = renderParts.filter((part) => part.type === 'text' && part.variant === 'final');
   const renderAssistantPart = (part: AssistantRenderPart, index: number) => {
     if (part.type === 'tools') {
@@ -490,6 +501,18 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
     }
     if (part.type === 'codex_context_compaction') {
       return <ContextCompactionRow key={`assistant-context-compaction-${index}`} block={part} />;
+    }
+    if (part.type === 'codex_interrupted') {
+      const seconds = Math.max(0, Math.round((part.elapsed_ms ?? 0) / 1000));
+      return (
+        <div
+          key={`assistant-interrupted-${index}`}
+          className="mb-4 border-b border-border/70 pb-3 text-sm text-muted-foreground"
+          data-interrupted-source={part.sourceBreadcrumb}
+        >
+          你在 {seconds}秒 后停止了
+        </div>
+      );
     }
     return (
       <AssistantContent
@@ -574,6 +597,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
 
         {!isUser && (
           <>
+            {interruptedParts.map((part, index) => renderAssistantPart(part, index))}
             {hasAssistantProcess && (
               <ProcessCollapseGroup
                 elapsedMs={elapsedMs}
@@ -596,7 +620,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
                 {finalParts.map((part, index) => renderAssistantPart(part, index))}
               </div>
             )}
-            {finalParts.length === 0 && planParts.length === 0 && !hasAssistantProcess && (
+            {finalParts.length === 0 && planParts.length === 0 && interruptedParts.length === 0 && !hasAssistantProcess && (
               <div className="contents" data-assistant-final-answer data-answer-complete="true">
                 {renderParts.map((part, index) => renderAssistantPart(part, index))}
               </div>
@@ -604,6 +628,13 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
           </>
         )}
       </MessageContent>
+
+      {isUser && isGoalMessage && (
+        <div className="flex items-center self-end gap-1.5 pr-1 text-xs text-muted-foreground" data-goal-message-marker>
+          <Target size={15} aria-hidden />
+          <span>设为目标</span>
+        </div>
+      )}
 
       {/* Diff summary for assistant messages with file modifications */}
       {!isUser && (() => {

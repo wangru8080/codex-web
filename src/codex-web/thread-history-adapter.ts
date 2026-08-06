@@ -150,6 +150,7 @@ export function threadToMessages(
           turnItemsToMessageContent({
             items: turn.items,
             durationMs: turn.durationMs ?? undefined,
+            interrupted: turn.status === "interrupted",
           }),
         ),
       );

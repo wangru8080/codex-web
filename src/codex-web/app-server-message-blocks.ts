@@ -14,6 +14,7 @@ type TurnItemsToMessageContentArgs = {
   items: ThreadItem[];
   assistantText?: string;
   durationMs?: number;
+  interrupted?: boolean;
   reasoningText?: string;
   planBlocks?: MessageContentBlock[];
   toolOutputs?: Record<string, string>;
@@ -27,6 +28,7 @@ export function appServerTurnToMessageContent(turn: AppServerTurnState): string 
     items: turn.items,
     assistantText: turn.assistantText,
     durationMs: turn.durationMs,
+    interrupted: turn.status === "interrupted",
     reasoningText: turn.reasoningText,
     planBlocks: turn.planBlocks,
     toolOutputs: turn.toolOutputs,
@@ -41,6 +43,7 @@ export function appServerTerminalTurnToMessageContent(
 ): string | null {
   if (turn.status !== "completed" && turn.status !== "interrupted") return null;
   if (
+    turn.status !== "interrupted" &&
     !turn.assistantText.trim() &&
     !turn.reasoningText.trim() &&
     turn.items.length === 0 &&
@@ -56,6 +59,7 @@ export function appServerTurnToMessageBlocks(turn: AppServerTurnState): MessageC
     items: turn.items,
     assistantText: turn.assistantText,
     durationMs: turn.durationMs,
+    interrupted: turn.status === "interrupted",
     reasoningText: turn.reasoningText,
     planBlocks: turn.planBlocks,
     toolOutputs: turn.toolOutputs,
@@ -70,6 +74,7 @@ export function turnItemsToMessageContent(args: TurnItemsToMessageContentArgs): 
   const hasProcessBlocks = blocks.some(
     (block) =>
       block.type === "thinking" ||
+      block.type === "codex_interrupted" ||
       block.type === "codex_process_text" ||
       block.type === "codex_context_compaction" ||
       block.type === "codex_proposed_plan" ||
@@ -93,6 +98,14 @@ export function turnItemsToMessageBlocks(args: TurnItemsToMessageContentArgs): M
   const finalAgentMessage = selectFinalAgentMessage(args.items);
   const finalText = finalAgentMessage?.text.trim() || args.assistantText?.trim() || "";
   let processCount = 0;
+
+  if (args.interrupted) {
+    blocks.push({
+      type: "codex_interrupted",
+      ...(typeof args.durationMs === "number" ? { elapsed_ms: args.durationMs } : {}),
+      sourceBreadcrumb: "app-server.turn/completed",
+    });
+  }
 
   if (reasoningText) {
     blocks.push({ type: "thinking", thinking: reasoningText });

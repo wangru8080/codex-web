@@ -1,5 +1,43 @@
 import type { ThreadGoal } from "@/codex/protocol/generated/v2/ThreadGoal";
 import type { ThreadGoalStatus } from "@/codex/protocol/generated/v2/ThreadGoalStatus";
+import type { AppServerTurnStatus } from "./turn-reducer";
+
+export function liveGoalElapsedSeconds(params: {
+  goal: ThreadGoal;
+  observedAtMs: number;
+  nowMs: number;
+  turnStartedAtMs?: number;
+  turnStatus?: AppServerTurnStatus;
+}): number {
+  const { goal, observedAtMs, nowMs, turnStartedAtMs, turnStatus } = params;
+  if (goal.status !== "active" || turnStatus !== "running" || !turnStartedAtMs) {
+    return goal.timeUsedSeconds;
+  }
+
+  const baselineMs = Math.max(observedAtMs, turnStartedAtMs);
+  const activeSeconds = Math.max(0, Math.floor((nowMs - baselineMs) / 1000));
+  return goal.timeUsedSeconds + activeSeconds;
+}
+
+export function shouldInterruptForGoalPause(
+  nextStatus: ThreadGoalStatus,
+  turnStatus?: AppServerTurnStatus,
+): boolean {
+  return nextStatus === "paused" && (turnStatus === "starting" || turnStatus === "running");
+}
+
+export async function updateGoalStatusWithTurnControl(params: {
+  status: ThreadGoalStatus;
+  turnStatus?: AppServerTurnStatus;
+  updateGoal: (status: ThreadGoalStatus) => Promise<unknown>;
+  interruptTurn?: () => Promise<unknown>;
+}): Promise<void> {
+  const { status, turnStatus, updateGoal, interruptTurn } = params;
+  await updateGoal(status);
+  if (shouldInterruptForGoalPause(status, turnStatus) && interruptTurn) {
+    await interruptTurn();
+  }
+}
 
 export function formatGoalElapsedSeconds(seconds: number): string {
   const safeSeconds = Math.max(0, Math.trunc(seconds));

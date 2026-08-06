@@ -44,6 +44,7 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
   const {
     readThread,
     resumeThread,
+    getThreadGoal,
     sendTurnInThread,
     interruptTurn,
     respondToServerRequest,
@@ -78,6 +79,10 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
 
         const resumed = await resumeThread({ threadId: sessionId });
         if (cancelled) return;
+        await Promise.allSettled(
+          Array.from(new Set([sessionId, resumed.thread.id])).map((threadId) => getThreadGoal(threadId)),
+        );
+        if (cancelled) return;
         setModel(resumed.model || '');
         setColumnWorkingDirectory(resumed.cwd || session.working_directory || '');
       })
@@ -89,7 +94,7 @@ export function SplitColumn({ sessionId, isActive, onClose, onFocus }: SplitColu
       });
 
     return () => { cancelled = true; };
-  }, [connectionData, readThread, resumeThread, sessionId, t]);
+  }, [connectionData, readThread, resumeThread, getThreadGoal, sessionId, t]);
 
   useEffect(() => {
     if (!isActive) return;

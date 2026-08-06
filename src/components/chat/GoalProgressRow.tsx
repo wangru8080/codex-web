@@ -1,16 +1,24 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
-import { goalObjectiveLabel, goalProgressLabel } from '@/codex-web/goal-display-adapter';
+import type { AppServerTurnStatus } from '@/codex-web/turn-reducer';
+import {
+  formatGoalElapsedSeconds,
+  goalObjectiveLabel,
+  liveGoalElapsedSeconds,
+} from '@/codex-web/goal-display-adapter';
 import { Button } from '@/components/ui/button';
-import { NotePencil, Play, X } from '@/components/ui/icon';
+import { NotePencil, Play, Trash } from '@/components/ui/icon';
 import { Pause, Target } from '@phosphor-icons/react';
 
 type GoalProgressRowProps = {
   goal: ThreadGoal;
   sourceBreadcrumb: string;
-  disabled?: boolean;
+  turnStatus?: AppServerTurnStatus;
+  turnStartedAtMs?: number;
+  pending?: boolean;
   onStatusChange?: (status: ThreadGoalStatus) => void | Promise<void>;
   onEdit?: () => void;
   onClear?: () => void | Promise<void>;
@@ -19,7 +27,9 @@ type GoalProgressRowProps = {
 export function GoalProgressRow({
   goal,
   sourceBreadcrumb,
-  disabled,
+  turnStatus,
+  turnStartedAtMs,
+  pending,
   onStatusChange,
   onEdit,
   onClear,
@@ -29,16 +39,52 @@ export function GoalProgressRow({
     goal.status === 'blocked' ||
     goal.status === 'usageLimited';
   const canPause = goal.status === 'active';
+  const [observedAtMs, setObservedAtMs] = useState(() => Date.now());
+  const [nowMs, setNowMs] = useState(observedAtMs);
+
+  useEffect(() => {
+    const observedAt = Date.now();
+    setObservedAtMs(observedAt);
+    setNowMs(observedAt);
+  }, [goal.status, goal.timeUsedSeconds, goal.updatedAt]);
+
+  useEffect(() => {
+    if (goal.status !== 'active' || turnStatus !== 'running') return;
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [goal.status, observedAtMs, turnStatus]);
+
+  const elapsed = liveGoalElapsedSeconds({
+    goal,
+    observedAtMs,
+    nowMs,
+    turnStartedAtMs,
+    turnStatus,
+  });
+  const statusLabel = goal.status === 'active'
+    ? '进行中的目标'
+    : goal.status === 'complete'
+      ? '已完成的目标'
+      : goal.status === 'budgetLimited'
+        ? '未完成的目标'
+        : '已暂停的目标';
 
   return (
-    <div className="mx-auto mb-2 flex w-full max-w-3xl items-center gap-2 rounded-md border border-border/70 bg-muted/30 px-3 py-2">
-      <Target size={15} className="shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">{goalProgressLabel(goal)}</div>
-        <div className="truncate text-xs text-muted-foreground" title={goal.objective}>
+    <div
+      className="mx-auto -mb-px flex min-h-11 w-[calc(100%-2rem)] max-w-[45rem] items-center gap-2 rounded-t-lg border border-border/70 bg-background px-3 py-2"
+      data-goal-source={sourceBreadcrumb}
+      data-goal-status={goal.status}
+    >
+      <Target size={17} className="shrink-0 text-muted-foreground" aria-hidden />
+      <div className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm">
+        <span className="shrink-0 font-semibold text-foreground">{statusLabel}</span>
+        <span className="truncate text-muted-foreground" title={goal.objective}>
           {goalObjectiveLabel(goal)}
-        </div>
-        <div className="truncate text-[10px] text-muted-foreground/60">{sourceBreadcrumb}</div>
+        </span>
+        <span className="shrink-0 text-muted-foreground">·</span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">
+          {formatGoalElapsedSeconds(elapsed)}
+        </span>
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {(canPause || canResume) && (
@@ -46,9 +92,10 @@ export function GoalProgressRow({
             type="button"
             variant="ghost"
             size="icon-xs"
-            disabled={disabled || !onStatusChange}
+            disabled={pending || !onStatusChange}
             onClick={() => onStatusChange?.(canResume ? 'active' : 'paused')}
-            aria-label={canResume ? 'Resume goal' : 'Pause goal'}
+            aria-label={canResume ? '恢复目标' : '暂停目标'}
+            title={canResume ? '恢复目标' : '暂停目标'}
           >
             {canResume ? <Play size={13} /> : <Pause size={13} />}
           </Button>
@@ -57,9 +104,10 @@ export function GoalProgressRow({
           type="button"
           variant="ghost"
           size="icon-xs"
-          disabled={disabled || !onEdit}
+          disabled={pending || !onEdit}
           onClick={onEdit}
-          aria-label="Edit goal"
+          aria-label="编辑目标"
+          title="编辑目标"
         >
           <NotePencil size={13} />
         </Button>
@@ -67,11 +115,12 @@ export function GoalProgressRow({
           type="button"
           variant="ghost"
           size="icon-xs"
-          disabled={disabled || !onClear}
+          disabled={pending || !onClear}
           onClick={() => onClear?.()}
-          aria-label="Clear goal"
+          aria-label="清除目标"
+          title="清除目标"
         >
-          <X size={13} />
+          <Trash size={13} />
         </Button>
       </div>
     </div>

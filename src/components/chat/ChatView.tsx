@@ -81,10 +81,15 @@ import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
 import type { ReasoningEffort } from '@/codex/protocol/generated/ReasoningEffort';
 import type { ThreadTokenUsage } from '@/codex/protocol/generated/v2/ThreadTokenUsage';
-import { editedGoalStatus, goalSummaryLines } from '@/codex-web/goal-display-adapter';
+import {
+  editedGoalStatus,
+  goalSummaryLines,
+  updateGoalStatusWithTurnControl,
+} from '@/codex-web/goal-display-adapter';
 import { selectPlanImplementationPrompt } from '@/codex-web/plan-implementation-adapter';
 import { mergeThreadTurnMessages } from '@/codex-web/thread-turns-page-adapter';
 import { GoalProgressRow } from './GoalProgressRow';
+import { GoalEditDialog } from './GoalEditDialog';
 import { PlanImplementationPromptBar } from './PlanImplementationPromptBar';
 import {
   mergeCrossClientUserMessages,
@@ -224,6 +229,13 @@ export function ChatView({
       ? `/api/chat/sessions/${encodeURIComponent(activeSessionId)}`
       : messageApiBase ?? `/api/chat/sessions/${encodeURIComponent(activeSessionId)}`;
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [goalMessageIds, setGoalMessageIds] = useState<Set<string>>(() => new Set());
+  const [goalEditOpen, setGoalEditOpen] = useState(false);
+  const [goalMutationPending, setGoalMutationPending] = useState(false);
+  useEffect(() => {
+    setGoalMessageIds(new Set());
+    setGoalEditOpen(false);
+  }, [sessionId]);
   const [permissionProfile, setPermissionProfile] = useState<PermissionProfile>(initialPermissionProfile || 'request_approval');
   const handlePermissionProfileChange = useCallback(async (next: PermissionProfile) => {
     try {
@@ -1109,14 +1121,19 @@ export function ChatView({
 
   const stopStreaming = useCallback(() => {
     if (appServerSend && appServerInterrupt) {
-      void appServerInterrupt().catch((error) => {
-        console.warn('[ChatView] app-server turn interrupt failed', error);
-      });
+      const pauseGoal = appServerGoal?.data.status === 'active' && onAppServerGoalStatusChange
+        ? onAppServerGoalStatusChange('paused')
+        : Promise.resolve();
+      void pauseGoal
+        .then(() => appServerInterrupt())
+        .catch((error) => {
+          console.warn('[ChatView] app-server turn interrupt failed', error);
+        });
       return;
     }
 
     stopStream(activeSessionId);
-  }, [activeSessionId, appServerInterrupt, appServerSend]);
+  }, [activeSessionId, appServerGoal?.data.status, appServerInterrupt, appServerSend, onAppServerGoalStatusChange]);
 
   const handlePermissionResponse = useCallback(
     async (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => {
@@ -1144,41 +1161,60 @@ export function ChatView({
   );
 
   const handleGoalEdit = useCallback(() => {
-    if (!appServerGoal || !onAppServerGoalEdit) return;
-    const objective = window.prompt('Edit goal', appServerGoal.data.objective);
-    if (objective === null) return;
-    const trimmed = objective.trim();
-    if (!trimmed) return;
-    void onAppServerGoalEdit(
-      trimmed,
-      editedGoalStatus(appServerGoal.data.status),
-      appServerGoal.data.tokenBudget,
-    ).catch((error) => {
-      setAppServerErrorBanner({
-        message: 'Goal update failed',
-        description: error instanceof Error ? error.message : String(error),
-      });
-    });
+    if (appServerGoal && onAppServerGoalEdit) setGoalEditOpen(true);
   }, [appServerGoal, onAppServerGoalEdit]);
 
-  const handleGoalStatusChange = useCallback((status: ThreadGoalStatus) => {
-    if (!onAppServerGoalStatusChange) return;
-    void onAppServerGoalStatusChange(status).catch((error) => {
+  const handleGoalSave = useCallback(async (objective: string) => {
+    if (!appServerGoal || !onAppServerGoalEdit) return;
+    setGoalMutationPending(true);
+    try {
+      await onAppServerGoalEdit(
+        objective,
+        editedGoalStatus(appServerGoal.data.status),
+        appServerGoal.data.tokenBudget,
+      );
+      setGoalEditOpen(false);
+    } catch (error) {
       setAppServerErrorBanner({
-        message: 'Goal update failed',
+        message: '目标更新失败',
         description: error instanceof Error ? error.message : String(error),
       });
-    });
-  }, [onAppServerGoalStatusChange]);
+    } finally {
+      setGoalMutationPending(false);
+    }
+  }, [appServerGoal, onAppServerGoalEdit]);
+
+  const handleGoalStatusChange = useCallback(async (status: ThreadGoalStatus) => {
+    if (!onAppServerGoalStatusChange) return;
+    setGoalMutationPending(true);
+    try {
+      await updateGoalStatusWithTurnControl({
+        status,
+        turnStatus: appServerTurn?.status,
+        updateGoal: onAppServerGoalStatusChange,
+        interruptTurn: appServerInterrupt,
+      });
+    } catch (error) {
+      setAppServerErrorBanner({
+        message: '目标更新失败',
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setGoalMutationPending(false);
+    }
+  }, [appServerInterrupt, appServerTurn?.status, onAppServerGoalStatusChange]);
 
   const handleGoalClear = useCallback(() => {
     if (!onAppServerGoalClear) return;
-    void onAppServerGoalClear().catch((error) => {
-      setAppServerErrorBanner({
-        message: 'Goal clear failed',
-        description: error instanceof Error ? error.message : String(error),
-      });
-    });
+    setGoalMutationPending(true);
+    void onAppServerGoalClear()
+      .catch((error) => {
+        setAppServerErrorBanner({
+          message: '目标清除失败',
+          description: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => setGoalMutationPending(false));
   }, [onAppServerGoalClear]);
 
   /** Start an API stream for the given content. Does NOT add a user message to the list. */
@@ -1556,11 +1592,11 @@ export function ChatView({
       return;
     }
     if (action === 'pause') {
-      handleGoalStatusChange('paused');
+      void handleGoalStatusChange('paused');
       return;
     }
     if (action === 'resume') {
-      handleGoalStatusChange('active');
+      void handleGoalStatusChange('active');
       return;
     }
     if (action === 'clear') {
@@ -1575,13 +1611,27 @@ export function ChatView({
       appendCommandMessage('Create a thread before setting a goal.');
       return;
     }
-    void onAppServerGoalSet(action).catch((error) => {
-      setAppServerErrorBanner({
-        message: 'Goal update failed',
-        description: error instanceof Error ? error.message : String(error),
+    const goalMessageId = `goal-user-${Date.now()}`;
+    void onAppServerGoalSet(action)
+      .then(() => {
+        const goalMessage: Message = {
+          id: goalMessageId,
+          session_id: activeSessionId,
+          role: 'user',
+          content: action,
+          created_at: new Date().toISOString(),
+          token_usage: null,
+        };
+        cappedSetMessages((current) => [...current, goalMessage]);
+        setGoalMessageIds((current) => new Set(current).add(goalMessageId));
+      })
+      .catch((error) => {
+        setAppServerErrorBanner({
+          message: '目标更新失败',
+          description: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
-  }, [appendCommandMessage, appServerGoal, handleGoalClear, handleGoalEdit, handleGoalStatusChange, onAppServerGoalSet]);
+  }, [activeSessionId, appendCommandMessage, appServerGoal, cappedSetMessages, handleGoalClear, handleGoalEdit, handleGoalStatusChange, onAppServerGoalSet]);
 
   const handleCommand = useChatCommands({
     sessionId: settingsLocked ? '' : activeSessionId,
@@ -1757,6 +1807,7 @@ export function ChatView({
               continuedFromMessageId={continuedFromMessageId}
               targetMessageId={targetMessageId}
               modelSwitches={modelSwitches}
+              goalMessageIds={goalMessageIds}
             />
           </PerformanceProfiler>
       {/* End-of-turn terminal reason chip (only shown when stream is not active) */}
@@ -1776,6 +1827,13 @@ export function ChatView({
       <AppServerRequestPrompt
         request={appServerRequest}
         onRespond={handleAppServerRequestResponse}
+      />
+      <GoalEditDialog
+        open={goalEditOpen}
+        objective={appServerGoal?.data.objective ?? ''}
+        pending={goalMutationPending}
+        onOpenChange={setGoalEditOpen}
+        onSave={handleGoalSave}
       />
       {/* Phase 1b — confirmation dialog for destructive chip actions */}
       <AlertDialog
@@ -1885,7 +1943,9 @@ export function ChatView({
         <GoalProgressRow
           goal={appServerGoal.data}
           sourceBreadcrumb={appServerGoal.source}
-          disabled={isStreaming}
+          turnStatus={appServerTurn?.status}
+          turnStartedAtMs={appServerPanelStartedAt}
+          pending={goalMutationPending}
           onStatusChange={handleGoalStatusChange}
           onEdit={handleGoalEdit}
           onClear={handleGoalClear}

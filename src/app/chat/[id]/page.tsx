@@ -118,6 +118,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     listThreadTurns,
     setThreadName,
     resumeThread,
+    getThreadGoal,
     forkThread,
     sendOneTurn,
     sendTurnInThread,
@@ -219,6 +220,13 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           model: savedPreference?.model,
           permissionProfile: savedPreference?.permissionProfile,
         });
+        if (cancelled) return;
+        // Goal state is not guaranteed to be replayed as a notification when
+        // reopening a persisted thread. Hydrate both route and resumed ids so
+        // the composer can render the app-server goal immediately.
+        await Promise.allSettled(
+          Array.from(new Set([id, resume.thread.id])).map((threadId) => getThreadGoal(threadId)),
+        );
         if (cancelled) return;
         const resumedLiveTurnId = latestInProgressTurnId(resume.thread.turns);
         const resumedSettings = modelSettingsFromResume(resume);
@@ -384,7 +392,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     loadSessionAndMessages();
 
     return () => { cancelled = true; };
-  }, [connectionData, id, readThread, listThreadTurns, resumeThread, setWorkingDirectory, setSessionId, setPanelSessionTitle, t, targetMessageId, updateThreadModelSettings]);
+  }, [connectionData, id, readThread, listThreadTurns, resumeThread, getThreadGoal, setWorkingDirectory, setSessionId, setPanelSessionTitle, t, targetMessageId, updateThreadModelSettings]);
 
   // Auto-open file tree when jumping from a file search result
   useEffect(() => {
