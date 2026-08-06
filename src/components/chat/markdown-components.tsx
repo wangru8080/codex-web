@@ -23,7 +23,7 @@
  */
 
 import type { ComponentProps, ReactNode } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { showToast } from "@/hooks/useToast";
@@ -32,6 +32,8 @@ import { classifyChatLinkHref } from "@/lib/markdown/chat-link";
 import { parseAnchor } from "@/lib/markdown/anchor";
 import { classifyPath } from "@/lib/preview-source";
 import { resolveToolPath } from "@/lib/file-write-tools";
+import { useAppServerActions } from "@/codex-web/AppServerProvider";
+import { getCachedMediaObjectUrl } from "@/lib/media-resource-cache";
 
 // Shared card-action-button class — same geometry as Widget toolbar.
 // `justify-center` is intentional: icon-only variants (h-7 w-7 px-0)
@@ -246,11 +248,57 @@ function ChatStrong(props: ComponentProps<"strong">) {
 
 // `img` — center + rounded; keeps images sane in the chat column.
 function ChatImg(props: ComponentProps<"img">) {
+  const { src, alt, ...rest } = props;
+  const source = typeof src === "string" ? src : null;
+  const { workingDirectory } = usePanel();
+  const { readFile } = useAppServerActions();
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(source);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    if (!source || /^(?:https?:|data:|blob:)/i.test(source)) {
+      setLoadError(false);
+      setResolvedSrc(source);
+      return;
+    }
+    let cancelled = false;
+    const path = resolveToolPath(source, workingDirectory);
+    setLoadError(false);
+    setResolvedSrc(null);
+    void getCachedMediaObjectUrl(path, readFile)
+      .then((url) => {
+        if (!cancelled) setResolvedSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResolvedSrc(null);
+          setLoadError(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [readFile, source, workingDirectory]);
+
+  if (source === null) return <img className="my-3 max-w-full rounded-lg border border-border/40" loading="lazy" {...props} />;
+
+  if (loadError) {
+    return (
+      <div className="my-3 flex min-h-16 items-center justify-center rounded-lg border border-destructive/30 px-4 text-sm text-destructive" role="alert">
+        图片加载失败，请检查文件后重试
+      </div>
+    );
+  }
+
+  if (!resolvedSrc) {
+    return <div className="my-3 h-32 max-w-full animate-pulse rounded-lg border border-border/40 bg-muted/40" aria-label="图片加载中" />;
+  }
+
   return (
     <img
       className="my-3 max-w-full rounded-lg border border-border/40"
       loading="lazy"
-      {...props}
+      {...rest}
+      src={resolvedSrc}
+      alt={alt}
     />
   );
 }

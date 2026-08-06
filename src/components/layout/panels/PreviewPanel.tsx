@@ -58,11 +58,11 @@ import { useAppServerActions } from "@/codex-web/AppServerProvider";
 import {
   AppServerFilePreviewError,
   fileBytesFromResponse,
-  fileDataUrlFromResponse,
   fileDocumentBytesFromResponse,
   filePreviewFromResponse,
   utf8ToBase64,
 } from "@/codex-web/app-server-files";
+import { clearCachedMediaObjectUrl, getCachedMediaObjectUrl } from "@/lib/media-resource-cache";
 import { showToast } from "@/hooks/useToast";
 // MarkdownOutlineRail removed from the UI per Codex UX feedback —
 // outline rail ate too much sidebar width and its partial background
@@ -500,14 +500,17 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
 
     async function loadPreview() {
       try {
-        const response = await readFile(filePath);
-        if (cancelled) return;
         if (isMediaPreview(filePath)) {
+          if (!isFilePathChange) clearCachedMediaObjectUrl(filePath, readFile);
+          const mediaUrl = await getCachedMediaObjectUrl(filePath, readFile);
+          if (cancelled) return;
           setDocumentBytes(null);
-          setMediaUrl(fileDataUrlFromResponse(filePath, response));
+          setMediaUrl(mediaUrl);
           setLoadedPath(filePath);
           return;
         }
+        const response = await readFile(filePath);
+        if (cancelled) return;
         if (isDocumentPreview(filePath)) {
           setPreview(null);
           setMediaUrl("");
@@ -1617,13 +1620,27 @@ function AgentReferencedConfirm({
 
 /** Direct media preview — no API fetch needed */
 function MediaView({ filePath, fileServeUrl }: { filePath: string; fileServeUrl: string }) {
+  const [mediaError, setMediaError] = useState(false);
+
+  useEffect(() => {
+    setMediaError(false);
+  }, [filePath, fileServeUrl]);
+
   if (isImagePreview(filePath)) {
+    if (mediaError) {
+      return (
+        <div className="flex h-full items-center justify-center px-4 py-8 text-center text-sm text-destructive" role="alert">
+          图片加载失败，请刷新后重试
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center p-4 h-full">
         <img
           src={fileServeUrl}
           alt={filePath.split('/').pop() || ''}
           className="max-w-full max-h-full object-contain rounded"
+          onError={() => setMediaError(true)}
         />
       </div>
     );

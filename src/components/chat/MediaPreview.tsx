@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useAppServerActions } from '@/codex-web/AppServerProvider';
-import { fileDataUrlFromResponse } from '@/codex-web/app-server-files';
+import { getCachedMediaObjectUrl } from '@/lib/media-resource-cache';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { MediaBlock } from '@/types';
 import { ImageLightbox } from './ImageLightbox';
@@ -34,9 +34,9 @@ export function MediaPreview({ media }: MediaPreviewProps) {
     let cancelled = false;
     for (const path of localPaths) {
       if (pathUrls[path] || failedPaths[path]) continue;
-      void readFile(path).then((response) => {
+      void getCachedMediaObjectUrl(path, readFile).then((url) => {
         if (cancelled) return;
-        setPathUrls((current) => ({ ...current, [path]: fileDataUrlFromResponse(path, response) }));
+        setPathUrls((current) => ({ ...current, [path]: url }));
       }).catch(() => {
         if (cancelled) return;
         setFailedPaths((current) => ({ ...current, [path]: true }));

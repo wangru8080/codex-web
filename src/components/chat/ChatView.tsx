@@ -12,6 +12,7 @@ import { MessageInput } from './MessageInput';
 import { PerformanceProfiler } from '@/components/performance/PerformanceProfiler';
 import { RunCheckpoint } from './RunCheckpoint';
 import { buildCheckpoints } from '@/lib/run-checkpoint';
+import { clearAllCachedMediaObjectUrls } from '@/lib/media-resource-cache';
 // Chat first-paint memory contract (2026-05-09): ChatView must NOT
 // statically reach `useOverviewData` (full Settings overview snapshot,
 // fans out to 6+ /api endpoints + transitively pulls runtime/effective
@@ -1314,6 +1315,8 @@ export function ChatView({
         }
 
         setAppServerPanelClock({ turnKey: 'pending', startedAt: Date.now() });
+        // 文件可能在上一个 turn 后被外部工具更新；新 turn 重新读取本地媒体。
+        clearAllCachedMediaObjectUrls();
         setAppServerLocalStreaming(true);
         setAppServerErrorBanner(null);
         let accepted = false;

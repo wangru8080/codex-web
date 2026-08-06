@@ -11,8 +11,7 @@ describe("app-server 输出媒体接线", () => {
     );
 
     expect(preview).toContain("useAppServerActions");
-    expect(preview).toContain("readFile(path)");
-    expect(preview).toContain("fileDataUrlFromResponse(path, response)");
+    expect(preview).toContain("getCachedMediaObjectUrl(path, readFile)");
     expect(preview).not.toContain("/api/media/serve");
   });
 
@@ -26,6 +25,16 @@ describe("app-server 输出媒体接线", () => {
     expect(preview).toContain("media.outputLoadFailed");
   });
 
+  it("Markdown 本地绝对路径通过 app-server 读取后转成 Blob URL", () => {
+    const markdown = readFileSync(
+      resolve(process.cwd(), "src/components/chat/markdown-components.tsx"),
+      "utf8",
+    );
+    expect(markdown).toContain("getCachedMediaObjectUrl(path, readFile)");
+    expect(markdown).toContain("resolveToolPath(source, workingDirectory)");
+    expect(markdown).toContain("图片加载失败，请检查文件后重试");
+  });
+
   it("图片灯箱提供可访问性描述", () => {
     const lightbox = readFileSync(
       resolve(process.cwd(), "src/components/chat/ImageLightbox.tsx"),
@@ -34,5 +43,13 @@ describe("app-server 输出媒体接线", () => {
 
     expect(lightbox).toContain("DialogDescription");
     expect(lightbox).toContain("{current.alt}");
+  });
+
+  it("新 app-server turn 发送前清空媒体缓存", () => {
+    const chatView = readFileSync(
+      resolve(process.cwd(), "src/components/chat/ChatView.tsx"),
+      "utf8",
+    );
+    expect(chatView).toContain("clearAllCachedMediaObjectUrls();");
   });
 });

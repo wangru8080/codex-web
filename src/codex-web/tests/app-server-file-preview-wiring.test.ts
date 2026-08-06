@@ -14,9 +14,15 @@ describe("app-server 文件预览接线", () => {
 
   it("预览和保存不再调用缺失的 Next 文件 API", () => {
     expect(preview).toContain("filePreviewFromResponse");
-    expect(preview).toContain("fileDataUrlFromResponse");
+    expect(preview).toContain("getCachedMediaObjectUrl(filePath, readFile)");
+    expect(preview).toContain("clearCachedMediaObjectUrl(filePath, readFile)");
     expect(preview).not.toContain('const res = await fetch(\n          `/api/files/preview');
     expect(preview).not.toContain('fetch("/api/files/write"');
+  });
+
+  it("损坏图片显示可见错误态", () => {
+    expect(preview).toContain("onError={() => setMediaError(true)}");
+    expect(preview).toContain("图片加载失败，请刷新后重试");
   });
 
   it("复制按钮右侧通过 app-server 原始字节下载已授权文件", () => {
