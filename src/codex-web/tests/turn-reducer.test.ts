@@ -50,6 +50,21 @@ describe("reduceAppServerTurnNotification", () => {
     expect(next).toEqual(createAcceptedTurnState("thread-1", "turn-2"));
   });
 
+  it("同一 turn 进入终态后忽略迟到的 turn/started", () => {
+    const completed = {
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      status: "completed" as const,
+      assistantText: "最终回答",
+    };
+
+    const next = reduceAppServerTurnNotification(completed, {
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: { id: "turn-1", status: "inProgress" } },
+    });
+
+    expect(next).toBe(completed);
+  });
+
   it("turn/started 保存 app-server 的 Unix 秒开始时间", () => {
     const next = reduceAppServerTurnNotification(createStartingTurnState(), {
       method: "turn/started",

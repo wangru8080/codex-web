@@ -1321,6 +1321,20 @@ export function ChatView({
         setAppServerErrorBanner(null);
         let accepted = false;
         let handoffToAppServerTurn = false;
+        const userMessageContent = (displayedFiles: readonly FileAttachment[] | undefined) =>
+          displayedFiles && displayedFiles.length > 0
+            ? `<!--files:${JSON.stringify(displayedFiles.map((file) => ({ id: file.id, name: file.name, type: file.type, size: file.size, data: file.data, filePath: file.filePath })))}-->${displayOverride || content}`
+            : displayOverride || content;
+        const optimisticUserMessage: Message = {
+          id: `temp-user-pending-${Date.now()}`,
+          session_id: activeSessionId,
+          role: 'user',
+          content: userMessageContent(files),
+          created_at: new Date().toISOString(),
+          token_usage: null,
+        };
+        pendingOptimisticUserIdRef.current = optimisticUserMessage.id;
+        cappedSetMessages((prev) => [...prev, optimisticUserMessage]);
 
         try {
           await appServerSend({
@@ -1336,23 +1350,24 @@ export function ChatView({
               if (accepted) return;
               accepted = true;
               const displayedFiles = acceptedFiles ?? files;
-              const userMessage: Message = {
+              const acceptedUserMessage: Message = {
+                ...optimisticUserMessage,
                 id: `temp-user-${turnId}`,
                 session_id: threadId || activeSessionId,
-                role: 'user',
-                content: displayedFiles && displayedFiles.length > 0
-                  ? `<!--files:${JSON.stringify(displayedFiles.map((file) => ({ id: file.id, name: file.name, type: file.type, size: file.size, data: file.data, filePath: file.filePath })))}-->${displayOverride || content}`
-                  : displayOverride || content,
-                created_at: new Date().toISOString(),
-                token_usage: null,
+                turn_id: turnId,
+                content: userMessageContent(displayedFiles),
               };
-              pendingOptimisticUserIdRef.current = userMessage.id;
-              cappedSetMessages((prev) => [...prev, userMessage]);
+              cappedSetMessages((prev) => prev.map((message) =>
+                message.id === optimisticUserMessage.id ? acceptedUserMessage : message
+              ));
+              if (pendingOptimisticUserIdRef.current === optimisticUserMessage.id) {
+                pendingOptimisticUserIdRef.current = acceptedUserMessage.id;
+              }
               onAppServerUserMessageAccepted?.({
                 threadId,
                 turnId,
                 isNewThread: false,
-                message: userMessage,
+                message: acceptedUserMessage,
               });
             },
           });
@@ -1360,7 +1375,10 @@ export function ChatView({
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error);
           setAppServerErrorBanner({ message: 'Codex 发送失败', description: errMsg });
-          if (!accepted) return false;
+          if (!accepted) {
+            cappedSetMessages((prev) => prev.filter((message) => message.id !== optimisticUserMessage.id));
+            return false;
+          }
         } finally {
           if (!handoffToAppServerTurn) {
             setAppServerLocalStreaming(false);

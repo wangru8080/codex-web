@@ -143,6 +143,13 @@ export function reduceAppServerTurnNotification(
       const threadId = data.threadId;
       if (typeof turnId !== "string") return state;
       const resolvedThreadId = typeof threadId === "string" ? threadId : state.threadId;
+      if (
+        state.threadId === resolvedThreadId &&
+        state.turnId === turnId &&
+        isTerminalTurnStatus(state.status)
+      ) {
+        return state;
+      }
       const existingStartedAtMs =
         state.threadId === resolvedThreadId && state.turnId === turnId
           ? state.startedAtMs
