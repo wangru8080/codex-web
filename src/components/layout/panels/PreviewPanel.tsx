@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from "react";
+import type { ComponentProps } from "react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { X, Check, SpinnerGap } from "@/components/ui/icon";
@@ -26,6 +27,7 @@ import {
   htmlPreviewDirname,
 } from "@/lib/html-preview-url";
 import { classifyPath } from "@/lib/preview-source";
+import { resolveToolPath } from "@/lib/file-write-tools";
 import { parseFrontmatter } from "@/lib/markdown/frontmatter";
 import { parseOutline, slugify } from "@/lib/markdown/outline";
 import { rewriteWikilinks, resolveWikilink, parseWikilinkHref } from "@/lib/markdown/wikilink";
@@ -70,6 +72,7 @@ import { showToast } from "@/hooks/useToast";
 // imported because the rendered Markdown still uses them.
 import { injectHeadingIds, applyCalloutClasses } from "@/components/editor/MarkdownOutlineRail";
 import { MarkdownFrontmatterPanel } from "@/components/editor/MarkdownFrontmatterPanel";
+import { ChatImg } from "@/components/chat/markdown-components";
 // Phase 4 UX — PresentationPicker no longer mounted in this surface;
 // the explicit HTML artifact action is a one-click save button.
 // import { PresentationPicker } from "@/components/editor/PresentationPicker";
@@ -1722,7 +1725,9 @@ function RenderedView({
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    loadStreamdown().then(() => setReady(true)).catch(() => {});
+    loadStreamdown().then(() => setReady(true)).catch((error) => {
+      console.error("Markdown 渲染器加载失败", error);
+    });
   }, []);
 
   if (isHtml(filePath)) {
@@ -1950,6 +1955,35 @@ function MarkdownRenderedView({
   );
 
   const Sd = _StreamdownComponent!;
+  const imageBaseDirectory = htmlPreviewDirname(filePath) || workingDirectory || undefined;
+  const remarkResolveLocalImages = useMemo(
+    () => () => (tree: unknown) => {
+      if (!imageBaseDirectory || !tree || typeof tree !== "object") return;
+      const visit = (node: unknown) => {
+        if (!node || typeof node !== "object") return;
+        const current = node as { type?: unknown; url?: unknown; children?: unknown };
+        if (
+          current.type === "image" &&
+          typeof current.url === "string" &&
+          current.url !== "" &&
+          !/^(?:[a-z][a-z\d+.-]*:|\/|#)/i.test(current.url)
+        ) {
+          current.url = resolveToolPath(current.url.replace(/^\.\//, ""), imageBaseDirectory);
+        }
+        if (Array.isArray(current.children)) current.children.forEach(visit);
+      };
+      visit(tree);
+    },
+    [imageBaseDirectory],
+  );
+  const markdownComponents = useMemo(
+    () => ({
+      img: (props: ComponentProps<"img">) => (
+        <ChatImg {...props} baseDirectory={imageBaseDirectory} />
+      ),
+    }),
+    [imageBaseDirectory],
+  );
   // Phase 4 UX (Codex feedback):
   //   - In-content toolbar dropped: style Select + updated badge moved
   //     to the main panel header so the rendered region doesn't stack
@@ -1974,6 +2008,8 @@ function MarkdownRenderedView({
           <Sd
             className="size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul]:pl-6 [&_ol]:pl-6"
             plugins={_streamdownPlugins!}
+            remarkPlugins={[remarkResolveLocalImages]}
+            components={markdownComponents}
             linkSafety={{ enabled: false }}
             // Phase 4 UX v5 — mode="static" instead of the default
             // "streaming". Streaming mode wraps each parse cycle in

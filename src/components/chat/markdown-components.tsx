@@ -247,9 +247,19 @@ function ChatStrong(props: ComponentProps<"strong">) {
 }
 
 // `img` — center + rounded; keeps images sane in the chat column.
-function ChatImg(props: ComponentProps<"img">) {
+type ChatImgProps = ComponentProps<"img"> & {
+  baseDirectory?: string;
+  node?: { properties?: { src?: unknown } };
+};
+
+export function ChatImg({ baseDirectory, node, ...props }: ChatImgProps) {
   const { src, alt, ...rest } = props;
-  const source = typeof src === "string" ? src : null;
+  const nodeSource = node?.properties?.src;
+  const source = typeof nodeSource === "string"
+    ? nodeSource
+    : typeof src === "string"
+      ? src
+      : null;
   const { workingDirectory } = usePanel();
   const { readFile } = useAppServerActions();
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(source);
@@ -262,7 +272,7 @@ function ChatImg(props: ComponentProps<"img">) {
       return;
     }
     let cancelled = false;
-    const path = resolveToolPath(source, workingDirectory);
+    const path = resolveToolPath(source.replace(/^\.[/\\]/, ""), baseDirectory ?? workingDirectory);
     setLoadError(false);
     setResolvedSrc(null);
     void getCachedMediaObjectUrl(path, readFile)
@@ -276,7 +286,7 @@ function ChatImg(props: ComponentProps<"img">) {
         }
       });
     return () => { cancelled = true; };
-  }, [readFile, source, workingDirectory]);
+  }, [baseDirectory, readFile, source, workingDirectory]);
 
   if (source === null) return <img className="my-3 max-w-full rounded-lg border border-border/40" loading="lazy" {...props} />;
 

@@ -31,7 +31,7 @@ describe("app-server 输出媒体接线", () => {
       "utf8",
     );
     expect(markdown).toContain("getCachedMediaObjectUrl(path, readFile)");
-    expect(markdown).toContain("resolveToolPath(source, workingDirectory)");
+    expect(markdown).toContain("resolveToolPath(source.replace(/^\\.[/\\\\]/, \"\"), baseDirectory ?? workingDirectory)");
     expect(markdown).toContain("图片加载失败，请检查文件后重试");
   });
 

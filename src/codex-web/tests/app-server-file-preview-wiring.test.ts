@@ -25,6 +25,13 @@ describe("app-server 文件预览接线", () => {
     expect(preview).toContain("图片加载失败，请刷新后重试");
   });
 
+  it("Markdown 相对图片先按文档目录解析，避免退回浏览器 HTTP 路径", () => {
+    expect(preview).toContain("remarkResolveLocalImages");
+    expect(preview).toContain('current.type === "image"');
+    expect(preview).toContain("resolveToolPath(current.url.replace(/^\\.\\//, \"\"), imageBaseDirectory)");
+    expect(preview).toContain("remarkPlugins={[remarkResolveLocalImages]}");
+  });
+
   it("复制按钮右侧通过 app-server 原始字节下载已授权文件", () => {
     const copyButton = preview.indexOf('name="copy"');
     const downloadButton = preview.indexOf('name="download"');
