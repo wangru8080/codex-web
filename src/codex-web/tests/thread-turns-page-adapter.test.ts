@@ -7,6 +7,7 @@ import {
   applyTurnSnapshotsToMessages,
   continuationBoundaryMessageId,
   latestHistoryTurnFromPage,
+  mergeLoadedThreadMessages,
   mergeThreadTurnMessages,
   threadTurnsPageToMessages,
 } from "../thread-turns-page-adapter";
@@ -87,6 +88,29 @@ describe("thread-turns-page-adapter", () => {
     const merged = mergeThreadTurnMessages([historical], [live], "append");
 
     expect(merged).toEqual([historical]);
+  });
+
+  it("历史请求较旧时保留已接受但尚未落入历史的用户消息", () => {
+    const loaded = threadTurnsPageToMessages(createThread(), [
+      createTurn("turn-1", "user-1", "first", 10),
+    ], "asc");
+    const pending = {
+      ...loaded[0],
+      id: "temp-user-turn-2",
+      turn_id: undefined,
+      content: "已提交的问题",
+    };
+
+    expect(mergeLoadedThreadMessages([...loaded, pending], loaded)).toEqual([...loaded, pending]);
+  });
+
+  it("历史已包含同一 turn 时不重复保留临时用户消息", () => {
+    const loaded = threadTurnsPageToMessages(createThread(), [
+      createTurn("turn-2", "user-2", "second", 20),
+    ], "asc");
+    const pending = { ...loaded[0], id: "temp-user-turn-2", turn_id: undefined };
+
+    expect(mergeLoadedThreadMessages([pending], loaded)).toEqual(loaded);
   });
 
   it("用父子任务共有的最后一个 turn 定位接续边界", () => {

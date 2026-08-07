@@ -83,6 +83,25 @@ export function mergeThreadTurnMessages(
   return result;
 }
 
+/** 保留历史请求完成前已接受、但尚未出现在历史快照中的临时用户消息。 */
+export function mergeLoadedThreadMessages(
+  current: Message[],
+  loaded: Message[],
+): Message[] {
+  const loadedIds = new Set(loaded.map((message) => message.id));
+  const loadedTurnIds = new Set(
+    loaded
+      .filter((message) => message.role === "user" && message.turn_id)
+      .map((message) => message.turn_id),
+  );
+  const pendingUsers = current.filter((message) => {
+    if (message.role !== "user" || !message.id.startsWith("temp-user-")) return false;
+    if (loadedIds.has(message.id)) return false;
+    return !loadedTurnIds.has(message.id.slice("temp-user-".length));
+  });
+  return pendingUsers.length > 0 ? [...loaded, ...pendingUsers] : loaded;
+}
+
 export function continuationBoundaryMessageId(
   messages: Message[],
   parentTurnIds: readonly string[],

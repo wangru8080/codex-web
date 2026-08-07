@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import type { Message } from "@/types";
@@ -9,6 +10,7 @@ import {
   readCrossClientUserMessage,
   readCrossClientThreadRollback,
   reduceCrossClientUserMessage,
+  reduceCrossClientUserMessageEvent,
 } from "../cross-client-sync";
 
 describe("readCrossClientThreadRollback", () => {
@@ -89,6 +91,24 @@ describe("reduceCrossClientUserMessage", () => {
       method: CROSS_CLIENT_USER_MESSAGE_METHOD,
       params: { threadId: "thread-1" },
     })).toBe(initialCrossClientUserMessageState);
+  });
+});
+
+describe("发送端本地同步", () => {
+  it("发送端无需等待 bridge 回送即可保存已接受的用户消息", () => {
+    const event = readCrossClientUserMessage(notification("1", "thread-1", true))!;
+    const state = reduceCrossClientUserMessageEvent(initialCrossClientUserMessageState, event);
+
+    expect(state.byThreadId["thread-1"]?.[0]).toEqual(event);
+    expect(state.latest).toEqual(event);
+
+    const provider = readFileSync(new URL("../AppServerProvider.tsx", import.meta.url), "utf8");
+    const publish = provider.slice(
+      provider.indexOf("const publishCrossClientUserMessage"),
+      provider.indexOf("const rollbackThread"),
+    );
+    expect(publish).toContain("reduceCrossClientUserMessageEvent");
+    expect(publish.indexOf("reduceCrossClientUserMessageEvent")).toBeLessThan(publish.indexOf("client.notify"));
   });
 });
 

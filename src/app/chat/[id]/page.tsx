@@ -34,6 +34,7 @@ import {
   applyTurnSnapshotsToMessages,
   continuationBoundaryMessageId,
   latestHistoryTurnFromPage,
+  mergeLoadedThreadMessages,
   mergeThreadTurnMessages,
   threadTurnsPageToMessages,
 } from '@/codex-web/thread-turns-page-adapter';
@@ -269,7 +270,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             turnSnapshotsRef.current,
             { omitAssistantTurnId: resumedLiveTurnId },
           );
-          setMessages(loadedMessages);
+          setMessages((current) => mergeLoadedThreadMessages(current, loadedMessages));
           setLatestHistoryTurn(
             latestHistoryTurnFromPage(
               turnsPage.data,
@@ -306,7 +307,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
               "app-server.thread/read",
             ),
           );
-          setMessages(snapshotMessages);
+          setMessages((current) => mergeLoadedThreadMessages(current, snapshotMessages));
           setHasMore(false);
           setTurnsNextCursor(null);
           setPaginationNotice(historyPaginationFailureNotice(pageError));
@@ -330,7 +331,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
               turnSnapshotsRef.current,
             );
             setAppServerThread(fullResponse.thread);
-            setMessages(loadedMessages);
+            setMessages((current) => mergeLoadedThreadMessages(current, loadedMessages));
             setHasMore(false);
             setTurnsNextCursor(null);
             setLatestHistoryTurn(latestHistoryTurnFromPage(

@@ -74,6 +74,14 @@ export function reduceCrossClientUserMessage(
     return current;
   }
 
+  return reduceCrossClientUserMessageEvent(current, event);
+}
+
+export function reduceCrossClientUserMessageEvent(
+  current: CrossClientUserMessageState,
+  event: CrossClientUserMessage,
+): CrossClientUserMessageState {
+
   const existing = current.byThreadId[event.threadId] ?? [];
   const messages = existing.some((entry) => entry.message.id === event.message.id)
     ? existing

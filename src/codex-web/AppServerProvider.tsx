@@ -141,6 +141,7 @@ import {
   CROSS_CLIENT_USER_MESSAGE_METHOD,
   readCrossClientThreadRollback,
   reduceCrossClientUserMessage,
+  reduceCrossClientUserMessageEvent,
   type CrossClientUserMessage,
 } from "./cross-client-sync";
 import { reconnectDelayMs } from "./reconnect-policy";
@@ -1300,6 +1301,17 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     if (!client) {
       return;
     }
+    setState((current) => {
+      const crossClientState = reduceCrossClientUserMessageEvent({
+        byThreadId: current.crossClientUserMessagesByThreadId,
+        latest: current.latestCrossClientUserMessage,
+      }, event);
+      return {
+        ...current,
+        crossClientUserMessagesByThreadId: crossClientState.byThreadId,
+        latestCrossClientUserMessage: crossClientState.latest,
+      };
+    });
     try {
       client.notify(CROSS_CLIENT_USER_MESSAGE_METHOD, event);
     } catch (error) {
