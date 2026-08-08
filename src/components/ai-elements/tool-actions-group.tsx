@@ -646,7 +646,7 @@ export function ToolActionsGroup({
 
   const runningCount = tools.filter((t) => t.result === undefined).length;
   const runningDesc = getRunningDescription(tools);
-  const hasError = tools.some((t) => t.isError);
+  const errorCount = tools.filter((t) => t.isError).length;
   const elapsedText = elapsedMs !== undefined ? ` ${formatElapsed(elapsedMs)}` : '';
   const singleInlineTool = !hasMetadata && !thinkingContent && tools.length === 1 ? tools[0] : null;
   const singleInlineDetail = singleInlineTool
@@ -663,9 +663,12 @@ export function ToolActionsGroup({
     if (singleInlineTool) return toolTitle(singleInlineTool, getStatus(singleInlineTool));
     if (runningCount > 0) return runningCount === 1 ? '正在处理' : `正在处理 ${runningCount} 项`;
     if (isStreaming) return '正在生成回答';
-    if (hasError) return `处理遇到问题${elapsedText}`;
-    if (!hasMetadata && tools.length > 1) return `已处理 ${tools.length} 项`;
-    return `已处理${elapsedText}`;
+    const processedSummary = !hasMetadata && tools.length > 1
+      ? `已处理 ${tools.length} 项`
+      : `已处理${elapsedText}`;
+    return errorCount > 0
+      ? `${processedSummary} · ${errorCount} 项失败`
+      : processedSummary;
   })();
 
   return (
