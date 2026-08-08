@@ -205,6 +205,7 @@ sudoedit /etc/codex-web/users.json
       "allowRoot": true,
       "maxConcurrentTurns": 1,
       "env": {
+        "CODEX_WEB_STATE": "/root/.codex-web",
         "PATH": "<node-bin-dir>:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       }
     }
