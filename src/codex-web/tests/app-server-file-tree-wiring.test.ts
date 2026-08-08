@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 describe("app-server 文件树接线", () => {
   const tree = readFileSync(resolve(process.cwd(), "src/components/project/FileTree.tsx"), "utf8");
   const panel = readFileSync(resolve(process.cwd(), "src/components/layout/panels/FileTreePanel.tsx"), "utf8");
+  const chatDetail = readFileSync(resolve(process.cwd(), "src/app/chat/[id]/page.tsx"), "utf8");
   const primitive = readFileSync(resolve(process.cwd(), "src/components/ai-elements/file-tree.tsx"), "utf8");
   const zh = readFileSync(resolve(process.cwd(), "src/i18n/zh.ts"), "utf8");
 
@@ -33,6 +34,13 @@ describe("app-server 文件树接线", () => {
     expect(tree).toContain("void fetchTree()");
     expect(tree).toContain("window.addEventListener('refresh-file-tree', handler)");
     expect(tree).toContain("void stopWatching()");
+  });
+
+  it("同项目切换会话时保留文件树，由 cwd 真实变化驱动跨项目刷新", () => {
+    expect(chatDetail).not.toContain("setWorkingDirectory('');");
+    expect(chatDetail).not.toContain("window.dispatchEvent(new Event('refresh-file-tree'));");
+    expect(chatDetail).toContain("setWorkingDirectory(session.working_directory);");
+    expect(tree).toContain("}, [readDirectory, workingDirectory]);");
   });
 
   it("文件节点提供复制、下载和添加到对话三项右键操作", () => {

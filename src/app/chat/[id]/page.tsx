@@ -155,7 +155,6 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setError(null);
     setMessages([]);
     setHasMore(false);
-    setWorkingDirectory('');
     setSessionModel('');
     setSessionEffort(null);
     setSessionProviderId('');
@@ -377,7 +376,6 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         setSessionWorkingDirectory(session.working_directory);
         setWorkingDirectory(session.working_directory);
         localStorage.setItem("codepilot:last-working-directory", session.working_directory);
-        window.dispatchEvent(new Event('refresh-file-tree'));
       }
       setSessionProjectName(session.project_name || '');
       setSessionId(id);
