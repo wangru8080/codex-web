@@ -35,7 +35,7 @@ describe("app-server 断线重连接线", () => {
 
   it("新任务被接受后进入 Thread 路由，使刷新能够恢复运行态", () => {
     expect(newChatPage).toContain("if (!existingThreadId)");
-    expect(newChatPage).toContain("router.push(`/chat/${encodeURIComponent(acceptedTurn.threadId)}`)");
+    expect(newChatPage).toContain("router.push(`/chat/${encodeURIComponent(threadId)}`)");
   });
 
   it("thread/resume 使用真实 active Turn 水合并清理陈旧运行态", () => {

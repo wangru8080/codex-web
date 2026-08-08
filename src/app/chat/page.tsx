@@ -52,6 +52,7 @@ import { mergeCrossClientUserMessages } from '@/codex-web/cross-client-sync';
 
 const DEFAULT_CODEX_PROVIDER_ID = 'codex_account';
 const DEFAULT_CODEX_MODEL = 'gpt-5.5';
+const PENDING_NEW_CHAT_DRAFT_KEY = 'codepilot:pending-new-chat-draft';
 
 export default function NewChatPage() {
   // useSearchParams in App Router needs a Suspense boundary. The body of
@@ -90,12 +91,8 @@ function NewChatPageInner() {
   const initialSkillKeyRef = useRef(initialSkillKey);
   useEffect(() => { initialSkillKeyRef.current = initialSkillKey; }, [initialSkillKey]);
   const newChatKey = readNewChatKey(searchParams);
-  // #4/#5 (Codex P2) — the prefill enters the composer via `initialValue`, which
-  // MessageInput prioritises OVER the draft. So clearing only the sessionStorage
-  // draft at send-accept (below) leaves the URL prefill, and the accept-time
-  // composer remount re-seeds the just-sent text from `initialValue`. Track which
-  // prefill we've already sent and feed '' for it so the remount comes up empty;
-  // a genuinely NEW prefill (different text) still shows.
+  // The URL prefill outranks the saved draft. Track the accepted prefill so the
+  // stable composer does not restore already-sent text on later warm navigation.
   const [consumedPrefill, setConsumedPrefill] = useState<string | null>(null);
   const effectivePrefill = prefillText && prefillText !== consumedPrefill ? prefillText : '';
   // #4/#5 (Codex P2, warm-nav) — live ref to the URL prefill so the accept path
@@ -308,11 +305,7 @@ function NewChatPageInner() {
   const finalizedAppServerTurnRef = useRef<string>('');
   const [livePlanPromptTurnKey, setLivePlanPromptTurnKey] = useState('');
   const [dismissedPlanPromptKey, setDismissedPlanPromptKey] = useState('');
-  // #615: guards the first-message send while it's mid-flight. We defer the
-  // isStreaming / optimistic-bubble flips until the backend ACCEPTS the message
-  // (otherwise flipping `isNewChat` remounts the composer and eats the
-  // screenshot), which means the usual `if (isStreaming) return` re-entry guard
-  // isn't armed during that window — this ref blocks a double-submit instead.
+  // Guards the first-message send while thread/start and turn/start are in flight.
   const firstSendInFlightRef = useRef(false);
   // Effort level — lifted here so the first message includes it
   const [selectedEffort, setSelectedEffort] = useState<string | undefined>(undefined);
@@ -383,7 +376,11 @@ function NewChatPageInner() {
     setLivePlanPromptTurnKey('');
     firstSendInFlightRef.current = false;
     applyNewChatModelDefaults();
-    try { sessionStorage.removeItem(composerDraftKey()); } catch { /* unavailable */ }
+    try {
+      const preservePendingDraft = sessionStorage.getItem(PENDING_NEW_CHAT_DRAFT_KEY) === '1';
+      sessionStorage.removeItem(PENDING_NEW_CHAT_DRAFT_KEY);
+      if (!preservePendingDraft) sessionStorage.removeItem(composerDraftKey());
+    } catch { /* unavailable */ }
   }, [applyNewChatModelDefaults, setPendingApprovalSessionId]);
 
   useEffect(() => {
@@ -781,31 +778,75 @@ function NewChatPageInner() {
         return false; // not delivered → preserve composer (#615)
       }
 
-      // #615 remount fix: do NOT flip isStreaming / push the optimistic bubble
-      // yet. Either flips `isNewChat` (messages.length === 0 && !isStreaming),
-      // which swaps the whole layout ternary — the composer moves from the
-      // centered hero branch to the active-layout branch (a DIFFERENT parent), so
-      // MessageInput remounts and PromptInput loses the attachment, BEFORE we even
-      // learn the send failed. Defer those flips to the post-accept point so a
-      // pre-acceptance failure leaves the hero (and the screenshot) untouched.
       if (firstSendInFlightRef.current) return false; // double-submit guard while mid-flight
       firstSendInFlightRef.current = true;
 
-      // #615: tracks whether the message reached a delivered / recoverable state
-      // (session created + POST /api/chat accepted). A failure BEFORE this must
-      // return false so the composer preserves the user's text + attachments —
-      // otherwise a session-create 500 silently eats the screenshot.
       let accepted = false;
       let handoffToAppServerTurn = false;
-      let persistedFiles: readonly FileAttachment[] | undefined = files;
+      const existingThreadId = forceNewThread ? undefined : getExistingNewChatThreadId(createdSessionId);
+      const messageSessionId = existingThreadId || `app-server-${Date.now()}`;
+      const userMessageContent = (displayedFiles: readonly FileAttachment[] | undefined) => {
+        const displayUserContent = displayOverride || content;
+        return displayedFiles && displayedFiles.length > 0
+          ? `<!--files:${JSON.stringify(displayedFiles.map((file) => ({ id: file.id, name: file.name, type: file.type, size: file.size, data: file.data, filePath: file.filePath })))}-->${displayUserContent}`
+          : displayUserContent;
+      };
+      const optimisticUserMessage: Message = {
+        id: `temp-user-pending-${Date.now()}`,
+        session_id: messageSessionId,
+        role: 'user',
+        content: userMessageContent(files),
+        created_at: new Date().toISOString(),
+        token_usage: null,
+      };
+
+      if (!existingThreadId) setCreatedSessionId(messageSessionId);
+      // MessageInput clears its visible field before awaiting onSend. Keep a
+      // reload-safe text draft until app-server confirms the Turn; never auto-resend it.
+      try {
+        sessionStorage.setItem(composerDraftKey(), content);
+        sessionStorage.setItem(PENDING_NEW_CHAT_DRAFT_KEY, '1');
+      } catch { /* unavailable */ }
+      streamingStartedAtRef.current = Date.now();
+      setIsStreaming(true);
+      setStreamingContent('');
+      setToolUses([]);
+      setToolResults([]);
+      setStatusText(undefined);
+      setMessages((prev) => [...prev, optimisticUserMessage]);
+
+      const onAccepted = (threadId: string, turnId: string, acceptedFiles?: readonly FileAttachment[]) => {
+        if (accepted) return;
+        accepted = true;
+        const acceptedUserMessage: Message = {
+          ...optimisticUserMessage,
+          id: `temp-user-${turnId}`,
+          session_id: threadId || messageSessionId,
+          turn_id: turnId,
+          content: userMessageContent(acceptedFiles ?? files),
+        };
+        setMessages((prev) => prev.map((message) =>
+          message.id === optimisticUserMessage.id ? acceptedUserMessage : message
+        ));
+        publishCrossClientUserMessage({
+          threadId: acceptedUserMessage.session_id,
+          turnId,
+          isNewThread: !existingThreadId,
+          message: acceptedUserMessage,
+        });
+        if (initialSkillKeyRef.current) setConsumedSkillKey(initialSkillKeyRef.current);
+        try {
+          sessionStorage.removeItem(composerDraftKey());
+          sessionStorage.removeItem(PENDING_NEW_CHAT_DRAFT_KEY);
+        } catch { /* unavailable */ }
+        if (prefillTextRef.current) setConsumedPrefill(prefillTextRef.current);
+        if (threadId) {
+          setCreatedSessionId(threadId);
+          if (!existingThreadId) router.push(`/chat/${encodeURIComponent(threadId)}`);
+        }
+      };
 
       try {
-        const existingThreadId = forceNewThread ? undefined : getExistingNewChatThreadId(createdSessionId);
-        const messageSessionId = existingThreadId || `app-server-${Date.now()}`;
-        if (!existingThreadId) {
-          setCreatedSessionId(messageSessionId);
-        }
-
         const acceptedTurn = existingThreadId
           ? await sendTurnInThread({
               threadId: existingThreadId,
@@ -817,9 +858,7 @@ function NewChatPageInner() {
               mode: modeOverride ?? mode,
               permissionProfile,
               skills: selectedSkills,
-              onAccepted: (_threadId, _turnId, acceptedFiles) => {
-                persistedFiles = acceptedFiles ?? files;
-              },
+              onAccepted,
             })
           : await sendOneTurn({
               content,
@@ -830,11 +869,12 @@ function NewChatPageInner() {
               mode: modeOverride ?? mode,
               permissionProfile,
               skills: selectedSkills,
-              onAccepted: (_threadId, _turnId, acceptedFiles) => {
-                persistedFiles = acceptedFiles ?? files;
-              },
+              onAccepted,
             });
 
+        if (!accepted) {
+          onAccepted(acceptedTurn.threadId, acceptedTurn.turnId, files);
+        }
         if (acceptedTurn.threadId) {
           writeThreadRuntimePreference(localStorage, acceptedTurn.threadId, {
             model: currentModel,
@@ -844,56 +884,6 @@ function NewChatPageInner() {
             permissionProfile,
           });
         }
-        accepted = true;
-        if (initialSkillKeyRef.current) setConsumedSkillKey(initialSkillKeyRef.current);
-        // #4/#5 — clear the persisted composer draft at accept. The imminent
-        // isStreaming flip REMOUNTS the composer, which re-seeds inputValue from
-        // this draft (the only composer state surviving the remount); without
-        // clearing it the just-sent text lingers all turn (CDP repro).
-        try { sessionStorage.removeItem(composerDraftKey()); } catch { /* unavailable */ }
-        // #4/#5 (Codex P2) — also mark the URL prefill consumed so the remount's
-        // `initialValue` (which outranks the draft) doesn't re-seed the sent text.
-        if (prefillTextRef.current) setConsumedPrefill(prefillTextRef.current);
-
-        // Flip the layout-driving state ONLY now: show streaming + push the
-        // optimistic user bubble. Deferring to here keeps `isNewChat` true
-        // through any pre-acceptance failure, so the composer never remounts and
-        // the screenshot survives (#615).
-        streamingStartedAtRef.current = Date.now();
-        setIsStreaming(true);
-        setStreamingContent('');
-        setToolUses([]);
-        setToolResults([]);
-        setStatusText(undefined);
-        {
-          // Optimistic user bubble — preserves base64 `data` so images render
-          // their thumbnail immediately (backend strips `data` before persisting).
-          const displayUserContent = displayOverride || content;
-          const contentWithFileMeta = persistedFiles && persistedFiles.length > 0
-            ? `<!--files:${JSON.stringify(persistedFiles.map(f => ({ id: f.id, name: f.name, type: f.type, size: f.size, data: f.data, filePath: f.filePath })))}-->${displayUserContent}`
-            : displayUserContent;
-          const userMessage: Message = {
-            id: `temp-user-${acceptedTurn.turnId}`,
-            session_id: acceptedTurn.threadId || messageSessionId,
-            role: 'user',
-            content: contentWithFileMeta,
-            created_at: new Date().toISOString(),
-            token_usage: null,
-          };
-          setMessages((prev) => existingThreadId ? [...prev, userMessage] : [userMessage]);
-          publishCrossClientUserMessage({
-            threadId: userMessage.session_id,
-            turnId: acceptedTurn.turnId,
-            isNewThread: !existingThreadId,
-            message: userMessage,
-          });
-        }
-        if (acceptedTurn.threadId) {
-          setCreatedSessionId(acceptedTurn.threadId);
-          if (!existingThreadId) {
-            router.push(`/chat/${encodeURIComponent(acceptedTurn.threadId)}`);
-          }
-        }
         handoffToAppServerTurn = true;
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
@@ -902,11 +892,11 @@ function NewChatPageInner() {
           const errMsg = error instanceof Error ? error.message : 'Unknown error';
           setErrorBanner({ message: t('error.sessionCreateFailed'), description: errMsg });
         }
-        // #615: a failure BEFORE the message was accepted for delivery (session
-        // creation or POST /api/chat rejected) must preserve the composer so the
-        // user's screenshot isn't cleared. Post-acceptance errors (mid-stream)
-        // keep today's behavior — the message already went, so the composer clears.
-        if (!accepted) return false;
+        if (!accepted) {
+          try { sessionStorage.removeItem(PENDING_NEW_CHAT_DRAFT_KEY); } catch { /* unavailable */ }
+          setMessages((prev) => prev.filter((message) => message.id !== optimisticUserMessage.id));
+          return false;
+        }
       } finally {
         if (!handoffToAppServerTurn) {
           setIsStreaming(false);
@@ -1102,11 +1092,7 @@ function NewChatPageInner() {
   // ChatComposerActionBar across two branches.
   const composerStack = (
     <>
-      {/* #615: stable keys so MessageInput keeps its identity (and PromptInput
-          keeps its attachment state) when ErrorBanner appears/disappears as a
-          sibling. The dominant remount cause — the isNewChat layout swap — is
-          fixed by deferring the layout-flip until accept (see sendFirstMessage);
-          these keys cover the within-parent ErrorBanner toggle. */}
+      {/* Stable keys preserve composer state when transient sibling rows change. */}
       {errorBanner && (
         <ErrorBanner
           key="composer-error-banner"
@@ -1216,19 +1202,15 @@ function NewChatPageInner() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {isNewChat ? (
-        // Centered new-chat hero: welcome → composer → onboarding cards
-        // as one vertically-centered max-w-3xl block. Mirrors ChatGPT /
-        // Claude / Codex new-chat pattern.
-        <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-0 py-8 sm:px-4">
+      <div className={isNewChat
+        ? "flex flex-1 flex-col items-center justify-center px-0 py-8 sm:px-4 overflow-y-auto"
+        : "flex min-h-0 flex-1 flex-col"
+      }>
+        {isNewChat ? (
           <div className="w-full max-w-3xl">
             <NewChatWelcome />
-            {composerStack}
-            {needsOnboardingCards && <div className="mt-4">{chatEmptyStateNode}</div>}
           </div>
-        </div>
-      ) : (
-        <>
+        ) : (
           <PerformanceProfiler id="MessageList">
             <MessageList
               messages={messages}
@@ -1247,9 +1229,17 @@ function NewChatPageInner() {
               goalMessageIds={goalMessageIds}
             />
           </PerformanceProfiler>
+        )}
+        <div
+          className={isNewChat ? "w-full max-w-3xl" : undefined}
+          data-testid="new-chat-composer-slot"
+        >
           {composerStack}
-        </>
-      )}
+        </div>
+        {isNewChat && needsOnboardingCards && (
+          <div className="mt-4 w-full max-w-3xl">{chatEmptyStateNode}</div>
+        )}
+      </div>
       <FolderPicker
         open={folderPickerOpen}
         onOpenChange={setFolderPickerOpen}

@@ -35,6 +35,11 @@ describe('聊天虚拟化与流式渲染接线', () => {
     expect(source).not.toContain('scrollIntoView({ block:');
   });
 
+  it('小消息列表走静态渲染，避免首条消息交接空帧', () => {
+    const source = read('src/components/chat/MessageList.tsx');
+    expect(source).toContain('messages.length <= 2 || modelSwitches.length > 0');
+  });
+
   it('接续深链禁用底部锁定并使用 Virtuoso 定位目标消息', () => {
     const messageList = read('src/components/chat/MessageList.tsx');
     const chatView = read('src/components/chat/ChatView.tsx');

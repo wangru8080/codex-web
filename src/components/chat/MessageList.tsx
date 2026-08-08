@@ -520,7 +520,9 @@ export function MessageList({
     );
   }
 
-  if (modelSwitches.length > 0) {
+  // 首条消息在路由交接期间必须同步出现在 DOM 中。小列表没有虚拟化收益，
+  // 直接复用静态分支可避免 Virtuoso 测量和卸载造成的空帧；长会话仍走虚拟化。
+  if (messages.length <= 2 || modelSwitches.length > 0) {
     const fallbackRows: Array<{ type: 'message'; message: Message } | { type: 'model-switch'; change: ModelSwitch }> = [];
     messages.forEach((message, messageIndex) => {
       fallbackRows.push({ type: 'message', message });

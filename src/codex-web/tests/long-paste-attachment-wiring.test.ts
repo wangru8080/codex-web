@@ -24,8 +24,8 @@ describe("长文本粘贴附件接线", () => {
     expect(provider).toContain("onAccepted?.(threadId, turnResponse.turn.id, persistedFiles)");
     expect(chatView).toContain("acceptedFiles ?? files");
     expect(chatView).toContain("if (!trimmed && !files?.length) return false");
-    expect(newChatPage).toContain("persistedFiles = acceptedFiles ?? files");
-    expect(newChatPage).toContain("filePath: f.filePath");
+    expect(newChatPage).toContain("userMessageContent(acceptedFiles ?? files)");
+    expect(newChatPage).toContain("filePath: file.filePath");
   });
 
   it("带路径的普通附件点击后打开右侧只读预览", () => {

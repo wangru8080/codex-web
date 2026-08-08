@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { Message, ChatSession, PermissionProfile } from '@/types';
 import { ChatView } from '@/components/chat/ChatView';
+import { MessageList } from '@/components/chat/MessageList';
 import { SpinnerGap } from "@/components/ui/icon";
 import { usePanel } from '@/hooks/usePanel';
 import { useWorkspaceSidebarOptional } from '@/hooks/useWorkspaceSidebar';
@@ -143,6 +144,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     const threadIds = resumedThreadId && resumedThreadId !== id ? [id, resumedThreadId] : [id];
     return threadIds.flatMap((threadId) => crossClientUserMessagesByThreadId[threadId] ?? []);
   }, [crossClientUserMessagesByThreadId, id, resumedThreadId]);
+  const loadingHandoffMessages = appServerSyncedUserMessages.map(({ message }) => message);
 
   useEffect(() => {
     turnSnapshotsRef.current = turnSnapshots;
@@ -456,6 +458,21 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   }, [threadSettingsByThreadId, id, resumedThreadId]);
 
   if (loading || !sessionInfoLoaded) {
+    if (loadingHandoffMessages.length > 0) {
+      return (
+        <div className="flex h-full min-h-0 flex-col" data-testid="chat-route-handoff">
+          <MessageList
+            messages={loadingHandoffMessages}
+            streamingContent=""
+            isStreaming
+            sessionId={id}
+          />
+          <div className="flex h-24 shrink-0 items-center justify-center border-t border-border/50">
+            <SpinnerGap size={20} className="animate-spin text-muted-foreground" />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex h-full items-center justify-center">
         <SpinnerGap size={32} className="animate-spin text-muted-foreground" />
