@@ -8,7 +8,7 @@ import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/auth/T
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/hooks/useTranslation";
-import { canSubmitLogin, resolveLoginDestination } from "@/lib/web-login";
+import { canSubmitLogin, resolveLoginDestination, turnstileClientErrorCode } from "@/lib/web-login";
 
 type PublicAuthConfig = { turnstile: { enabled: boolean; siteKey: string } };
 
@@ -22,6 +22,7 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileError, setTurnstileError] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -37,12 +38,22 @@ export function LoginForm() {
 
   const clearTurnstile = useCallback(() => {
     setTurnstileToken("");
+    setTurnstileError("");
     widgetRef.current?.reset();
   }, []);
-  const handleTurnstileError = useCallback(() => {
-    clearTurnstile();
-    setError(t("auth.turnstileFailed"));
-  }, [clearTurnstile, t]);
+  const handleTurnstileVerify = useCallback((token: string) => {
+    setTurnstileToken(token);
+    setTurnstileError("");
+  }, []);
+  const handleTurnstileError = useCallback((errorCode?: string | number) => {
+    setTurnstileToken("");
+    const safeCode = turnstileClientErrorCode(errorCode);
+    setTurnstileError(safeCode ? t("auth.turnstileFailedCode", { code: safeCode }) : t("auth.turnstileFailed"));
+  }, [t]);
+  const retryTurnstile = useCallback(() => {
+    setTurnstileError("");
+    widgetRef.current?.retry();
+  }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -94,8 +105,9 @@ export function LoginForm() {
         </div>
       </div>
       {turnstileRequired && (
-        <TurnstileWidget ref={widgetRef} siteKey={config.turnstile.siteKey} onVerify={setTurnstileToken} onExpire={clearTurnstile} onError={handleTurnstileError} />
+        <TurnstileWidget ref={widgetRef} siteKey={config.turnstile.siteKey} onVerify={handleTurnstileVerify} onExpire={clearTurnstile} onError={handleTurnstileError} />
       )}
+      {turnstileError && <div className="space-y-2" role="alert"><p className="text-sm text-destructive">{turnstileError}</p><Button type="button" variant="outline" size="sm" onClick={retryTurnstile}>{t("auth.turnstileRetry")}</Button></div>}
       {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
       <Button type="submit" size="lg" className="w-full rounded-lg" disabled={submitting || !canSubmitLogin(Boolean(config), turnstileRequired, turnstileToken)}>
         <LogIn aria-hidden />

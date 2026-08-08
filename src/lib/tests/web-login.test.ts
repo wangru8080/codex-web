@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canSubmitLogin, resolveLoginDestination } from "../web-login";
+import { canSubmitLogin, resolveLoginDestination, turnstileClientErrorCode } from "../web-login";
 
 describe("登录页纯逻辑", () => {
   it("只接受站内 next 路径", () => {
@@ -15,5 +15,11 @@ describe("登录页纯逻辑", () => {
     expect(canSubmitLogin(true, false, "")).toBe(true);
     expect(canSubmitLogin(true, true, "")).toBe(false);
     expect(canSubmitLogin(true, true, "token")).toBe(true);
+  });
+
+  it("只保留 Cloudflare 六位数字客户端错误码", () => {
+    expect(turnstileClientErrorCode("110200")).toBe("110200");
+    expect(turnstileClientErrorCode(300030)).toBe("300030");
+    expect(turnstileClientErrorCode("Turnstile 脚本加载失败")).toBeNull();
   });
 });

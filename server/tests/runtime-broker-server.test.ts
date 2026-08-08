@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,7 +7,7 @@ import type { AppServerPeer } from "../app-server-peer";
 import { parseRuntimeBrokerConfig } from "../runtime-broker-config";
 import { RuntimeBrokerClient } from "../runtime-broker-client";
 import { hashBrokerPassword } from "../runtime-broker-password";
-import { createRuntimeBrokerServer } from "../runtime-broker-server";
+import { createRuntimeBrokerServer, resolveBrokerTurnstilePaths } from "../runtime-broker-server";
 import type { UserRuntimeServer } from "../user-runtime-registry";
 import type { JsonRpcMessage } from "../../src/codex/protocol/json-rpc";
 
@@ -225,6 +225,108 @@ describe("runtime broker server", () => {
     await expect(client.attachRuntime(firstLogin.token)).resolves.toMatchObject({ user: { id: "codex" } });
     expect(created).toHaveBeenCalledTimes(1);
     firstConnection.close();
+  });
+
+  it("没有启用的 root 账号时 Turnstile 继续由 Web 状态目录管理", async () => {
+    const passwordHash = await hashBrokerPassword("correct-password");
+    const { socketPath, config } = await fixture(passwordHash);
+    const server = await createRuntimeBrokerServer({ socketPath, config, createRuntime: () => fakeRuntime() });
+    servers.push(server);
+
+    await expect(new RuntimeBrokerClient(socketPath).readTurnstilePublic()).resolves.toEqual({
+      rootManaged: false,
+      config: { enabled: false, siteKey: "", secretKeyConfigured: false },
+    });
+  });
+
+  it("root broker 预检成功后写全局 Turnstile，普通账号不能更新", async () => {
+    const passwordHash = await hashBrokerPassword("correct-password");
+    const { socketPath, config } = await fixture(passwordHash);
+    const directory = await mkdtemp(join(tmpdir(), "codex-web-root-turnstile-"));
+    const turnstilePath = join(directory, "turnstile.json");
+    const rootConfig = parseRuntimeBrokerConfig({
+      ...config,
+      allowRootRuntime: true,
+      users: [
+        { ...config.users[0], role: "admin" },
+        {
+          ...config.users[0],
+          id: "root",
+          email: "root@example.com",
+          osUser: "root",
+          home: "/root",
+          codexHome: "/root/CodexApp",
+          cwd: "/root",
+          role: "admin",
+          allowRoot: true,
+        },
+      ],
+    });
+    const verifyTurnstile = vi.fn(async (token: string) => token === "bad-token"
+      ? { success: false as const, reason: "rejected" as const, errorCodes: ["invalid-input-secret"] }
+      : { success: true as const });
+    const server = await createRuntimeBrokerServer({
+      socketPath,
+      config: rootConfig,
+      createRuntime: () => fakeRuntime(),
+      turnstileConfigPath: turnstilePath,
+      verifyTurnstile,
+    });
+    servers.push(server);
+    const client = new RuntimeBrokerClient(socketPath);
+    const ordinary = await client.login("codex@example.com", "correct-password");
+    const root = await client.login("root@example.com", "correct-password");
+    const update = { enabled: true, siteKey: "site-key", secretKey: "secret-key" };
+
+    await expect(client.updateTurnstile(ordinary.token, update, "good-token"))
+      .rejects.toThrow("只有 root 账号");
+    await expect(client.updateTurnstile(root.token, update, "bad-token"))
+      .rejects.toThrow("invalid-input-secret");
+    await expect(readFile(turnstilePath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(client.updateTurnstile(root.token, update, "good-token")).resolves.toEqual({
+      enabled: true,
+      siteKey: "site-key",
+      secretKeyConfigured: true,
+    });
+    expect(JSON.parse(await readFile(turnstilePath, "utf8"))).toEqual(update);
+    await expect(client.readTurnstilePublic()).resolves.toEqual({
+      rootManaged: true,
+      config: { enabled: true, siteKey: "site-key", secretKeyConfigured: true },
+    });
+    await expect(client.verifyTurnstile("login-token")).resolves.toEqual({ success: true });
+    expect(verifyTurnstile).toHaveBeenLastCalledWith("login-token", "secret-key", undefined);
+  });
+
+  it("root broker 使用 root 的 CODEX_WEB_STATE，未设置时默认 root home", async () => {
+    const passwordHash = await hashBrokerPassword("correct-password");
+    const { config } = await fixture(passwordHash);
+    const rootUser = {
+      ...config.users[0],
+      id: "root",
+      email: "root@example.com",
+      osUser: "root",
+      home: "/root",
+      codexHome: "/root/CodexApp",
+      cwd: "/root",
+      role: "admin" as const,
+      allowRoot: true,
+    };
+    const withRoot = parseRuntimeBrokerConfig({ ...config, allowRootRuntime: true, users: [rootUser] });
+    expect(resolveBrokerTurnstilePaths(withRoot)).toMatchObject({
+      rootManaged: true,
+      path: "/root/.codex-web/turnstile.json",
+    });
+
+    const explicit = parseRuntimeBrokerConfig({
+      ...config,
+      allowRootRuntime: true,
+      users: [{ ...rootUser, env: { CODEX_WEB_STATE: "/srv/root-web-state" } }],
+    });
+    expect(resolveBrokerTurnstilePaths(explicit)).toMatchObject({
+      rootManaged: true,
+      path: "/srv/root-web-state/turnstile.json",
+    });
   });
 });
 

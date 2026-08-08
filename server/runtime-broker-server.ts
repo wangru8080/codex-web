@@ -10,6 +10,15 @@ import type { BrokerErrorResponse, BrokerRequest, BrokerResponse } from "./runti
 import { publicBrokerUser } from "./runtime-broker-protocol";
 import { createBrokerSession, verifyBrokerSession } from "./runtime-broker-session";
 import {
+  EMPTY_TURNSTILE_CONFIG,
+  mergeTurnstileConfig,
+  publicTurnstileConfig,
+  readTurnstileConfigAt,
+  turnstileConfigPath,
+  writeTurnstileConfigAt,
+} from "./turnstile-config";
+import { verifyTurnstileTokenDetailed } from "./turnstile";
+import {
   RuntimeCapacityError,
   UserRuntimeRegistry,
   type UserRuntimeServer,
@@ -23,6 +32,8 @@ type BrokerServerOptions = {
     user: RuntimeBrokerUserConfig,
     onNotification: (message: JsonRpcMessage) => void,
   ) => UserRuntimeServer;
+  turnstileConfigPath?: string;
+  verifyTurnstile?: typeof verifyTurnstileTokenDetailed;
 };
 
 export type RuntimeBrokerServer = {
@@ -34,6 +45,18 @@ export type RuntimeBrokerServer = {
   ) => void;
   close: () => Promise<void>;
 };
+
+export function resolveBrokerTurnstilePaths(
+  config: RuntimeBrokerConfig,
+  configuredPath?: string,
+): { rootManaged: boolean; path?: string } {
+  const rootUser = config.users.find((user) => user.enabled && user.osUser === "root");
+  if (!rootUser) return { rootManaged: false };
+  return {
+    rootManaged: true,
+    path: configuredPath ?? turnstileConfigPath(rootUser.env, rootUser.home),
+  };
+}
 
 const DUMMY_PASSWORD_HASH = "scrypt$v1$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
@@ -47,9 +70,11 @@ export async function createRuntimeBrokerServer(options: BrokerServerOptions): P
   });
   const sockets = new Set<Socket>();
   const attempts = new LoginAttemptLimiter();
+  const configuredTurnstilePath = options.turnstileConfigPath;
+  const verifyTurnstile = options.verifyTurnstile ?? verifyTurnstileTokenDetailed;
   const server = createServer((socket) => {
     sockets.add(socket);
-    handleSocket(socket, () => config, registry, attempts);
+    handleSocket(socket, () => config, registry, attempts, configuredTurnstilePath, verifyTurnstile);
     socket.once("close", () => sockets.delete(socket));
   });
   await listen(server, options.socketPath);
@@ -85,6 +110,8 @@ function handleSocket(
   getConfig: () => RuntimeBrokerConfig,
   registry: UserRuntimeRegistry,
   attempts: LoginAttemptLimiter,
+  configuredTurnstilePath: string | undefined,
+  verifyTurnstile: typeof verifyTurnstileTokenDetailed,
 ): void {
   let attached: { userId: string; peer: BufferedSocketPeer } | null = null;
   let handledRequest = false;
@@ -123,7 +150,7 @@ function handleSocket(
       peer.activate();
       return;
     }
-    void handleOneShot(request, getConfig(), attempts).then(
+    void handleOneShot(request, getConfig(), attempts, configuredTurnstilePath, verifyTurnstile).then(
       (response) => respondAndEnd(socket, response),
       () => respondAndEnd(socket, errorResponse("unavailable", "runtime broker 请求失败")),
     );
@@ -180,12 +207,46 @@ async function handleOneShot(
   request: Exclude<BrokerRequest, { type: "attachRuntime" }>,
   config: RuntimeBrokerConfig,
   attempts: LoginAttemptLimiter,
+  configuredTurnstilePath: string | undefined,
+  verifyTurnstile: typeof verifyTurnstileTokenDetailed,
 ): Promise<BrokerResponse> {
   if (request.type === "verifySession") {
     const user = verifyBrokerSession(request.token, config);
     return user
       ? { ok: true, type: "verifySession", user: publicBrokerUser(user) }
       : errorResponse("unauthorized", "登录已失效");
+  }
+
+  const paths = resolveBrokerTurnstilePaths(config, configuredTurnstilePath);
+  const { rootManaged } = paths;
+  const turnstilePath = paths.path ?? "";
+  if (request.type === "turnstile/readPublic") {
+    const turnstile = rootManaged
+      ? await readTurnstileConfigAt(turnstilePath)
+      : EMPTY_TURNSTILE_CONFIG;
+    return { ok: true, type: "turnstilePublic", rootManaged, config: publicTurnstileConfig(turnstile) };
+  }
+  if (request.type === "turnstile/verify") {
+    if (!rootManaged) return errorResponse("invalid_request", "Turnstile 配置不由 runtime broker 管理");
+    const turnstile = await readTurnstileConfigAt(turnstilePath);
+    const result = turnstile.enabled
+      ? await verifyTurnstile(request.responseToken, turnstile.secretKey, request.remoteAddress)
+      : { success: true } as const;
+    return { ok: true, type: "turnstileVerified", result };
+  }
+  if (request.type === "turnstile/update") {
+    if (!rootManaged) return errorResponse("invalid_request", "Turnstile 配置不由 runtime broker 管理");
+    const user = verifyBrokerSession(request.token, config);
+    if (!user) return errorResponse("unauthorized", "登录已失效");
+    if (user.osUser !== "root") return errorResponse("forbidden", "只有 root 账号可以管理 Turnstile");
+    const current = await readTurnstileConfigAt(turnstilePath);
+    const candidate = mergeTurnstileConfig(current, request.update);
+    if (candidate.enabled) {
+      const verification = await verifyTurnstile(request.responseToken, candidate.secretKey);
+      if (!verification.success) return errorResponse("turnstile_failed", turnstileVerificationError(verification));
+    }
+    const saved = await writeTurnstileConfigAt(request.update, turnstilePath);
+    return { ok: true, type: "turnstileUpdated", config: publicTurnstileConfig(saved) };
   }
 
   const key = request.email.trim().toLowerCase();
@@ -282,7 +343,45 @@ function parseRequest(value: unknown): BrokerRequest {
     if (typeof request.token !== "string") throw new Error("broker Session 请求格式无效");
     return { type: request.type, token: request.token };
   }
+  if (request.type === "turnstile/readPublic") return { type: request.type };
+  if (request.type === "turnstile/verify") {
+    if (typeof request.responseToken !== "string") throw new Error("broker Turnstile 验证请求格式无效");
+    return {
+      type: request.type,
+      responseToken: request.responseToken,
+      ...(typeof request.remoteAddress === "string" ? { remoteAddress: request.remoteAddress } : {}),
+    };
+  }
+  if (request.type === "turnstile/update") {
+    if (
+      typeof request.token !== "string"
+      || typeof request.responseToken !== "string"
+      || typeof request.update !== "object"
+      || request.update === null
+    ) throw new Error("broker Turnstile 更新请求格式无效");
+    const update = request.update as Record<string, unknown>;
+    if (
+      typeof update.enabled !== "boolean"
+      || typeof update.siteKey !== "string"
+      || (update.secretKey !== undefined && typeof update.secretKey !== "string")
+    ) throw new Error("broker Turnstile 更新配置格式无效");
+    return {
+      type: request.type,
+      token: request.token,
+      responseToken: request.responseToken,
+      update: {
+        enabled: update.enabled,
+        siteKey: update.siteKey,
+        ...(typeof update.secretKey === "string" ? { secretKey: update.secretKey } : {}),
+      },
+    };
+  }
   throw new Error("broker 请求类型无效");
+}
+
+function turnstileVerificationError(result: Exclude<Awaited<ReturnType<typeof verifyTurnstileTokenDetailed>>, { success: true }>): string {
+  const codes = result.errorCodes?.join(",") ?? "none";
+  return `Turnstile 配置验证失败：reason=${result.reason} codes=${codes}`;
 }
 
 function errorResponse(code: BrokerErrorResponse["code"], error: string): BrokerResponse {

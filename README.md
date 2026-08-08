@@ -146,6 +146,8 @@ sudo install -o root -g root -m 0600 deploy/systemd/users.example.json /etc/code
 sudoedit /etc/codex-web/users.json
 ```
 
+仓库中的 systemd 示例包含一个普通 `codex` 用户和一个 root 用户，已开启 `allowRootRuntime`。root 条目中的 `CODEX_WEB_STATE` 示例为 `/root/.codex-web`；删除该字段即可使用相同的默认目录。实际部署前必须替换两个账号的邮箱、密码哈希和 session secret。
+
 下面是两个普通用户和一个 root 用户的完整结构。分别替换三个 `passwordHash`、`sessionSecret`、邮箱、系统用户和路径；允许 root 意味着其命令、文件修改和 MCP 均以 UID 0 运行：
 
 ```json
@@ -598,7 +600,7 @@ runtime serve 必需参数：
 | `CODEX_WEB_LOGIN_PASSWORD` | Web 登录密码 | 单用户模式 |
 | `CODEX_WEB_SESSION_SECRET` | Web 会话签名密钥，至少 32 个字符 | 单用户模式 |
 | `CODEX_HOME` | 单用户 app-server 的 Codex 配置目录 | 否 |
-| `CODEX_WEB_STATE` | Web 自身状态目录（例如 Turnstile 配置）；多用户模式推荐设置 | 否 |
+| `CODEX_WEB_STATE` | Web 自身状态目录；未设置时使用当前进程用户的 `~/.codex-web` | 否 |
 | `PORT` | HTTP 端口 | 否 |
 | `CODEX_WEB_NEXT_HOST` | 监听地址 | 否 |
 | `CODEX_WEB_PUBLIC_HOST` | `--open` 使用的公开主机名 | 否 |
@@ -611,7 +613,7 @@ Codex Web 使用三个彼此独立的路径：
 - 安装目录：保存 Codex Web 的 `.next`、主题和 CLI 资源。
 - 工作目录：执行 `codex-web` 时所在的目录，会作为 app-server 的 cwd。
 - `CODEX_HOME`：保存 Codex 账户、配置、历史会话、MCP 和 Skills。
-- `CODEX_WEB_STATE`：保存 Web 自身状态，不承载用户的 Codex 会话；未设置时单用户模式回退到 `CODEX_HOME`。
+- `CODEX_WEB_STATE`：保存 Web 自身状态，不承载用户的 Codex 会话；未设置时使用当前进程用户的 `~/.codex-web`。
 
 单用户模式下，`CODEX_HOME` 的优先级为：
 
@@ -640,13 +642,25 @@ codex-web serve --host 0.0.0.0 --port 3001
 
 ### Cloudflare Turnstile
 
-登录后打开“设置 -> 安全”可以启用 Turnstile。配置保存在：
+登录后打开“设置 -> 安全”可以启用 Turnstile。启用或修改密钥时，设置页必须先完成一次真实 Turnstile 验证，服务端使用候选私密密钥调用 Siteverify 成功后才保存配置。
+
+Turnstile 配置统一保存在：
 
 ```text
-${CODEX_WEB_STATE:-$CODEX_HOME}/codex-web/turnstile.json
+${CODEX_WEB_STATE}/turnstile.json
 ```
 
-私密密钥不会返回浏览器。启用后，每次登录都需要服务端向 Cloudflare Siteverify 验证一次性 token。
+如果没有显式设置 `CODEX_WEB_STATE`，则使用当前管理进程用户的默认目录：
+
+```text
+~/.codex-web/turnstile.json
+```
+
+单用户和没有启用 root 账号的多用户模式使用启动 Web 用户的 `CODEX_WEB_STATE`，未设置时使用该用户的 `~/.codex-web`。多用户 broker 存在启用的 root 账号时，只使用 root 用户配置中的 `CODEX_WEB_STATE`，未设置时使用 `/root/.codex-web`；只有 root 账号可以更新，普通 Web 进程只读取不含私密密钥的公开配置，登录 token 也由 broker 在 root 进程内完成 Siteverify。私密密钥不会返回浏览器或普通 Web 进程。
+
+如果错误配置导致无法登录，可以由配置文件所有者把生效的 `turnstile.json` 中的 `"enabled"` 改为 `false`。请求会重新读取配置，不必删除 site key 或 secret key；恢复登录后可在设置页重新预检并启用。状态目录权限为 `0700`，配置文件权限为 `0600`。
+
+配置只读取新的统一路径。升级后如果旧路径仍有配置，请在设置页重新填写并保存；程序不会自动读取、移动、覆盖或删除旧文件。
 
 ## 升级
 

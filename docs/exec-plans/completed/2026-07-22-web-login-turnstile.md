@@ -4,7 +4,7 @@
 
 **Goal:** 为 Codex Web 增加基于环境变量邮箱/密码的 Web 登录门禁，并提供可在登录后设置页启停的 Cloudflare Turnstile。
 
-**Architecture:** Next.js Proxy 读取签名 HttpOnly Cookie 做请求前的乐观门禁，登录和敏感 API 在服务端再次验证会话。邮箱和密码只来自服务端环境变量；Turnstile 私密密钥只保存在 `${CODEX_HOME}/codex-web/turnstile.json` 并由服务端调用 Siteverify，浏览器仅获得启用状态、站点密钥和私密密钥已配置状态。
+**Architecture:** Next.js Proxy 读取签名 HttpOnly Cookie 做请求前的乐观门禁，登录和敏感 API 在服务端再次验证会话。邮箱和密码只来自服务端环境变量；Turnstile 私密密钥只保存在 `${CODEX_WEB_STATE}/turnstile.json`（未设置时为当前管理进程用户的 `~/.codex-web/turnstile.json`）并由服务端调用 Siteverify，浏览器仅获得启用状态、站点密钥和私密密钥已配置状态。
 
 **Tech Stack:** Next.js 16、React 19、TypeScript、Node.js crypto/fs、Cloudflare Turnstile、Vitest、Playwright smoke。
 

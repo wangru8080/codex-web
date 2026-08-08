@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, LogOut, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -9,20 +9,27 @@ import { SettingsCard } from "@/components/patterns/SettingsCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/auth/TurnstileWidget";
 import { useTranslation } from "@/hooks/useTranslation";
+import { turnstileClientErrorCode } from "@/lib/web-login";
 
 type SecurityResponse = {
   email: string;
+  canManageSecurity: boolean;
+  rootManaged: boolean;
   turnstile: { enabled: boolean; siteKey: string; secretKeyConfigured: boolean };
 };
 
 export function SecuritySection() {
   const { t } = useTranslation();
   const router = useRouter();
+  const widgetRef = useRef<TurnstileWidgetHandle>(null);
   const [data, setData] = useState<SecurityResponse>();
   const [enabled, setEnabled] = useState(false);
   const [siteKey, setSiteKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileError, setTurnstileError] = useState("");
   const [busy, setBusy] = useState<"save" | "logout" | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -32,6 +39,8 @@ export function SecuritySection() {
     setEnabled(response.turnstile.enabled);
     setSiteKey(response.turnstile.siteKey);
     setSecretKey("");
+    setTurnstileToken("");
+    setTurnstileError("");
   }, []);
 
   useEffect(() => {
@@ -50,7 +59,7 @@ export function SecuritySection() {
       const response = await fetch("/api/settings/security", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled, siteKey, secretKey }),
+        body: JSON.stringify({ enabled, siteKey, secretKey, turnstileToken }),
       });
       const result = await response.json() as SecurityResponse & { error?: string };
       if (!response.ok) throw new Error(result.error || t("security.saveFailed"));
@@ -58,6 +67,10 @@ export function SecuritySection() {
       setMessage(t("security.saved"));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : t("security.saveFailed"));
+      if (enabled) {
+        setTurnstileToken("");
+        widgetRef.current?.reset();
+      }
     } finally { setBusy(null); }
   }
 
@@ -82,25 +95,40 @@ export function SecuritySection() {
       </SettingsCard>
       <SettingsCard title="Cloudflare Turnstile" description={t("security.turnstileDescription")}>
         <FieldRow label={t("security.enable")} description={t("security.enableDescription")}>
-          <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!data || busy !== null} aria-label={t("security.enable")} />
+          <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!data?.canManageSecurity || busy !== null} aria-label={t("security.enable")} />
         </FieldRow>
         {enabled && (
           <div className="space-y-5 border-t border-border/50 pt-4">
             <div className="space-y-2">
               <label htmlFor="turnstile-site-key" className="text-sm font-medium">{t("security.siteKey")}</label>
-              <Input id="turnstile-site-key" value={siteKey} onChange={(e) => setSiteKey(e.target.value)} className="rounded-lg border border-border bg-background font-mono" placeholder="0x4AAAAAAA..." />
+              <Input id="turnstile-site-key" value={siteKey} disabled={!data?.canManageSecurity} onChange={(e) => { setSiteKey(e.target.value); setTurnstileToken(""); setTurnstileError(""); }} className="rounded-lg border border-border bg-background font-mono" placeholder="0x4AAAAAAA..." />
               <a href="https://dash.cloudflare.com/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">{t("security.cloudflareDashboard")}<ExternalLink className="size-3" /></a>
             </div>
             <div className="space-y-2">
               <label htmlFor="turnstile-secret-key" className="text-sm font-medium">{t("security.secretKey")}</label>
-              <Input id="turnstile-secret-key" type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} className="rounded-lg border border-border bg-background font-mono" placeholder={data?.turnstile.secretKeyConfigured ? t("security.secretConfiguredPlaceholder") : "0x4AAAAAAA..."} />
+              <Input id="turnstile-secret-key" type="password" value={secretKey} disabled={!data?.canManageSecurity} onChange={(e) => { setSecretKey(e.target.value); setTurnstileToken(""); widgetRef.current?.reset(); }} className="rounded-lg border border-border bg-background font-mono" placeholder={data?.turnstile.secretKeyConfigured ? t("security.secretConfiguredPlaceholder") : "0x4AAAAAAA..."} />
               <p className="text-xs text-muted-foreground">{data?.turnstile.secretKeyConfigured ? t("security.secretConfiguredHint") : t("security.secretHint")}</p>
             </div>
+            {siteKey.trim() && data?.canManageSecurity && (
+              <TurnstileWidget
+                ref={widgetRef}
+                siteKey={siteKey.trim()}
+                onVerify={(token) => { setTurnstileToken(token); setTurnstileError(""); }}
+                onExpire={() => setTurnstileToken("")}
+                onError={(errorCode) => {
+                  setTurnstileToken("");
+                  const safeCode = turnstileClientErrorCode(errorCode);
+                  setTurnstileError(safeCode ? t("security.turnstileTestFailedCode", { code: safeCode }) : t("security.turnstileTestFailed"));
+                }}
+              />
+            )}
+            {turnstileError && <p className="text-sm text-destructive" role="alert">{turnstileError}</p>}
+            {turnstileToken && <p className="text-sm text-primary" role="status">{t("security.turnstileTestPassed")}</p>}
           </div>
         )}
         {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
         {message && <p className="text-sm text-primary" role="status">{message}</p>}
-        <div className="flex justify-end"><Button onClick={() => void save()} disabled={!data || busy !== null}><Save />{busy === "save" ? t("security.saving") : t("security.save")}</Button></div>
+        <div className="flex justify-end"><Button onClick={() => void save()} disabled={!data?.canManageSecurity || busy !== null || (enabled && !turnstileToken)}><Save />{busy === "save" ? t("security.saving") : t("security.save")}</Button></div>
       </SettingsCard>
     </div>
   );

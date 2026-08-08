@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { homedir } from "node:os";
 
 export type TurnstileConfig = {
   enabled: boolean;
@@ -14,30 +15,42 @@ export type TurnstileConfigUpdate = {
   secretKey?: string;
 };
 
+type TurnstileEnvironment = Readonly<Record<string, string | undefined>>;
+
 export const EMPTY_TURNSTILE_CONFIG: TurnstileConfig = {
   enabled: false,
   siteKey: "",
   secretKey: "",
 };
 
-export function turnstileConfigPath(env = process.env): string {
-  const webState = env.CODEX_WEB_STATE?.trim() || env.CODEX_HOME?.trim();
-  if (!webState) throw new Error("CODEX_WEB_STATE 未设置，无法读取 Turnstile 配置");
-  return join(webState, "codex-web", "turnstile.json");
+export function turnstileStateDirectory(env: TurnstileEnvironment = process.env, home = homedir()): string {
+  return env.CODEX_WEB_STATE?.trim() || join(home, ".codex-web");
 }
 
-export async function readTurnstileConfig(env = process.env): Promise<TurnstileConfig> {
+export function turnstileConfigPath(env: TurnstileEnvironment = process.env, home = homedir()): string {
+  return join(turnstileStateDirectory(env, home), "turnstile.json");
+}
+
+export async function readTurnstileConfig(env: TurnstileEnvironment = process.env, home = homedir()): Promise<TurnstileConfig> {
+  return readTurnstileConfigAt(turnstileConfigPath(env, home));
+}
+
+export async function readTurnstileConfigAt(path: string): Promise<TurnstileConfig> {
   try {
-    const value = JSON.parse(await readFile(turnstileConfigPath(env), "utf8")) as Partial<TurnstileConfig>;
-    return {
-      enabled: value.enabled === true,
-      siteKey: typeof value.siteKey === "string" ? value.siteKey.trim() : "",
-      secretKey: typeof value.secretKey === "string" ? value.secretKey.trim() : "",
-    };
+    return parseTurnstileConfig(await readFile(path, "utf8"));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ...EMPTY_TURNSTILE_CONFIG };
-    throw error;
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  return { ...EMPTY_TURNSTILE_CONFIG };
+}
+
+function parseTurnstileConfig(contents: string): TurnstileConfig {
+  const value = JSON.parse(contents) as Partial<TurnstileConfig>;
+  return {
+    enabled: value.enabled === true,
+    siteKey: typeof value.siteKey === "string" ? value.siteKey.trim() : "",
+    secretKey: typeof value.secretKey === "string" ? value.secretKey.trim() : "",
+  };
 }
 
 export function mergeTurnstileConfig(
@@ -56,12 +69,23 @@ export function mergeTurnstileConfig(
 
 export async function writeTurnstileConfig(
   update: TurnstileConfigUpdate,
-  env = process.env,
+  env: TurnstileEnvironment = process.env,
+  home = homedir(),
 ): Promise<TurnstileConfig> {
-  const current = await readTurnstileConfig(env);
+  return writeTurnstileConfigAt(
+    update,
+    turnstileConfigPath(env, home),
+  );
+}
+
+export async function writeTurnstileConfigAt(
+  update: TurnstileConfigUpdate,
+  path: string,
+): Promise<TurnstileConfig> {
+  const current = await readTurnstileConfigAt(path);
   const next = mergeTurnstileConfig(current, update);
-  const path = turnstileConfigPath(env);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await chmod(dirname(path), 0o700);
   const temporaryPath = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
   await rename(temporaryPath, path);

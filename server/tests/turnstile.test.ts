@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { verifyTurnstileToken } from "../turnstile";
+import { verifyTurnstileToken, verifyTurnstileTokenDetailed } from "../turnstile";
 
 describe("Cloudflare Turnstile Siteverify", () => {
   it("提交 token、私密密钥和来源 IP 并接受成功响应", async () => {
@@ -35,5 +35,16 @@ describe("Cloudflare Turnstile Siteverify", () => {
         async () => new Response(JSON.stringify({ success: false }), { status: 200 }),
       ),
     ).resolves.toBe(false);
+  });
+
+  it("保留不含敏感值的 Cloudflare 失败类别", async () => {
+    await expect(
+      verifyTurnstileTokenDetailed(
+        "sensitive-token",
+        "sensitive-secret",
+        undefined,
+        async () => new Response(JSON.stringify({ success: false, "error-codes": ["timeout-or-duplicate"] })),
+      ),
+    ).resolves.toEqual({ success: false, reason: "rejected", errorCodes: ["timeout-or-duplicate"] });
   });
 });

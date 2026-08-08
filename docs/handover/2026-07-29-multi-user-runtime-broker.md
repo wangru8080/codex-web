@@ -80,7 +80,8 @@ macOS 使用 root-owned LaunchDaemon 运行 runtime，并以 `dscacheutil` 查�
 - `/api/codex/bridge-url` 返回当前认证用户、home 和同源 bridge 路径。
 - app-server initialize 仍是 UI 中 `CODEX_HOME` 的事实源。
 - 首版账号来自静态 JSON，不提供浏览器用户管理界面。
-- Turnstile 是 Web 全局配置；broker 普通用户只读，只有 `admin` 角色可更新。
+- Turnstile 是 Web 全局配置。存在启用的 root 账号时由 root broker 使用 root 用户的 `${CODEX_WEB_STATE}/turnstile.json`，未设置时为 `/root/.codex-web/turnstile.json`，只有 root 账号可更新；普通 Web 进程只能读取公开字段并委托 broker 完成 Siteverify。没有启用 root 账号时使用启动 Web 用户的 `CODEX_WEB_STATE`，未设置时为该用户的 `~/.codex-web`，由 `admin` 角色管理。
+- 启用或修改 Turnstile 密钥必须先用候选 site key/secret key 完成真实 Siteverify，失败时不写配置。紧急恢复可由配置文件所有者把 `enabled` 改为 `false`，不需要删除密钥。
 - runtime 支持 Linux 与 macOS；Windows 明确拒绝多用户启动，但单用户 `codex-web serve` 保持支持。
 - Linux 使用 `getent + setpriv`；macOS 使用 `dscacheutil + sudo + env -i`。macOS 若修改默认 sudo policy 导致 root 的非交互降权被拒绝，runtime 会快速失败并通过 app-server stderr 诊断暴露。
 

@@ -12,7 +12,7 @@
 
 ## Turnstile 所有权
 
-- 配置文件：`${CODEX_HOME}/codex-web/turnstile.json`，目录权限 0700、文件权限 0600。
+- 配置文件：`${CODEX_WEB_STATE}/turnstile.json`；未设置状态目录时使用当前管理进程用户的 `~/.codex-web/turnstile.json`，目录权限 0700、文件权限 0600。
 - 公开登录配置只返回 `enabled` 和 `siteKey`。
 - 安全设置 API 只返回 `secretKeyConfigured`，不返回 `secretKey`。
 - 私密密钥输入为空表示保留当前值；启用时缺少任一密钥会拒绝保存。

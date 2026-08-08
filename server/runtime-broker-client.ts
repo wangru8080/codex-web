@@ -5,7 +5,10 @@ import type {
   BrokerPublicUser,
   BrokerRequest,
   BrokerResponse,
+  PublicTurnstileConfig,
 } from "./runtime-broker-protocol";
+import type { TurnstileConfigUpdate } from "./turnstile-config";
+import type { TurnstileVerificationResult } from "./turnstile";
 import type { JsonRpcMessage } from "../src/codex/protocol/json-rpc";
 
 export type RuntimeBrokerConnection = {
@@ -33,6 +36,28 @@ export class RuntimeBrokerClient {
     const response = await this.request({ type: "verifySession", token });
     if (response.type !== "verifySession") throw new Error("broker Session 响应类型无效");
     return response.user;
+  }
+
+  async readTurnstilePublic(): Promise<{ rootManaged: boolean; config: PublicTurnstileConfig }> {
+    const response = await this.request({ type: "turnstile/readPublic" });
+    if (response.type !== "turnstilePublic") throw new Error("broker Turnstile 配置响应类型无效");
+    return { rootManaged: response.rootManaged, config: response.config };
+  }
+
+  async verifyTurnstile(responseToken: string, remoteAddress?: string): Promise<TurnstileVerificationResult> {
+    const response = await this.request({ type: "turnstile/verify", responseToken, remoteAddress });
+    if (response.type !== "turnstileVerified") throw new Error("broker Turnstile 验证响应类型无效");
+    return response.result;
+  }
+
+  async updateTurnstile(
+    token: string,
+    update: TurnstileConfigUpdate,
+    responseToken: string,
+  ): Promise<PublicTurnstileConfig> {
+    const response = await this.request({ type: "turnstile/update", token, update, responseToken });
+    if (response.type !== "turnstileUpdated") throw new Error("broker Turnstile 更新响应类型无效");
+    return response.config;
   }
 
   async attachRuntime(token: string): Promise<RuntimeBrokerConnection> {

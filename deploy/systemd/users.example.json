@@ -4,7 +4,7 @@
   "sessionMaxAgeSeconds": 259200,
   "disconnectGraceMs": 30000,
   "maxActiveAppServers": 8,
-  "allowRootRuntime": false,
+  "allowRootRuntime": true,
   "codexCommand": "/usr/local/bin/codex",
   "setprivCommand": "/usr/bin/setpriv",
   "users": [
@@ -21,6 +21,23 @@
       "allowRoot": false,
       "maxConcurrentTurns": 2,
       "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin"
+      }
+    },
+    {
+      "id": "root",
+      "email": "root@example.com",
+      "passwordHash": "请使用 codex-web runtime hash-password 生成",
+      "osUser": "root",
+      "home": "/root",
+      "codexHome": "/root/.codex",
+      "cwd": "/root",
+      "role": "admin",
+      "enabled": true,
+      "allowRoot": true,
+      "maxConcurrentTurns": 2,
+      "env": {
+        "CODEX_WEB_STATE": "/root/.codex-web",
         "PATH": "/usr/local/bin:/usr/bin:/bin"
       }
     }

@@ -11,7 +11,7 @@ import {
 } from "../../../../../server/web-auth";
 import { BrokerClientError, RuntimeBrokerClient } from "../../../../../server/runtime-broker-client";
 import { readTurnstileConfig } from "../../../../../server/turnstile-config";
-import { verifyTurnstileToken } from "../../../../../server/turnstile";
+import { verifyTurnstileTokenDetailed } from "../../../../../server/turnstile";
 
 export async function POST(request: NextRequest) {
   if (!isSameOriginRequest(request)) {
@@ -28,16 +28,26 @@ export async function POST(request: NextRequest) {
   const password = typeof body.password === "string" ? body.password : "";
   const token = typeof body.turnstileToken === "string" ? body.turnstileToken : "";
 
-  const turnstile = await readTurnstileConfig();
-  if (turnstile.enabled) {
+  const brokerSocket = runtimeBrokerSocket();
+  const brokerClient = brokerSocket ? new RuntimeBrokerClient(brokerSocket) : null;
+  const brokerTurnstile = brokerClient ? await brokerClient.readTurnstilePublic() : null;
+  const localTurnstile = brokerTurnstile?.rootManaged ? null : await readTurnstileConfig();
+  const turnstileEnabled = brokerTurnstile?.rootManaged
+    ? brokerTurnstile.config.enabled
+    : localTurnstile?.enabled === true;
+  if (turnstileEnabled) {
     const remoteIp = request.headers.get("x-real-ip") ?? undefined;
-    if (!await verifyTurnstileToken(token, turnstile.secretKey, remoteIp)) {
+    const verification = brokerTurnstile?.rootManaged
+      ? await brokerClient!.verifyTurnstile(token, remoteIp)
+      : await verifyTurnstileTokenDetailed(token, localTurnstile!.secretKey, remoteIp);
+    if (!verification.success) {
+      const codes = verification.errorCodes?.join(",") ?? "none";
+      console.warn(`[auth/login] Turnstile 验证失败：reason=${verification.reason} codes=${codes}`);
       return NextResponse.json({ error: "人机验证未通过", code: "turnstile_failed" }, { status: 400 });
     }
   }
 
   let sessionToken: string;
-  const brokerSocket = runtimeBrokerSocket();
   if (brokerSocket) {
     try {
       const login = await new RuntimeBrokerClient(brokerSocket).login(
