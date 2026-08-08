@@ -39,7 +39,7 @@ export function deriveTurnFileChangeSummary(
   }
 
   const files = [...changesByPath.values()]
-    .map((change) => ({ ...change, ...countDiffLines(change.diff) }))
+    .map((change) => ({ ...change, ...countChangeLines(change) }))
     .sort((a, b) => a.path.localeCompare(b.path));
   if (files.length === 0) return null;
 
@@ -52,15 +52,23 @@ export function deriveTurnFileChangeSummary(
   };
 }
 
-function countDiffLines(diff: string): { additions: number; deletions: number } {
+function countChangeLines(change: FileUpdateChange): { additions: number; deletions: number } {
+  if (change.kind.type === "add") return { additions: countContentLines(change.diff), deletions: 0 };
+  if (change.kind.type === "delete") return { additions: 0, deletions: countContentLines(change.diff) };
+
   let additions = 0;
   let deletions = 0;
 
-  for (const line of diff.split(/\r?\n/)) {
+  for (const line of change.diff.split(/\r?\n/)) {
     if (line.startsWith("+++") || line.startsWith("---")) continue;
     if (line.startsWith("+")) additions += 1;
     if (line.startsWith("-")) deletions += 1;
   }
 
   return { additions, deletions };
+}
+
+function countContentLines(content: string): number {
+  if (!content) return 0;
+  return content.split(/\r\n|\r|\n/).length - (/(?:\r\n|\r|\n)$/.test(content) ? 1 : 0);
 }

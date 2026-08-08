@@ -30,7 +30,12 @@ describe("deriveTurnFileChangeSummary", () => {
             {
               path: "src/new.ts",
               kind: { type: "add" as const },
-              diff: "--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1 @@\n+export {};",
+              diff: "export {};\n",
+            },
+            {
+              path: "src/old.ts",
+              kind: { type: "delete" as const },
+              diff: "const oldValue = 1;\nexport { oldValue };\n",
             },
           ],
         },
@@ -38,12 +43,13 @@ describe("deriveTurnFileChangeSummary", () => {
     };
 
     expect(deriveTurnFileChangeSummary(turn)).toEqual({
-      fileCount: 2,
+      fileCount: 3,
       additions: 3,
-      deletions: 1,
+      deletions: 3,
       files: [
         expect.objectContaining({ path: "src/app.ts", additions: 2, deletions: 1 }),
         expect.objectContaining({ path: "src/new.ts", additions: 1, deletions: 0 }),
+        expect.objectContaining({ path: "src/old.ts", additions: 0, deletions: 2 }),
       ],
       sourceBreadcrumb: "app-server.item/fileChange/patchUpdated",
     });

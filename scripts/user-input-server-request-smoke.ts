@@ -29,7 +29,7 @@ async function main(): Promise<void> {
 
   try {
   debug("等待 Next 页面");
-  await waitForHttp(`http://127.0.0.1:${appPort}/chat/${threadId}`, next);
+  await waitForHttp(`http://127.0.0.1:${appPort}/api/auth/config`, next);
   debug("Next 页面可访问，创建 CDP target");
   target = await createTarget(cdpBaseUrl);
   cdp = await CdpClient.connect(target.webSocketDebuggerUrl);
@@ -399,7 +399,7 @@ function fileChangeNotifications(): unknown[] {
     {
       path: "src/new.ts",
       kind: { type: "add" },
-      diff: "--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1 @@\n+export {};",
+      diff: "export {};\n",
     },
   ];
   return [
@@ -683,14 +683,18 @@ async function reservePort(): Promise<number> {
 }
 
 async function waitForHttp(url: string, process: ChildProcess): Promise<void> {
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     if (process.exitCode !== null) throw new Error(`Next 提前退出：${process.exitCode}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5_000);
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: controller.signal });
       if (response.ok) return;
     } catch {
       // 等待 dev server。
+    } finally {
+      clearTimeout(timeout);
     }
     await delay(200);
   }
