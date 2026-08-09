@@ -14,6 +14,11 @@ describe("app-server 断线重连接线", () => {
     expect(provider).not.toContain("failRunningTurnOnTransportClose(current.activeTurn");
   });
 
+  it("Web 登录失效时停止重连并返回原页面", () => {
+    expect(provider).toContain("error instanceof BridgeAuthenticationError");
+    expect(provider).toContain("window.location.replace(`/login?reason=session-expired&next=${encodeURIComponent(next)}`)");
+  });
+
   it("每次 bootstrap 先解析最新 bridge URL，再复用同一个 client 连接", () => {
     expect(provider.match(/new AppServerBrowserClient/g)).toHaveLength(1);
     expect(provider).toContain("const latestBridgeUrl = await resolveCodexBridgeUrl(publicBridgeUrl)");

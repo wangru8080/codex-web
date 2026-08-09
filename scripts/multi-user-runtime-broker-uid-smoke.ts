@@ -27,7 +27,7 @@ type Identity = {
   egid: number;
   groups: number[];
   cwd: string;
-  env: Record<string, string | undefined>;
+  env: Record<string, string | boolean | undefined>;
   capabilities: { effective: string; bounding: string };
 };
 
@@ -36,6 +36,7 @@ async function main(): Promise<void> {
     throw new Error("UID smoke 必须由 root 执行，请使用 sudo 运行 npm 命令");
   }
   assertCommand("/usr/bin/setpriv", ["--version"]);
+  process.env.UID_SMOKE_BROKER_ONLY = "broker-only";
 
   const runDirectory = await mkdtemp(join(tempRoot, "codex-web-multi-user-uid-smoke-"));
   await chmod(runDirectory, 0o711);
@@ -74,7 +75,11 @@ async function main(): Promise<void> {
         home: user.home,
         codexHome: paths.get(user.name)?.codexHome,
         cwd: paths.get(user.name)?.cwd,
-        env: { PATH: "/volume2/SSD/node-v24.14.0/bin:/usr/bin:/bin" },
+        inheritLoginEnvironment: true,
+        env: {
+          PATH: "/volume2/SSD/node-v24.14.0/bin:/usr/bin:/bin",
+          UID_SMOKE_USER: user.name,
+        },
       })),
     });
     const resolvedUsers = await resolveBrokerRuntimeUsers(config);
@@ -103,6 +108,15 @@ async function main(): Promise<void> {
 
     const rrssnasConnection = connectionsByUser.get("rrssnas")!;
     const codexConnection = connectionsByUser.get("codex")!;
+    for (const user of systemUsers.values()) {
+      const env = identities.get(user.name)?.env;
+      if (env?.UID_SMOKE_USER !== user.name) {
+        throw new Error(`${user.name} runtime 未获得自己的用户环境标记`);
+      }
+      if (env.UID_SMOKE_BROKER_ONLY !== undefined) {
+        throw new Error(`${user.name} runtime 泄漏了 Broker 全局环境`);
+      }
+    }
     const rrssnasOtherPath = join(paths.get("codex")!.codexHome, "identity.json");
     const codexOtherPath = join(paths.get("rrssnas")!.codexHome, "identity.json");
     const [rrssnasCrossRead, codexCrossRead] = await Promise.all([
@@ -123,6 +137,10 @@ async function main(): Promise<void> {
       broker: { uid: process.getuid(), gid: process.getgid?.() },
       users: Object.fromEntries([...identities].map(([id, identity]) => [id, identity])),
       crossUserReadsDenied: true,
+      environmentIsolationVerified: true,
+      loginProfileGithubTokenPresent: Object.fromEntries(
+        [...identities].map(([id, identity]) => [id, identity.env.GITHUB_PAT_TOKEN_SET === true]),
+      ),
       runtimesStopped: true,
       realCodexHomeUsed: false,
     };
@@ -263,6 +281,9 @@ const identity = {
     CODEX_HOME: process.env.CODEX_HOME,
     NODE_ENV: process.env.NODE_ENV,
     RUST_LOG: process.env.RUST_LOG,
+    GITHUB_PAT_TOKEN_SET: typeof process.env.GITHUB_PAT_TOKEN === "string" && process.env.GITHUB_PAT_TOKEN.length > 0,
+    UID_SMOKE_USER: process.env.UID_SMOKE_USER,
+    UID_SMOKE_BROKER_ONLY: process.env.UID_SMOKE_BROKER_ONLY,
   },
   capabilities: { effective: capability("CapEff"), bounding: capability("CapBnd") },
 };

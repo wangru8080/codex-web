@@ -199,6 +199,7 @@ function userRuntimeKey(user: RuntimeBrokerUserConfig): string {
     user.role,
     user.enabled,
     user.allowRoot,
+    user.inheritLoginEnvironment,
     Object.entries(user.env ?? {}).sort(([left], [right]) => left.localeCompare(right)),
   ]);
 }

@@ -1872,6 +1872,7 @@ const en = {
   'auth.signingIn': 'Signing in...',
   'auth.loginFailed': 'Sign in failed',
   'auth.configFailed': 'Unable to load sign-in configuration',
+  'auth.sessionExpired': 'Your session has expired. Sign in again to return to your previous page.',
   'auth.turnstileFailed': 'Human verification failed. Please try again.',
   'auth.turnstileFailedCode': 'Human verification failed. Please try again. Error code: {code}',
   'auth.turnstileRetry': 'Reload verification',

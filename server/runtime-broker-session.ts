@@ -81,6 +81,7 @@ function credentialVersion(user: RuntimeBrokerUserConfig, secret: string): strin
       user.role,
       user.enabled,
       user.allowRoot,
+      user.inheritLoginEnvironment,
       Object.entries(user.env ?? {}).sort(([left], [right]) => left.localeCompare(right)),
     ]))
     .digest("base64url")

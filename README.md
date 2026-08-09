@@ -347,11 +347,12 @@ systemd 会创建 socket 目录，runtime 进程会创建 `runtime-broker.sock`�
 | `home` | 是 | `osUser` 的 home 绝对路径，必须与系统账号数据库一致。 |
 | `codexHome` | 是 | 该用户 app-server 使用的 `CODEX_HOME` 绝对路径，账号、配置、会话、MCP、skills 和 approval 状态均来自此目录。 |
 | `cwd` | 是 | 该用户 app-server 的默认工作目录绝对路径。 |
+| `inheritLoginEnvironment` | 否 | 是否以对应系统用户身份执行其登录 shell profile 并继承环境，默认 `false`。登录 shell 最长运行 5 秒；Broker 管理变量和动态加载变量会被过滤。 |
 | `role` | 否 | Web 角色，只允许 `user` 或 `admin`，默认 `user`；`admin` 可管理安全设置，但不代表操作系统 root。 |
 | `enabled` | 否 | 是否允许该账号登录，默认 `true`。 |
 | `allowRoot` | 否 | 是否允许该用户项启动 UID 0 app-server，默认 `false`；仅对 `osUser: "root"` 有效，并且顶层 `allowRootRuntime` 也必须为 `true`。 |
 | `maxConcurrentTurns` | 否 | 该账号在全部浏览器连接和 Thread 中合计允许的并发 Turn 上限，必须为正整数；不配置表示无限制。 |
-| `env` | 否 | 传给 app-server 的额外环境变量字符串对象。变量名必须为大写形式；`HOME`、`CODEX_HOME`、`USER`、`SHELL`、`RUST_LOG`、`LD_*`、`DYLD_*` 等受保护变量禁止设置。 |
+| `env` | 否 | 传给 app-server 的额外环境变量字符串对象；会覆盖登录 shell 环境中的同名变量。变量名必须为大写形式；`HOME`、`CODEX_HOME`、`USER`、`SHELL`、`RUST_LOG`、`LD_*`、`DYLD_*` 等受保护变量禁止设置。 |
 
 #### Broker 配置热加载
 
@@ -360,6 +361,7 @@ systemd 会创建 socket 目录，runtime 进程会创建 `runtime-broker.sock`�
 - 新增用户可以立即登录，并在首次连接时启动自己的 app-server。
 - 内容未变化的用户继续使用当前 app-server，运行中的 Turn 不受影响。
 - 修改 `maxActiveAppServers` 或 `maxConcurrentTurns` 会立即更新限制，但不会使 Session 失效、重启 app-server 或中断已有 Turn。降低限制后只拒绝新的超限创建或 `turn/start`；提高或移除限制后立即恢复接收。
+- 启用 `inheritLoginEnvironment` 后，用户 runtime 启动时会执行该系统用户的登录 shell profile；profile 失败、超时或未输出有效环境标记时，该用户 runtime 启动失败。修改开关或 `env` 会使该用户旧 Session 和在线连接失效，重新登录后按新环境启动 runtime。
 - 删除、禁用或修改用户的邮箱、密码哈希、角色、系统用户、home、`CODEX_HOME`、cwd 或环境变量时，该用户的旧 Session 和在线连接会失效；重新登录后按新配置启动 runtime。
 - 修改 `sessionSecret`、`codexCommand`、`setprivCommand` 或 `allowRootRuntime` 会使全部在线用户失效。修改 `sessionMaxAgeSeconds` 只影响之后签发的 Session。
 - JSON 不完整、权限错误、重复身份或系统用户解析失败时，broker 会记录“配置重载失败”，继续使用最后一份有效配置。修正并再次保存后会自动恢复加载。

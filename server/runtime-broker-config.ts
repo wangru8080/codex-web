@@ -13,6 +13,7 @@ export type RuntimeBrokerUserConfig = {
   home: string;
   codexHome: string;
   cwd: string;
+  inheritLoginEnvironment: boolean;
   env?: Record<string, string>;
   role: RuntimeBrokerRole;
   enabled: boolean;
@@ -84,6 +85,11 @@ export function parseRuntimeBrokerConfig(value: unknown): RuntimeBrokerConfig {
     const allowRoot = booleanValue(user.allowRoot, false, `users[${index}].allowRoot`);
     const enabled = booleanValue(user.enabled, true, `users[${index}].enabled`);
     const env = environmentVariables(user.env, `users[${index}].env`);
+    const inheritLoginEnvironment = booleanValue(
+      user.inheritLoginEnvironment,
+      false,
+      `users[${index}].inheritLoginEnvironment`,
+    );
     const maxConcurrentTurns = optionalPositiveInteger(
       user.maxConcurrentTurns,
       `users[${index}].maxConcurrentTurns`,
@@ -104,6 +110,7 @@ export function parseRuntimeBrokerConfig(value: unknown): RuntimeBrokerConfig {
       home: absolutePath(user.home, `users[${index}].home`),
       codexHome: absolutePath(user.codexHome, `users[${index}].codexHome`),
       cwd: absolutePath(user.cwd, `users[${index}].cwd`),
+      inheritLoginEnvironment,
       env,
       role,
       enabled,
@@ -165,6 +172,15 @@ function environmentVariables(value: unknown, name: string): Record<string, stri
     output[key] = item;
   }
   return output;
+}
+
+export function filterLoginEnvironment(values: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(values).filter(([key]) => (
+    /^[A-Z_][A-Z0-9_]*$/.test(key)
+    && !PROTECTED_ENVIRONMENT_VARIABLES.has(key)
+    && !key.startsWith("LD_")
+    && !key.startsWith("DYLD_")
+  )));
 }
 
 export async function readRuntimeBrokerConfig(

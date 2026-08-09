@@ -11,6 +11,8 @@ type BridgeRuntimeResponse = {
   error?: unknown;
 };
 
+export class BridgeAuthenticationError extends Error {}
+
 export async function resolveCodexBridgeUrl(
   publicBridgeUrl: string,
   fetcher: BridgeUrlFetch = fetch,
@@ -26,7 +28,9 @@ export async function resolveCodexBridgeUrl(
   const body = (await response.json()) as BridgeRuntimeResponse;
 
   if (!response.ok) {
-    throw new Error(typeof body.error === "string" ? body.error : `bridge url request failed: ${response.status}`);
+    const message = typeof body.error === "string" ? body.error : `bridge url request failed: ${response.status}`;
+    if (response.status === 401) throw new BridgeAuthenticationError(message);
+    throw new Error(message);
   }
 
   if (typeof body.bridgeUrl !== "string" || body.bridgeUrl.length === 0) {

@@ -33,6 +33,7 @@ async function main(): Promise<void> {
   const rootUser = {
     ...smokeUser("root", "/root", join(runDirectory, "root-codex-home"), passwordHash),
     allowRoot: true,
+    env: { CODEX_WEB_STATE: join(runDirectory, "root-web-state") },
   };
   const initialConfig = {
     version: 1,

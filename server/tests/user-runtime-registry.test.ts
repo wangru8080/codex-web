@@ -14,6 +14,7 @@ const USER: RuntimeBrokerUserConfig = {
   home: "/home/codex",
   codexHome: "/home/codex/CodexApp",
   cwd: "/home/codex/workspace",
+  inheritLoginEnvironment: false,
   role: "user",
   enabled: true,
   allowRoot: false,

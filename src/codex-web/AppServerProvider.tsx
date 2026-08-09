@@ -98,7 +98,7 @@ import { AppServerBrowserClient } from "./app-server-browser-client";
 import { withPlanCollaborationMode } from "./app-server-collaboration-mode";
 import { appServerInitializeCapabilities } from "./app-server-capabilities";
 import { threadPermissionUpdateOptions, threadRuntimeOptions, turnRuntimeOptions } from "./app-server-runtime-options";
-import { resolveCodexBridgeUrl } from "./bridge-url-runtime";
+import { BridgeAuthenticationError, resolveCodexBridgeUrl } from "./bridge-url-runtime";
 import { initialAppServerState, type CodexWebAppServerState } from "./app-server-state";
 import { createAppServerStore, type AppServerStore } from "./app-server-store";
 import type {
@@ -528,6 +528,18 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         }));
       } catch (error) {
         if (disposed) {
+          return;
+        }
+        if (error instanceof BridgeAuthenticationError) {
+          disposed = true;
+          if (reconnectTimer !== null) {
+            window.clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+          clientRef.current = null;
+          client.close();
+          const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+          window.location.replace(`/login?reason=session-expired&next=${encodeURIComponent(next)}`);
           return;
         }
         setState((current) => ({

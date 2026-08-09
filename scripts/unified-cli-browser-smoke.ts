@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import { chmod, chown, lstat, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
@@ -13,9 +14,22 @@ const setprivCommand = "/usr/bin/setpriv";
 const sharedGroupId = 133;
 const password = `unified-cli-browser-smoke-${Date.now()}`;
 const altPassword = `unified-cli-browser-smoke-alt-${Date.now()}`;
+const syntheticTokens = {
+  rrssnas: `synthetic-rrssnas-${randomBytes(24).toString("hex")}`,
+  codex: `synthetic-codex-${randomBytes(24).toString("hex")}`,
+};
 
 type SystemUser = { name: string; uid: number; gid: number; home: string };
-type RuntimeIdentity = { pid: number; uid: number; gid: number; codexHome: string; cwd: string };
+type RuntimeIdentity = {
+  pid: number;
+  uid: number;
+  gid: number;
+  codexHome: string;
+  cwd: string;
+  tokenFingerprint: string;
+  tokenOwner: string;
+  nodeHomeSet: boolean;
+};
 type RuntimePaths = { cwd: string; codexHome: string };
 type FixtureUser = {
   id: string;
@@ -25,7 +39,8 @@ type FixtureUser = {
   home: string;
   codexHome: string;
   cwd: string;
-  env: { PATH: string };
+  inheritLoginEnvironment: boolean;
+  env: { PATH: string; GITHUB_PAT_TOKEN: string; UID_SMOKE_USER: string };
 };
 
 async function main(): Promise<void> {
@@ -44,7 +59,6 @@ async function main(): Promise<void> {
     paths.set(user.name, await createRuntimePaths(runDirectory, user.name, user));
   }
   const rrssnasAltPaths = await createRuntimePaths(runDirectory, "rrssnas-alt", users.get("rrssnas")!);
-  const codexNextPaths = await createRuntimePaths(runDirectory, "codex-next", users.get("codex")!);
 
   const webState = join(runDirectory, "web-state");
   const socketDirectory = join(runDirectory, "run");
@@ -142,6 +156,9 @@ async function main(): Promise<void> {
     const codexIdentity = await readRuntimeIdentity(paths.get("codex")!.codexHome);
     assertIdentity(rrssnasIdentity, users.get("rrssnas")!, paths.get("rrssnas")!);
     assertIdentity(codexIdentity, users.get("codex")!, paths.get("codex")!);
+    if (rrssnasIdentity.tokenFingerprint === codexIdentity.tokenFingerprint) {
+      throw new Error("两个用户读取了相同的合成 Token 指纹");
+    }
 
     const rrssnasSecond = await browser.createPage(rrssnasPage.contextId, `${baseUrl}/chat`);
     await rrssnasSecond.waitFor("location.pathname === '/chat'", 30_000);
@@ -200,7 +217,10 @@ async function main(): Promise<void> {
     assertIdentity(altIdentity, users.get("rrssnas")!, rrssnasAltPaths);
     await sendMarker(altPage, "rrssnas-alt-marker");
 
-    const nextCodexUser = fixtureUser("codex", users.get("codex")!, codexNextPaths, passwordHash);
+    const nextCodexUser = {
+      ...initialUsers[1]!,
+      inheritLoginEnvironment: true,
+    };
     const changeUserReloads = reloadSuccessCount(childLogs.runtime);
     await writeConfig(configPath, {
       ...initialConfig,
@@ -211,9 +231,23 @@ async function main(): Promise<void> {
     if (!processExists(rrssnasIdentity.pid) || !processExists(altIdentity.pid)) {
       throw new Error("修改 codex 配置影响了未变化用户 runtime");
     }
+    await codexPage.waitFor(
+      "location.pathname === '/login' && new URLSearchParams(location.search).get('reason') === 'session-expired'",
+      30_000,
+    );
+    await codexPage.waitFor("Boolean(document.querySelector('[data-testid=session-expired-message]'))", 30_000);
+    if (await authStatus(codexPage) !== 401) {
+      throw new Error("inheritLoginEnvironment 变化后旧 Session 仍然有效");
+    }
     await login(codexPage, baseUrl, nextCodexUser.email);
-    const codexNextIdentity = await readRuntimeIdentity(codexNextPaths.codexHome);
-    assertIdentity(codexNextIdentity, users.get("codex")!, codexNextPaths);
+    const codexNextIdentity = await waitForRuntimeIdentity(
+      paths.get("codex")!.codexHome,
+      codexIdentity.pid,
+    );
+    assertIdentity(codexNextIdentity, users.get("codex")!, paths.get("codex")!, true);
+    if (codexNextIdentity.tokenFingerprint !== codexIdentity.tokenFingerprint) {
+      throw new Error("登录环境重启后 codex 合成 Token 指纹发生变化");
+    }
     await sendMarker(codexPage, "codex-next-home-marker");
 
     await logout(rrssnasPage);
@@ -229,9 +263,8 @@ async function main(): Promise<void> {
     ), 5_000);
 
     const finalRrssnasMarkers = await readMarkers(paths.get("rrssnas")!.codexHome);
-    const finalCodexMarkers = await readMarkers(paths.get("codex")!.codexHome);
     const altMarkers = await readMarkers(rrssnasAltPaths.codexHome);
-    const codexNextMarkers = await readMarkers(codexNextPaths.codexHome);
+    const codexNextMarkers = await readMarkers(paths.get("codex")!.codexHome);
 
     const resultPath = join(runDirectory, "result.json");
     const result = {
@@ -250,7 +283,7 @@ async function main(): Promise<void> {
       },
       markers: {
         rrssnas: finalRrssnasMarkers,
-        codexBeforeReload: finalCodexMarkers,
+        codexBeforeReload: codexMarkers,
         codexAfterReload: codexNextMarkers,
         rrssnasAlt: altMarkers,
       },
@@ -261,6 +294,10 @@ async function main(): Promise<void> {
       sameOsUserDifferentCredentialsHotLoaded: true,
       crossedPasswordsRejected: true,
       changedUserRuntimeReplaced: true,
+      inheritLoginEnvironmentInvalidatedOldSession: true,
+      expiredSessionRedirectedToLogin: true,
+      restartedWithLoginEnvironment: true,
+      syntheticTokensIsolated: true,
       unchangedUsersStayedOnline: true,
       runtimesStopped: true,
       realCodexHomeUsed: false,
@@ -304,6 +341,7 @@ function fixtureUser(
   paths: RuntimePaths,
   passwordHash: string,
 ): FixtureUser {
+  const token = syntheticTokenFor(user.name);
   return {
     id,
     email: `${id}@example.test`,
@@ -312,8 +350,22 @@ function fixtureUser(
     home: user.home,
     codexHome: paths.codexHome,
     cwd: paths.cwd,
-    env: { PATH: "/volume2/SSD/node-v24.14.0/bin:/usr/bin:/bin" },
+    inheritLoginEnvironment: false,
+    env: {
+      PATH: "/volume2/SSD/node-v24.14.0/bin:/usr/bin:/bin",
+      GITHUB_PAT_TOKEN: token,
+      UID_SMOKE_USER: user.name,
+    },
   };
+}
+
+function syntheticTokenFor(user: string): string {
+  if (user === "rrssnas" || user === "codex") return syntheticTokens[user];
+  throw new Error(`没有为 ${user} 配置合成 Token`);
+}
+
+function tokenFingerprint(token: string): string {
+  return createHash("sha256").update(token).digest("hex").slice(0, 16);
 }
 
 async function writeConfig(path: string, value: object, create = false): Promise<void> {
@@ -384,6 +436,12 @@ async function loginStatus(
   }).then((response) => response.status)`);
 }
 
+async function authStatus(page: CdpClient): Promise<number> {
+  return await page.evaluate<number>(
+    "fetch('/api/auth/me', { cache: 'no-store' }).then((response) => response.status)",
+  );
+}
+
 async function sendMarker(page: CdpClient, marker: string): Promise<void> {
   await page.evaluate(`(async () => {
     const config = await fetch('/api/codex/bridge-url', { cache: 'no-store' }).then((response) => response.json());
@@ -417,14 +475,35 @@ async function readRuntimeIdentity(codexHome: string): Promise<RuntimeIdentity> 
   return JSON.parse(await readFile(path, "utf8")) as RuntimeIdentity;
 }
 
+async function waitForRuntimeIdentity(codexHome: string, previousPid: number): Promise<RuntimeIdentity> {
+  let identity: RuntimeIdentity | null = null;
+  await waitFor(async () => {
+    try {
+      identity = await readRuntimeIdentity(codexHome);
+      return identity.pid !== previousPid;
+    } catch {
+      return false;
+    }
+  }, 10_000);
+  return identity!;
+}
+
 function assertIdentity(
   identity: RuntimeIdentity,
   user: SystemUser,
   paths: { cwd: string; codexHome: string },
+  expectLoginEnvironment = false,
 ): void {
   if (identity.uid !== user.uid || identity.gid !== user.gid) throw new Error(`${user.name} UID/GID 不匹配`);
   if (identity.codexHome !== paths.codexHome || identity.cwd !== paths.cwd) {
     throw new Error(`${user.name} CODEX_HOME/cwd 不匹配`);
+  }
+  if (identity.tokenFingerprint !== tokenFingerprint(syntheticTokenFor(user.name))) {
+    throw new Error(`${user.name} runtime 读取了错误的合成 Token`);
+  }
+  if (identity.tokenOwner !== user.name) throw new Error(`${user.name} runtime 用户环境标记不匹配`);
+  if (identity.nodeHomeSet !== expectLoginEnvironment) {
+    throw new Error(`${user.name} 登录 profile 环境状态不符合预期`);
   }
 }
 
@@ -519,6 +598,7 @@ function delay(milliseconds: number): Promise<void> {
 
 function fixtureSource(): string {
   return `#!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -528,8 +608,11 @@ const identity = {
   gid: process.getgid(),
   codexHome: process.env.CODEX_HOME,
   cwd: process.cwd(),
+  tokenFingerprint: createHash("sha256").update(process.env.GITHUB_PAT_TOKEN ?? "").digest("hex").slice(0, 16),
+  tokenOwner: process.env.UID_SMOKE_USER,
+  nodeHomeSet: typeof process.env.NODE_HOME === "string" && process.env.NODE_HOME.length > 0,
 };
-writeFileSync(process.env.CODEX_HOME + "/identity.json", JSON.stringify(identity, null, 2) + "\\n", { flag: "wx", mode: 0o600 });
+writeFileSync(process.env.CODEX_HOME + "/identity.json", JSON.stringify(identity, null, 2) + "\\n", { mode: 0o600 });
 
 createInterface({ input: process.stdin }).on("line", (line) => {
   const request = JSON.parse(line);

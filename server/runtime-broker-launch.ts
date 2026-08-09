@@ -4,7 +4,11 @@ import { promisify } from "node:util";
 
 import type { CodexProcessOptions } from "./codex-process";
 import { PersistentAppServer } from "./persistent-app-server";
-import type { RuntimeBrokerConfig, RuntimeBrokerUserConfig } from "./runtime-broker-config";
+import {
+  filterLoginEnvironment,
+  type RuntimeBrokerConfig,
+  type RuntimeBrokerUserConfig,
+} from "./runtime-broker-config";
 import type { JsonRpcMessage } from "../src/codex/protocol/json-rpc";
 
 export type RuntimeUserRecord = {
@@ -19,12 +23,20 @@ export type RuntimeBrokerPlatform = "linux" | "darwin";
 export type ResolvedBrokerRuntimeUser = RuntimeBrokerUserConfig & RuntimeUserRecord;
 
 type RuntimeUserLookup = (osUser: string) => Promise<RuntimeUserRecord>;
+type RuntimeLoginEnvironmentLoader = (
+  config: RuntimeBrokerConfig,
+  user: RuntimeBrokerUserConfig,
+  systemUser: RuntimeUserRecord,
+) => Promise<Record<string, string>>;
 
 const execFileAsync = promisify(execFile);
+const loginEnvironmentMarker = Buffer.from("\0CODEX_WEB_LOGIN_ENV_V1\0");
+const loginEnvironmentCommand = "printf '\\000CODEX_WEB_LOGIN_ENV_V1\\000'; /usr/bin/env -0";
 
 export async function resolveBrokerRuntimeUsers(
   config: RuntimeBrokerConfig,
   lookup: RuntimeUserLookup = lookupRuntimeUser,
+  loadLoginEnvironment: RuntimeLoginEnvironmentLoader = loadRuntimeLoginEnvironment,
 ): Promise<Map<string, ResolvedBrokerRuntimeUser>> {
   const resolved = new Map<string, ResolvedBrokerRuntimeUser>();
   for (const user of config.users) {
@@ -37,9 +49,75 @@ export async function resolveBrokerRuntimeUsers(
     )) {
       throw new Error(`${user.id} 解析为 UID 0，但没有 root 双重授权`);
     }
-    resolved.set(user.id, { ...user, ...systemUser });
+    const loginEnv = user.inheritLoginEnvironment
+      ? await loadLoginEnvironment(config, user, systemUser)
+      : {};
+    resolved.set(user.id, {
+      ...user,
+      ...systemUser,
+      env: { ...loginEnv, ...user.env },
+    });
   }
   return resolved;
+}
+
+export async function loadRuntimeLoginEnvironment(
+  config: RuntimeBrokerConfig,
+  user: RuntimeBrokerUserConfig,
+  systemUser: RuntimeUserRecord,
+  platform: RuntimeBrokerPlatform = resolveRuntimeBrokerPlatform(process.platform),
+): Promise<Record<string, string>> {
+  const baseEnv = {
+    HOME: user.home,
+    USER: user.osUser,
+    LOGNAME: user.osUser,
+    SHELL: systemUser.shell,
+    PATH: `${dirname(config.codexCommand)}:/usr/local/bin:/usr/bin:/bin`,
+    NODE_ENV: "production" as const,
+  };
+  const identityArgs = platform === "darwin"
+    ? ["-n", "-H", "-u", user.osUser, "--", systemUser.shell, "-l", "-c", loginEnvironmentCommand]
+    : [
+        `--reuid=${systemUser.uid}`,
+        `--regid=${systemUser.gid}`,
+        "--init-groups",
+        "--inh-caps=-all",
+        "--ambient-caps=-all",
+        "--bounding-set=-all",
+        "--pdeathsig=SIGTERM",
+        "--",
+        systemUser.shell,
+        "-l",
+        "-c",
+        loginEnvironmentCommand,
+      ];
+  const command = platform === "darwin" ? "/usr/bin/sudo" : config.setprivCommand;
+  let stdout: Buffer | string;
+  try {
+    ({ stdout } = await execFileAsync(command, identityArgs, {
+      encoding: "buffer",
+      env: baseEnv,
+      timeout: 5_000,
+      maxBuffer: 1024 * 1024,
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${user.id} 的登录 shell 环境加载失败：${message}`, { cause: error });
+  }
+  return parseLoginEnvironmentOutput(stdout, user.id);
+}
+
+export function parseLoginEnvironmentOutput(output: Buffer | string, userId: string): Record<string, string> {
+  const buffer = Buffer.isBuffer(output) ? output : Buffer.from(output);
+  const markerIndex = buffer.lastIndexOf(loginEnvironmentMarker);
+  if (markerIndex < 0) throw new Error(`${userId} 的登录 shell 未返回环境标记`);
+  const values: Record<string, string> = {};
+  for (const entry of buffer.subarray(markerIndex + loginEnvironmentMarker.length).toString().split("\0")) {
+    const separator = entry.indexOf("=");
+    if (separator <= 0) continue;
+    values[entry.slice(0, separator)] = entry.slice(separator + 1);
+  }
+  return filterLoginEnvironment(values);
 }
 
 export function buildBrokerRuntimeProcessOptions(

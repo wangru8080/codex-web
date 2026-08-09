@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseRuntimeBrokerConfig } from "../runtime-broker-config";
 import {
   buildBrokerRuntimeProcessOptions,
+  parseLoginEnvironmentOutput,
   parseDarwinUserRecord,
   resolveBrokerRuntimeUsers,
   resolveRuntimeBrokerPlatform,
@@ -11,6 +12,68 @@ import {
 const HASH = "scrypt$v1$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 describe("runtime broker 用户启动", () => {
+  it("按用户加载登录环境，并由显式 env 覆盖同名变量", async () => {
+    const config = parseRuntimeBrokerConfig({
+      version: 1,
+      sessionSecret: "0123456789abcdef0123456789abcdef",
+      codexCommand: "/opt/node/bin/codex",
+      users: [
+        {
+          id: "alice",
+          email: "alice@example.com",
+          passwordHash: HASH,
+          osUser: "alice",
+          home: "/home/alice",
+          codexHome: "/home/alice/CodexApp",
+          cwd: "/home/alice/workspace",
+          inheritLoginEnvironment: true,
+          env: { TOKEN: "alice-explicit" },
+        },
+        {
+          id: "bob",
+          email: "bob@example.com",
+          passwordHash: HASH,
+          osUser: "bob",
+          home: "/home/bob",
+          codexHome: "/home/bob/CodexApp",
+          cwd: "/home/bob/workspace",
+          inheritLoginEnvironment: true,
+        },
+      ],
+    });
+    const users = await resolveBrokerRuntimeUsers(
+      config,
+      async (osUser) => ({
+        uid: osUser === "alice" ? 1001 : 1002,
+        gid: 100,
+        home: `/home/${osUser}`,
+        shell: "/bin/bash",
+      }),
+      async (_config, user) => ({ TOKEN: `${user.id}-profile`, [`${user.id.toUpperCase()}_ONLY`]: "1" }),
+    );
+
+    expect(users.get("alice")?.env).toEqual({
+      TOKEN: "alice-explicit",
+      ALICE_ONLY: "1",
+    });
+    expect(users.get("bob")?.env).toEqual({
+      TOKEN: "bob-profile",
+      BOB_ONLY: "1",
+    });
+  });
+
+  it("只解析登录 shell 环境标记后的变量并过滤身份变量", () => {
+    const output = Buffer.from(
+      "profile banner\n\0CODEX_WEB_LOGIN_ENV_V1\0TOKEN=value\0HOME=/wrong\0PATH=/custom/bin\0",
+    );
+    expect(parseLoginEnvironmentOutput(output, "alice")).toEqual({
+      TOKEN: "value",
+      PATH: "/custom/bin",
+    });
+    expect(() => parseLoginEnvironmentOutput("no marker", "alice"))
+      .toThrow("未返回环境标记");
+  });
+
   it("普通用户通过 setpriv 初始化身份并清除 capability", async () => {
     const config = parseRuntimeBrokerConfig({
       version: 1,

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, LockKeyhole, LogIn, Mail } from "lucide-react";
+import { CircleAlert, Eye, EyeOff, LockKeyhole, LogIn, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/auth/TurnstileWidget";
@@ -80,6 +80,7 @@ export function LoginForm() {
   }
 
   const turnstileRequired = config?.turnstile.enabled === true;
+  const sessionExpired = searchParams.get("reason") === "session-expired";
   return (
     <>
     <header className="mb-7 text-center">
@@ -87,6 +88,12 @@ export function LoginForm() {
       <p className="mt-2 text-sm text-muted-foreground">{t("auth.subtitle")}</p>
     </header>
     <form onSubmit={submit} className="space-y-5" data-testid="web-login-form">
+      {sessionExpired && (
+        <p className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3 py-2.5 text-sm text-foreground" role="status" data-testid="session-expired-message">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span>{t("auth.sessionExpired")}</span>
+        </p>
+      )}
       <div className="space-y-2">
         <label htmlFor="login-email" className="text-sm font-medium">{t("auth.email")}</label>
         <div className="relative">

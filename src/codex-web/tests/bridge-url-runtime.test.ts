@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BridgeAuthenticationError,
   resolveBridgeEndpoint,
   resolveCodexBridgeHomeDirectory,
   resolveCodexBridgeUrl,
@@ -64,6 +65,16 @@ describe("bridge url runtime resolver", () => {
     });
 
     await expect(resolveCodexBridgeUrl("", fetcher)).rejects.toThrow("CODEX_WEB_BRIDGE_URL 未设置");
+  });
+
+  it("仅把 runtime API 的 401 标记为 Web 登录失效", async () => {
+    const fetcher: BridgeUrlFetch = async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "登录已失效" }),
+    });
+
+    await expect(resolveCodexBridgeUrl("", fetcher)).rejects.toBeInstanceOf(BridgeAuthenticationError);
   });
 
   it("从 bridge runtime API 读取当前服务用户主目录", async () => {

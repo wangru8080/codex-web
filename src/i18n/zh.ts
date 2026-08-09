@@ -1847,6 +1847,7 @@ const zh: Record<TranslationKey, string> = {
   'auth.signingIn': '正在登录...',
   'auth.loginFailed': '登录失败',
   'auth.configFailed': '无法加载登录配置',
+  'auth.sessionExpired': '登录状态已失效，请重新登录。登录后将返回刚才的页面。',
   'auth.turnstileFailed': '人机验证失败，请重试。',
   'auth.turnstileFailedCode': '人机验证失败，请重试。错误代码：{code}',
   'auth.turnstileRetry': '重新加载验证',

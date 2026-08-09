@@ -162,7 +162,7 @@ describe("runtime broker server", () => {
 
     const nextConfig = parseRuntimeBrokerConfig({
       ...config,
-      users: [{ ...config.users[0], codexHome: "/home/codex/CodexApp-next" }],
+      users: [{ ...config.users[0], inheritLoginEnvironment: true }],
     });
     server.reload(nextConfig, () => fakeRuntime());
 

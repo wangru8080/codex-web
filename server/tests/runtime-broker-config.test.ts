@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  filterLoginEnvironment,
   parseRuntimeBrokerConfig,
   readRuntimeBrokerConfig,
 } from "../runtime-broker-config";
@@ -33,7 +34,13 @@ describe("runtime broker 配置", () => {
       sessionMaxAgeSeconds: 259200,
       disconnectGraceMs: 30000,
       setprivCommand: "/usr/bin/setpriv",
-      users: [{ id: "codex", role: "user", enabled: true, allowRoot: false }],
+      users: [{
+        id: "codex",
+        role: "user",
+        enabled: true,
+        allowRoot: false,
+        inheritLoginEnvironment: false,
+      }],
     });
     expect(config.maxActiveAppServers).toBeUndefined();
     expect(config.users[0]?.maxConcurrentTurns).toBeUndefined();
@@ -138,6 +145,10 @@ describe("runtime broker 配置", () => {
     })).toThrow("绝对路径");
     expect(() => parseRuntimeBrokerConfig({
       ...base,
+      users: [{ ...user, inheritLoginEnvironment: "yes" }],
+    })).toThrow("布尔值");
+    expect(() => parseRuntimeBrokerConfig({
+      ...base,
       users: [{
         ...user,
         id: "root",
@@ -149,6 +160,20 @@ describe("runtime broker 配置", () => {
         allowRoot: true,
       }],
     })).toThrow("allowRootRuntime");
+  });
+
+  it("过滤登录环境中的 Broker 管理变量和动态加载变量", () => {
+    expect(filterLoginEnvironment({
+      GITHUB_PAT_TOKEN: "token",
+      PATH: "/home/alice/bin:/usr/bin",
+      HOME: "/wrong-home",
+      NODE_OPTIONS: "--require=/tmp/inject.js",
+      LD_PRELOAD: "/tmp/inject.so",
+      lower_case: "ignored",
+    })).toEqual({
+      GITHUB_PAT_TOKEN: "token",
+      PATH: "/home/alice/bin:/usr/bin",
+    });
   });
 
   it("读取时拒绝组或其他用户可读的配置文件", async () => {
