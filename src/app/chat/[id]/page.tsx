@@ -92,6 +92,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const [sessionMode, setSessionMode] = useState<'code' | 'plan'>('code');
   const [sessionHasSummary, setSessionHasSummary] = useState(false);
   const [sessionReadOnly, setSessionReadOnly] = useState(false);
+  const [activeWriterReplayOnly, setActiveWriterReplayOnly] = useState(false);
   const [sessionWorkingDirectory, setSessionWorkingDirectory] = useState('');
   const [sessionProjectName, setSessionProjectName] = useState('');
   const [resumedThreadId, setResumedThreadId] = useState<string | null>(null);
@@ -162,6 +163,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     setSessionProviderId('');
     setSessionRuntimePin('');
     setSessionReadOnly(false);
+    setActiveWriterReplayOnly(false);
     setSessionWorkingDirectory('');
     setSessionProjectName('');
     setResumedThreadId(null);
@@ -216,12 +218,42 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         const session = threadToChatSession(response.thread);
         applySession(session);
         const savedPreference = readThreadRuntimePreference(localStorage, id);
-        const resume = await resumeThread({
-          threadId: id,
-          cwd: response.thread.cwd,
-          model: savedPreference?.model,
-          permissionProfile: savedPreference?.permissionProfile,
-        });
+        let resume;
+        try {
+          resume = await resumeThread({
+            threadId: id,
+            cwd: response.thread.cwd,
+            model: savedPreference?.model,
+            permissionProfile: savedPreference?.permissionProfile,
+          });
+        } catch (resumeError) {
+          const message = resumeError instanceof Error ? resumeError.message : String(resumeError);
+          if (!message.includes('already has an active writer')) throw resumeError;
+
+          const fallbackResponse = await readThread(id, { includeTurns: true });
+          if (cancelled) return;
+          const result = threadToMessages(fallbackResponse.thread);
+          const replayMessages = applyTurnSnapshotsToMessages(
+            fallbackResponse.thread,
+            result.messages,
+            turnSnapshotsRef.current,
+          );
+          setAppServerThread(fallbackResponse.thread);
+          setMessages(replayMessages);
+          setLatestHistoryTurn(latestHistoryTurnFromPage(
+            fallbackResponse.thread.turns,
+            "asc",
+            "app-server.thread/read",
+          ));
+          setHasMore(false);
+          setTurnsNextCursor(null);
+          setActiveWriterReplayOnly(true);
+          setPaginationNotice({
+            message: '此会话正在另一个 app-server 中运行',
+            description: '已加载完整历史；连接到原 app-server 后才能继续提交。',
+          });
+          return;
+        }
         if (cancelled) return;
         // Goal state is not guaranteed to be replayed as a notification when
         // reopening a persisted thread. Hydrate both route and resumed ids so
@@ -364,7 +396,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         }
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load messages');
+        const message = err instanceof Error ? err.message : 'Failed to load messages';
+        setError(message);
       } finally {
         if (!cancelled) {
           setSessionInfoLoaded(true);
@@ -553,8 +586,10 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         initialPermissionProfile={sessionPermissionProfile}
         initialMode={sessionMode}
         initialHasSummary={sessionHasSummary}
-        readOnly={!isAppServerThread && sessionReadOnly}
-        readOnlyReason="这是只读历史会话，当前版本不能继续发送。"
+        readOnly={activeWriterReplayOnly || (!isAppServerThread && sessionReadOnly)}
+        readOnlyReason={activeWriterReplayOnly
+          ? "此会话由另一个 app-server 持有；当前仅显示历史，不能提交。"
+          : "这是只读历史会话，当前版本不能继续发送。"}
         messageApiBase={messageApiBase}
         workingDirectory={sessionWorkingDirectory}
         projectName={sessionProjectName}

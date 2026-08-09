@@ -706,6 +706,7 @@ export const MessageInput = memo(function MessageInput({
   const [reviewBranch, setReviewBranch] = useState('main');
   const [rateLimits, setRateLimits] = useState<GetAccountRateLimitsResponse | null>(null);
   const [pendingHooks, setPendingHooks] = useState<HookMetadata[]>([]);
+  const [installedPlugins, setInstalledPlugins] = useState<Array<{ name: string; label: string; description: string; uri: string; iconUrl: string | null }>>([]);
   const [trustingHooks, setTrustingHooks] = useState(false);
   const memoriesConfig = config?.data.config.memories as Record<string, unknown> | undefined;
   const [useMemories, setUseMemories] = useState(() => memoriesConfig?.use_memories !== false);
@@ -735,6 +736,30 @@ export const MessageInput = memo(function MessageInput({
   useEffect(() => {
     void refreshPendingHooks();
   }, [refreshPendingHooks, config?.data]);
+
+  useEffect(() => {
+    if (appServerConnection !== 'connected') {
+      setInstalledPlugins([]);
+      return;
+    }
+    let cancelled = false;
+    void appServer.listInstalledPlugins(workingDirectory ? { cwds: [workingDirectory] } : {})
+      .then((response) => {
+        if (cancelled) return;
+        const plugins = response.marketplaces.flatMap((marketplace) => marketplace.plugins
+          .filter((plugin) => plugin.installed && plugin.enabled)
+          .map((plugin) => ({
+            name: plugin.name,
+            label: plugin.interface?.displayName || plugin.name,
+            description: plugin.interface?.shortDescription || '',
+            uri: `plugin://${plugin.name}@${marketplace.name}/`,
+            iconUrl: plugin.interface?.composerIconUrl || plugin.interface?.logoUrl || null,
+          })));
+        setInstalledPlugins(plugins);
+      })
+      .catch(() => { if (!cancelled) setInstalledPlugins([]); });
+    return () => { cancelled = true; };
+  }, [appServer, appServerConnection, workingDirectory, config?.data]);
 
   const trustAllPendingHooks = useCallback(async () => {
     if (pendingHooks.length === 0) return;
@@ -896,7 +921,7 @@ export const MessageInput = memo(function MessageInput({
   }, [modelName, modelOptions, currentProviderIdValue, onModelChange, onProviderModelChange]);
 
   const { badges, addBadge, removeBadge, clearBadges, hasBadge } = useCommandBadge(textareaRef);
-  const addBadgeWithOrder = useCallback((badge: { command: string; label: string; description: string; kind: 'agent_skill' | 'slash_command' | 'sdk_command' | 'codepilot_command'; installedSource?: 'agents' | 'claude'; skillPath?: string }) => {
+  const addBadgeWithOrder = useCallback((badge: { command: string; label: string; description: string; kind: 'agent_skill' | 'plugin' | 'slash_command' | 'sdk_command' | 'codepilot_command'; installedSource?: 'agents' | 'claude'; skillPath?: string; pluginUri?: string; pluginIconUrl?: string | null }) => {
     ensureBadgeOrder(badge.command);
     addBadge(badge);
   }, [addBadge, ensureBadgeOrder]);
@@ -1930,6 +1955,27 @@ export const MessageInput = memo(function MessageInput({
                       disabled={modeChangeDisabled || !onModeChange}
                       onSelect={activatePlanPrompt}
                     />
+                    {installedPlugins.length > 0 && (
+                      <div className="mt-2 border-t border-border/50 pt-2">
+                        <div className="px-2.5 pb-1 text-xs font-semibold text-foreground">插件</div>
+                        {installedPlugins.map((plugin) => (
+                          <ComposerPlusMenuItem
+                            key={plugin.uri}
+                            icon={plugin.iconUrl
+                              ? // eslint-disable-next-line @next/next/no-img-element
+                                <img src={plugin.iconUrl} alt="" className="size-5 rounded object-contain" />
+                              : <CodexWebIcon name="plugin" size={20} />}
+                            label={plugin.label}
+                            description={plugin.description}
+                            onSelect={(event) => {
+                              event.preventDefault();
+                              addBadgeWithOrder({ command: plugin.name, label: plugin.label, description: plugin.description, kind: 'plugin', pluginUri: plugin.uri, pluginIconUrl: plugin.iconUrl });
+                              setTimeout(() => textareaRef.current?.focus(), 0);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </PromptInputActionMenuContent>
                 </PromptInputActionMenu>
 

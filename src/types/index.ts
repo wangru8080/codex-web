@@ -140,7 +140,7 @@ export interface FilePreview {
 // Skill / Command Types
 // ==========================================
 
-export type SkillKind = 'agent_skill' | 'slash_command' | 'sdk_command' | 'codepilot_command';
+export type SkillKind = 'agent_skill' | 'plugin' | 'slash_command' | 'sdk_command' | 'codepilot_command';
 
 // ==========================================
 // Popover / Command Input Types
@@ -178,6 +178,8 @@ export interface PopoverItem {
    */
   iconName?: CodexWebIconName;
   nodeType?: MentionNodeType;
+  pluginUri?: string;
+  pluginIconUrl?: string | null;
 }
 
 /** Which popover is currently active in the command input. */
@@ -191,6 +193,8 @@ export interface CommandBadge {
   kind: SkillKind;
   installedSource?: 'agents' | 'claude';
   skillPath?: string;
+  pluginUri?: string;
+  pluginIconUrl?: string | null;
 }
 
 export interface SkillInputReference {

@@ -181,12 +181,28 @@ export function resolveItemSelection(
         kind: item.kind || 'slash_command',
         installedSource: item.installedSource,
         skillPath: item.skillPath,
+        pluginUri: item.pluginUri,
+        pluginIconUrl: item.pluginIconUrl,
       },
       newInputValue: before + after,
     };
   }
 
   const { before, after } = splitAroundTrigger(inputValue, triggerPos, popoverFilter);
+  if (item.kind === 'plugin') {
+    return {
+      action: 'set_badge',
+      badge: {
+        command: item.value,
+        label: item.label,
+        description: item.description || '',
+        kind: 'plugin',
+        pluginUri: item.pluginUri,
+        pluginIconUrl: item.pluginIconUrl,
+      },
+      newInputValue: joinAroundRemovedTrigger(before, after),
+    };
+  }
   if (popoverMode === 'file' && item.nodeType !== 'directory') {
     return {
       action: 'select_file_reference',
@@ -236,9 +252,14 @@ export function dispatchBadge(
 
   const badge = badges[0];
   const baseLabel = `/${badge.label}`;
-  const displayLabel = userContent ? `${baseLabel}\n${userContent}` : baseLabel;
+  const pluginLabel = badge.kind === 'plugin' ? `@${badge.label}` : baseLabel;
+  const displayLabel = userContent ? `${pluginLabel}\n${userContent}` : pluginLabel;
 
   switch (badge.kind) {
+    case 'plugin': {
+      const marker = badge.pluginUri ? `[@${badge.label}](${badge.pluginUri})` : `@${badge.label}`;
+      return { prompt: userContent ? `${marker} ${userContent}` : marker, displayLabel };
+    }
     case 'agent_skill': {
       const marker = buildSkillReferenceMarker(badge);
       const agentPrompt = userContent ? `${marker} ${userContent}` : marker;

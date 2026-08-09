@@ -47,6 +47,7 @@ export function SlashCommandPopover({
   const builtInItems = filteredItems.filter(item => item.builtIn);
   const slashCommandItems = filteredItems.filter(item => !item.builtIn && item.kind !== 'agent_skill');
   const agentSkillItems = filteredItems.filter(item => !item.builtIn && item.kind === 'agent_skill');
+  const pluginItems = filteredItems.filter(item => item.kind === 'plugin');
   let globalIdx = 0;
 
   const renderItem = (item: PopoverItem, idx: number) => (
@@ -57,10 +58,14 @@ export function SlashCommandPopover({
       onClick={() => onInsertItem(item)}
       onMouseEnter={() => onSetSelectedIndex(idx)}
     >
-      {popoverMode === 'file' ? (
+      {popoverMode === 'file' && item.kind !== 'plugin' ? (
         item.nodeType === 'directory'
           ? <Folder size={16} className="shrink-0 text-muted-foreground" />
           : <File size={16} className="shrink-0 text-muted-foreground" />
+      ) : item.kind === 'plugin' && item.pluginIconUrl ? (
+        // app-server 提供的远程图标只在列表展示，不写入本地凭据或状态。
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={item.pluginIconUrl} alt="" className="size-5 shrink-0 rounded object-contain" />
       ) : item.builtIn && item.iconName ? (
         <CodexWebIcon name={item.iconName} size="md" className="shrink-0 text-muted-foreground" aria-hidden />
       ) : item.kind === 'agent_skill' ? (
@@ -99,13 +104,34 @@ export function SlashCommandPopover({
       <CommandList className="w-full">
         <CommandListItems className="max-h-72">
           {popoverMode === 'file' ? (
-            <CommandListGroup label="文件">
-              {filteredItems.length > 0
-                ? filteredItems.map((item, i) => renderItem(item, i))
-                : <div className="px-3 py-3 text-sm text-muted-foreground">输入字符以搜索当前项目文件</div>}
-            </CommandListGroup>
+            <>
+              {pluginItems.length > 0 && (
+                <CommandListGroup label="插件">
+                  {pluginItems.map((item) => {
+                    const idx = globalIdx++;
+                    return renderItem(item, idx);
+                  })}
+                </CommandListGroup>
+              )}
+              <CommandListGroup label="文件和聊天">
+                {filteredItems.filter((item) => item.kind !== 'plugin').length > 0
+                  ? filteredItems.filter((item) => item.kind !== 'plugin').map((item) => {
+                    const idx = globalIdx++;
+                    return renderItem(item, idx);
+                  })
+                  : <div className="px-3 py-3 text-sm text-muted-foreground">输入字符以搜索当前项目文件</div>}
+              </CommandListGroup>
+            </>
           ) : (
             <>
+              {pluginItems.length > 0 && (
+                <CommandListGroup label="插件">
+                  {pluginItems.map((item) => {
+                    const idx = globalIdx++;
+                    return renderItem(item, idx);
+                  })}
+                </CommandListGroup>
+              )}
               {builtInItems.length > 0 && (
                 <CommandListGroup label="命令">
                   {builtInItems.map((item) => {

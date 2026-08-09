@@ -33,7 +33,7 @@ export function useSlashCommands(opts: {
   setTriggerPos: (pos: number | null) => void;
   closePopover: () => void;
   onCommand?: (command: string) => void;
-  addBadge: (badge: { command: string; label: string; description: string; kind: SkillKind; installedSource?: "agents" | "claude"; skillPath?: string }) => void;
+  addBadge: (badge: { command: string; label: string; description: string; kind: SkillKind; installedSource?: "agents" | "claude"; skillPath?: string; pluginUri?: string; pluginIconUrl?: string | null }) => void;
   onMentionInserted?: (mention: { path: string; nodeType: 'file' | 'directory'; display: string }) => void;
   onFileReferenceSelected?: (reference: { path: string; display: string }) => void;
   /** When true, block immediate commands and badge selection from popover */
@@ -59,7 +59,7 @@ export function useSlashCommands(opts: {
     onFileReferenceSelected,
     isStreaming,
 } = opts;
-  const { listSkills, fuzzyFileSearch } = useAppServerActions();
+  const { listSkills, fuzzyFileSearch, listInstalledPlugins } = useAppServerActions();
   const searchSequenceRef = useRef(0);
 
   // Enrich built-in commands with icons (presentation layer enrichment)
@@ -89,6 +89,25 @@ export function useSlashCommands(opts: {
       return [];
     }
   }, [workingDirectory, fuzzyFileSearch]);
+
+  const fetchPlugins = useCallback(async () => {
+    try {
+      const response = await listInstalledPlugins(workingDirectory ? { cwds: [workingDirectory] } : {});
+      return response.marketplaces.flatMap((marketplace) => marketplace.plugins.map((plugin) => ({ marketplace, plugin })))
+        .filter(({ plugin }) => plugin.installed && plugin.enabled)
+        .map(({ marketplace, plugin }) => ({
+          label: plugin.interface?.displayName || plugin.name,
+          value: plugin.name,
+          description: plugin.interface?.shortDescription || undefined,
+          kind: 'plugin' as const,
+          source: 'plugin' as const,
+          pluginUri: `plugin://${plugin.name}@${marketplace.name}/`,
+          pluginIconUrl: plugin.interface?.composerIconUrl || plugin.interface?.logoUrl || null,
+        }));
+    } catch {
+      return [];
+    }
+  }, [listInstalledPlugins, workingDirectory]);
 
   // Fetch enabled skills for the $ picker from app-server.
   const fetchSkills = useCallback(async () => {
@@ -192,8 +211,10 @@ export function useSlashCommands(opts: {
 
       if (trigger.mode === 'file') {
         const sequence = ++searchSequenceRef.current;
-        const items = await fetchFiles(trigger.filter);
-        if (sequence === searchSequenceRef.current) setPopoverItems(items);
+        const [files, plugins] = await Promise.all([fetchFiles(trigger.filter), fetchPlugins()]);
+        const filterLower = trigger.filter.toLowerCase();
+        const matchingPlugins = plugins.filter((item) => item.label.toLowerCase().includes(filterLower));
+        if (sequence === searchSequenceRef.current) setPopoverItems([...files, ...matchingPlugins]);
       } else if (trigger.mode === 'skill') {
         const sequence = ++searchSequenceRef.current;
         const items = await fetchSkills();
@@ -210,7 +231,7 @@ export function useSlashCommands(opts: {
       searchSequenceRef.current += 1;
       closePopover();
     }
-  }, [fetchFiles, fetchSkills, enrichedBuiltIns, popoverMode, closePopover, textareaRef, setInputValue, setPopoverMode, setPopoverFilter, setTriggerPos, setSelectedIndex, setPopoverItems]);
+  }, [fetchFiles, fetchPlugins, fetchSkills, enrichedBuiltIns, popoverMode, closePopover, textareaRef, setInputValue, setPopoverMode, setPopoverFilter, setTriggerPos, setSelectedIndex, setPopoverItems]);
 
   // Insert `/` into textarea to trigger slash command popover. When the
   // preceding char isn't whitespace, auto-prepend a space so the trigger regex

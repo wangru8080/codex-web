@@ -1681,7 +1681,7 @@ const zh: Record<TranslationKey, string> = {
   'messageInput.placeholderWithBadges': '补充细节（可选），按 Enter 发送…',
   'messageInput.placeholderCli': '描述你想用这个工具完成什么…',
   'messageInput.placeholderDefault': '让 CodexWeb 做什么…',
-  'messageInput.actionMenuTooltip': '添加上下文或命令',
+  'messageInput.actionMenuTooltip': '添加文件等内容 @',
   'messageInput.actionAddContext': '添加文件上下文',
   'messageInput.actionInsertCommand': '插入命令',
   'messageInput.actionCallCli': '调用 CLI 工具',

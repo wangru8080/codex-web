@@ -1,5 +1,6 @@
 import type { AppServerPeer } from "./app-server-peer";
-import { startCodexAppServer, type CodexProcess, type CodexProcessOptions } from "./codex-process";
+import { startAppServerRuntime, type AppServerRuntime } from "./app-server-runtime";
+import type { CodexProcessOptions } from "./codex-process";
 import { BridgeServerRequestRouter } from "./bridge-message-routing";
 import { JsonRpcClient } from "./json-rpc-client";
 import type {
@@ -17,7 +18,7 @@ type ClientRequestRoute = {
 type InitializeWaiter = ClientRequestRoute;
 
 export class PersistentAppServer {
-  private process: CodexProcess | null = null;
+  private runtime: AppServerRuntime | null = null;
   private rpc: JsonRpcClient | null = null;
   private readonly sockets = new Set<AppServerPeer>();
   private readonly requestRoutes = new Map<string, ClientRequestRoute>();
@@ -40,7 +41,7 @@ export class PersistentAppServer {
   }
 
   get pid(): number | undefined {
-    return this.process?.child.pid;
+    return this.runtime?.pid;
   }
 
   attach(socket: AppServerPeer): void {
@@ -123,11 +124,11 @@ export class PersistentAppServer {
       this.restartTimer = null;
     }
     const rpc = this.rpc;
-    const process = this.process;
+    const runtime = this.runtime;
     this.rpc = null;
-    this.process = null;
+    this.runtime = null;
     rpc?.close(new Error("Web bridge 已关闭"));
-    process?.stop();
+    runtime?.stop();
   }
 
   private startRuntime(): void {
@@ -135,13 +136,9 @@ export class PersistentAppServer {
       return;
     }
 
-    const process = startCodexAppServer(this.options);
-    const rpc = new JsonRpcClient({
-      input: process.child.stdout,
-      output: process.child.stdin,
-      closeEmitter: process.child,
-    });
-    this.process = process;
+    const runtime = startAppServerRuntime(this.options);
+    const rpc = runtime.rpc;
+    this.runtime = runtime;
     this.rpc = rpc;
     rpc.on("message", (message) => {
       if (this.rpc === rpc) this.handleAppServerMessage(message, rpc);
@@ -149,20 +146,20 @@ export class PersistentAppServer {
     rpc.on("error", (error) => {
       if (this.rpc === rpc) this.broadcastBridgeError(error.message);
     });
-    rpc.on("close", (error) => this.handleRuntimeClose(rpc, process, error));
+    rpc.on("close", (error) => this.handleRuntimeClose(rpc, runtime, error));
   }
 
-  private handleRuntimeClose(rpc: JsonRpcClient, process: CodexProcess, error?: Error): void {
+  private handleRuntimeClose(rpc: JsonRpcClient, runtime: AppServerRuntime, error?: Error): void {
     if (this.closed || this.rpc !== rpc) {
       return;
     }
 
     this.rpc = null;
-    this.process = null;
-    process.stop();
+    this.runtime = null;
+    runtime.stop();
     this.resetProtocolState();
 
-    const diagnostics = process.diagnostics.slice(-5);
+    const diagnostics = runtime.diagnostics.slice(-5);
     const detail = diagnostics.length > 0 ? `\n${diagnostics.join("\n")}` : "";
     this.broadcastBridgeError(`${error?.message ?? "app-server 已关闭"}${detail}`);
     for (const socket of this.sockets) {

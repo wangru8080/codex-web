@@ -388,8 +388,13 @@ export function CommandBadge({
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
-  const visibleLabel = badge.kind === 'agent_skill' ? badge.label : badge.command;
-  const icon = badge.kind === 'agent_skill'
+  const visibleLabel = badge.kind === 'agent_skill' || badge.kind === 'plugin' ? badge.label : badge.command;
+  const icon = badge.kind === 'plugin' && badge.pluginIconUrl
+    ? // eslint-disable-next-line @next/next/no-img-element
+      <img src={badge.pluginIconUrl} alt="" className="size-3.5 rounded object-contain" />
+    : badge.kind === 'plugin'
+    ? <CodexWebIcon name="plugin" size={12} aria-hidden />
+    : badge.kind === 'agent_skill'
     ? <CodexWebIcon name="skill" size={12} aria-hidden />
     : badge.kind === 'codepilot_command'
       ? <CodexWebIcon name="code" size={12} aria-hidden />
