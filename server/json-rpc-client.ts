@@ -78,6 +78,10 @@ export class JsonRpcClient extends EventEmitter<JsonRpcClientEvents> {
     this.pending.clear();
   }
 
+  isClosed(): boolean {
+    return this.closed;
+  }
+
   close(error?: Error): void {
     if (this.closed) {
       return;

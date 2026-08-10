@@ -1,16 +1,70 @@
 import { createServer } from "node:http";
-import { mkdtemp } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 
 import {
+  buildControlSocketProcessOptions,
   resolveAppServerControlSocket,
   startAppServerRuntime,
 } from "../app-server-runtime";
+import { PersistentAppServer } from "../persistent-app-server";
 
 describe("app-server runtime", () => {
+  it("control socket 失效时启动同一用户的共享 listener，不回退 stdio", async () => {
+    const codexHome = await mkdtemp(join(tmpdir(), "codex-web-stale-control-socket-"));
+    const controlDirectory = join(codexHome, "app-server-control");
+    await mkdir(controlDirectory);
+    const socketPath = join(controlDirectory, "app-server-control.sock");
+    const staleServer = spawn(process.execPath, [
+      "--input-type=module",
+      "-e",
+      "import { createServer } from 'node:net'; createServer().listen(process.argv[1]);",
+      socketPath,
+    ], { stdio: "ignore" });
+    await waitFor(() => existsSync(socketPath));
+    staleServer.kill("SIGKILL");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const marker = join(codexHome, "started.txt");
+    const fixture = "import { appendFileSync } from 'node:fs'; appendFileSync(process.env.MARKER, process.argv.includes('--listen') ? 'listen\\n' : 'stdio\\n'); setInterval(() => {}, 1000);";
+    const server = new PersistentAppServer({
+      command: process.execPath,
+      args: ["--input-type=module", "-e", fixture, "--", "--stdio"],
+      codexHome,
+      env: { MARKER: marker },
+      inheritEnv: false,
+    });
+    try {
+      await waitFor(() => existsSync(marker));
+      const started = await readFile(marker, "utf8");
+      expect(started).toBe("listen\n");
+      expect(server.pid).toBeUndefined();
+    } finally {
+      server.close();
+    }
+  });
+
+  it("将 stdio 参数转换为共享 listener 参数", () => {
+    expect(buildControlSocketProcessOptions({
+      command: "/usr/bin/setpriv",
+      args: ["--reuid=1004", "--", "codex", "app-server", "--stdio"],
+    })).toMatchObject({
+      args: ["--reuid=1004", "--", "codex", "app-server", "--listen", "unix://"],
+    });
+    expect(buildControlSocketProcessOptions({ command: "codex", args: ["app-server"] })).toBeNull();
+  });
+
+  it("broker 显式优先共享 control socket，即使 socket 尚未创建", async () => {
+    const codexHome = await mkdtemp(join(tmpdir(), "codex-web-preferred-control-socket-"));
+    const runtime = startAppServerRuntime({ codexHome, preferControlSocket: true });
+    expect(runtime.kind).toBe("control-socket");
+    runtime.stop();
+  });
+
   it("仅在当前 CODEX_HOME 的 control socket 可访问时选择共享运行时", () => {
     const expected = "/chosen/app-server-control/app-server-control.sock";
     expect(resolveAppServerControlSocket(

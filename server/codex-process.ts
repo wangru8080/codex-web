@@ -7,6 +7,7 @@ export type CodexProcessOptions = {
   cwd?: string;
   env?: Record<string, string | undefined>;
   inheritEnv?: boolean;
+  preferControlSocket?: boolean;
 };
 
 export type CodexProcess = {

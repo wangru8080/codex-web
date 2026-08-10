@@ -15,8 +15,20 @@ export type AppServerRuntime = {
   stop: () => void;
 };
 
+export function buildControlSocketProcessOptions(options: CodexProcessOptions): CodexProcessOptions | null {
+  const args = options.args ?? ["app-server", "--stdio"];
+  const stdioIndex = args.lastIndexOf("--stdio");
+  if (stdioIndex < 0) return null;
+  return {
+    ...options,
+    args: [...args.slice(0, stdioIndex), "--listen", "unix://", ...args.slice(stdioIndex + 1)],
+  };
+}
+
 export function startAppServerRuntime(options: CodexProcessOptions = {}): AppServerRuntime {
-  const socketPath = resolveAppServerControlSocket(options);
+  const socketPath = resolveAppServerControlSocket(options) ?? (
+    options.preferControlSocket ? controlSocketPath(options) : null
+  );
   if (socketPath) return startControlSocketRuntime(socketPath);
 
   const process = startCodexAppServer(options);
@@ -39,10 +51,14 @@ export function resolveAppServerControlSocket(
   canAccess: (path: string) => boolean = canAccessSocket,
 ): string | null {
   if (platform === "win32") return null;
-  const codexHome = effectiveCodexHome(options);
-  if (!codexHome) return null;
-  const socketPath = join(codexHome, "app-server-control", "app-server-control.sock");
+  const socketPath = controlSocketPath(options);
+  if (!socketPath) return null;
   return canAccess(socketPath) ? socketPath : null;
+}
+
+function controlSocketPath(options: CodexProcessOptions): string | null {
+  const codexHome = effectiveCodexHome(options);
+  return codexHome ? join(codexHome, "app-server-control", "app-server-control.sock") : null;
 }
 
 function effectiveCodexHome(options: CodexProcessOptions): string | null {
@@ -78,7 +94,10 @@ function startControlSocketRuntime(socketPath: string): AppServerRuntime {
   const rpc = new JsonRpcClient({ input, output });
 
   socket.on("message", (data) => input.write(`${data.toString()}\n`));
-  socket.on("error", (error) => pushDiagnostic(diagnostics, error.message));
+  socket.on("error", (error) => {
+    pushDiagnostic(diagnostics, error.message);
+    input.end();
+  });
   socket.on("close", () => input.end());
 
   return {

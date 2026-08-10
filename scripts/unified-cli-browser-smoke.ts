@@ -411,6 +411,7 @@ async function login(
 ): Promise<void> {
   await page.navigate(`${baseUrl}/login`);
   await page.waitFor("Boolean(document.querySelector('[data-testid=web-login-form]'))", 30_000);
+  await page.waitFor("!document.querySelector('[data-testid=web-login-form] button[type=submit]')?.disabled", 30_000);
   const status = await page.evaluate<number>(`fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -467,6 +468,7 @@ async function logout(page: CdpClient): Promise<void> {
     location.href = '/login';
   })()`);
   await page.waitFor("location.pathname === '/login'", 30_000);
+  await page.waitFor("!document.querySelector('[data-testid=web-login-form] button[type=submit]')?.disabled", 30_000);
 }
 
 async function readRuntimeIdentity(codexHome: string): Promise<RuntimeIdentity> {

@@ -58,6 +58,29 @@ describe("runtime broker server", () => {
     expect(created).not.toHaveBeenCalled();
   });
 
+  it("runtime 在 attach 阶段关闭连接时 broker 继续服务", async () => {
+    const passwordHash = await hashBrokerPassword("correct-password");
+    const { socketPath, config } = await fixture(passwordHash);
+    const server = await createRuntimeBrokerServer({
+      socketPath,
+      config,
+      createRuntime: () => {
+        const runtime = fakeRuntime();
+        runtime.attach.mockImplementation((peer: AppServerPeer) => {
+          peer.send(JSON.stringify({ method: "bridge/error", params: { message: "app-server 正在恢复" } }));
+          peer.close(1013, "app-server 正在恢复");
+        });
+        return runtime;
+      },
+    });
+    servers.push(server);
+    const client = new RuntimeBrokerClient(socketPath);
+    const login = await client.login("codex@example.com", "correct-password");
+
+    await expect(client.attachRuntime(login.token)).rejects.toThrow("runtime broker 连接已关闭");
+    await expect(client.verifySession(login.token)).resolves.toMatchObject({ id: "codex" });
+  });
+
   it("伪造不同来源不能绕过账号登录限速", async () => {
     const passwordHash = await hashBrokerPassword("correct-password");
     const { socketPath, config } = await fixture(passwordHash);

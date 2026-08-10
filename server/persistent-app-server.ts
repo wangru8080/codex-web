@@ -1,6 +1,6 @@
 import type { AppServerPeer } from "./app-server-peer";
-import { startAppServerRuntime, type AppServerRuntime } from "./app-server-runtime";
-import type { CodexProcessOptions } from "./codex-process";
+import { buildControlSocketProcessOptions, startAppServerRuntime, type AppServerRuntime } from "./app-server-runtime";
+import { startCodexAppServer, type CodexProcess, type CodexProcessOptions } from "./codex-process";
 import { BridgeServerRequestRouter } from "./bridge-message-routing";
 import { JsonRpcClient } from "./json-rpc-client";
 import type {
@@ -32,6 +32,7 @@ export class PersistentAppServer {
   private closed = false;
   private restartAttempt = 0;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private controlProcess: CodexProcess | null = null;
 
   constructor(
     private readonly options: CodexProcessOptions = {},
@@ -129,6 +130,8 @@ export class PersistentAppServer {
     this.runtime = null;
     rpc?.close(new Error("Web bridge 已关闭"));
     runtime?.stop();
+    this.controlProcess?.stop();
+    this.controlProcess = null;
   }
 
   private startRuntime(): void {
@@ -147,6 +150,7 @@ export class PersistentAppServer {
       if (this.rpc === rpc) this.broadcastBridgeError(error.message);
     });
     rpc.on("close", (error) => this.handleRuntimeClose(rpc, runtime, error));
+    if (rpc.isClosed()) this.handleRuntimeClose(rpc, runtime);
   }
 
   private handleRuntimeClose(rpc: JsonRpcClient, runtime: AppServerRuntime, error?: Error): void {
@@ -157,6 +161,7 @@ export class PersistentAppServer {
     this.rpc = null;
     this.runtime = null;
     runtime.stop();
+    if (runtime.kind === "control-socket") this.ensureControlSocketProcess();
     this.resetProtocolState();
 
     const diagnostics = runtime.diagnostics.slice(-5);
@@ -168,6 +173,17 @@ export class PersistentAppServer {
       }
     }
     this.scheduleRestart();
+  }
+
+  private ensureControlSocketProcess(): void {
+    if (this.controlProcess) return;
+    const options = buildControlSocketProcessOptions(this.options);
+    if (!options) return;
+    const process = startCodexAppServer(options);
+    this.controlProcess = process;
+    process.child.once("exit", () => {
+      if (this.controlProcess?.child === process.child) this.controlProcess = null;
+    });
   }
 
   private scheduleRestart(): void {

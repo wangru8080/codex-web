@@ -115,6 +115,7 @@ function handleSocket(
 ): void {
   let attached: { userId: string; peer: BufferedSocketPeer } | null = null;
   let handledRequest = false;
+  socket.once("error", () => socket.destroy());
   const cleanup = listenJsonLines(socket, (value) => {
     if (attached) {
       registry.handleClientMessage(attached.userId, attached.peer, value as JsonRpcMessage);
@@ -141,6 +142,7 @@ function handleSocket(
         throw error;
       }
       attached = { userId: user.id, peer };
+      if (!peer.isOpen()) return;
       writeJsonLine(socket, {
         ok: true,
         type: "attached",

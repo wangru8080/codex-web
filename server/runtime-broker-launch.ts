@@ -141,6 +141,7 @@ export function buildBrokerRuntimeProcessOptions(
     codexHome: user.codexHome,
     env,
     inheritEnv: false,
+    preferControlSocket: true,
   } satisfies CodexProcessOptions;
 
   if (user.uid === 0) {

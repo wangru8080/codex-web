@@ -27,13 +27,28 @@ export function LoginForm() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/config", { cache: "no-store" })
-      .then(async (response) => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const loadConfig = async () => {
+      try {
+        const response = await fetch("/api/auth/config", { cache: "no-store" });
         if (!response.ok) throw new Error(t("auth.configFailed"));
-        return response.json() as Promise<PublicAuthConfig>;
-      })
-      .then(setConfig)
-      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : t("auth.configFailed")));
+        const nextConfig = await response.json() as PublicAuthConfig;
+        if (cancelled) return;
+        setConfig(nextConfig);
+        setError("");
+      } catch (loadError) {
+        if (cancelled) return;
+        setConfig(undefined);
+        setError(loadError instanceof Error ? loadError.message : t("auth.configFailed"));
+        retryTimer = setTimeout(() => void loadConfig(), 1_000);
+      }
+    };
+    void loadConfig();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [t]);
 
   const clearTurnstile = useCallback(() => {
