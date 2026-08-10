@@ -52,6 +52,7 @@ import { ComposerFileChanges } from './ComposerFileChanges';
 import { ComposerTurnPlan } from './ComposerTurnPlan';
 import { useMentionTokenEstimate } from '@/hooks/useMentionTokenEstimate';
 import { dataUrlToFileAttachment } from '@/lib/file-utils';
+import { getPluginIconUrl } from '@/lib/media-resource-cache';
 import { usePopoverState } from '@/hooks/usePopoverState';
 import { useProviderModels, isComposerProviderLoading } from '@/hooks/useProviderModels';
 import { resolveComposerModelAutoCorrect } from '@/lib/model-option-match';
@@ -744,18 +745,18 @@ export const MessageInput = memo(function MessageInput({
     }
     let cancelled = false;
     void appServer.listInstalledPlugins(workingDirectory ? { cwds: [workingDirectory] } : {})
-      .then((response) => {
+      .then(async (response) => {
         if (cancelled) return;
-        const plugins = response.marketplaces.flatMap((marketplace) => marketplace.plugins
+        const plugins = await Promise.all(response.marketplaces.flatMap((marketplace) => marketplace.plugins
           .filter((plugin) => plugin.installed && plugin.enabled)
-          .map((plugin) => ({
+          .map(async (plugin) => ({
             name: plugin.name,
             label: plugin.interface?.displayName || plugin.name,
             description: plugin.interface?.shortDescription || '',
             uri: `plugin://${plugin.name}@${marketplace.name}/`,
-            iconUrl: plugin.interface?.composerIconUrl || plugin.interface?.logoUrl || null,
-          })));
-        setInstalledPlugins(plugins);
+            iconUrl: await getPluginIconUrl(plugin.interface, appServer.readFile),
+          }))));
+        if (!cancelled) setInstalledPlugins(plugins);
       })
       .catch(() => { if (!cancelled) setInstalledPlugins([]); });
     return () => { cancelled = true; };

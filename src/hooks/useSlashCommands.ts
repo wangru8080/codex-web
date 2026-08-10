@@ -4,6 +4,7 @@ import { detectPopoverTrigger, resolveItemSelection } from '@/lib/message-input-
 import { BUILT_IN_COMMANDS, COMMAND_PROMPTS } from '@/lib/constants/commands';
 import { COMMAND_ICON_NAMES } from '@/lib/constants/command-icons';
 import { useAppServerActions } from '@/codex-web/AppServerProvider';
+import { getPluginIconUrl } from '@/lib/media-resource-cache';
 
 // Re-export for backward compatibility
 export { BUILT_IN_COMMANDS, COMMAND_PROMPTS };
@@ -59,7 +60,7 @@ export function useSlashCommands(opts: {
     onFileReferenceSelected,
     isStreaming,
 } = opts;
-  const { listSkills, fuzzyFileSearch, listInstalledPlugins } = useAppServerActions();
+  const { listSkills, fuzzyFileSearch, listInstalledPlugins, readFile } = useAppServerActions();
   const searchSequenceRef = useRef(0);
 
   // Enrich built-in commands with icons (presentation layer enrichment)
@@ -93,21 +94,21 @@ export function useSlashCommands(opts: {
   const fetchPlugins = useCallback(async () => {
     try {
       const response = await listInstalledPlugins(workingDirectory ? { cwds: [workingDirectory] } : {});
-      return response.marketplaces.flatMap((marketplace) => marketplace.plugins.map((plugin) => ({ marketplace, plugin })))
+      return Promise.all(response.marketplaces.flatMap((marketplace) => marketplace.plugins.map((plugin) => ({ marketplace, plugin })))
         .filter(({ plugin }) => plugin.installed && plugin.enabled)
-        .map(({ marketplace, plugin }) => ({
+        .map(async ({ marketplace, plugin }) => ({
           label: plugin.interface?.displayName || plugin.name,
           value: plugin.name,
           description: plugin.interface?.shortDescription || undefined,
           kind: 'plugin' as const,
           source: 'plugin' as const,
           pluginUri: `plugin://${plugin.name}@${marketplace.name}/`,
-          pluginIconUrl: plugin.interface?.composerIconUrl || plugin.interface?.logoUrl || null,
-        }));
+          pluginIconUrl: await getPluginIconUrl(plugin.interface, readFile),
+        })));
     } catch {
       return [];
     }
-  }, [listInstalledPlugins, workingDirectory]);
+  }, [listInstalledPlugins, readFile, workingDirectory]);
 
   // Fetch enabled skills for the $ picker from app-server.
   const fetchSkills = useCallback(async () => {

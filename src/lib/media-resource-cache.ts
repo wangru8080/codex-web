@@ -1,4 +1,5 @@
 import type { FsReadFileResponse } from "@/codex/protocol/generated/v2/FsReadFileResponse";
+import type { PluginInterface } from "@/codex/protocol/generated/v2/PluginInterface";
 import { fileBytesFromResponse, mediaTypeForPath } from "@/codex-web/app-server-files";
 
 type ReadFile = (path: string) => Promise<FsReadFileResponse>;
@@ -27,6 +28,32 @@ export function getCachedMediaObjectUrl(path: string, readFile: ReadFile): Promi
 
   mediaUrlCache.set(path, pending);
   return pending;
+}
+
+type PluginIconSource = Pick<PluginInterface, "composerIcon" | "composerIconUrl" | "logo" | "logoUrl">;
+
+/** 将 app-server 返回的本地图标路径转换为浏览器可显示的 URL。 */
+export async function getPluginIconUrl(
+  pluginInterface: PluginIconSource | null | undefined,
+  readFile: ReadFile,
+): Promise<string | null> {
+  if (!pluginInterface) return null;
+
+  for (const [path, url] of [
+    [pluginInterface.composerIcon, pluginInterface.composerIconUrl],
+    [pluginInterface.logo, pluginInterface.logoUrl],
+  ] as const) {
+    if (path) {
+      try {
+        return await getCachedMediaObjectUrl(path, readFile);
+      } catch {
+        // 本地插件资源不可读时继续使用 app-server 提供的远程地址。
+      }
+    }
+    if (url) return url;
+  }
+
+  return null;
 }
 
 export function clearCachedMediaObjectUrl(path: string, readFile: ReadFile): void {
