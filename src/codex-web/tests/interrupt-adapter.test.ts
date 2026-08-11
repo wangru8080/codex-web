@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildTurnInterruptParams,
+  isNoActiveTurnInterruptError,
   readActiveTurnIdMismatch,
   requestTurnInterrupt,
   selectTurnInterruptParams,
@@ -81,7 +82,10 @@ describe("requestTurnInterrupt", () => {
       }
     };
 
-    await requestTurnInterrupt(request, { threadId: "thread-1", turnId: "turn-stale" });
+    await expect(requestTurnInterrupt(
+      request,
+      { threadId: "thread-1", turnId: "turn-stale" },
+    )).resolves.toBe("requested");
 
     expect(requests).toEqual([
       { threadId: "thread-1", turnId: "turn-stale" },
@@ -101,6 +105,12 @@ describe("requestTurnInterrupt", () => {
     expect(requestCount).toBe(1);
   });
 
+  it("服务端确认没有活动 Turn 时视为已完成停止", async () => {
+    await expect(requestTurnInterrupt(async () => {
+      throw new Error("no active turn to interrupt");
+    }, { threadId: "thread-1", turnId: "turn-1" })).resolves.toBe("alreadyStopped");
+  });
+
   it("服务端报告相同 turn id 时不重复请求", async () => {
     const error = new Error("expected active turn id turn-1 but found turn-1");
     let requestCount = 0;
@@ -111,6 +121,14 @@ describe("requestTurnInterrupt", () => {
     }, { threadId: "thread-1", turnId: "turn-1" })).rejects.toBe(error);
 
     expect(requestCount).toBe(1);
+  });
+});
+
+describe("isNoActiveTurnInterruptError", () => {
+  it("只识别官方无活动 Turn 错误", () => {
+    expect(isNoActiveTurnInterruptError(new Error("no active turn to interrupt"))).toBe(true);
+    expect(isNoActiveTurnInterruptError(new Error("prefix no active turn to interrupt"))).toBe(false);
+    expect(isNoActiveTurnInterruptError(new Error("request failed"))).toBe(false);
   });
 });
 

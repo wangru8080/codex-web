@@ -6,7 +6,45 @@ import {
   initialAppServerTurnState,
   mergeAcceptedTurnState,
   reduceAppServerTurnNotification,
+  hydrateTerminalTurn,
 } from "../turn-reducer";
+
+describe("hydrateTerminalTurn", () => {
+  it("从 thread/read 的真实终态恢复正文和 completed 状态", () => {
+    const current = createAcceptedTurnState("thread-1", "turn-1");
+    const hydrated = hydrateTerminalTurn(current, {
+      id: "turn-1",
+      status: "completed",
+      items: [{
+        type: "agentMessage",
+        id: "message-1",
+        text: "完整回复",
+        phase: "final_answer",
+        memoryCitation: null,
+      }],
+      startedAt: 100,
+      durationMs: 3000,
+      error: null,
+    });
+
+    expect(hydrated).toMatchObject({
+      status: "completed",
+      assistantText: "完整回复",
+      durationMs: 3000,
+    });
+  });
+
+  it("不会用 thread/read 的 inProgress Turn 伪造终态", () => {
+    expect(hydrateTerminalTurn(createAcceptedTurnState("thread-1", "turn-1"), {
+      id: "turn-1",
+      status: "inProgress",
+      items: [],
+      startedAt: 100,
+      durationMs: null,
+      error: null,
+    })).toBeNull();
+  });
+});
 
 describe("reduceAppServerTurnNotification", () => {
   it("跟踪 contextCompaction item 的开始和完成状态", () => {

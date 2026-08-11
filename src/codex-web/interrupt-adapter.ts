@@ -17,6 +17,7 @@ export type InterruptableTurnState = {
 } | null;
 
 type TurnInterruptRequester = (params: TurnInterruptParams) => Promise<unknown>;
+export type TurnInterruptResult = "requested" | "alreadyStopped";
 
 export function buildTurnInterruptParams({
   threadId,
@@ -50,16 +51,32 @@ export function selectTurnInterruptParams({
 export async function requestTurnInterrupt(
   request: TurnInterruptRequester,
   params: TurnInterruptParams,
-): Promise<void> {
+): Promise<TurnInterruptResult> {
   try {
     await request(params);
+    return "requested";
   } catch (error) {
+    if (isNoActiveTurnInterruptError(error)) {
+      return "alreadyStopped";
+    }
     const actualTurnId = readActiveTurnIdMismatch(error);
     if (!actualTurnId || actualTurnId === params.turnId) {
       throw error;
     }
-    await request({ ...params, turnId: actualTurnId });
+    try {
+      await request({ ...params, turnId: actualTurnId });
+      return "requested";
+    } catch (retryError) {
+      if (isNoActiveTurnInterruptError(retryError)) {
+        return "alreadyStopped";
+      }
+      throw retryError;
+    }
   }
+}
+
+export function isNoActiveTurnInterruptError(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error)) === "no active turn to interrupt";
 }
 
 export function readActiveTurnIdMismatch(error: unknown): string | null {

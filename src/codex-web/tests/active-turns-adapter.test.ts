@@ -5,6 +5,7 @@ import {
   failRunningTurnsOnTransportClose,
   rememberActiveTurnByThread,
   removeActiveTurnByThread,
+  removeActiveTurnByThreadIfMatches,
   removeStartingActiveTurnByThread,
   selectActiveTurnByThreadIds,
   selectOtherRunningActiveTurns,
@@ -55,6 +56,22 @@ describe("active-turns-adapter", () => {
 
     expect(next["thread-a"]).toBeUndefined();
     expect(next["thread-b"]?.data).toBe(turnB);
+  });
+
+  it("中断返回时只移除发起请求时的 Turn", () => {
+    const oldTurn = createAcceptedTurnState("thread-a", "turn-old");
+    const newTurn = createAcceptedTurnState("thread-a", "turn-new");
+
+    expect(removeActiveTurnByThreadIfMatches(
+      rememberActiveTurnByThread({}, oldTurn),
+      "thread-a",
+      "turn-old",
+    )["thread-a"]).toBeUndefined();
+    expect(removeActiveTurnByThreadIfMatches(
+      rememberActiveTurnByThread({}, newTurn),
+      "thread-a",
+      "turn-old",
+    )["thread-a"]?.data).toBe(newTurn);
   });
 
   it("列出当前 thread 之外的 running turn", () => {

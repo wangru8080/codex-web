@@ -15,6 +15,7 @@ export function shouldPresentAppServerTurnAsStreaming({
   localStreaming,
   finalizedTurnKey,
 }: LiveTurnPresentationArgs): boolean {
+  if (!turn) return false;
   const turnKey = appServerTurnPresentationKey(turn);
   if (turnKey && turnKey === finalizedTurnKey) return false;
   return localStreaming || turn?.status === "running";

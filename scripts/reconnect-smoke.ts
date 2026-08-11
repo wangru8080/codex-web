@@ -3,7 +3,10 @@ import WebSocket from "ws";
 
 import { createWebSocketBridge } from "../server/websocket-bridge";
 import { resolveTestCodexHome } from "../server/test-codex-home";
+import type { ThreadResumeResponse } from "../src/codex/protocol/generated/v2/ThreadResumeResponse";
 import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
+import { activeTurnFromResume, mergeResumedActiveTurn } from "../src/codex-web/resumed-turn-hydration";
+import { createAcceptedTurnState } from "../src/codex-web/turn-reducer";
 
 const codexHome = resolveTestCodexHome();
 process.env.CODEX_HOME = codexHome;
@@ -117,9 +120,63 @@ async function main(): Promise<void> {
       throw new Error("已完成 Turn 在再次 resume 后仍被标记为 inProgress");
     }
 
+    let streamedText = "";
+    const partialTextReceived = second.waitForNotification((notification) => {
+      const params = notification.params as { threadId?: string; turnId?: string; delta?: string } | undefined;
+      if (
+        notification.method !== "item/agentMessage/delta"
+        || params?.threadId !== threadId
+        || typeof params.delta !== "string"
+      ) {
+        return false;
+      }
+      streamedText += params.delta;
+      return streamedText.length >= 20;
+    }, commandStartTimeoutMs, "等待部分模型正文");
+    const streamingTurn = await second.request("turn/start", {
+      threadId,
+      cwd,
+      model,
+      input: [{ type: "text", text: "请从 1 到 1000 逐行输出数字，每行一个数字，不要省略，不要使用工具。", text_elements: [] }],
+    }) as { turn?: { id?: string } };
+    const streamingTurnId = streamingTurn.turn?.id;
+    if (!streamingTurnId) throw new Error("流式 turn/start 未返回 turn.id");
+    await partialTextReceived;
+
+    const localTurn = {
+      ...createAcceptedTurnState(threadId, streamingTurnId),
+      assistantText: streamedText,
+    };
     await second.close();
+
+    const third = await RpcClient.connect(url, reconnectTimeoutMs);
+    await initializeClient(third);
+    const streamingResume = await third.request("thread/resume", { threadId }) as ThreadResumeResponse;
+    const resumedStreamingTurn = streamingResume.thread.turns.find((turn) => turn.id === streamingTurnId);
+    if (resumedStreamingTurn?.status !== "inProgress") {
+      throw new Error(`流式 Turn 重连时不是 inProgress：${resumedStreamingTurn?.status ?? "缺失"}`);
+    }
+    const hydratedTurn = activeTurnFromResume(streamingResume);
+    const mergedTurn = mergeResumedActiveTurn(localTurn, hydratedTurn);
+    if (!mergedTurn || mergedTurn.assistantText.length < streamedText.length) {
+      throw new Error(
+        `重连后正文发生回退：断线前=${streamedText.length}，合并后=${mergedTurn?.assistantText.length ?? 0}`,
+      );
+    }
+
+    const streamingCompleted = third.waitForNotification((notification) => {
+      const params = notification.params as { threadId?: string; turn?: { id?: string } } | undefined;
+      return notification.method === "turn/completed"
+        && params?.threadId === threadId
+        && params.turn?.id === streamingTurnId;
+    }, turnCompleteTimeoutMs, "等待流式 Turn 中断完成");
+    await third.request("turn/interrupt", { threadId, turnId: streamingTurnId });
+    await streamingCompleted;
+    await third.close();
+
+    const resumedTextLength = hydratedTurn?.assistantText.length ?? 0;
     console.log(
-      `重连 smoke 通过：CODEX_HOME=${initialize.codexHome}，thread=${threadId}，turn=${turnId}，恢复状态=inProgress，终态=${completedStatus}`,
+      `重连 smoke 通过：CODEX_HOME=${initialize.codexHome}，thread=${threadId}，turn=${turnId}，恢复状态=inProgress，终态=${completedStatus}，断线前正文=${streamedText.length}，resume 正文=${resumedTextLength}，合并正文=${mergedTurn.assistantText.length}`,
     );
   } finally {
     await bridge.close();

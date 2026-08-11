@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
-import { activeTurnFromResume } from "../resumed-turn-hydration";
+import { createAcceptedTurnState } from "../turn-reducer";
+import { activeTurnFromResume, mergeResumedActiveTurn } from "../resumed-turn-hydration";
 
 describe("activeTurnFromResume", () => {
   it("从最新 inProgress Turn 恢复真实 item 和聚合输出", () => {
@@ -38,6 +39,55 @@ describe("activeTurnFromResume", () => {
     response.thread.turns.push({ ...completed, id: "turn-2" });
 
     expect(activeTurnFromResume(response)).toBeNull();
+  });
+});
+
+describe("mergeResumedActiveTurn", () => {
+  it("同一 Turn 的空恢复快照保留断线前流式内容", () => {
+    const current = {
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      assistantText: "已经显示的回复",
+      reasoningText: "已经显示的推理",
+      toolOutputs: { "command-1": "partial output" },
+    };
+    const resumed = createAcceptedTurnState("thread-1", "turn-1");
+
+    expect(mergeResumedActiveTurn(current, resumed)).toMatchObject({
+      assistantText: "已经显示的回复",
+      reasoningText: "已经显示的推理",
+      toolOutputs: { "command-1": "partial output" },
+    });
+  });
+
+  it("同一 Turn 使用更完整的恢复内容", () => {
+    const current = {
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      assistantText: "部分",
+      reasoningText: "思考",
+      toolOutputs: { "command-1": "short" },
+    };
+    const resumed = {
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      assistantText: "部分回复已经恢复",
+      reasoningText: "思考内容已经恢复",
+      toolOutputs: { "command-1": "longer output" },
+    };
+
+    expect(mergeResumedActiveTurn(current, resumed)).toMatchObject({
+      assistantText: "部分回复已经恢复",
+      reasoningText: "思考内容已经恢复",
+      toolOutputs: { "command-1": "longer output" },
+    });
+  });
+
+  it("不同 Turn 不合并旧内容", () => {
+    const current = {
+      ...createAcceptedTurnState("thread-1", "turn-old"),
+      assistantText: "旧回复",
+    };
+    const resumed = createAcceptedTurnState("thread-1", "turn-new");
+
+    expect(mergeResumedActiveTurn(current, resumed)).toBe(resumed);
   });
 });
 

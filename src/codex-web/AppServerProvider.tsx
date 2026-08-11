@@ -85,6 +85,7 @@ import {
   isRunningActiveTurn,
   rememberActiveTurnByThread,
   removeActiveTurnByThread,
+  removeActiveTurnByThreadIfMatches,
   removeStartingActiveTurnByThread,
   sourcedActiveTurn,
 } from "./active-turns-adapter";
@@ -111,12 +112,13 @@ import {
   type InterruptTurnParams,
 } from "./interrupt-adapter";
 import { buildThreadResumeParams } from "./resume-adapter";
-import { activeTurnFromResume } from "./resumed-turn-hydration";
+import { activeTurnFromResume, mergeResumedActiveTurn } from "./resumed-turn-hydration";
 import {
   appServerTurnSnapshotKey,
   createAcceptedTurnState,
   createStartingTurnState,
   initialAppServerTurnState,
+  hydrateTerminalTurn,
   mergeAcceptedTurnState,
   reduceAppServerTurnNotification,
   turnStartedAtMs,
@@ -261,6 +263,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const publicBridgeUrl = useMemo(() => process.env.NEXT_PUBLIC_CODEX_BRIDGE_URL ?? "", []);
   const clientRef = useRef<AppServerBrowserClient | null>(null);
   const fsWatchSequenceRef = useRef(0);
+  const terminalTurnRecoveryRef = useRef(new Set<string>());
   const threadSettingsWaitersRef = useRef(new Map<string, Set<() => void>>());
   const approvalResponseStateRef = useRef<ApprovalResponseGuardState>({});
 
@@ -372,6 +375,40 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           if (waiters) {
             waiters.forEach((resolve) => resolve());
             threadSettingsWaitersRef.current.delete(threadId);
+          }
+        }
+      }
+      if (notification.method === "thread/status/changed") {
+        const params = readRecord(notification.params);
+        const status = readRecord(params.status);
+        const threadId = typeof params.threadId === "string" ? params.threadId : "";
+        const staleTurn = threadId ? store.getState().activeTurnsByThreadId[threadId]?.data : null;
+        if (status.type === "idle" && staleTurn && isRunningActiveTurn(staleTurn)) {
+          const recoveryKey = `${threadId}:${staleTurn.turnId}`;
+          if (!terminalTurnRecoveryRef.current.has(recoveryKey)) {
+            terminalTurnRecoveryRef.current.add(recoveryKey);
+            void client.request("thread/read", { threadId, includeTurns: true })
+              .then((value) => {
+                if (disposed) return;
+                const response = value as ThreadReadResponse;
+                const turn = response.thread.turns.find((candidate) => candidate.id === staleTurn.turnId);
+                if (!turn) return;
+                const terminalTurn = hydrateTerminalTurn(staleTurn, turn);
+                if (!terminalTurn) return;
+                setState((current) => {
+                  const activeTurn = current.activeTurnsByThreadId[threadId]?.data;
+                  if (activeTurn?.turnId !== staleTurn.turnId || !isRunningActiveTurn(activeTurn)) {
+                    return current;
+                  }
+                  return {
+                    ...current,
+                    ...setActiveTurnState(current, terminalTurn),
+                    turnSnapshots: rememberTurnSnapshot(current.turnSnapshots, terminalTurn),
+                  };
+                });
+              })
+              .catch(() => undefined)
+              .finally(() => terminalTurnRecoveryRef.current.delete(recoveryKey));
           }
         }
       }
@@ -1119,31 +1156,33 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     )) as ThreadResumeResponse;
     const resumedActiveTurn = activeTurnFromResume(response);
     setState((current) => {
+      const currentThreadTurn = current.activeTurnsByThreadId[response.thread.id]?.data;
+      const mergedResumedActiveTurn = mergeResumedActiveTurn(currentThreadTurn, resumedActiveTurn);
       const currentActiveTurn = current.activeTurn?.data;
       const shouldClearCurrent =
-        !resumedActiveTurn &&
+        !mergedResumedActiveTurn &&
         currentActiveTurn?.threadId === response.thread.id &&
         isRunningActiveTurn(currentActiveTurn);
       return {
         ...current,
         resumedThread: { source: "app-server.thread/resume", data: response },
         selectedThread: { source: "app-server.thread/resume", data: { thread: response.thread } },
-        activeTurn: resumedActiveTurn
-          ? sourcedActiveTurn(resumedActiveTurn, "app-server.thread/resume")
+        activeTurn: mergedResumedActiveTurn
+          ? sourcedActiveTurn(mergedResumedActiveTurn, "app-server.thread/resume")
           : shouldClearCurrent
             ? null
             : current.activeTurn,
-        activeTurnsByThreadId: resumedActiveTurn
+        activeTurnsByThreadId: mergedResumedActiveTurn
           ? rememberActiveTurnByThread(
               current.activeTurnsByThreadId,
-              resumedActiveTurn,
+              mergedResumedActiveTurn,
               "app-server.thread/resume",
             )
           : removeActiveTurnByThread(current.activeTurnsByThreadId, response.thread.id),
-        turnSnapshots: resumedActiveTurn
+        turnSnapshots: mergedResumedActiveTurn
           ? rememberTurnSnapshot(
               current.turnSnapshots,
-              resumedActiveTurn,
+              mergedResumedActiveTurn,
               "app-server.thread/resume",
             )
           : current.turnSnapshots,
@@ -1302,10 +1341,41 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    await requestTurnInterrupt(
+    const result = await requestTurnInterrupt(
       (requestParams) => client.request("turn/interrupt", requestParams) as Promise<TurnInterruptResponse>,
       interruptParams,
     );
+    if (result !== "alreadyStopped") {
+      return;
+    }
+    const response = await client.request("thread/read", {
+      threadId: interruptParams.threadId,
+      includeTurns: true,
+    }) as ThreadReadResponse;
+    const historicalTurn = response.thread.turns.find((turn) => turn.id === interruptParams.turnId);
+    const terminalTurn = historicalTurn && activeTurn
+      ? hydrateTerminalTurn(activeTurn, historicalTurn)
+      : null;
+    setState((current) => ({
+      ...current,
+      activeTurn:
+        current.activeTurn?.data.threadId === interruptParams.threadId &&
+        current.activeTurn.data.turnId === interruptParams.turnId
+          ? terminalTurn
+            ? sourcedActiveTurn(terminalTurn)
+            : null
+          : current.activeTurn,
+      activeTurnsByThreadId: terminalTurn
+        ? rememberActiveTurnByThread(current.activeTurnsByThreadId, terminalTurn)
+        : removeActiveTurnByThreadIfMatches(
+            current.activeTurnsByThreadId,
+            interruptParams.threadId,
+            interruptParams.turnId,
+          ),
+      turnSnapshots: terminalTurn
+        ? rememberTurnSnapshot(current.turnSnapshots, terminalTurn)
+        : current.turnSnapshots,
+    }));
   }, [store]);
 
   const publishCrossClientUserMessage = useCallback((event: CrossClientUserMessage) => {

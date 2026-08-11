@@ -35,6 +35,32 @@ export function activeTurnFromResume(response: ThreadResumeResponse): AppServerT
   };
 }
 
+export function mergeResumedActiveTurn(
+  current: AppServerTurnState | null | undefined,
+  resumed: AppServerTurnState | null,
+): AppServerTurnState | null {
+  if (
+    !current ||
+    !resumed ||
+    current.threadId !== resumed.threadId ||
+    current.turnId !== resumed.turnId
+  ) {
+    return resumed;
+  }
+
+  const assistantText = longerText(current.assistantText, resumed.assistantText);
+  return {
+    ...resumed,
+    assistantText,
+    assistantTextItemId:
+      assistantText === current.assistantText
+        ? current.assistantTextItemId
+        : resumed.assistantTextItemId,
+    reasoningText: longerText(current.reasoningText, resumed.reasoningText),
+    toolOutputs: mergeAccumulatedText(current.toolOutputs, resumed.toolOutputs),
+  };
+}
+
 export function latestInProgressTurnId(turns: Turn[]): string | null {
   const latest = turns.at(-1);
   return latest?.status === "inProgress" ? latest.id : null;
@@ -51,5 +77,19 @@ function collectToolOutputs(items: ThreadItem[]): Record<string, string> {
         ? [[item.id, item.aggregatedOutput]]
         : [],
     ),
+  );
+}
+
+function longerText(current: string, resumed: string): string {
+  return resumed.length >= current.length ? resumed : current;
+}
+
+function mergeAccumulatedText(
+  current: Record<string, string>,
+  resumed: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Array.from(new Set([...Object.keys(current), ...Object.keys(resumed)]))
+      .map((key) => [key, longerText(current[key] ?? "", resumed[key] ?? "")]),
   );
 }

@@ -7,6 +7,16 @@ import {
 } from "../live-turn-presentation";
 
 describe("shouldPresentAppServerTurnAsStreaming", () => {
+  it("本地标记残留但已无活动 Turn 时隐藏流式行", () => {
+    expect(
+      shouldPresentAppServerTurnAsStreaming({
+        turn: null,
+        localStreaming: true,
+        finalizedTurnKey: "",
+      }),
+    ).toBe(false);
+  });
+
   it("展示尚未取得 turnId 的本地 starting 状态", () => {
     expect(
       shouldPresentAppServerTurnAsStreaming({

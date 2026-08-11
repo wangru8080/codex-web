@@ -37,6 +37,17 @@ export function removeActiveTurnByThread(
   return next;
 }
 
+export function removeActiveTurnByThreadIfMatches(
+  activeTurns: ActiveTurnsByThreadId,
+  threadId: string,
+  turnId: string,
+): ActiveTurnsByThreadId {
+  if (activeTurns[threadId]?.data.turnId !== turnId) {
+    return activeTurns;
+  }
+  return removeActiveTurnByThread(activeTurns, threadId);
+}
+
 export function failRunningTurnOnTransportClose(
   turn: Sourced<AppServerTurnState> | null,
   message: string,

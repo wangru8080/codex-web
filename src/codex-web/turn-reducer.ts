@@ -116,6 +116,33 @@ export function turnStartedAtMs(startedAt: unknown): number | undefined {
   return seconds === undefined ? undefined : seconds * 1000;
 }
 
+export function hydrateTerminalTurn(
+  current: AppServerTurnState,
+  turn: {
+    id: string;
+    status: TurnStatus;
+    items: ThreadItem[];
+    startedAt: number | null;
+    durationMs: number | null;
+    error: unknown;
+  },
+): AppServerTurnState | null {
+  if (current.turnId !== turn.id || !isTerminalTurnStatus(turn.status)) {
+    return null;
+  }
+  let next = current;
+  for (const item of turn.items) {
+    next = reduceAppServerTurnNotification(next, {
+      method: "item/completed",
+      params: { threadId: current.threadId, turnId: turn.id, item },
+    });
+  }
+  return reduceAppServerTurnNotification(next, {
+    method: "turn/completed",
+    params: { threadId: current.threadId, turn },
+  });
+}
+
 export function reduceAppServerTurnNotification(
   state: AppServerTurnState,
   notification: JsonRpcNotification,

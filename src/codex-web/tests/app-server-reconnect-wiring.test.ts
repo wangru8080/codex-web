@@ -45,7 +45,8 @@ describe("app-server 断线重连接线", () => {
 
   it("thread/resume 使用真实 active Turn 水合并清理陈旧运行态", () => {
     expect(provider).toContain("const resumedActiveTurn = activeTurnFromResume(response)");
-    expect(provider).toContain('sourcedActiveTurn(resumedActiveTurn, "app-server.thread/resume")');
+    expect(provider).toContain("const mergedResumedActiveTurn = mergeResumedActiveTurn(currentThreadTurn, resumedActiveTurn)");
+    expect(provider).toContain('sourcedActiveTurn(mergedResumedActiveTurn, "app-server.thread/resume")');
     expect(provider).toContain("removeActiveTurnByThread(current.activeTurnsByThreadId, response.thread.id)");
   });
 });
