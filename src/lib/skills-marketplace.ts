@@ -1,7 +1,6 @@
 import type { MarketplaceSkill } from "@/types";
 
 export const SKILLS_SH_API = "https://skills.sh/api/v1";
-export const SKILLS_SH_PUBLIC_API = "https://skills.sh/api";
 
 type SkillsShListing = {
   id?: unknown;

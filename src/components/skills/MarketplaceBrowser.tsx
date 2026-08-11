@@ -37,8 +37,10 @@ export function MarketplaceBrowser({ cwd, onInstalled }: MarketplaceBrowserProps
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const requestSequence = useRef(0);
 
   const doSearch = useCallback(async (query: string) => {
+    const requestId = ++requestSequence.current;
     setLoading(true);
     setError(null);
     try {
@@ -51,12 +53,14 @@ export function MarketplaceBrowser({ cwd, onInstalled }: MarketplaceBrowserProps
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       const data = await res.json();
+      if (requestId !== requestSequence.current) return;
       setResults(data.skills || []);
     } catch (err) {
+      if (requestId !== requestSequence.current) return;
       setError((err as Error).message);
       setResults([]);
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) setLoading(false);
     }
   }, []);
 

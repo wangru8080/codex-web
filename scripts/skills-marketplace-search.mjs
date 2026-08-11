@@ -23,7 +23,7 @@ function finish(payload, code) {
 
 function parse(value, max) {
   const lines = value.replace(/\x1B\[[0-9;]*m/g, "").split("\n");
-  return lines.map((line) => line.trim().match(/^([a-zA-Z0-9_.-]+\/[^\s@]+)@([^\s]+)$/))
+  return lines.map((line) => line.trim().match(/^([a-zA-Z0-9_.-]+\/[^\s@]+)@([^\s]+)(?:\s+.*)?$/))
     .filter(Boolean)
     .slice(0, max)
     .map((match) => ({
