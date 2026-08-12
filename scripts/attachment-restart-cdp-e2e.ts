@@ -35,12 +35,15 @@ async function main(): Promise<void> {
     const expectedAnswer = process.env.CODEX_WEB_E2E_EXPECTED_ANSWER?.trim();
 
     await waitFor(cdp, "document.querySelector('textarea') !== null");
-    await evaluate(cdp, `
-      localStorage.setItem('codepilot:last-working-directory', ${JSON.stringify(workingDirectory)});
-      window.dispatchEvent(new CustomEvent('project-directory-changed', {
-        detail: { path: ${JSON.stringify(workingDirectory)} }
-      }));
-    `);
+    await waitFor(
+      cdp,
+      `Array.from(document.querySelectorAll('button')).some((button) => button.getAttribute('title') === ${JSON.stringify(workingDirectory)})`,
+    );
+    await evaluate(cdp, `Array.from(document.querySelectorAll('button')).find((button) => button.getAttribute('title') === ${JSON.stringify(workingDirectory)})?.click()`);
+    await waitFor(
+      cdp,
+      `document.querySelector('[data-testid="new-chat-project-selector"]')?.getAttribute('data-current-project') === ${JSON.stringify(workingDirectory)}`,
+    );
     await setFileInput(cdp, fixture);
     const sourceFixtureName = fixture.split(/[\\/]/).pop() ?? fixture;
     const fixtureName = sourceFixtureName.endsWith(".base64")
@@ -113,6 +116,9 @@ async function main(): Promise<void> {
     const imageCount = expectedAttachment === "image"
       ? await waitForImage(cdp)
       : 0;
+    const imageInteraction = expectedAttachment === "image"
+      ? await verifyImageLightbox(cdp)
+      : null;
     console.log(JSON.stringify({
       marker,
       threadUrl: initialUrl,
@@ -121,6 +127,7 @@ async function main(): Promise<void> {
       expectedAnswer: expectedAnswer || null,
       assistantAnswer,
       imageCount,
+      imageInteraction,
     }));
     }
   } catch (error) {
@@ -161,8 +168,20 @@ async function setFileInput(cdp: CdpClient, filePath: string): Promise<void> {
 }
 
 async function waitForImage(cdp: CdpClient): Promise<number> {
-  await waitFor(cdp, "document.querySelectorAll('img[src^=\"data:image/\"]').length > 0", 30_000);
-  return evaluate<number>(cdp, "document.querySelectorAll('img[src^=\"data:image/\"]').length");
+  const selector = 'img[src^="data:image/"], img[src^="blob:"]';
+  await waitFor(cdp, `document.querySelectorAll(${JSON.stringify(selector)}).length > 0`, 30_000);
+  return evaluate<number>(cdp, `document.querySelectorAll(${JSON.stringify(selector)}).length`);
+}
+
+async function verifyImageLightbox(cdp: CdpClient): Promise<{ protocol: string; lightboxOpen: boolean }> {
+  const selector = 'img[src^="data:image/"], img[src^="blob:"]';
+  const source = await evaluate<string>(cdp, `document.querySelector(${JSON.stringify(selector)})?.getAttribute('src') ?? ''`);
+  await evaluate(cdp, `document.querySelector(${JSON.stringify(selector)})?.parentElement?.parentElement?.click()`);
+  await waitFor(cdp, `document.querySelector('[role="dialog"] img')?.getAttribute('src') === ${JSON.stringify(source)}`);
+  return {
+    protocol: source.startsWith('blob:') ? 'blob:' : 'data:',
+    lightboxOpen: true,
+  };
 }
 
 async function waitForCurrentTurnAssistantAnswer(

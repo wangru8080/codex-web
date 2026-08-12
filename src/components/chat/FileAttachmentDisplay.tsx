@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { FileUIPart } from 'ai';
 import type { FileAttachment } from '@/types';
 import { isImageFile } from '@/types';
+import { useAppServerActions } from '@/codex-web/AppServerProvider';
+import { getCachedMediaObjectUrl } from '@/lib/media-resource-cache';
 import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import {
   Attachment,
@@ -25,11 +27,12 @@ interface FileAttachmentDisplayProps {
  * - Directories (`inode/directory`) carry no content — return '' so
  *   ai-elements falls back to the Folder icon (set via fallbackIcon).
  * - If base64 `data` is available (optimistic / in-memory): use data URI
- * - A path-only attachment has no browser-readable URL and falls back to a file item
+ * - A path-only image uses the app-server-loaded Blob URL when available
  */
-function fileUrl(f: FileAttachment): string {
+function fileUrl(f: FileAttachment, pathUrls: Record<string, string> = {}): string {
   if (f.type === DIR_MIME) return '';
   if (f.data) return `data:${f.type};base64,${f.data}`;
+  if (f.filePath) return pathUrls[f.filePath] ?? '';
   return '';
 }
 
@@ -38,13 +41,13 @@ function fileUrl(f: FileAttachment): string {
  * ai-elements `<Attachment>` can render it. The `id` is also needed by
  * the AttachmentData union — pass it through as a custom field.
  */
-function toFileUIPart(file: FileAttachment): FileUIPart & { id: string } {
+function toFileUIPart(file: FileAttachment, url = fileUrl(file)): FileUIPart & { id: string } {
   return {
     id: file.id,
     type: 'file',
     filename: file.name,
     mediaType: file.type,
-    url: fileUrl(file),
+    url,
   };
 }
 
@@ -53,26 +56,49 @@ function toFileUIPart(file: FileAttachment): FileUIPart & { id: string } {
  * `<Attachments>`. Images use the `grid` variant for a thumbnail strip
  * (click to open lightbox); non-images use the `list` variant for a
  * compact file row with icon + name. ai-elements handles missing-URL
- * fallbacks (file becomes an icon instead of a broken image), which is
- * how path-only images degrade gracefully when the browser cannot read the app-server filesystem.
+ * fallbacks (file becomes an icon instead of a broken image), so unreadable
+ * path-only images degrade gracefully.
  */
 export function FileAttachmentDisplay({ files }: FileAttachmentDisplayProps) {
   const { setPreviewSource } = usePanel();
+  const { readFile } = useAppServerActions();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [pathUrls, setPathUrls] = useState<Record<string, string>>({});
+  const [failedPaths, setFailedPaths] = useState<Record<string, true>>({});
+  const imagePaths = useMemo(() => Array.from(new Set(
+    files
+      .filter((file) => isImageFile(file.type) && !file.data && file.filePath)
+      .map((file) => file.filePath as string),
+  )), [files]);
+
+  useEffect(() => {
+    let cancelled = false;
+    for (const path of imagePaths) {
+      if (pathUrls[path] || failedPaths[path]) continue;
+      void getCachedMediaObjectUrl(path, readFile)
+        .then((url) => {
+          if (!cancelled) setPathUrls((current) => ({ ...current, [path]: url }));
+        })
+        .catch(() => {
+          if (!cancelled) setFailedPaths((current) => ({ ...current, [path]: true }));
+        });
+    }
+    return () => { cancelled = true; };
+  }, [failedPaths, imagePaths, pathUrls, readFile]);
 
   const imageFiles = useMemo(
-    () => files.filter((f) => isImageFile(f.type) && fileUrl(f)),
-    [files],
+    () => files.filter((f) => isImageFile(f.type) && fileUrl(f, pathUrls)),
+    [files, pathUrls],
   );
   const otherFiles = useMemo(
-    () => files.filter((f) => !isImageFile(f.type) || !fileUrl(f)),
-    [files],
+    () => files.filter((f) => !isImageFile(f.type) || !fileUrl(f, pathUrls)),
+    [files, pathUrls],
   );
 
   const lightboxImages = useMemo(
-    () => imageFiles.map((f) => ({ src: fileUrl(f), alt: f.name })),
-    [imageFiles],
+    () => imageFiles.map((f) => ({ src: fileUrl(f, pathUrls), alt: f.name })),
+    [imageFiles, pathUrls],
   );
 
   const handlePreview = useCallback((index: number) => {
@@ -99,7 +125,7 @@ export function FileAttachmentDisplay({ files }: FileAttachmentDisplayProps) {
           {imageFiles.map((file, i) => (
             <Attachment
               key={file.id}
-              data={toFileUIPart(file)}
+              data={toFileUIPart(file, fileUrl(file, pathUrls))}
               onClick={() => handlePreview(i)}
               // Image grid sits on top of the bubble's `bg-muted`; lift it
               // with bg-background + a subtle ring so the thumbnail edges

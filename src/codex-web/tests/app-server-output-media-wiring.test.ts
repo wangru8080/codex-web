@@ -35,6 +35,17 @@ describe("app-server 输出媒体接线", () => {
     expect(markdown).toContain("图片加载失败，请检查文件后重试");
   });
 
+  it("用户消息中的路径型图片通过 app-server 读取后显示缩略图", () => {
+    const attachments = readFileSync(
+      resolve(process.cwd(), "src/components/chat/FileAttachmentDisplay.tsx"),
+      "utf8",
+    );
+
+    expect(attachments).toContain("getCachedMediaObjectUrl(path, readFile)");
+    expect(attachments).toContain("fileUrl(f, pathUrls)");
+    expect(attachments).toContain("!fileUrl(f, pathUrls)");
+  });
+
   it("图片灯箱提供可访问性描述", () => {
     const lightbox = readFileSync(
       resolve(process.cwd(), "src/components/chat/ImageLightbox.tsx"),
