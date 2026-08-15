@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 describe("新聊天项目选择竞态", () => {
   const page = readFileSync(resolve(process.cwd(), "src/app/chat/page.tsx"), "utf8");
+  const block = (start: string, end: string) => page.slice(page.indexOf(start), page.indexOf(end));
 
   it("用户选择项目后会阻止旧初始化覆盖选择", () => {
     expect(page).toContain("const initializationVersion = workingDirectorySelectionVersionRef.current");
@@ -29,15 +30,29 @@ describe("新聊天项目选择竞态", () => {
     expect(projectSelectionListener).toContain("}, []);");
   });
 
+  it("app-server 连接就绪后才验证保存的项目", () => {
+    const initialization = block("// 初始化工作目录", "// 侧栏项目切换监听");
+    expect(initialization).toContain("if (connectionData !== 'connected') return;");
+    expect(initialization).toContain("}, [connectionData, threads, readDirectory]);");
+  });
+
   it("项目选择器和清除操作也会使旧初始化失效", () => {
-    expect(page).toMatch(/handleSelectProject[\s\S]*workingDirectorySelectionVersionRef\.current \+= 1/);
-    expect(page).toMatch(/handleClearProject[\s\S]*workingDirectorySelectionVersionRef\.current \+= 1/);
+    const selection = block("const applyWorkingDirectorySelection", "const handleSelectFolder");
+    expect(selection).toContain("workingDirectorySelectionVersionRef.current += 1");
+    expect(selection).toContain("workingDirectoryClearedRef.current = !path");
   });
 
   it("选择器的三条路径会立即同步共享 PanelContext", () => {
-    expect(page).toMatch(/handleFolderPickerSelect[\s\S]*setWorkingDir\(path\);[\s\S]*setWorkingDirectory\(path\);/);
-    expect(page).toMatch(/handleSelectProject[\s\S]*setWorkingDir\(path\);[\s\S]*setWorkingDirectory\(path\);/);
-    expect(page).toMatch(/handleClearProject[\s\S]*setWorkingDir\(''\);[\s\S]*setWorkingDirectory\(''\);/);
+    const selection = block("const applyWorkingDirectorySelection", "const handleSelectFolder");
+    const folderPicker = block("const handleFolderPickerSelect", "const handleSelectProject");
+    const projectPicker = block("const handleSelectProject", "const handleClearProject");
+    const clearProject = block("const handleClearProject", "const stopStreaming");
+
+    expect(selection).toContain("setWorkingDir(path)");
+    expect(selection).toContain("setWorkingDirectory(path)");
+    expect(folderPicker).toContain("applyWorkingDirectorySelection(path)");
+    expect(projectPicker).toContain("applyWorkingDirectorySelection(path)");
+    expect(clearProject).toContain("applyWorkingDirectorySelection('')");
   });
 
   it("会把全局 PanelContext 的项目同步到新对话发送状态", () => {

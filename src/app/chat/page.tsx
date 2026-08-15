@@ -501,6 +501,7 @@ function NewChatPageInner() {
 
   // 初始化工作目录，并通过 app-server 验证目录仍然存在。
   useEffect(() => {
+    if (connectionData !== 'connected') return;
     if (workingDirectoryInitializedRef.current || workingDirectoryClearedRef.current) return;
     let cancelled = false;
     const initializationVersion = workingDirectorySelectionVersionRef.current;
@@ -550,7 +551,7 @@ function NewChatPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [threads, readDirectory]);
+  }, [connectionData, threads, readDirectory]);
 
   // 侧栏项目切换监听必须独立于只执行一次的目录初始化。
   useEffect(() => {
@@ -579,34 +580,31 @@ function NewChatPageInner() {
     return workingDir.trim() ? [workingDir, ...projects] : projects;
   }, [recentProjects, workingDir]);
 
+  const applyWorkingDirectorySelection = useCallback((path: string) => {
+    workingDirectorySelectionVersionRef.current += 1;
+    workingDirectoryClearedRef.current = !path;
+    setWorkingDir(path);
+    setWorkingDirectory(path);
+    if (path) localStorage.setItem('codepilot:last-working-directory', path);
+    else localStorage.removeItem('codepilot:last-working-directory');
+  }, [setWorkingDirectory]);
+
   const handleSelectFolder = useCallback(() => {
     setFolderPickerOpen(true);
   }, []);
 
   const handleFolderPickerSelect = useCallback((path: string) => {
-    workingDirectorySelectionVersionRef.current += 1;
-    workingDirectoryClearedRef.current = false;
-    setWorkingDir(path);
-    setWorkingDirectory(path);
-    localStorage.setItem('codepilot:last-working-directory', path);
+    applyWorkingDirectorySelection(path);
     setFolderPickerOpen(false);
-  }, [setWorkingDirectory]);
+  }, [applyWorkingDirectorySelection]);
 
   const handleSelectProject = useCallback((path: string) => {
-    workingDirectorySelectionVersionRef.current += 1;
-    workingDirectoryClearedRef.current = false;
-    setWorkingDir(path);
-    setWorkingDirectory(path);
-    localStorage.setItem('codepilot:last-working-directory', path);
-  }, [setWorkingDirectory]);
+    applyWorkingDirectorySelection(path);
+  }, [applyWorkingDirectorySelection]);
 
   const handleClearProject = useCallback(() => {
-    workingDirectorySelectionVersionRef.current += 1;
-    workingDirectoryClearedRef.current = true;
-    setWorkingDir('');
-    setWorkingDirectory('');
-    localStorage.removeItem('codepilot:last-working-directory');
-  }, [setWorkingDirectory]);
+    applyWorkingDirectorySelection('');
+  }, [applyWorkingDirectorySelection]);
 
   const stopStreaming = useCallback(() => {
     if (appServerTurn?.threadId) {
