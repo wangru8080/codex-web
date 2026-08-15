@@ -130,16 +130,30 @@ function fileExtension(path: string): string {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
-function languageForPath(path: string): string {
+export function languageForPath(path: string): string {
+  const fileName = path.split(/[\\/]/).pop()?.toLowerCase() ?? "";
+  const names: Record<string, string> = {
+    dockerfile: "dockerfile",
+    makefile: "makefile",
+    "cmakelists.txt": "makefile",
+  };
+  if (names[fileName]) return names[fileName];
+
   const extension = fileExtension(path);
   const languages: Record<string, string> = {
     md: "markdown", mdx: "markdown", ts: "typescript", tsx: "tsx",
-    js: "javascript", jsx: "jsx", json: "json", py: "python", rs: "rust",
+    js: "javascript", jsx: "jsx", mjs: "javascript", cjs: "javascript",
+    json: "json", jsonc: "json", py: "python", pyw: "python", rs: "rust",
     go: "go", html: "html", htm: "html", css: "css", scss: "scss",
-    yaml: "yaml", yml: "yaml", toml: "toml", sh: "bash", sql: "sql",
-    csv: "csv", tsv: "tsv", xml: "xml",
+    yaml: "yaml", yml: "yaml", toml: "toml", sh: "bash", bash: "bash",
+    zsh: "bash", fish: "bash", sql: "sql", xml: "xml", svg: "xml",
+    c: "c", h: "c", cc: "cpp", cpp: "cpp", cxx: "cpp", hpp: "cpp",
+    cs: "csharp", java: "java", kt: "kotlin", kts: "kotlin",
+    rb: "ruby", php: "php", swift: "swift", lua: "lua", pl: "perl",
+    pm: "perl", ps1: "powershell", psm1: "powershell", diff: "diff",
+    patch: "diff", ini: "ini", cfg: "ini", conf: "ini",
   };
-  return languages[extension] ?? "text";
+  return languages[extension] ?? "plaintext";
 }
 
 export function mediaTypeForPath(path: string): string {

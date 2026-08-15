@@ -7,6 +7,7 @@ import type { ReasoningEffort } from "@/codex/protocol/generated/ReasoningEffort
 import type { ConfigReadResponse } from "@/codex/protocol/generated/v2/ConfigReadResponse";
 import type { FsReadDirectoryResponse } from "@/codex/protocol/generated/v2/FsReadDirectoryResponse";
 import type { FsCreateDirectoryResponse } from "@/codex/protocol/generated/v2/FsCreateDirectoryResponse";
+import type { FsGetMetadataResponse } from "@/codex/protocol/generated/v2/FsGetMetadataResponse";
 import type { FsReadFileResponse } from "@/codex/protocol/generated/v2/FsReadFileResponse";
 import type { FsWriteFileResponse } from "@/codex/protocol/generated/v2/FsWriteFileResponse";
 import type { FsRemoveResponse } from "@/codex/protocol/generated/v2/FsRemoveResponse";
@@ -117,7 +118,6 @@ import {
   appServerTurnSnapshotKey,
   createAcceptedTurnState,
   createStartingTurnState,
-  initialAppServerTurnState,
   hydrateTerminalTurn,
   mergeAcceptedTurnState,
   reduceAppServerTurnNotification,
@@ -147,6 +147,10 @@ import {
   type CrossClientUserMessage,
 } from "./cross-client-sync";
 import { reconnectDelayMs } from "./reconnect-policy";
+import {
+  shouldUpdateActiveTurnFromNotification,
+  turnNotificationBase,
+} from "./turn-notification-routing";
 import { readAccountLoginCompletion } from "./account-login-adapter";
 import {
   BROKER_PRESENCE_LIST_METHOD,
@@ -218,6 +222,7 @@ export type AppServerActions = {
   readDirectory: (path: string) => Promise<FsReadDirectoryResponse>;
   createDirectory: (path: string, recursive?: boolean) => Promise<FsCreateDirectoryResponse>;
   readFile: (path: string) => Promise<FsReadFileResponse>;
+  getFileMetadata: (path: string) => Promise<FsGetMetadataResponse>;
   writeFile: (path: string, dataBase64: string) => Promise<FsWriteFileResponse>;
   removeFileTree: (path: string) => Promise<FsRemoveResponse>;
   watchFileSystem: (
@@ -456,19 +461,24 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
                 appServerTurnSnapshotKey(notificationTurnIds.threadId, notificationTurnIds.turnId)
               ]?.data
             : null;
-        const activeTurn = normalizeSnapshotTurn(
+        const currentThreadActive = notificationTurnIds.threadId
+          ? current.activeTurnsByThreadId[notificationTurnIds.threadId]?.data ?? null
+          : current.activeTurn?.data ?? null;
+        const snapshotTurn = normalizeSnapshotTurn(
           reduceAppServerTurnNotification(
-            selectNotificationBaseTurn(current, notificationTurnIds),
+            turnNotificationBase({
+              activeTurn: currentThreadActive,
+              snapshotTurn: notificationSnapshot,
+              ids: notificationTurnIds,
+            }),
             notification,
           ),
           notificationTurnIds,
         );
-        const snapshotTurn = normalizeSnapshotTurn(
-          reduceAppServerTurnNotification(
-            notificationSnapshot ?? selectNotificationBaseTurn(current, notificationTurnIds),
-            notification,
-          ),
+        const updateActiveTurn = shouldUpdateActiveTurnFromNotification(
+          currentThreadActive,
           notificationTurnIds,
+          notification.method,
         );
         const pendingApprovals = resolvePendingApprovals(current.pendingApprovals, notification);
         const next: CodexWebAppServerState = {
@@ -487,8 +497,10 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
             notification.method === "skills/changed"
               ? current.skillsRevision + 1
               : current.skillsRevision,
-          activeTurn: sourcedActiveTurn(activeTurn),
-          activeTurnsByThreadId: rememberActiveTurnByThread(current.activeTurnsByThreadId, activeTurn),
+          activeTurn: updateActiveTurn ? sourcedActiveTurn(snapshotTurn) : current.activeTurn,
+          activeTurnsByThreadId: updateActiveTurn
+            ? rememberActiveTurnByThread(current.activeTurnsByThreadId, snapshotTurn)
+            : current.activeTurnsByThreadId,
           turnSnapshots: rememberTurnSnapshot(current.turnSnapshots, snapshotTurn),
           pendingApprovals,
           pendingApproval: sourcedApproval(firstApproval(pendingApprovals)),
@@ -855,6 +867,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
     return (await client.request("fs/readFile", { path })) as FsReadFileResponse;
+  }, []);
+
+  const getFileMetadata = useCallback(async (path: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return (await client.request("fs/getMetadata", { path })) as FsGetMetadataResponse;
   }, []);
 
   const writeFile = useCallback(async (path: string, dataBase64: string) => {
@@ -1455,6 +1473,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       readDirectory,
       createDirectory,
       readFile,
+      getFileMetadata,
       writeFile,
       removeFileTree,
       watchFileSystem,
@@ -1488,7 +1507,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       publishCrossClientUserMessage,
       listOnlineUsers,
     }),
-    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, listHooks, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
+    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, getFileMetadata, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, listHooks, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
   );
 
   return (
@@ -1537,31 +1556,6 @@ function setActiveTurnState(
     activeTurn: sourcedActiveTurn(turn),
     activeTurnsByThreadId: rememberActiveTurnByThread(current.activeTurnsByThreadId, turn),
   };
-}
-
-function selectNotificationBaseTurn(
-  state: CodexWebAppServerState,
-  ids: { threadId?: string; turnId?: string },
-): AppServerTurnState {
-  if (ids.threadId) {
-    const activeTurn = state.activeTurnsByThreadId[ids.threadId]?.data;
-    if (activeTurn) {
-      return activeTurn;
-    }
-  }
-
-  if (ids.threadId && ids.turnId) {
-    const snapshot = state.turnSnapshots[appServerTurnSnapshotKey(ids.threadId, ids.turnId)]?.data;
-    if (snapshot) {
-      return snapshot;
-    }
-  }
-
-  if (!ids.threadId && !ids.turnId && state.activeTurn?.data) {
-    return state.activeTurn.data;
-  }
-
-  return initialAppServerTurnState;
 }
 
 function rememberTurnSnapshot(

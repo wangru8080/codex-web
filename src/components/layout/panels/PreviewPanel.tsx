@@ -9,6 +9,7 @@ import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Light as SyntaxHighlighter } from "react-syntax-highlighter";
+import "@/components/editor/source-highlight-languages";
 import { useThemeFamily } from "@/lib/theme/context";
 import { resolveCodeTheme, resolveHljsStyle } from "@/lib/theme/code-themes";
 import { usePanel } from "@/hooks/usePanel";
@@ -21,12 +22,8 @@ import {
   dispatchFileChanged,
   isFileChangedDetail,
 } from "@/lib/file-changed-event";
-import {
-  buildHtmlPreviewUrl,
-  shouldReloadHtmlForPath,
-  htmlPreviewDirname,
-} from "@/lib/html-preview-url";
-import { classifyPath } from "@/lib/preview-source";
+import { htmlPreviewDirname } from "@/lib/html-preview-url";
+import { classifyPath, workspacePathRequiresConfirmation } from "@/lib/preview-source";
 import { resolveToolPath } from "@/lib/file-write-tools";
 import { parseFrontmatter } from "@/lib/markdown/frontmatter";
 import { parseOutline, slugify } from "@/lib/markdown/outline";
@@ -303,7 +300,7 @@ const INTERACTIVE_SCRIPTS_PREF_KEY = "codepilot.preview.interactiveScripts";
 export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   const { resolvedTheme } = useTheme();
   const { workingDirectory, previewSource, previewFile, setPreviewFile, setPreviewSource, previewViewMode, setPreviewViewMode } = usePanel();
-  const { readFile, writeFile } = useAppServerActions();
+  const { readFile, getFileMetadata, writeFile } = useAppServerActions();
   const isDark = resolvedTheme === "dark";
   const [preview, setPreview] = useState<FilePreviewType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -421,45 +418,6 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   // setting survives reloads via localStorage (see
   // INTERACTIVE_SCRIPTS_PREF_KEY).
 
-  // Phase 4 Phase 1.5 — same-origin preview URL for HTML files.
-  // null for non-HTML, agent-referenced (no fetch until confirm), or
-  // missing scope info. Workspace tier encodes baseDir into the URL;
-  // user-selected tier uses the home scope.
-  //
-  // `interactive` query controls the document CSP at the route level
-  // (subresources don't carry it but their behaviour is governed by
-  // the document's CSP anyway). `_t` is a reload nonce — bumping it
-  // changes the iframe src so the browser re-fetches the document
-  // and all its subresources, which is how a sibling-resource edit
-  // (./style.css, ./logo.svg) propagates into the live preview.
-  const htmlPreviewUrl = useMemo(() => {
-    if (previewSource?.kind !== "file") return null;
-    if (!isHtml(previewSource.filePath)) return null;
-    if (isAgentReferenced) return null;
-    try {
-      if (sourceTrust === "workspace" && sourceBaseDir) {
-        return buildHtmlPreviewUrl(
-          previewSource.filePath,
-          { kind: "workspace", baseDir: sourceBaseDir },
-          { interactive: interactiveScripts, reloadNonce: reloadTick },
-        );
-      }
-      if (sourceTrust === "user-selected") {
-        return buildHtmlPreviewUrl(
-          previewSource.filePath,
-          { kind: "home" },
-          { interactive: interactiveScripts, reloadNonce: reloadTick },
-        );
-      }
-    } catch {
-      // Non-absolute path or other URL-building error → fall back to
-      // null, which makes the rendered branch use the safe srcDoc
-      // path (strict sandbox, no relative resources).
-      return null;
-    }
-    return null;
-  }, [previewSource, sourceTrust, sourceBaseDir, isAgentReferenced, interactiveScripts, reloadTick]);
-
   // Phase 4 UX — quiet refresh discipline. Distinguish "filePath
   // changed" (cold load: clear state, show loading, fetch) from
   // "same-file reloadTick bump" (warm refresh: background fetch,
@@ -503,6 +461,25 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
 
     async function loadPreview() {
       try {
+        if (previewSource?.kind === "file" && sourceTrust === "workspace") {
+          const requiresConfirmation =
+            !sourceBaseDir ||
+            await workspacePathRequiresConfirmation(
+              filePath,
+              sourceBaseDir,
+              getFileMetadata,
+            );
+          if (cancelled) return;
+          if (requiresConfirmation) {
+            const { baseDir: _baseDir, ...source } = previewSource;
+            setPreviewSource({
+              ...source,
+              trust: "agent-referenced",
+              readonly: true,
+            });
+            return;
+          }
+        }
         if (isMediaPreview(filePath)) {
           if (!isFilePathChange) clearCachedMediaObjectUrl(filePath, readFile);
           const mediaUrl = await getCachedMediaObjectUrl(filePath, readFile);
@@ -587,7 +564,19 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [filePath, isAgentReferenced, readFile, reloadTick, t, triggerUpdatedFlash]);
+  }, [
+    filePath,
+    getFileMetadata,
+    isAgentReferenced,
+    previewSource,
+    readFile,
+    reloadTick,
+    setPreviewSource,
+    sourceBaseDir,
+    sourceTrust,
+    t,
+    triggerUpdatedFlash,
+  ]);
 
   const handleCopyContent = async () => {
     const text = previewSource?.kind === "inline-code"
@@ -735,111 +724,28 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     return () => clearTimeout(timer);
   }, [editContent, editDirty, savingEdit, previewSource, filePath, isReadonlySource, handleSaveEdit]);
 
-  // Phase 4: listen for codepilot:file-changed events.
-  //
-  // Match rules:
-  //  1. The event's paths include the active filePath itself → handle
-  //     same-file change (existing contract). For editable files with
-  //     a dirty buffer this surfaces the conflict banner; otherwise
-  //     it bumps reloadTick so the load effect re-fetches.
-  //  2. The active source is an HTML file with a same-origin preview
-  //     URL AND a changed path is a static-resource dependency under
-  //     the HTML's reload scope (see shouldReloadHtmlForPath) → bump
-  //     reloadTick. The bump changes the iframe `src` (via the URL
-  //     reloadNonce param), forcing a browser-level reload of the
-  //     document AND every relative subresource it pulls. Without
-  //     this branch, editing `./style.css` while `./index.html` is
-  //     open would silently leave the live preview stale.
-  //
-  // Reload scope:
-  //   - workspace HTML → workspace baseDir (the broadest reasonable
-  //     floor; CSS / images can legitimately live anywhere in the
-  //     project root)
-  //   - user-selected (external) HTML → the active HTML's own
-  //     directory. sourceBaseDir is undefined for user-selected, so
-  //     using it directly would silently skip the dep-reload path for
-  //     every external HTML. Codex Round 2 flagged exactly this gap.
-  //     Falling back to dirname covers same-dir + subdir siblings
-  //     (e.g. `./style.css`, `./assets/logo.svg`) which is what an
-  //     external HTML typically references.
-  //
-  // HTML files don't have an editable buffer (EDITABLE_EXTENSIONS is
-  // Markdown-only), so the dirty-buffer conflict path doesn't apply
-  // to the HTML-dep case — we go straight to reload.
-  //
-  // Self-saves are skipped via originId.
-  const htmlDepScope = useMemo<string | null>(() => {
-    if (previewSource?.kind !== "file") return null;
-    if (!isHtml(previewSource.filePath)) return null;
-    if (sourceTrust === "workspace") return sourceBaseDir ?? null;
-    if (sourceTrust === "user-selected") {
-      return htmlPreviewDirname(previewSource.filePath) || null;
-    }
-    return null;
-  }, [previewSource, sourceTrust, sourceBaseDir]);
-
-  // Phase 4 UX — HTML dep-reload debounce. When the user saves a
-  // workspace that triggers multiple file-changed events in rapid
-  // succession (CSS + JS + image touch each fire separately), we
-  // coalesce them into a single reload nonce bump so the iframe
-  // doesn't strobe through 3-4 reloads in 100ms.
-  //
-  // Markdown self-file changes still bump immediately — the quiet
-  // refresh logic above absorbs the cost without a visible flash, so
-  // there's no benefit to delaying user-perceptible content updates.
-  const htmlReloadDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleHtmlDepReload = useCallback(() => {
-    if (htmlReloadDebounceRef.current) return;
-    htmlReloadDebounceRef.current = setTimeout(() => {
-      htmlReloadDebounceRef.current = null;
-      setReloadTick((tick) => tick + 1);
-    }, 400);
-  }, []);
-  // Ensure no pending debounce fires after unmount / file switch.
-  useEffect(() => {
-    return () => {
-      if (htmlReloadDebounceRef.current) {
-        clearTimeout(htmlReloadDebounceRef.current);
-        htmlReloadDebounceRef.current = null;
-      }
-    };
-  }, [filePath]);
-
+  // 仅监听当前文件自身的变更。HTML 使用 app-server 返回内容构造
+  // srcDoc，不再伪装支持通过本地 Route 加载相对文件依赖。
   useEffect(() => {
     if (!filePath) return;
     const normalizedActive = filePath.replace(/\\/g, "/");
-    const activeIsHtml = isHtml(filePath);
     function handle(event: Event) {
       const detail = (event as CustomEvent).detail;
       if (!isFileChangedDetail(detail)) return;
       if (detail.source === "preview-save" && detail.originId === filePath) return;
 
       const selfMatch = detail.paths.some((p) => p === normalizedActive);
-      let depMatch = false;
-      if (!selfMatch && activeIsHtml && htmlPreviewUrl) {
-        depMatch = detail.paths.some((p) =>
-          shouldReloadHtmlForPath(p, normalizedActive, htmlDepScope),
-        );
-      }
-      if (!selfMatch && !depMatch) return;
+      if (!selfMatch) return;
 
-      if (selfMatch && editDirty) {
+      if (editDirty) {
         setDiskConflict(true);
         return;
       }
-      // HTML dep matches go through the debounce; self matches +
-      // non-HTML same-file refreshes bump immediately (the quiet
-      // refresh logic upstream absorbs the redundant fetch if the
-      // content didn't actually change).
-      if (depMatch) {
-        scheduleHtmlDepReload();
-      } else {
-        setReloadTick((tick) => tick + 1);
-      }
+      setReloadTick((tick) => tick + 1);
     }
     window.addEventListener(FILE_CHANGED_EVENT, handle);
     return () => window.removeEventListener(FILE_CHANGED_EVENT, handle);
-  }, [filePath, editDirty, htmlPreviewUrl, htmlDepScope, scheduleHtmlDepReload]);
+  }, [filePath, editDirty]);
   // No `handleClose` here — the Workspace Sidebar Tab strip's X owns
   // close, and there's no panel chrome on this surface for the user
   // to close from.
@@ -1138,15 +1044,12 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
           </>
         )}
 
-        {/* Phase 4 UX v3 — HTML interactive mode collapsed into a
-            single Select instead of a separate chip + toggle button
-            (those were redundant — both encoded the same state).
-            Default option is "静态" (scripts off; https resources
-            allowed for img/style/font/media); user can switch to
-            "交互" (scripts on; all https resources blocked to prevent
-            URL-shaped exfiltration). The Select trigger itself
-            surfaces the current mode — no second chip needed. */}
-        {htmlPreviewUrl && previewViewMode === "rendered" && (
+        {/* HTML 渲染模式：静态模式禁用脚本，交互模式仅开放内联脚本；
+            两种模式都禁止 connect、子框架、worker 和同源权限。 */}
+        {previewSource?.kind === "file" &&
+          isHtml(filePath) &&
+          !isAgentReferenced &&
+          previewViewMode === "rendered" && (
           <Select
             value={interactiveScripts ? "interactive" : "static"}
             onValueChange={(v) => setInteractiveScripts(v === "interactive")}
@@ -1344,7 +1247,6 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
               <RenderedView
                 content={freshPreview.content}
                 filePath={filePath}
-                htmlPreviewUrl={htmlPreviewUrl}
                 interactiveScripts={interactiveScripts}
                 anchor={previewSource?.kind === "file" ? previewSource.anchor : undefined}
                 workingDirectory={workingDirectory}
@@ -1529,33 +1431,23 @@ function SourceView({
 }
 
 /**
- * Inline HTML preview — Phase 1.5 + Phase 4 CSP injection.
- *
- * Renders caller-provided HTML inside a fully sandboxed iframe with
- * `sandbox=""` (no scripts, no same-origin) AND a Round 4 CSP meta
- * injected into the document head. The route-served file previews
- * get their CSP via response headers; inline-html srcDoc didn't
- * inherit those, so a code-fence Preview / Markdown→HTML artifact
- * / localhost redirector all needed the same protection in-band.
- * See `src/lib/inline-html-csp.ts` for the directive table.
- *
- * `cspMode` defaults to `'strict'`; the localhost-artifact redirector
- * passes `'navigate'` so meta refresh navigation isn't blocked while
- * keeping every fetch / nested frame / worker closed.
+ * HTML 内容统一通过 srcDoc 渲染并注入 CSP。交互模式只增加脚本和表单
+ * 权限，始终不开放 allow-same-origin。
  */
 function InlineHtmlView({
   html,
   cspMode = 'strict',
 }: {
   html: string;
-  cspMode?: 'strict' | 'navigate';
+  cspMode?: 'strict' | 'interactive' | 'navigate';
 }) {
   const { t } = useTranslation();
   const hardenedHtml = useMemo(() => injectInlineHtmlCsp(html, cspMode), [html, cspMode]);
+  const sandbox = cspMode === 'interactive' ? 'allow-scripts allow-forms' : '';
   return (
     <iframe
       srcDoc={hardenedHtml}
-      sandbox=""
+      sandbox={sandbox}
       className="h-full w-full border-0"
       title={t("docPreview.htmlPreview")}
     />
@@ -1685,7 +1577,6 @@ function DocumentView({ filePath, bytes }: { filePath: string; bytes: Uint8Array
 function RenderedView({
   content,
   filePath,
-  htmlPreviewUrl,
   interactiveScripts,
   anchor,
   workingDirectory,
@@ -1695,17 +1586,6 @@ function RenderedView({
 }: {
   content: string;
   filePath: string;
-  /**
-   * Phase 4 Phase 1.5 — when provided, the HTML branch loads from this
-   * same-origin route URL instead of `srcDoc={content}`. The browser
-   * uses the URL as the document base, so relative resources
-   * (`./style.css`, `<img src="logo.png">`) resolve back through the
-   * same route and the route serves siblings within the authorized
-   * scope. Null falls back to the legacy strict-sandbox srcDoc path
-   * (used when scope info is missing or the source is agent-referenced
-   * and hasn't been confirmed).
-   */
-  htmlPreviewUrl: string | null;
   /**
    * When true, the iframe sandbox includes `allow-scripts` so HTML
    * with embedded JavaScript can execute. The iframe still gets a
@@ -1731,34 +1611,7 @@ function RenderedView({
   }, []);
 
   if (isHtml(filePath)) {
-    // The interactive toggle gates allow-scripts; allow-forms is
-    // bundled because forms-without-scripts is a common static-page
-    // affordance the user already trusts when they click "enable
-    // scripts." Same-origin is NEVER added — that's the load-bearing
-    // security guarantee for this preview surface.
-    const sandbox = interactiveScripts ? "allow-scripts allow-forms" : "";
-    if (htmlPreviewUrl) {
-      return (
-        <iframe
-          src={htmlPreviewUrl}
-          sandbox={sandbox}
-          className="h-full w-full border-0"
-          title={t('docPreview.htmlPreview')}
-        />
-      );
-    }
-    // Fallback path — scope info is missing (agent-referenced or
-    // build error). Show the raw HTML in a strict srcDoc so the user
-    // can still see content; relative resources won't resolve but
-    // that's the cost of not having an authorized scope.
-    return (
-      <iframe
-        srcDoc={content}
-        sandbox={sandbox}
-        className="h-full w-full border-0"
-        title={t('docPreview.htmlPreview')}
-      />
-    );
+    return <InlineHtmlView html={content} cspMode={interactiveScripts ? 'interactive' : 'strict'} />;
   }
 
   // .jsx / .tsx → Sandpack (React in iframe). See POC 0.5 for the s4

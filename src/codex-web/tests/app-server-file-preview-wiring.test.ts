@@ -18,6 +18,16 @@ describe("app-server 文件预览接线", () => {
     expect(preview).toContain("clearCachedMediaObjectUrl(filePath, readFile)");
     expect(preview).not.toContain('const res = await fetch(\n          `/api/files/preview');
     expect(preview).not.toContain('fetch("/api/files/write"');
+    expect(preview).not.toContain("buildHtmlPreviewUrl");
+    expect(preview).not.toContain("/api/files/html-preview");
+  });
+
+  it("HTML 文件提供源码与 sandbox srcDoc 渲染视图", () => {
+    expect(preview).toContain('isHtml(filePath)');
+    expect(preview).toContain('<InlineHtmlView html={content}');
+    expect(preview).toContain('sandbox={sandbox}');
+    expect(preview).toContain('<TabsTrigger value="source">');
+    expect(preview).toContain('<TabsTrigger value="rendered">');
   });
 
   it("损坏图片显示可见错误态", () => {

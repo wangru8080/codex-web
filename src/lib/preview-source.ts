@@ -45,6 +45,10 @@ export interface PathClassification {
   readonly: boolean;
 }
 
+type PreviewPathMetadata = {
+  isSymlink: boolean;
+};
+
 /**
  * Normalize a path to forward slashes + collapse trailing slash. Frontend
  * doesn't have Node's `path.resolve`; we just need consistent comparison
@@ -56,20 +60,66 @@ export interface PathClassification {
  */
 function normalize(p: string): string {
   if (!p) return '';
-  let s = p.replace(/\\/g, '/');
-  // Collapse repeated slashes but keep the leading slash for absolute
-  // POSIX paths, and the leading "C:" drive letter intact.
-  s = s.replace(/\/+/g, '/');
-  if (s.length > 1 && s.endsWith('/')) s = s.slice(0, -1);
-  return s;
+  const source = p.replace(/\\/g, '/');
+  const drive = source.match(/^([A-Za-z]:)(?:\/|$)/)?.[1] ?? '';
+  const absolute = source.startsWith('/') || !!drive;
+  const root = drive ? `${drive.toLowerCase()}/` : absolute ? '/' : '';
+  const body = drive ? source.slice(drive.length) : source;
+  const segments: string[] = [];
+
+  for (const segment of body.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (segments.length > 0) segments.pop();
+      else if (!absolute) segments.push(segment);
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  return root + segments.join('/');
 }
 
 function isUnderDirectory(child: string, parent: string): boolean {
   const c = normalize(child);
   const p = normalize(parent);
   if (!c || !p) return false;
-  if (c === p) return true;
-  return c.startsWith(p + '/');
+  const caseInsensitive = /^[a-z]:\//i.test(p);
+  const comparableChild = caseInsensitive ? c.toLowerCase() : c;
+  const comparableParent = caseInsensitive ? p.toLowerCase() : p;
+  if (comparableChild === comparableParent) return true;
+  return comparableChild.startsWith(`${comparableParent.replace(/\/$/, '')}/`);
+}
+
+export function workspacePathsToInspect(filePath: string, workingDirectory: string): string[] {
+  const file = normalize(filePath);
+  const workspace = normalize(workingDirectory).replace(/\/$/, '');
+  if (!file || !workspace || !isUnderDirectory(file, workspace) || file === workspace) return [];
+
+  const relative = file.slice(workspace.length).replace(/^\//, '');
+  const separator = workingDirectory.includes('\\') ? '\\' : '/';
+  let current = workspace.replace(/\//g, separator);
+  return relative.split('/').filter(Boolean).map((segment) => {
+    current = `${current.replace(/[\\/]$/, '')}${separator}${segment}`;
+    return current;
+  });
+}
+
+export async function workspacePathRequiresConfirmation(
+  filePath: string,
+  workingDirectory: string,
+  getMetadata: (path: string) => Promise<PreviewPathMetadata>,
+): Promise<boolean> {
+  const paths = workspacePathsToInspect(filePath, workingDirectory);
+  if (paths.length === 0 && normalize(filePath) !== normalize(workingDirectory)) return true;
+  try {
+    for (const path of paths) {
+      if ((await getMetadata(path)).isSymlink) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /**

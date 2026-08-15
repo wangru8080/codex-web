@@ -7,6 +7,7 @@ import {
   fileBytesFromResponse,
   fileDocumentBytesFromResponse,
   filePreviewFromResponse,
+  languageForPath,
   utf8ToBase64,
   utf8FromBase64,
 } from "../app-server-files";
@@ -45,6 +46,15 @@ describe("app-server 文件适配器", () => {
       truncated: false,
       bytes_total: Buffer.byteLength(content),
     });
+  });
+
+  it("识别常见源码语言并为未知文本回退 plaintext", () => {
+    expect(languageForPath("/workspace/app.py")).toBe("python");
+    expect(languageForPath("/workspace/app.ts")).toBe("typescript");
+    expect(languageForPath("/workspace/start.sh")).toBe("bash");
+    expect(languageForPath("/workspace/Dockerfile")).toBe("dockerfile");
+    expect(languageForPath("/workspace/main.cpp")).toBe("cpp");
+    expect(languageForPath("/workspace/unknown.custom")).toBe("plaintext");
   });
 
   it("拒绝二进制文件", () => {

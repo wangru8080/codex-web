@@ -1,38 +1,9 @@
 /**
- * Inline-html srcDoc Content-Security-Policy injection — Phase 4 P1.2.
+ * 为 iframe srcDoc 注入 Content-Security-Policy。
  *
- * Background: the `/api/files/html-preview` route applies a strict
- * Round 4 CSP at the HTTP-response level. That CSP protects file
- * previews loaded via the route, but NOT inline-html artifacts
- * produced from chat code fences, the Markdown→HTML presentation
- * pipeline, or the localhost-artifact redirector — those all flow
- * through `<iframe srcDoc=...>` which is sandboxed but otherwise
- * unconstrained, so a script in the rendered content could leak via
- * URL-shaped channels (img / style / script src + query string).
- *
- * This module injects an equivalent CSP as a `<meta>` element near
- * the top of the HTML document. Browsers respect meta CSP for
- * fetch-directives once they encounter the tag in <head>, so
- * inserting BEFORE any other <head> content gives us protection over
- * subsequent subresource loads.
- *
- * Two modes mirror the route:
- *   - 'strict'   : the default. Round 4 Static policy — no scripts,
- *                  no egress (connect/frame/object/worker), https
- *                  allowed only for static-display resources
- *                  (img / style / font / media).
- *   - 'navigate' : permits same-document navigation via meta refresh
- *                  but keeps everything else closed. Used by the
- *                  localhost-artifact path which navigates the
- *                  iframe to the user's dev server.
- *
- * The HTML the caller passes in may have any shape — full document,
- * fragment, no <head>. We handle the common cases:
- *   1. Has `<head>` → inject right after the opening tag
- *   2. Has `<html>` but no `<head>` → insert `<head>…</head>` right
- *      after `<html>`
- *   3. Bare fragment → wrap the input in a minimal `<!doctype html>
- *      <html><head>…</head><body>{input}</body></html>` shell
+ * strict 禁止脚本；interactive 只允许内联脚本；navigate 供本地开发页
+ * 跳转使用。三种模式都禁止 connect、子框架、worker 和对象资源。
+ * 输入可以是完整文档或 HTML 片段，CSP 始终插入 head 的最前方。
  */
 
 const STRICT_CSP_PARTS = [
@@ -54,12 +25,25 @@ const STRICT_CSP_PARTS = [
   "worker-src 'none'",
   "child-src 'none'",
   "manifest-src 'none'",
-  // No scripts in inline-html artifacts. This matches Round 4 Static;
-  // an Interactive equivalent isn't exposed for inline-html because
-  // there's no UI affordance for the user to toggle it on a code-fence
-  // Preview — code fences are the AI's output, not a trusted page.
+  // 静态模式不执行任何脚本。
   "script-src 'none'",
-  "frame-ancestors 'self'",
+  "base-uri 'self'",
+  "form-action 'none'",
+];
+
+const INTERACTIVE_CSP_PARTS = [
+  "default-src 'none'",
+  "img-src 'self' data: blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
+  "media-src 'self' data: blob:",
+  "connect-src 'none'",
+  "frame-src 'none'",
+  "object-src 'none'",
+  "worker-src 'none'",
+  "child-src 'none'",
+  "manifest-src 'none'",
+  "script-src 'unsafe-inline'",
   "base-uri 'self'",
   "form-action 'none'",
 ];
@@ -81,15 +65,18 @@ const NAVIGATE_CSP_PARTS = [
   "script-src 'none'",
   "img-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
-  "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'none'",
 ];
 
-export type InlineHtmlCspMode = 'strict' | 'navigate';
+export type InlineHtmlCspMode = 'strict' | 'interactive' | 'navigate';
 
 export function buildInlineHtmlCspMeta(mode: InlineHtmlCspMode = 'strict'): string {
-  const directives = mode === 'navigate' ? NAVIGATE_CSP_PARTS : STRICT_CSP_PARTS;
+  const directives = mode === 'navigate'
+    ? NAVIGATE_CSP_PARTS
+    : mode === 'interactive'
+      ? INTERACTIVE_CSP_PARTS
+      : STRICT_CSP_PARTS;
   const value = directives.join('; ');
   return `<meta http-equiv="Content-Security-Policy" content="${value.replace(/"/g, '&quot;')}">`;
 }
