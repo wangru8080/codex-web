@@ -6,18 +6,6 @@ import type { FilePreview, FileTreeNode } from "@/types";
 
 export const FILE_PREVIEW_BYTE_LIMIT = 10 * 1024 * 1024;
 
-const WINDOWS_LIMITED_READ_SCRIPT = [
-  "$ErrorActionPreference='Stop'",
-  "$readBytes=[int]$env:CODEX_WEB_FILE_READ_BYTES",
-  "$stream=[IO.File]::OpenRead($env:CODEX_WEB_FILE_PATH)",
-  "try{",
-  "$buffer=[byte[]]::new($readBytes)",
-  "$count=0",
-  "while($count -lt $readBytes){$read=$stream.Read($buffer,$count,$readBytes-$count);if($read -eq 0){break};$count+=$read}",
-  "[Console]::Out.Write([Convert]::ToBase64String($buffer,0,$count))",
-  "}finally{$stream.Dispose()}",
-].join(";");
-
 const WINDOWS_FILE_SIZE_SCRIPT = [
   "$ErrorActionPreference='Stop'",
   "$stream=[IO.File]::OpenRead($env:CODEX_WEB_FILE_PATH)",
@@ -31,58 +19,33 @@ export class AppServerFilePreviewError extends Error {
   }
 }
 
-export function buildLimitedFileReadCommand(
-  platformFamily: string,
-  path: string,
-  maxBytes: number,
-): CommandExecParams {
-  assertByteLimit(maxBytes);
-  const readBytes = maxBytes + 1;
-  const outputBytesCap = Math.ceil(readBytes / 3) * 4 + 128;
-  const isWindows = platformFamily.toLowerCase() === "windows";
-  return {
-    command: isWindows
-      ? ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_LIMITED_READ_SCRIPT]
-      : ["sh", "-c", 'exec 3< "$CODEX_WEB_FILE_PATH" || exit 1; head -c "$CODEX_WEB_FILE_READ_BYTES" <&3 | base64 | tr -d "\\r\\n"'],
-    env: {
-      CODEX_WEB_FILE_PATH: path,
-      CODEX_WEB_FILE_READ_BYTES: String(readBytes),
-    },
-    outputBytesCap,
-    timeoutMs: 15_000,
-    sandboxPolicy: { type: "readOnly", networkAccess: false },
-  };
-}
-
 export function buildFileSizeCommand(platformFamily: string, path: string): CommandExecParams {
   const isWindows = platformFamily.toLowerCase() === "windows";
   return {
     command: isWindows
       ? ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_FILE_SIZE_SCRIPT]
-      : ["sh", "-c", 'wc -c < "$CODEX_WEB_FILE_PATH"'],
-    env: { CODEX_WEB_FILE_PATH: path },
+      : ["wc", "-c", path],
+    ...(isWindows ? { env: { CODEX_WEB_FILE_PATH: path } } : {}),
     outputBytesCap: 128,
     timeoutMs: 10_000,
-    sandboxPolicy: { type: "readOnly", networkAccess: false },
+    sandboxPolicy: { type: "dangerFullAccess" },
   };
 }
 
-export function limitedFileResponseFromCommand(
-  response: CommandExecResponse,
+export function limitedFileResponse(
+  response: FsReadFileResponse,
   maxBytes: number,
 ): FsReadFileResponse {
   assertByteLimit(maxBytes);
-  assertCommandSucceeded(response);
-  const dataBase64 = response.stdout.replace(/\s/g, "");
-  if (decodedBase64Size(dataBase64) > maxBytes) {
+  if (decodedBase64Size(response.dataBase64) > maxBytes) {
     throw new AppServerFilePreviewError("file_too_large");
   }
-  return { dataBase64 };
+  return response;
 }
 
 export function fileSizeFromCommandResponse(response: CommandExecResponse): number {
   assertCommandSucceeded(response);
-  const size = Number(response.stdout.trim());
+  const size = Number(/^\s*(\d+)(?:\s|$)/.exec(response.stdout)?.[1]);
   if (!Number.isSafeInteger(size) || size < 0) {
     throw new Error("app-server 返回了无效的文件大小");
   }

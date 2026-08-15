@@ -1204,7 +1204,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
           </div>
         ) : isDocument && freshDocumentBytes ? (
           <DocumentView filePath={filePath} bytes={freshDocumentBytes} />
-        ) : isMedia && loading ? (
+        ) : isMedia && (loading || !mediaUrl) ? (
           <div className="flex items-center justify-center py-12">
             <SpinnerGap size={20} className="animate-spin text-muted-foreground" />
           </div>

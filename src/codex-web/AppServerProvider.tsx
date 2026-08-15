@@ -68,10 +68,10 @@ import type { CommandExecResponse } from "@/codex/protocol/generated/v2/CommandE
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
 import { APP_VERSION } from "@/lib/app-version";
 import {
+  AppServerFilePreviewError,
   buildFileSizeCommand,
-  buildLimitedFileReadCommand,
   fileSizeFromCommandResponse,
-  limitedFileResponseFromCommand,
+  limitedFileResponse,
 } from "./app-server-files";
 import type { FileAttachment, PermissionProfile, SkillInputReference } from "@/types";
 import type { MCPServer } from "@/types";
@@ -877,21 +877,19 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return (await client.request("fs/readFile", { path })) as FsReadFileResponse;
   }, []);
 
-  const readFileLimited = useCallback(async (path: string, maxBytes: number) => {
-    const initialize = store.getState().initialize?.data;
-    if (!initialize) throw new Error("app-server 尚未完成初始化");
-    const response = await execCommand(
-      buildLimitedFileReadCommand(initialize.platformFamily, path, maxBytes),
-    );
-    return limitedFileResponseFromCommand(response, maxBytes);
-  }, [execCommand, store]);
-
   const getFileSize = useCallback(async (path: string) => {
     const initialize = store.getState().initialize?.data;
     if (!initialize) throw new Error("app-server 尚未完成初始化");
     const response = await execCommand(buildFileSizeCommand(initialize.platformFamily, path));
     return fileSizeFromCommandResponse(response);
   }, [execCommand, store]);
+
+  const readFileLimited = useCallback(async (path: string, maxBytes: number) => {
+    if (await getFileSize(path) > maxBytes) {
+      throw new AppServerFilePreviewError("file_too_large");
+    }
+    return limitedFileResponse(await readFile(path), maxBytes);
+  }, [getFileSize, readFile]);
 
   const getFileMetadata = useCallback(async (path: string) => {
     const client = clientRef.current;

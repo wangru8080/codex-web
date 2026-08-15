@@ -11,7 +11,9 @@ describe("app-server 文件预览接线", () => {
     expect(provider).toContain('client.request("fs/readFile"');
     expect(provider).toContain('client.request("fs/writeFile"');
     expect(provider).toContain("readFileLimited");
-    expect(provider).toContain("buildLimitedFileReadCommand");
+    expect(provider).toContain("await getFileSize(path)");
+    expect(provider).toContain("limitedFileResponse(await readFile(path), maxBytes)");
+    expect(provider).not.toContain("buildLimitedFileReadCommand");
   });
 
   it("预览和保存不再调用缺失的 Next 文件 API", () => {
@@ -34,6 +36,7 @@ describe("app-server 文件预览接线", () => {
   });
 
   it("损坏图片显示可见错误态", () => {
+    expect(preview).toContain("isMedia && (loading || !mediaUrl)");
     expect(preview).toContain("onError={() => setMediaError(true)}");
     expect(preview).toContain("图片加载失败，请刷新后重试");
   });

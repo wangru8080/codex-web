@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   AppServerFilePreviewError,
   buildFileSizeCommand,
-  buildLimitedFileReadCommand,
   directoryContainsName,
   directoryEntriesToNodes,
   fileDataUrlFromResponse,
@@ -12,46 +11,28 @@ import {
   filePreviewFromResponse,
   languageForPath,
   fileSizeFromCommandResponse,
-  limitedFileResponseFromCommand,
+  limitedFileResponse,
   utf8ToBase64,
   utf8FromBase64,
 } from "../app-server-files";
 
 describe("app-server 文件适配器", () => {
-  it("Unix 受限读取只读取上限加一字节并限制命令输出", () => {
-    const command = buildLimitedFileReadCommand("unix", "/workspace/a file.bin", 1024);
+  it("Unix 文件大小检查使用固定 argv，不通过 shell 读取文件内容", () => {
+    const command = buildFileSizeCommand("unix", "/workspace/a file.bin");
 
-    expect(command.command).toEqual([
-      "sh",
-      "-c",
-      expect.stringContaining('head -c "$CODEX_WEB_FILE_READ_BYTES" <&3'),
-    ]);
-    expect(command.env).toMatchObject({
-      CODEX_WEB_FILE_PATH: "/workspace/a file.bin",
-      CODEX_WEB_FILE_READ_BYTES: "1025",
-    });
-    expect(command.outputBytesCap).toBeGreaterThan(1368);
-    expect(command.sandboxPolicy).toEqual({ type: "readOnly", networkAccess: false });
+    expect(command.command).toEqual(["wc", "-c", "/workspace/a file.bin"]);
+    expect(command.command[0]).toBe("wc");
+    expect(command.command).not.toContain("sh");
+    expect(command.sandboxPolicy).toEqual({ type: "dangerFullAccess" });
   });
 
-  it("Windows 受限读取使用固定大小缓冲区", () => {
-    const command = buildLimitedFileReadCommand("windows", "C:\\workspace\\a.bin", 2048);
-
-    expect(command.command[0]).toBe("powershell.exe");
-    expect(command.command.join(" ")).toContain("CODEX_WEB_FILE_READ_BYTES");
-    expect(command.env).toMatchObject({
-      CODEX_WEB_FILE_PATH: "C:\\workspace\\a.bin",
-      CODEX_WEB_FILE_READ_BYTES: "2049",
-    });
-  });
-
-  it("受限读取在返回上限加一字节时拒绝内容", () => {
+  it("fs/readFile 响应超过读取上限时拒绝内容", () => {
     const withinLimit = Buffer.alloc(4, 1).toString("base64");
-    expect(limitedFileResponseFromCommand({ exitCode: 0, stdout: withinLimit, stderr: "" }, 4))
+    expect(limitedFileResponse({ dataBase64: withinLimit }, 4))
       .toEqual({ dataBase64: withinLimit });
 
     const overLimit = Buffer.alloc(5, 1).toString("base64");
-    expect(() => limitedFileResponseFromCommand({ exitCode: 0, stdout: overLimit, stderr: "" }, 4))
+    expect(() => limitedFileResponse({ dataBase64: overLimit }, 4))
       .toThrow(AppServerFilePreviewError);
   });
 
@@ -59,6 +40,7 @@ describe("app-server 文件适配器", () => {
     expect(buildFileSizeCommand("unix", "/workspace/a.txt").outputBytesCap).toBe(128);
     expect(buildFileSizeCommand("windows", "C:\\a.txt").command[0]).toBe("powershell.exe");
     expect(fileSizeFromCommandResponse({ exitCode: 0, stdout: "123\n", stderr: "" })).toBe(123);
+    expect(fileSizeFromCommandResponse({ exitCode: 0, stdout: "123 /workspace/a.txt\n", stderr: "" })).toBe(123);
     expect(() => fileSizeFromCommandResponse({ exitCode: 1, stdout: "", stderr: "missing" })).toThrow("missing");
   });
 
