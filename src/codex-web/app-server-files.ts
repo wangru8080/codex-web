@@ -1,14 +1,92 @@
 import type { FsReadDirectoryEntry } from "@/codex/protocol/generated/v2/FsReadDirectoryEntry";
 import type { FsReadFileResponse } from "@/codex/protocol/generated/v2/FsReadFileResponse";
+import type { CommandExecParams } from "@/codex/protocol/generated/v2/CommandExecParams";
+import type { CommandExecResponse } from "@/codex/protocol/generated/v2/CommandExecResponse";
 import type { FilePreview, FileTreeNode } from "@/types";
 
-const FILE_PREVIEW_BYTE_LIMIT = 10 * 1024 * 1024;
+export const FILE_PREVIEW_BYTE_LIMIT = 10 * 1024 * 1024;
+
+const WINDOWS_LIMITED_READ_SCRIPT = [
+  "$ErrorActionPreference='Stop'",
+  "$readBytes=[int]$env:CODEX_WEB_FILE_READ_BYTES",
+  "$stream=[IO.File]::OpenRead($env:CODEX_WEB_FILE_PATH)",
+  "try{",
+  "$buffer=[byte[]]::new($readBytes)",
+  "$count=0",
+  "while($count -lt $readBytes){$read=$stream.Read($buffer,$count,$readBytes-$count);if($read -eq 0){break};$count+=$read}",
+  "[Console]::Out.Write([Convert]::ToBase64String($buffer,0,$count))",
+  "}finally{$stream.Dispose()}",
+].join(";");
+
+const WINDOWS_FILE_SIZE_SCRIPT = [
+  "$ErrorActionPreference='Stop'",
+  "$stream=[IO.File]::OpenRead($env:CODEX_WEB_FILE_PATH)",
+  "try{[Console]::Out.Write($stream.Length)}finally{$stream.Dispose()}",
+].join(";");
 
 export class AppServerFilePreviewError extends Error {
   constructor(public readonly code: "file_too_large" | "binary_not_previewable") {
     super(code);
     this.name = "AppServerFilePreviewError";
   }
+}
+
+export function buildLimitedFileReadCommand(
+  platformFamily: string,
+  path: string,
+  maxBytes: number,
+): CommandExecParams {
+  assertByteLimit(maxBytes);
+  const readBytes = maxBytes + 1;
+  const outputBytesCap = Math.ceil(readBytes / 3) * 4 + 128;
+  const isWindows = platformFamily.toLowerCase() === "windows";
+  return {
+    command: isWindows
+      ? ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_LIMITED_READ_SCRIPT]
+      : ["sh", "-c", 'exec 3< "$CODEX_WEB_FILE_PATH" || exit 1; head -c "$CODEX_WEB_FILE_READ_BYTES" <&3 | base64 | tr -d "\\r\\n"'],
+    env: {
+      CODEX_WEB_FILE_PATH: path,
+      CODEX_WEB_FILE_READ_BYTES: String(readBytes),
+    },
+    outputBytesCap,
+    timeoutMs: 15_000,
+    sandboxPolicy: { type: "readOnly", networkAccess: false },
+  };
+}
+
+export function buildFileSizeCommand(platformFamily: string, path: string): CommandExecParams {
+  const isWindows = platformFamily.toLowerCase() === "windows";
+  return {
+    command: isWindows
+      ? ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_FILE_SIZE_SCRIPT]
+      : ["sh", "-c", 'wc -c < "$CODEX_WEB_FILE_PATH"'],
+    env: { CODEX_WEB_FILE_PATH: path },
+    outputBytesCap: 128,
+    timeoutMs: 10_000,
+    sandboxPolicy: { type: "readOnly", networkAccess: false },
+  };
+}
+
+export function limitedFileResponseFromCommand(
+  response: CommandExecResponse,
+  maxBytes: number,
+): FsReadFileResponse {
+  assertByteLimit(maxBytes);
+  assertCommandSucceeded(response);
+  const dataBase64 = response.stdout.replace(/\s/g, "");
+  if (decodedBase64Size(dataBase64) > maxBytes) {
+    throw new AppServerFilePreviewError("file_too_large");
+  }
+  return { dataBase64 };
+}
+
+export function fileSizeFromCommandResponse(response: CommandExecResponse): number {
+  assertCommandSucceeded(response);
+  const size = Number(response.stdout.trim());
+  if (!Number.isSafeInteger(size) || size < 0) {
+    throw new Error("app-server 返回了无效的文件大小");
+  }
+  return size;
 }
 
 export function directoryEntriesToNodes(
@@ -106,6 +184,17 @@ function decodedBase64Size(dataBase64: string): number {
   const normalized = dataBase64.replace(/\s/g, "");
   const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
   return Math.max(0, Math.floor(normalized.length * 3 / 4) - padding);
+}
+
+function assertByteLimit(maxBytes: number): void {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes >= Number.MAX_SAFE_INTEGER) {
+    throw new Error("文件读取上限无效");
+  }
+}
+
+function assertCommandSucceeded(response: CommandExecResponse): void {
+  if (response.exitCode === 0) return;
+  throw new Error(response.stderr.trim() || `文件命令执行失败（退出码 ${response.exitCode}）`);
 }
 
 function looksBinary(bytes: Uint8Array): boolean {

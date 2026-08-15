@@ -61,7 +61,7 @@ function toFileUIPart(file: FileAttachment, url = fileUrl(file)): FileUIPart & {
  */
 export function FileAttachmentDisplay({ files }: FileAttachmentDisplayProps) {
   const { setPreviewSource } = usePanel();
-  const { readFile } = useAppServerActions();
+  const { readFileLimited } = useAppServerActions();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [pathUrls, setPathUrls] = useState<Record<string, string>>({});
@@ -76,7 +76,7 @@ export function FileAttachmentDisplay({ files }: FileAttachmentDisplayProps) {
     let cancelled = false;
     for (const path of imagePaths) {
       if (pathUrls[path] || failedPaths[path]) continue;
-      void getCachedMediaObjectUrl(path, readFile)
+      void getCachedMediaObjectUrl(path, readFileLimited)
         .then((url) => {
           if (!cancelled) setPathUrls((current) => ({ ...current, [path]: url }));
         })
@@ -85,7 +85,7 @@ export function FileAttachmentDisplay({ files }: FileAttachmentDisplayProps) {
         });
     }
     return () => { cancelled = true; };
-  }, [failedPaths, imagePaths, pathUrls, readFile]);
+  }, [failedPaths, imagePaths, pathUrls, readFileLimited]);
 
   const imageFiles = useMemo(
     () => files.filter((f) => isImageFile(f.type) && fileUrl(f, pathUrls)),

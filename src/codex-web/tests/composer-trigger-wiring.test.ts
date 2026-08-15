@@ -18,7 +18,7 @@ describe("输入框命令、技能与文件接线", () => {
     const input = source("src/components/chat/MessageInput.tsx");
 
     expect(hook).toContain("fuzzyFileSearch({");
-    expect(input).toContain("appServer.readFile(absolutePath)");
+    expect(input).toContain("appServer.readFileLimited(absolutePath, MAX_MENTION_FILE_BYTES)");
     expect(input).toContain("appServer.readDirectory(dir)");
     expect(hook).not.toContain("/api/files/suggest");
     expect(input).not.toContain("/api/files/raw");

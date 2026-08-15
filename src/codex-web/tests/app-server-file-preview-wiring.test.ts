@@ -10,12 +10,15 @@ describe("app-server 文件预览接线", () => {
   it("Provider 公开 generated fs/readFile 与 fs/writeFile", () => {
     expect(provider).toContain('client.request("fs/readFile"');
     expect(provider).toContain('client.request("fs/writeFile"');
+    expect(provider).toContain("readFileLimited");
+    expect(provider).toContain("buildLimitedFileReadCommand");
   });
 
   it("预览和保存不再调用缺失的 Next 文件 API", () => {
     expect(preview).toContain("filePreviewFromResponse");
-    expect(preview).toContain("getCachedMediaObjectUrl(filePath, readFile)");
-    expect(preview).toContain("clearCachedMediaObjectUrl(filePath, readFile)");
+    expect(preview).toContain("getCachedMediaObjectUrl(filePath, readFileLimited)");
+    expect(preview).toContain("clearCachedMediaObjectUrl(filePath, readFileLimited)");
+    expect(preview).toContain("await readFileLimited(filePath, FILE_PREVIEW_BYTE_LIMIT)");
     expect(preview).not.toContain('const res = await fetch(\n          `/api/files/preview');
     expect(preview).not.toContain('fetch("/api/files/write"');
     expect(preview).not.toContain("buildHtmlPreviewUrl");

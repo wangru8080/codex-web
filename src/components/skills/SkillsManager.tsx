@@ -334,17 +334,17 @@ function SkillCard({
 }
 
 function SkillIcon({ skill }: { skill: SkillItem }) {
-  const { readFile } = useAppServerActions();
+  const { readFileLimited } = useAppServerActions();
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     if (!skill.iconSmall) return;
     let cancelled = false;
-    readFile(skill.iconSmall).then((response) => {
+    readFileLimited(skill.iconSmall, 10 * 1024 * 1024).then((response) => {
       if (cancelled) return;
       setSrc(`data:${mimeTypeForPath(skill.iconSmall!)};base64,${response.dataBase64}`);
     }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [readFile, skill.iconSmall]);
+  }, [readFileLimited, skill.iconSmall]);
 
   return (
     <div className="flex size-11 shrink-0 items-center justify-center rounded-md bg-muted/60">

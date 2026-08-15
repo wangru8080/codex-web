@@ -67,6 +67,12 @@ import type { CommandExecParams } from "@/codex/protocol/generated/v2/CommandExe
 import type { CommandExecResponse } from "@/codex/protocol/generated/v2/CommandExecResponse";
 import type { JsonRpcId } from "@/codex/protocol/json-rpc";
 import { APP_VERSION } from "@/lib/app-version";
+import {
+  buildFileSizeCommand,
+  buildLimitedFileReadCommand,
+  fileSizeFromCommandResponse,
+  limitedFileResponseFromCommand,
+} from "./app-server-files";
 import type { FileAttachment, PermissionProfile, SkillInputReference } from "@/types";
 import type { MCPServer } from "@/types";
 import {
@@ -222,6 +228,8 @@ export type AppServerActions = {
   readDirectory: (path: string) => Promise<FsReadDirectoryResponse>;
   createDirectory: (path: string, recursive?: boolean) => Promise<FsCreateDirectoryResponse>;
   readFile: (path: string) => Promise<FsReadFileResponse>;
+  readFileLimited: (path: string, maxBytes: number) => Promise<FsReadFileResponse>;
+  getFileSize: (path: string) => Promise<number>;
   getFileMetadata: (path: string) => Promise<FsGetMetadataResponse>;
   writeFile: (path: string, dataBase64: string) => Promise<FsWriteFileResponse>;
   removeFileTree: (path: string) => Promise<FsRemoveResponse>;
@@ -869,6 +877,22 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return (await client.request("fs/readFile", { path })) as FsReadFileResponse;
   }, []);
 
+  const readFileLimited = useCallback(async (path: string, maxBytes: number) => {
+    const initialize = store.getState().initialize?.data;
+    if (!initialize) throw new Error("app-server 尚未完成初始化");
+    const response = await execCommand(
+      buildLimitedFileReadCommand(initialize.platformFamily, path, maxBytes),
+    );
+    return limitedFileResponseFromCommand(response, maxBytes);
+  }, [execCommand, store]);
+
+  const getFileSize = useCallback(async (path: string) => {
+    const initialize = store.getState().initialize?.data;
+    if (!initialize) throw new Error("app-server 尚未完成初始化");
+    const response = await execCommand(buildFileSizeCommand(initialize.platformFamily, path));
+    return fileSizeFromCommandResponse(response);
+  }, [execCommand, store]);
+
   const getFileMetadata = useCallback(async (path: string) => {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
@@ -1473,6 +1497,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       readDirectory,
       createDirectory,
       readFile,
+      readFileLimited,
+      getFileSize,
       getFileMetadata,
       writeFile,
       removeFileTree,
@@ -1507,7 +1533,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       publishCrossClientUserMessage,
       listOnlineUsers,
     }),
-    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, getFileMetadata, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, listHooks, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
+    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, readFileLimited, getFileSize, getFileMetadata, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, listHooks, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
   );
 
   return (

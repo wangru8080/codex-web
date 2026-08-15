@@ -44,6 +44,7 @@ import type { HookMetadata } from '@/codex/protocol/generated/v2/HookMetadata';
 import type { TurnFileChangeSummary } from '@/codex-web/file-change-summary';
 import type { ComposerTurnPlan as ComposerTurnPlanData } from '@/codex-web/composer-turn-plan';
 import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
+import { AppServerFilePreviewError } from '@/codex-web/app-server-files';
 import { buildHookTrustEdit, hookNeedsReview } from '@/codex-web/hooks-config';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { ContextWindowIndicator } from './ContextWindowIndicator';
@@ -754,7 +755,7 @@ export const MessageInput = memo(function MessageInput({
             label: plugin.interface?.displayName || plugin.name,
             description: plugin.interface?.shortDescription || '',
             uri: `plugin://${plugin.name}@${marketplace.name}/`,
-            iconUrl: await getPluginIconUrl(plugin.interface, appServer.readFile),
+            iconUrl: await getPluginIconUrl(plugin.interface, appServer.readFileLimited),
           }))));
         if (!cancelled) setInstalledPlugins(plugins);
       })
@@ -1111,7 +1112,7 @@ export const MessageInput = memo(function MessageInput({
     if (!workingDirectory) return { attachment: null };
     try {
       const absolutePath = joinPath(workingDirectory, safePath);
-      const response = await appServer.readFile(absolutePath);
+      const response = await appServer.readFileLimited(absolutePath, MAX_MENTION_FILE_BYTES);
       const size = base64DecodedSize(response.dataBase64);
       if (size > MAX_MENTION_FILE_BYTES) {
         return { attachment: null, limitNote: `@${safePath}: omitted (file too large > 256KB).` };
@@ -1126,7 +1127,10 @@ export const MessageInput = memo(function MessageInput({
           originPath: safePath,
         },
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof AppServerFilePreviewError && error.code === 'file_too_large') {
+        return { attachment: null, limitNote: `@${safePath}: omitted (file too large > 256KB).` };
+      }
       return { attachment: null };
     }
   }, [workingDirectory, normalizeMentionPath, appServer]);
@@ -1878,7 +1882,7 @@ export const MessageInput = memo(function MessageInput({
             onDirectoriesDropped={handleDirectoriesDropped}
             className="[&_[data-slot=input-group]]:shadow-[var(--shadow-diffuse)]"
           >
-            <FileTreeAttachmentBridge imageOnly={codexOnly} />
+            <FileTreeAttachmentBridge />
             {/* Chip rows: each carries its own `pt-2.5 px-3 order-first`
                 so they float above the textarea via flex `order` and
                 produce zero DOM when their data is empty — wrapping them

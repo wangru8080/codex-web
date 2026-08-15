@@ -11,7 +11,7 @@ describe("app-server 输出媒体接线", () => {
     );
 
     expect(preview).toContain("useAppServerActions");
-    expect(preview).toContain("getCachedMediaObjectUrl(path, readFile)");
+    expect(preview).toContain("getCachedMediaObjectUrl(path, readFileLimited)");
     expect(preview).not.toContain("/api/media/serve");
   });
 
@@ -25,12 +25,24 @@ describe("app-server 输出媒体接线", () => {
     expect(preview).toContain("media.outputLoadFailed");
   });
 
+  it("Markdown 图片状态使用段落内合法的 phrasing content", () => {
+    const markdown = readFileSync(
+      resolve(process.cwd(), "src/components/chat/markdown-components.tsx"),
+      "utf8",
+    );
+
+    expect(markdown).toContain('<span className="my-3 flex min-h-16');
+    expect(markdown).toContain('<span className="my-3 block h-32');
+    expect(markdown).not.toContain('<div className="my-3 flex min-h-16');
+    expect(markdown).not.toContain('<div className="my-3 h-32');
+  });
+
   it("Markdown 本地绝对路径通过 app-server 读取后转成 Blob URL", () => {
     const markdown = readFileSync(
       resolve(process.cwd(), "src/components/chat/markdown-components.tsx"),
       "utf8",
     );
-    expect(markdown).toContain("getCachedMediaObjectUrl(path, readFile)");
+    expect(markdown).toContain("getCachedMediaObjectUrl(path, readFileLimited)");
     expect(markdown).toContain("resolveToolPath(source.replace(/^\\.[/\\\\]/, \"\"), baseDirectory ?? workingDirectory)");
     expect(markdown).toContain("图片加载失败，请检查文件后重试");
   });
@@ -41,7 +53,7 @@ describe("app-server 输出媒体接线", () => {
       "utf8",
     );
 
-    expect(attachments).toContain("getCachedMediaObjectUrl(path, readFile)");
+    expect(attachments).toContain("getCachedMediaObjectUrl(path, readFileLimited)");
     expect(attachments).toContain("fileUrl(f, pathUrls)");
     expect(attachments).toContain("!fileUrl(f, pathUrls)");
   });

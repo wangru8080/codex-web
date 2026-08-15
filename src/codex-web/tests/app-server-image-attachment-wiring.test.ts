@@ -35,7 +35,7 @@ describe("app-server image attachment wiring", () => {
     expect(historyPage).toMatch(/sendTurnInThread\(\{[\s\S]*?threadId,[\s\S]*?content,[\s\S]*?files,/);
   });
 
-  it("Codex 输入框允许普通上传文件但项目树普通文件保持 @路径", () => {
+  it("Codex 输入框允许普通上传文件且项目树生成真实附件", () => {
     const messageInput = source("../../components/chat/MessageInput.tsx");
     const messageInputParts = source("../../components/chat/MessageInputParts.tsx");
     const chatView = source("../../components/chat/ChatView.tsx");
@@ -43,9 +43,12 @@ describe("app-server image attachment wiring", () => {
     expect(messageInput).toContain("const resolvedAttachmentsAccept = attachmentsAccept ?? ''");
     expect(messageInput).toContain("accept={resolvedAttachmentsAccept}");
     expect(chatView).not.toContain("attachmentsAccept={appServerSend ? 'image/*' : undefined}");
-    expect(messageInput).toContain("<FileTreeAttachmentBridge imageOnly={codexOnly} />");
+    expect(messageInput).toContain("<FileTreeAttachmentBridge />");
     expect(messageInput).toContain("<FileAndFolderMenuItem />");
-    expect(messageInputParts).toContain("if (imageOnly && !contentType.startsWith('image/'))");
+    expect(messageInputParts).not.toContain("imageOnly");
+    expect(messageInputParts).toContain("readFileLimited(filePath");
+    expect(messageInputParts).toContain("fileBytesFromResponse(response)");
+    expect(messageInputParts).not.toContain("/api/files/raw");
     expect(messageInputParts).toContain("new CustomEvent('insert-file-mention', { detail: { path: filePath } })");
   });
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AppServerFilePreviewError,
+  buildFileSizeCommand,
+  buildLimitedFileReadCommand,
   directoryContainsName,
   directoryEntriesToNodes,
   fileDataUrlFromResponse,
@@ -8,11 +11,57 @@ import {
   fileDocumentBytesFromResponse,
   filePreviewFromResponse,
   languageForPath,
+  fileSizeFromCommandResponse,
+  limitedFileResponseFromCommand,
   utf8ToBase64,
   utf8FromBase64,
 } from "../app-server-files";
 
 describe("app-server 文件适配器", () => {
+  it("Unix 受限读取只读取上限加一字节并限制命令输出", () => {
+    const command = buildLimitedFileReadCommand("unix", "/workspace/a file.bin", 1024);
+
+    expect(command.command).toEqual([
+      "sh",
+      "-c",
+      expect.stringContaining('head -c "$CODEX_WEB_FILE_READ_BYTES" <&3'),
+    ]);
+    expect(command.env).toMatchObject({
+      CODEX_WEB_FILE_PATH: "/workspace/a file.bin",
+      CODEX_WEB_FILE_READ_BYTES: "1025",
+    });
+    expect(command.outputBytesCap).toBeGreaterThan(1368);
+    expect(command.sandboxPolicy).toEqual({ type: "readOnly", networkAccess: false });
+  });
+
+  it("Windows 受限读取使用固定大小缓冲区", () => {
+    const command = buildLimitedFileReadCommand("windows", "C:\\workspace\\a.bin", 2048);
+
+    expect(command.command[0]).toBe("powershell.exe");
+    expect(command.command.join(" ")).toContain("CODEX_WEB_FILE_READ_BYTES");
+    expect(command.env).toMatchObject({
+      CODEX_WEB_FILE_PATH: "C:\\workspace\\a.bin",
+      CODEX_WEB_FILE_READ_BYTES: "2049",
+    });
+  });
+
+  it("受限读取在返回上限加一字节时拒绝内容", () => {
+    const withinLimit = Buffer.alloc(4, 1).toString("base64");
+    expect(limitedFileResponseFromCommand({ exitCode: 0, stdout: withinLimit, stderr: "" }, 4))
+      .toEqual({ dataBase64: withinLimit });
+
+    const overLimit = Buffer.alloc(5, 1).toString("base64");
+    expect(() => limitedFileResponseFromCommand({ exitCode: 0, stdout: overLimit, stderr: "" }, 4))
+      .toThrow(AppServerFilePreviewError);
+  });
+
+  it("文件大小查询只返回受控数字输出", () => {
+    expect(buildFileSizeCommand("unix", "/workspace/a.txt").outputBytesCap).toBe(128);
+    expect(buildFileSizeCommand("windows", "C:\\a.txt").command[0]).toBe("powershell.exe");
+    expect(fileSizeFromCommandResponse({ exitCode: 0, stdout: "123\n", stderr: "" })).toBe(123);
+    expect(() => fileSizeFromCommandResponse({ exitCode: 1, stdout: "", stderr: "missing" })).toThrow("missing");
+  });
+
   it("把目录条目映射为目录优先的文件树节点", () => {
     expect(directoryEntriesToNodes("/workspace", [
       { fileName: "z.ts", isDirectory: false, isFile: true },

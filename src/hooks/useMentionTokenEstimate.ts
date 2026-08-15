@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import type { MentionRef } from '@/types';
+import { useAppServerActions } from '@/codex-web/AppServerProvider';
+import type { FsReadDirectoryResponse } from '@/codex/protocol/generated/v2/FsReadDirectoryResponse';
 
 /**
  * Estimate the token cost of pending @ mention chips so the user can
@@ -17,12 +19,9 @@ import type { MentionRef } from '@/types';
  */
 
 interface Options {
-  /** Workspace root — required to resolve absolute paths for mentions
-   *  inserted before a session has been created (chat/page.tsx). When
-   *  omitted, the hook uses `/api/files/serve?sessionId=...&path=...`. */
+  /** Workspace root used to resolve mention paths on the app-server target. */
   workingDirectory?: string;
-  /** Active chat session id; used by the file-serve endpoint to
-   *  enforce path safety. Pass undefined on the new-chat page. */
+  /** Active chat session id, used only to isolate the estimate cache. */
   sessionId?: string;
 }
 
@@ -54,39 +53,35 @@ function cacheKey(mention: MentionRef, sessionId?: string, workingDirectory?: st
   return `${mention.nodeType ?? 'file'}::${root}::${mention.path}`;
 }
 
-async function estimateFile(path: string, sessionId?: string, workingDirectory?: string): Promise<number | null> {
+export async function estimateMentionFileTokens(
+  path: string,
+  workingDirectory: string | undefined,
+  getFileSize: (path: string) => Promise<number>,
+): Promise<number | null> {
   try {
-    if (sessionId) {
-      const res = await fetch(`/api/files/serve?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`, {
-        method: 'HEAD',
-      });
-      if (!res.ok) return null;
-      const len = Number.parseInt(res.headers.get('content-length') || '', 10);
-      return Number.isFinite(len) ? Math.ceil(len * TOKEN_PER_BYTE) : null;
-    }
     if (!workingDirectory) return null;
     const abs = joinPath(workingDirectory, path);
-    const res = await fetch(`/api/files/raw?path=${encodeURIComponent(abs)}`, { method: 'HEAD' });
-    if (!res.ok) return null;
-    const len = Number.parseInt(res.headers.get('content-length') || '', 10);
-    return Number.isFinite(len) ? Math.ceil(len * TOKEN_PER_BYTE) : null;
+    const bytes = await getFileSize(abs);
+    return Math.ceil(bytes * TOKEN_PER_BYTE);
   } catch {
     return null;
   }
 }
 
-async function estimateDirectory(path: string, workingDirectory?: string): Promise<number | null> {
+export async function estimateMentionDirectoryTokens(
+  path: string,
+  workingDirectory: string | undefined,
+  readDirectory: (path: string) => Promise<FsReadDirectoryResponse>,
+): Promise<number | null> {
   if (!workingDirectory) return null;
   try {
     const dir = joinPath(workingDirectory, path);
-    const res = await fetch(`/api/files?dir=${encodeURIComponent(dir)}&baseDir=${encodeURIComponent(workingDirectory)}&depth=2`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const tree = Array.isArray(data.tree) ? data.tree : [];
+    const response = await readDirectory(dir);
+    const tree = response.entries;
     // Roughly mirrors fetchDirectorySummary's "Directory reference @path/\n- name1/\n- name2..." format
     const previewChars = tree
       .slice(0, 30)
-      .reduce((acc: number, node: { name?: string; type?: string }) => acc + (node.name?.length ?? 0) + 4, 0);
+      .reduce((acc, node) => acc + node.fileName.length + 4, 0);
     const headerChars = `Directory reference @${path}/\n`.length;
     return Math.ceil((previewChars + headerChars) * TOKEN_PER_BYTE);
   } catch {
@@ -98,6 +93,7 @@ export function useMentionTokenEstimate(
   mentions: MentionRef[],
   options?: Options,
 ): Record<string, number | null> {
+  const { getFileSize, readDirectory } = useAppServerActions();
   const [estimates, setEstimates] = useState<Record<string, number | null>>({});
   // Track which keys we've already kicked off this hook instance, so
   // re-renders don't refire pending requests.
@@ -121,8 +117,8 @@ export function useMentionTokenEstimate(
       let p = inflight.get(key);
       if (!p) {
         p = m.nodeType === 'directory'
-          ? estimateDirectory(m.path, options?.workingDirectory)
-          : estimateFile(m.path, options?.sessionId, options?.workingDirectory);
+          ? estimateMentionDirectoryTokens(m.path, options?.workingDirectory, readDirectory)
+          : estimateMentionFileTokens(m.path, options?.workingDirectory, getFileSize);
         inflight.set(key, p);
       }
       p.then(tokens => {
@@ -138,7 +134,7 @@ export function useMentionTokenEstimate(
     return () => {
       cancelled = true;
     };
-  }, [mentions, options?.sessionId, options?.workingDirectory]);
+  }, [getFileSize, mentions, options?.sessionId, options?.workingDirectory, readDirectory]);
 
   return estimates;
 }

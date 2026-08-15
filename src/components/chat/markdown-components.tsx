@@ -261,7 +261,7 @@ export function ChatImg({ baseDirectory, node, ...props }: ChatImgProps) {
       ? src
       : null;
   const { workingDirectory } = usePanel();
-  const { readFile } = useAppServerActions();
+  const { readFileLimited } = useAppServerActions();
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(source);
   const [loadError, setLoadError] = useState(false);
 
@@ -275,7 +275,7 @@ export function ChatImg({ baseDirectory, node, ...props }: ChatImgProps) {
     const path = resolveToolPath(source.replace(/^\.[/\\]/, ""), baseDirectory ?? workingDirectory);
     setLoadError(false);
     setResolvedSrc(null);
-    void getCachedMediaObjectUrl(path, readFile)
+    void getCachedMediaObjectUrl(path, readFileLimited)
       .then((url) => {
         if (!cancelled) setResolvedSrc(url);
       })
@@ -286,20 +286,20 @@ export function ChatImg({ baseDirectory, node, ...props }: ChatImgProps) {
         }
       });
     return () => { cancelled = true; };
-  }, [baseDirectory, readFile, source, workingDirectory]);
+  }, [baseDirectory, readFileLimited, source, workingDirectory]);
 
   if (source === null) return <img className="my-3 max-w-full rounded-lg border border-border/40" loading="lazy" {...props} />;
 
   if (loadError) {
     return (
-      <div className="my-3 flex min-h-16 items-center justify-center rounded-lg border border-destructive/30 px-4 text-sm text-destructive" role="alert">
+      <span className="my-3 flex min-h-16 items-center justify-center rounded-lg border border-destructive/30 px-4 text-sm text-destructive" role="alert">
         图片加载失败，请检查文件后重试
-      </div>
+      </span>
     );
   }
 
   if (!resolvedSrc) {
-    return <div className="my-3 h-32 max-w-full animate-pulse rounded-lg border border-border/40 bg-muted/40" aria-label="图片加载中" />;
+    return <span className="my-3 block h-32 max-w-full animate-pulse rounded-lg border border-border/40 bg-muted/40" aria-label="图片加载中" />;
   }
 
   return (

@@ -14,6 +14,12 @@ import type { ChatStatus } from 'ai';
 import { isSubmitEnabled } from '@/lib/message-input-logic';
 import type { MentionRef, CommandBadge as CommandBadgeType } from '@/types';
 import type { FileExcerptReference } from '@/lib/file-excerpt-reference';
+import { useAppServerActions } from '@/codex-web/AppServerProvider';
+import {
+  FILE_PREVIEW_BYTE_LIMIT,
+  fileBytesFromResponse,
+  mediaTypeForPath,
+} from '@/codex-web/app-server-files';
 
 /**
  * Submit button that's aware of file attachments. Must be rendered inside PromptInput.
@@ -83,34 +89,24 @@ export function FileAwareSubmitButton({
 /**
  * Bridge component that listens for 'attach-file-to-chat' custom events
  * from the file tree and adds the file as a proper attachment (capsule).
- * Uses /api/files/raw to fetch the real file binary, preserving type and content.
+ * Uses app-server to fetch the real file binary, preserving type and content.
  */
-export function FileTreeAttachmentBridge({ imageOnly = false }: { imageOnly?: boolean }) {
+export function FileTreeAttachmentBridge() {
   const attachments = usePromptInputAttachments();
+  const { readFileLimited } = useAppServerActions();
 
   const handleAttach = useCallback(async (filePath: string) => {
     try {
-      const res = await fetch(`/api/files/raw?path=${encodeURIComponent(filePath)}`);
-      if (!res.ok) {
-        // Fallback: insert as @mention if the raw API fails
-        window.dispatchEvent(new CustomEvent('insert-file-mention', { detail: { path: filePath } }));
-        return;
-      }
-      const blob = await res.blob();
-      const fileName = filePath.split('/').pop() || 'file';
-      // Use the content-type from the server response (it resolves from extension)
-      const contentType = res.headers.get('content-type') || 'application/octet-stream';
-      if (imageOnly && !contentType.startsWith('image/')) {
-        window.dispatchEvent(new CustomEvent('insert-file-mention', { detail: { path: filePath } }));
-        return;
-      }
-      const file = new File([blob], fileName, { type: contentType });
+      const response = await readFileLimited(filePath, FILE_PREVIEW_BYTE_LIMIT);
+      const fileName = filePath.split(/[/\\]/).pop() || 'file';
+      const contentType = mediaTypeForPath(filePath);
+      const file = new File([fileBytesFromResponse(response)], fileName, { type: contentType });
       attachments.add([file]);
     } catch {
       // Fallback: insert as @mention if fetch fails
       window.dispatchEvent(new CustomEvent('insert-file-mention', { detail: { path: filePath } }));
     }
-  }, [attachments, imageOnly]);
+  }, [attachments, readFileLimited]);
 
   useEffect(() => {
     const handler = (e: Event) => {

@@ -56,6 +56,7 @@ import { injectInlineHtmlCsp } from "@/lib/inline-html-csp";
 import { useAppServerActions } from "@/codex-web/AppServerProvider";
 import {
   AppServerFilePreviewError,
+  FILE_PREVIEW_BYTE_LIMIT,
   fileBytesFromResponse,
   fileDocumentBytesFromResponse,
   filePreviewFromResponse,
@@ -300,7 +301,7 @@ const INTERACTIVE_SCRIPTS_PREF_KEY = "codepilot.preview.interactiveScripts";
 export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   const { resolvedTheme } = useTheme();
   const { workingDirectory, previewSource, previewFile, setPreviewFile, setPreviewSource, previewViewMode, setPreviewViewMode } = usePanel();
-  const { readFile, getFileMetadata, writeFile } = useAppServerActions();
+  const { readFile, readFileLimited, getFileMetadata, writeFile } = useAppServerActions();
   const isDark = resolvedTheme === "dark";
   const [preview, setPreview] = useState<FilePreviewType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -481,15 +482,15 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
           }
         }
         if (isMediaPreview(filePath)) {
-          if (!isFilePathChange) clearCachedMediaObjectUrl(filePath, readFile);
-          const mediaUrl = await getCachedMediaObjectUrl(filePath, readFile);
+          if (!isFilePathChange) clearCachedMediaObjectUrl(filePath, readFileLimited);
+          const mediaUrl = await getCachedMediaObjectUrl(filePath, readFileLimited);
           if (cancelled) return;
           setDocumentBytes(null);
           setMediaUrl(mediaUrl);
           setLoadedPath(filePath);
           return;
         }
-        const response = await readFile(filePath);
+        const response = await readFileLimited(filePath, FILE_PREVIEW_BYTE_LIMIT);
         if (cancelled) return;
         if (isDocumentPreview(filePath)) {
           setPreview(null);
@@ -570,6 +571,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
     isAgentReferenced,
     previewSource,
     readFile,
+    readFileLimited,
     reloadTick,
     setPreviewSource,
     sourceBaseDir,

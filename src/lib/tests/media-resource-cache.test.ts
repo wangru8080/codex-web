@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearAllCachedMediaObjectUrls,
+  clearCachedMediaObjectUrl,
   getCachedMediaObjectUrl,
   getPluginIconUrl,
 } from "@/lib/media-resource-cache";
@@ -52,6 +53,28 @@ describe("媒体资源缓存", () => {
 
     expect(readFile).toHaveBeenCalledTimes(2);
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:old-image");
+  });
+
+  it("单项清理释放对应 Blob URL", async () => {
+    const readFile = vi.fn(async () => ({ dataBase64: "aGVsbG8=" }));
+    await getCachedMediaObjectUrl("/tmp/image.png", readFile);
+
+    clearCachedMediaObjectUrl("/tmp/image.png", readFile);
+
+    await vi.waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:cached-image"));
+  });
+
+  it("等待中的 Blob URL 在创建完成后仍会被释放", async () => {
+    let resolveRead!: (value: { dataBase64: string }) => void;
+    const readFile = vi.fn(() => new Promise<{ dataBase64: string }>((resolve) => { resolveRead = resolve; }));
+    const pending = getCachedMediaObjectUrl("/tmp/image.png", readFile);
+
+    clearAllCachedMediaObjectUrls();
+    resolveRead({ dataBase64: "aGVsbG8=" });
+    await pending;
+
+    await vi.waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:cached-image"));
   });
 
   it("优先通过 app-server 读取插件的本地 composer 图标", async () => {
@@ -64,7 +87,7 @@ describe("媒体资源缓存", () => {
       logoUrl: null,
     }, readFile)).resolves.toBe("blob:cached-image");
 
-    expect(readFile).toHaveBeenCalledWith("/plugins/github-small.svg");
+    expect(readFile).toHaveBeenCalledWith("/plugins/github-small.svg", 10 * 1024 * 1024);
   });
 
   it("本地图标读取失败时回退到 app-server 返回的远程图标", async () => {

@@ -65,6 +65,19 @@ describe("app-server 文件树接线", () => {
     expect(tree).not.toContain("new CustomEvent('insert-file-mention'");
   });
 
+  it("附件和 Token 估算不再依赖已删除的文件 API", () => {
+    const inputParts = readFileSync(resolve(process.cwd(), "src/components/chat/MessageInputParts.tsx"), "utf8");
+    const estimateHook = readFileSync(resolve(process.cwd(), "src/hooks/useMentionTokenEstimate.ts"), "utf8");
+
+    expect(inputParts).toContain("readFileLimited(filePath");
+    expect(inputParts).not.toContain("/api/files/raw");
+    expect(estimateHook).toContain("getFileSize");
+    expect(estimateHook).toContain("readDirectory");
+    expect(estimateHook).not.toContain("/api/files/raw");
+    expect(estimateHook).not.toContain("/api/files/serve");
+    expect(estimateHook).not.toContain("/api/files?");
+  });
+
   it("复制在 pointer 用户激活阶段执行，下载复用 app-server 文件读取", () => {
     expect(primitive).toContain("handleCopyPointerDown");
     expect(primitive).toContain("onPointerDown={handleCopyPointerDown}");

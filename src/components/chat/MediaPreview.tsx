@@ -21,7 +21,7 @@ interface MediaPreviewProps {
 
 export function MediaPreview({ media }: MediaPreviewProps) {
   const { t } = useTranslation();
-  const { readFile } = useAppServerActions();
+  const { readFileLimited } = useAppServerActions();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [pathUrls, setPathUrls] = useState<Record<string, string>>({});
@@ -34,7 +34,7 @@ export function MediaPreview({ media }: MediaPreviewProps) {
     let cancelled = false;
     for (const path of localPaths) {
       if (pathUrls[path] || failedPaths[path]) continue;
-      void getCachedMediaObjectUrl(path, readFile).then((url) => {
+      void getCachedMediaObjectUrl(path, readFileLimited).then((url) => {
         if (cancelled) return;
         setPathUrls((current) => ({ ...current, [path]: url }));
       }).catch(() => {
@@ -43,7 +43,7 @@ export function MediaPreview({ media }: MediaPreviewProps) {
       });
     }
     return () => { cancelled = true; };
-  }, [failedPaths, localPaths, pathUrls, readFile]);
+  }, [failedPaths, localPaths, pathUrls, readFileLimited]);
 
   if (!media || media.length === 0) return null;
 

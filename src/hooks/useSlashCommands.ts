@@ -60,7 +60,7 @@ export function useSlashCommands(opts: {
     onFileReferenceSelected,
     isStreaming,
 } = opts;
-  const { listSkills, fuzzyFileSearch, listInstalledPlugins, readFile } = useAppServerActions();
+  const { listSkills, fuzzyFileSearch, listInstalledPlugins, readFileLimited } = useAppServerActions();
   const searchSequenceRef = useRef(0);
 
   // Enrich built-in commands with icons (presentation layer enrichment)
@@ -103,12 +103,12 @@ export function useSlashCommands(opts: {
           kind: 'plugin' as const,
           source: 'plugin' as const,
           pluginUri: `plugin://${plugin.name}@${marketplace.name}/`,
-          pluginIconUrl: await getPluginIconUrl(plugin.interface, readFile),
+          pluginIconUrl: await getPluginIconUrl(plugin.interface, readFileLimited),
         })));
     } catch {
       return [];
     }
-  }, [listInstalledPlugins, readFile, workingDirectory]);
+  }, [listInstalledPlugins, readFileLimited, workingDirectory]);
 
   // Fetch enabled skills for the $ picker from app-server.
   const fetchSkills = useCallback(async () => {

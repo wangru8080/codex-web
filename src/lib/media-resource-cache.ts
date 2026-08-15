@@ -1,8 +1,12 @@
 import type { FsReadFileResponse } from "@/codex/protocol/generated/v2/FsReadFileResponse";
 import type { PluginInterface } from "@/codex/protocol/generated/v2/PluginInterface";
-import { fileBytesFromResponse, mediaTypeForPath } from "@/codex-web/app-server-files";
+import {
+  FILE_PREVIEW_BYTE_LIMIT,
+  fileBytesFromResponse,
+  mediaTypeForPath,
+} from "@/codex-web/app-server-files";
 
-type ReadFile = (path: string) => Promise<FsReadFileResponse>;
+type ReadFile = (path: string, maxBytes: number) => Promise<FsReadFileResponse>;
 
 let mediaUrlCaches = new Map<ReadFile, Map<string, Promise<string>>>();
 
@@ -16,13 +20,14 @@ export function getCachedMediaObjectUrl(path: string, readFile: ReadFile): Promi
   const cached = mediaUrlCache.get(path);
   if (cached) return cached;
 
-  const pending = readFile(path)
+  let pending: Promise<string>;
+  pending = readFile(path, FILE_PREVIEW_BYTE_LIMIT)
     .then((response) => {
       const bytes = fileBytesFromResponse(response);
       return URL.createObjectURL(new Blob([bytes], { type: mediaTypeForPath(path) }));
     })
     .catch((error) => {
-      mediaUrlCache.delete(path);
+      if (mediaUrlCache.get(path) === pending) mediaUrlCache.delete(path);
       throw error;
     });
 
@@ -57,9 +62,21 @@ export async function getPluginIconUrl(
 }
 
 export function clearCachedMediaObjectUrl(path: string, readFile: ReadFile): void {
-  mediaUrlCaches.get(readFile)?.delete(path);
+  const cache = mediaUrlCaches.get(readFile);
+  if (!cache) return;
+  const pending = cache.get(path);
+  if (!pending) return;
+  cache.delete(path);
+  revokeWhenReady(pending);
 }
 
 export function clearAllCachedMediaObjectUrls(): void {
+  for (const cache of mediaUrlCaches.values()) {
+    for (const pending of cache.values()) revokeWhenReady(pending);
+  }
   mediaUrlCaches = new Map();
+}
+
+function revokeWhenReady(pending: Promise<string>): void {
+  void pending.then((url) => URL.revokeObjectURL(url), () => undefined);
 }
