@@ -587,23 +587,26 @@ function NewChatPageInner() {
     workingDirectorySelectionVersionRef.current += 1;
     workingDirectoryClearedRef.current = false;
     setWorkingDir(path);
+    setWorkingDirectory(path);
     localStorage.setItem('codepilot:last-working-directory', path);
     setFolderPickerOpen(false);
-  }, []);
+  }, [setWorkingDirectory]);
 
   const handleSelectProject = useCallback((path: string) => {
     workingDirectorySelectionVersionRef.current += 1;
     workingDirectoryClearedRef.current = false;
     setWorkingDir(path);
+    setWorkingDirectory(path);
     localStorage.setItem('codepilot:last-working-directory', path);
-  }, []);
+  }, [setWorkingDirectory]);
 
   const handleClearProject = useCallback(() => {
     workingDirectorySelectionVersionRef.current += 1;
     workingDirectoryClearedRef.current = true;
     setWorkingDir('');
+    setWorkingDirectory('');
     localStorage.removeItem('codepilot:last-working-directory');
-  }, []);
+  }, [setWorkingDirectory]);
 
   const stopStreaming = useCallback(() => {
     if (appServerTurn?.threadId) {

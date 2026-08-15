@@ -34,6 +34,12 @@ describe("新聊天项目选择竞态", () => {
     expect(page).toMatch(/handleClearProject[\s\S]*workingDirectorySelectionVersionRef\.current \+= 1/);
   });
 
+  it("选择器的三条路径会立即同步共享 PanelContext", () => {
+    expect(page).toMatch(/handleFolderPickerSelect[\s\S]*setWorkingDir\(path\);[\s\S]*setWorkingDirectory\(path\);/);
+    expect(page).toMatch(/handleSelectProject[\s\S]*setWorkingDir\(path\);[\s\S]*setWorkingDirectory\(path\);/);
+    expect(page).toMatch(/handleClearProject[\s\S]*setWorkingDir\(''\);[\s\S]*setWorkingDirectory\(''\);/);
+  });
+
   it("会把全局 PanelContext 的项目同步到新对话发送状态", () => {
     expect(page).toContain("workingDirectory: panelWorkingDirectory");
     expect(page).toContain("if (panelWorkingDirectory !== workingDir) setWorkingDir(panelWorkingDirectory);");
