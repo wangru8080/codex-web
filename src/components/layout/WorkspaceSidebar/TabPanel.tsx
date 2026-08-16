@@ -23,13 +23,10 @@ import { previewSourceFromTab, WORKSPACE_HOME_TAB_ID, type Tab } from '@/lib/wor
 import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
+import { PreviewPanelFrame } from './PreviewPanelFrame';
 
 const GitTabContent = dynamic(
   () => import('@/components/layout/panels/GitPanel').then((m) => ({ default: m.GitTabContent })),
-  { ssr: false },
-);
-const PreviewPanel = dynamic(
-  () => import('@/components/layout/panels/PreviewPanel').then((m) => ({ default: m.PreviewPanel })),
   { ssr: false },
 );
 const FileTreePanel = dynamic(
@@ -63,7 +60,7 @@ function ActiveContent({ tab, hasFilesTab }: { tab: Tab; hasFilesTab: boolean })
   if (hasFilesTab && (tab.kind === 'file' || tab.kind === 'markdown')) {
     return <FileWorkspace />;
   }
-  return <PreviewPanel variant="sidebar" />;
+  return <PreviewPanelFrame />;
 }
 
 export function TabPanel() {
@@ -182,7 +179,7 @@ function FileWorkspace() {
       </div>
       <div className="flex min-h-0 flex-1 divide-x divide-border">
         <div className="min-w-0 flex-1">
-          {filePath ? <PreviewPanel variant="sidebar" /> : <EmptyFilePreview t={t} />}
+          {filePath ? <PreviewPanelFrame /> : <EmptyFilePreview t={t} />}
         </div>
         <div className="w-[42%] min-w-[220px] max-w-[360px]">
           <FileTreePanel
