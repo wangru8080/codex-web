@@ -8,7 +8,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { CaretRight } from "@phosphor-icons/react";
+import { CaretRight } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import {

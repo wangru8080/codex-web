@@ -20,8 +20,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useThemeFamily } from "@/lib/theme/context";
 import { resolveShikiTheme, resolveShikiThemes, SHIKI_DEFAULT_LIGHT, SHIKI_DEFAULT_DARK } from "@/lib/theme/code-themes";
-import type { Icon } from "@phosphor-icons/react";
-import { Check, CaretDown, CaretUp, Hash, Terminal, Code, File, FileCode } from "@phosphor-icons/react";
+import type { Icon } from "@/components/ui/icon";
+import { Check, CaretDown, CaretUp, Hash, Terminal, Code, File, FileCode } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import {
   createElement,

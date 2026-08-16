@@ -25,6 +25,7 @@ describe('工作区侧栏 UI 接线', () => {
     const tabBar = source('src/components/layout/WorkspaceSidebar/TabBar.tsx');
     const panel = source('src/components/layout/WorkspaceSidebar/TabPanel.tsx');
     const terminal = source('src/components/layout/WorkspaceSidebar/TerminalPanel.tsx');
+    const frame = source('src/components/layout/WorkspaceSidebar/TerminalFrame.tsx');
 
     expect(tabBar).toContain('workspaceSidebar.tool.terminal');
     expect(tabBar).toContain('workspaceSidebar.tool.sideChat');
@@ -37,6 +38,6 @@ describe('工作区侧栏 UI 接线', () => {
     expect(terminal).toContain('writeProcessStdin({');
     expect(terminal).toContain('resizeProcessPty({');
     expect(terminal).toContain('env: terminalEnvironment()');
-    expect(terminal).toContain("brightBlue: '#3b82c4'");
+    expect(frame).toContain("brightBlue: '#3b82c4'");
   });
 });

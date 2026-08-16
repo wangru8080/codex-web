@@ -16,7 +16,7 @@ import {
   Circle,
   Clock,
   XCircle,
-} from "@phosphor-icons/react";
+} from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { createContext, isValidElement, useContext, useState } from "react";
 

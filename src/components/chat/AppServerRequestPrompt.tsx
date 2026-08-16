@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowSquareOut } from '@phosphor-icons/react';
+import { ArrowSquareOut } from '@/components/ui/icon';
 import { ArrowRight, Clock3, Pencil, X } from 'lucide-react';
 
 import type {

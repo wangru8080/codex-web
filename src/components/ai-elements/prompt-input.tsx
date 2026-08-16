@@ -56,7 +56,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { normalizePastedText, shouldAttachPastedText } from "@/lib/message-input-logic";
-import { ArrowElbowDownLeft, Square, X } from "@phosphor-icons/react";
+import { ArrowElbowDownLeft, Square, X } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { nanoid } from "nanoid";
 import {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Bell, DotsThree, PushPin } from "@/components/ui/icon";
-import { PushPinSlash } from "@phosphor-icons/react";
+import { PushPinSlash } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
 import {

@@ -1,6 +1,6 @@
 "use client";
 
-import { IconContext } from "@phosphor-icons/react";
+import { IconContext } from "@/components/ui/icon";
 import type { ReactNode } from "react";
 
 /**

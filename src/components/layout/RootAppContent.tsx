@@ -9,7 +9,7 @@ import { WebPerformanceObserver } from "@/components/performance/WebPerformanceO
 
 export function RootAppContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (pathname === "/login") return children;
+  if (pathname === "/login" || pathname === "/workspace/terminal" || pathname === "/workspace/preview") return children;
   return (
     <AppServerProvider>
       <WebPerformanceObserver />

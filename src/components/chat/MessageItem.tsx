@@ -15,7 +15,7 @@ import { DiffSummary } from './DiffSummary';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, CaretDown, CaretUp, CaretRight, NotePencil, Copy, ArrowsSplit, SpinnerGap, Info } from "@/components/ui/icon";
-import { Target } from '@phosphor-icons/react';
+import { Target } from '@/components/ui/icon';
 import { FileAttachmentDisplay } from './FileAttachmentDisplay';
 import { FileExcerptDisplay } from './FileExcerptDisplay';
 import { parseFileExcerptDisplay } from '@/lib/file-excerpt-reference';

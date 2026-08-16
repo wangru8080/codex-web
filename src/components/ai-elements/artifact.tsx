@@ -1,6 +1,6 @@
 "use client";
 
-import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
+import type { Icon as PhosphorIcon } from "@/components/ui/icon";
 import type { ComponentProps, HTMLAttributes } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { X } from "@phosphor-icons/react";
+import { X } from "@/components/ui/icon";
 
 export type ArtifactProps = HTMLAttributes<HTMLDivElement>;
 

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 describe("多格式文件片段接线", () => {
   const editor = readFileSync(resolve(process.cwd(), "src/components/editor/MarkdownEditor.tsx"), "utf8");
   const preview = readFileSync(resolve(process.cwd(), "src/components/layout/panels/PreviewPanel.tsx"), "utf8");
+  const sourceView = readFileSync(resolve(process.cwd(), "src/components/editor/SourceView.tsx"), "utf8");
 
   it("CodeMirror 对非空选区报告正文和 1-based 行号", () => {
     expect(editor).toContain("onSelectionChange?:");
@@ -23,16 +24,16 @@ describe("多格式文件片段接线", () => {
 
   it("代码和 JSON 等非可编辑文本通过 SourceView 工具栏", () => {
     expect(preview).toContain("<SourceView preview={freshPreview} isDark={isDark} targetLine={targetLine} />");
-    expect(preview).toContain("sourceLineRangeFromDom");
-    expect(preview).toContain("lineProps={(lineNumber) => sourceLineProps(lineNumber, targetLine)}");
+    expect(sourceView).toContain("sourceLineRangeFromDom");
+    expect(sourceView).toContain("lineProps={(lineNumber) => sourceLineProps(lineNumber, targetLine)}");
   });
 
   it("普通源码根据文件 anchor 滚动并高亮目标行", () => {
     expect(preview).toContain('const targetLine = parsedPreviewAnchor.kind === "line"');
-    expect(preview).toContain('[data-source-line="${targetLine}"]');
-    expect(preview).toContain('scrollIntoView({ block: "start" })');
-    expect(preview).toContain('lineNumber === targetLine ? "block bg-blue-500/10"');
-    expect(preview).toContain("}, [preview.path, targetLine]);");
+    expect(sourceView).toContain('[data-source-line="${targetLine}"]');
+    expect(sourceView).toContain('scrollIntoView({ block: "start" })');
+    expect(sourceView).toContain('lineNumber === targetLine ? "block bg-blue-500/10"');
+    expect(sourceView).toContain("}, [preview.path, targetLine]);");
   });
 
   it("Markdown 和 TXT 的 CodeMirror 定位到目标行开头", () => {

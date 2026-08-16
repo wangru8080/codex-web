@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Target } from '@phosphor-icons/react';
+import { Target } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

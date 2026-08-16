@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   SpinnerGap,
   CaretRight,
-} from "@phosphor-icons/react";
+} from "@/components/ui/icon";
 import { CodexWebIcon, type CodexWebIconName } from "@/components/ui/semantic-icon";
 import { cn } from '@/lib/utils';
 import { Shimmer } from '@/components/ai-elements/shimmer';

@@ -4,7 +4,7 @@ import { forwardRef, useRef, useEffect, useLayoutEffect, useState, useCallback, 
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { Virtuoso, type Components, type VirtuosoHandle } from 'react-virtuoso';
-import { ArrowDown, Cube, GitBranch, Info } from '@phosphor-icons/react';
+import { ArrowDown, Cube, GitBranch, Info } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { FileAttachment, Message, MessageContentBlock } from '@/types';

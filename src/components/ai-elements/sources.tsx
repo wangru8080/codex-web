@@ -8,7 +8,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { CaretDown } from "@phosphor-icons/react";
+import { CaretDown } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 
 export type SourcesProps = ComponentProps<"div">;

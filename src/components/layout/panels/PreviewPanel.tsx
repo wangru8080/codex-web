@@ -8,10 +8,6 @@ import { X, Check, SpinnerGap } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Light as SyntaxHighlighter } from "react-syntax-highlighter";
-import "@/components/editor/source-highlight-languages";
-import { useThemeFamily } from "@/lib/theme/context";
-import { resolveCodeTheme, resolveHljsStyle } from "@/lib/theme/code-themes";
 import { usePanel } from "@/hooks/usePanel";
 import { useTranslation } from "@/hooks/useTranslation";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
@@ -48,7 +44,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildPresentationRefreshUrl } from "@/lib/markdown/presentation-refresh";
 import {
   FileSelectionToolbar,
-  sourceLineRangeFromDom,
   useDomFileSelection,
   type FileTextSelection,
 } from "@/components/editor/FileSelectionToolbar";
@@ -77,6 +72,10 @@ import { ChatImg } from "@/components/chat/markdown-components";
 
 const JsonTreeViewer = dynamic(
   () => import("@/components/editor/JsonTreeViewer").then((m) => m.JsonTreeViewer),
+  { ssr: false, loading: () => <div className="flex h-full items-center justify-center py-12"><SpinnerGap size={20} className="animate-spin text-muted-foreground" /></div> },
+);
+const SourceView = dynamic(
+  () => import("@/components/editor/SourceView").then((m) => ({ default: m.SourceView })),
   { ssr: false, loading: () => <div className="flex h-full items-center justify-center py-12"><SpinnerGap size={20} className="animate-spin text-muted-foreground" /></div> },
 );
 const DiffViewer = dynamic(
@@ -1352,83 +1351,6 @@ function PresentationStyleSelect({
         ))}
       </SelectContent>
     </Select>
-  );
-}
-
-/** Resolve hljs style from the current theme family + mode. */
-function useDocCodeTheme(isDark: boolean) {
-  const { family, families } = useThemeFamily();
-  const codeTheme = resolveCodeTheme(families, family);
-  return resolveHljsStyle(codeTheme, isDark);
-}
-
-function sourceLineProps(
-  lineNumber: number,
-  targetLine?: number,
-): React.HTMLProps<HTMLElement> {
-  return {
-    "data-source-line": String(lineNumber),
-    className: lineNumber === targetLine ? "block bg-blue-500/10" : "block",
-  } as React.HTMLProps<HTMLElement>;
-}
-
-/** Source code view using react-syntax-highlighter */
-function SourceView({
-  preview,
-  isDark,
-  targetLine,
-}: {
-  preview: FilePreviewType;
-  isDark: boolean;
-  targetLine?: number;
-}) {
-  const hljsStyle = useDocCodeTheme(isDark);
-  const sourceRef = useRef<HTMLDivElement | null>(null);
-  const selection = useDomFileSelection({
-    containerRef: sourceRef,
-    sourceText: preview.content,
-    resolveLines: sourceLineRangeFromDom,
-  });
-  useEffect(() => {
-    if (!targetLine) return;
-    const frame = requestAnimationFrame(() => {
-      const target = sourceRef.current?.querySelector<HTMLElement>(
-        `[data-source-line="${targetLine}"]`,
-      );
-      target?.scrollIntoView({ block: "start" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [preview.path, targetLine]);
-  return (
-    <div className="flex min-h-full flex-col text-xs">
-      <FileSelectionToolbar filePath={preview.path} selection={selection} />
-      <div ref={sourceRef}>
-        <SyntaxHighlighter
-          language={preview.language}
-          style={hljsStyle}
-          showLineNumbers
-          wrapLines
-          lineProps={(lineNumber) => sourceLineProps(lineNumber, targetLine)}
-          customStyle={{
-            margin: 0,
-            padding: "8px",
-            borderRadius: 0,
-            fontSize: "11px",
-            lineHeight: "1.5",
-            background: "transparent",
-          }}
-          lineNumberStyle={{
-            minWidth: "2.5em",
-            paddingRight: "8px",
-            color: "var(--muted-foreground)",
-            opacity: 0.5,
-            userSelect: "none",
-          }}
-        >
-          {preview.content}
-        </SyntaxHighlighter>
-      </div>
-    </div>
   );
 }
 

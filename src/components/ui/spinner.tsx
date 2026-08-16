@@ -1,4 +1,4 @@
-import { SpinnerGap } from "@phosphor-icons/react"
+import { SpinnerGap } from "@/components/ui/icon"
 
 import { cn } from "@/lib/utils"
 

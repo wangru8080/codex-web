@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 describe("文件片段加入对话接线", () => {
   const preview = readFileSync(resolve(process.cwd(), "src/components/layout/panels/PreviewPanel.tsx"), "utf8");
+  const sourceView = readFileSync(resolve(process.cwd(), "src/components/editor/SourceView.tsx"), "utf8");
   const input = readFileSync(resolve(process.cwd(), "src/components/chat/MessageInput.tsx"), "utf8");
   const parts = readFileSync(resolve(process.cwd(), "src/components/chat/MessageInputParts.tsx"), "utf8");
   const toolbar = readFileSync(resolve(process.cwd(), "src/components/editor/FileSelectionToolbar.tsx"), "utf8");
@@ -45,8 +46,8 @@ describe("文件片段加入对话接线", () => {
   });
 
   it("普通源码高亮行携带真实源行号", () => {
-    expect(preview).toContain("wrapLines");
-    expect(preview).toContain('"data-source-line": String(lineNumber)');
-    expect(preview).toContain("sourceLineRangeFromDom");
+    expect(sourceView).toContain("wrapLines");
+    expect(sourceView).toContain('"data-source-line": String(lineNumber)');
+    expect(sourceView).toContain("sourceLineRangeFromDom");
   });
 });

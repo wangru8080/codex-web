@@ -11,7 +11,7 @@ import {
 } from '@/codex-web/goal-display-adapter';
 import { Button } from '@/components/ui/button';
 import { NotePencil, Play, Trash } from '@/components/ui/icon';
-import { Pause, Target } from '@phosphor-icons/react';
+import { Pause, Target } from '@/components/ui/icon';
 
 type GoalProgressRowProps = {
   goal: ThreadGoal;

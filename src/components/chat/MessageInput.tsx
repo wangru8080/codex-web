@@ -80,7 +80,7 @@ import {
 } from '@/lib/message-input-logic';
 import { QuickActions } from './QuickActions';
 import { CaretDown, CaretRight, Check, Gear, X } from '@/components/ui/icon';
-import { HandPalm, ListChecks, Paperclip, ShieldCheck, ShieldWarning, Target } from '@phosphor-icons/react';
+import { HandPalm, ListChecks, Paperclip, ShieldCheck, ShieldWarning, Target } from '@/components/ui/icon';
 import { ADD_TO_CHAT_EVENT, isAddToChatDetail } from '@/lib/add-to-chat-event';
 import {
   buildFileExcerptPrompt,

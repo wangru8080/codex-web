@@ -1,7 +1,7 @@
 'use client';
 
 import { useId } from 'react';
-import { ListChecks } from '@phosphor-icons/react';
+import { ListChecks } from '@/components/ui/icon';
 
 import type { ComposerTurnPlan as ComposerTurnPlanData } from '@/codex-web/composer-turn-plan';
 import { CaretDown, CaretUp } from '@/components/ui/icon';

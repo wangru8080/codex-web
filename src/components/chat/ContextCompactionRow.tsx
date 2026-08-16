@@ -1,6 +1,6 @@
 'use client';
 
-import { Article } from '@phosphor-icons/react';
+import { Article } from '@/components/ui/icon';
 
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { useTranslation } from '@/hooks/useTranslation';
