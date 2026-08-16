@@ -86,7 +86,7 @@ async function main(): Promise<void> {
     broker = await createRuntimeBrokerServer({
       socketPath: join(runDirectory, "runtime-broker.sock"),
       config,
-      createRuntime: createBrokerRuntimeFactory(config, resolvedUsers),
+      createRuntime: createBrokerRuntimeFactory(config, resolvedUsers, undefined, false),
     });
     const client = new RuntimeBrokerClient(broker.socketPath);
 
@@ -119,10 +119,14 @@ async function main(): Promise<void> {
     }
     const rrssnasOtherPath = join(paths.get("codex")!.codexHome, "identity.json");
     const codexOtherPath = join(paths.get("rrssnas")!.codexHome, "identity.json");
-    const [rrssnasCrossRead, codexCrossRead] = await Promise.all([
-      request(rrssnasConnection, 101, "smoke/read", { path: rrssnasOtherPath }),
-      request(codexConnection, 102, "smoke/read", { path: codexOtherPath }),
-    ]);
+    const rrssnasOwnPath = join(paths.get("rrssnas")!.codexHome, "identity.json");
+    const codexOwnPath = join(paths.get("codex")!.codexHome, "identity.json");
+    const rrssnasOwnRead = await request(rrssnasConnection, 100, "smoke/read", { path: rrssnasOwnPath });
+    const codexOwnRead = await request(codexConnection, 200, "smoke/read", { path: codexOwnPath });
+    assertReadable(rrssnasOwnRead, "rrssnas");
+    assertReadable(codexOwnRead, "codex");
+    const rrssnasCrossRead = await request(rrssnasConnection, 101, "smoke/read", { path: rrssnasOtherPath });
+    const codexCrossRead = await request(codexConnection, 201, "smoke/read", { path: codexOtherPath });
     assertDenied(rrssnasCrossRead, "rrssnas");
     assertDenied(codexCrossRead, "codex");
 
@@ -211,11 +215,31 @@ async function request(
   params: Record<string, unknown>,
 ): Promise<unknown> {
   return await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`${method} 响应超时`)), 5_000);
-    const unsubscribe = connection.onMessage((message) => {
-      if (!("id" in message) || message.id !== id) return;
+    let settled = false;
+    const receivedIds: Array<string | number> = [];
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      unsubscribeClose();
+      unsubscribeMessage();
+      const detail = receivedIds.length > 0 ? `，已收到响应 ID：${receivedIds.join(", ")}` : "，未收到任何响应";
+      reject(new Error(`${method} 响应超时（请求 ID ${id}${detail}）`));
+    }, 15_000);
+    const unsubscribeClose = connection.onClose((error) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
-      unsubscribe();
+      unsubscribeMessage();
+      reject(new Error(`${method} 连接关闭（请求 ID ${id}）：${error?.message ?? "未知原因"}`));
+    });
+    const unsubscribeMessage = connection.onMessage((message) => {
+      if (settled) return;
+      if ("id" in message && message.id !== undefined) receivedIds.push(message.id);
+      if (!("id" in message) || message.id !== id) return;
+      settled = true;
+      clearTimeout(timeout);
+      unsubscribeMessage();
+      unsubscribeClose();
       if ("error" in message && message.error) reject(new Error(message.error.message));
       else resolve("result" in message ? message.result : undefined);
     });
@@ -226,6 +250,12 @@ async function request(
 function assertDenied(value: unknown, user: string): void {
   if (!value || typeof value !== "object" || (value as { readable?: unknown }).readable !== false) {
     throw new Error(`${user} 可以读取另一个用户的隔离文件`);
+  }
+}
+
+function assertReadable(value: unknown, user: string): void {
+  if (!value || typeof value !== "object" || (value as { readable?: unknown }).readable !== true) {
+    throw new Error(`${user} 无法读取自己的隔离文件`);
   }
 }
 

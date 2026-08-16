@@ -124,6 +124,7 @@ export function buildBrokerRuntimeProcessOptions(
   config: RuntimeBrokerConfig,
   user: ResolvedBrokerRuntimeUser,
   platform: RuntimeBrokerPlatform = resolveRuntimeBrokerPlatform(process.platform),
+  preferControlSocket = true,
 ): CodexProcessOptions {
   const userEnv = user.env ?? {};
   const env = {
@@ -141,7 +142,7 @@ export function buildBrokerRuntimeProcessOptions(
     codexHome: user.codexHome,
     env,
     inheritEnv: false,
-    preferControlSocket: true,
+    preferControlSocket,
   } satisfies CodexProcessOptions;
 
   if (user.uid === 0) {
@@ -192,11 +193,15 @@ export function createBrokerRuntimeFactory(
   config: RuntimeBrokerConfig,
   users: Map<string, ResolvedBrokerRuntimeUser>,
   platform: RuntimeBrokerPlatform = resolveRuntimeBrokerPlatform(process.platform),
+  preferControlSocket = true,
 ): (user: RuntimeBrokerUserConfig, onNotification: (message: JsonRpcMessage) => void) => PersistentAppServer {
   return (user, onNotification) => {
     const resolved = users.get(user.id);
     if (!resolved) throw new Error(`未解析 runtime 用户: ${user.id}`);
-    return new PersistentAppServer(buildBrokerRuntimeProcessOptions(config, resolved, platform), onNotification);
+    return new PersistentAppServer(
+      buildBrokerRuntimeProcessOptions(config, resolved, platform, preferControlSocket),
+      onNotification,
+    );
   };
 }
 
