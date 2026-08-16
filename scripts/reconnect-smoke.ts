@@ -14,6 +14,7 @@ const commandStartTimeoutMs = 90_000;
 const reconnectTimeoutMs = 10_000;
 const turnCompleteTimeoutMs = 120_000;
 const recentNotificationLimit = 20;
+const streamingMode = process.argv.includes("--streaming");
 
 type JsonRpcMessage = {
   id?: number | string;
@@ -120,6 +121,14 @@ async function main(): Promise<void> {
       throw new Error("已完成 Turn 在再次 resume 后仍被标记为 inProgress");
     }
 
+    if (!streamingMode) {
+      await second.close();
+      console.log(
+        `重连 smoke 通过：CODEX_HOME=${initialize.codexHome}，thread=${threadId}，turn=${turnId}，恢复状态=inProgress，终态=${completedStatus}`,
+      );
+      return;
+    }
+
     let streamedText = "";
     const partialTextReceived = second.waitForNotification((notification) => {
       const params = notification.params as { threadId?: string; turnId?: string; delta?: string } | undefined;
@@ -132,7 +141,7 @@ async function main(): Promise<void> {
       }
       streamedText += params.delta;
       return streamedText.length >= 20;
-    }, commandStartTimeoutMs, "等待部分模型正文");
+    }, commandStartTimeoutMs, "等待部分模型正文", threadId);
     const streamingTurn = await second.request("turn/start", {
       threadId,
       cwd,
@@ -276,9 +285,30 @@ class RpcClient {
     predicate: (notification: Notification) => boolean,
     timeoutMs: number,
     label: string,
+    rejectOnErrorThreadId?: string,
   ): Promise<Notification> {
     return new Promise((resolve, reject) => {
       const listener = (notification: Notification) => {
+        const errorParams = notification.params as {
+          threadId?: string;
+          error?: { message?: string; additionalDetails?: string | null };
+          willRetry?: boolean;
+        } | undefined;
+        if (
+          notification.method === "error"
+          && errorParams
+          && errorParams.threadId === rejectOnErrorThreadId
+        ) {
+          clearTimeout(timeout);
+          this.listeners.delete(listener);
+          const details = [
+            errorParams.error?.message ?? "app-server 模型请求失败",
+            errorParams.error?.additionalDetails,
+            errorParams.willRetry === undefined ? null : `willRetry=${errorParams.willRetry}`,
+          ].filter((value): value is string => Boolean(value));
+          reject(new Error(`${label}失败：${details.join("；")}`));
+          return;
+        }
         if (!predicate(notification)) return;
         clearTimeout(timeout);
         this.listeners.delete(listener);

@@ -41,6 +41,7 @@ function tabLabel(tab: Tab, t: (key: TranslationKey, vars?: Record<string, strin
     return t('workspaceSidebar.tab.git' as TranslationKey);
   }
   if (tab.kind === 'files-pinned') return t('workspaceSidebar.tab.openFile' as TranslationKey);
+  if (tab.kind === 'terminal-pinned') return t('workspaceSidebar.tool.terminal' as TranslationKey);
   return tab.title;
 }
 
@@ -60,6 +61,7 @@ function tabIcon(tab: Tab): React.ReactNode {
     return <CodexWebIcon name="git" size="md" className="text-inherit" aria-hidden />;
   }
   if (tab.kind === 'files-pinned') return <CodexWebIcon name="pin" size="md" className="text-inherit" aria-hidden />;
+  if (tab.kind === 'terminal-pinned') return <CodexWebIcon name="terminal" size="md" className="text-inherit" aria-hidden />;
   if (tab.kind === 'markdown' || tab.kind === 'file') {
     const ext = (tab.kind === 'markdown' ? '.md' : tab.filePath.split('.').pop() || '').toLowerCase();
     if (ext.endsWith('.md') || tab.kind === 'markdown') return <CodexWebIcon name="file" size="md" className="text-inherit" aria-hidden />;
@@ -175,7 +177,19 @@ export function TabBar({ className }: TabBarProps) {
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" side="bottom" className="w-52 gap-1 rounded-xl p-1.5">
-          <ToolMenuItem icon="terminal" label={t('workspaceSidebar.tool.terminal' as TranslationKey)} disabled />
+          <ToolMenuItem
+            icon="terminal"
+            label={t('workspaceSidebar.tool.terminal' as TranslationKey)}
+            onClick={() => {
+              openTab({
+                id: 'terminal-pinned',
+                kind: 'terminal-pinned',
+                key: 'terminal',
+                title: t('workspaceSidebar.tool.terminal' as TranslationKey),
+              });
+              setToolMenuOpen(false);
+            }}
+          />
           <ToolMenuItem icon="chat" label={t('workspaceSidebar.tool.sideChat' as TranslationKey)} disabled />
           <ToolMenuItem
             icon="file_tree"

@@ -21,13 +21,22 @@ describe('工作区侧栏 UI 接线', () => {
     expect(treePanel).toContain('highlightPath={focusPath ?? highlightPath}');
   });
 
-  it('终端和侧边聊天占位入口继续保留', () => {
+  it('终端入口接入真实 app-server process，侧边聊天继续保持占位', () => {
     const tabBar = source('src/components/layout/WorkspaceSidebar/TabBar.tsx');
     const panel = source('src/components/layout/WorkspaceSidebar/TabPanel.tsx');
+    const terminal = source('src/components/layout/WorkspaceSidebar/TerminalPanel.tsx');
 
     expect(tabBar).toContain('workspaceSidebar.tool.terminal');
     expect(tabBar).toContain('workspaceSidebar.tool.sideChat');
+    expect(tabBar).toContain("kind: 'terminal-pinned'");
     expect(panel).toContain('workspaceSidebar.tool.terminal');
     expect(panel).toContain('workspaceSidebar.tool.sideChat');
+    expect(panel).toContain('<TerminalPanel />');
+    expect(terminal).toContain('data-source-breadcrumb="app-server.process/spawn"');
+    expect(terminal).toContain('spawnProcess({');
+    expect(terminal).toContain('writeProcessStdin({');
+    expect(terminal).toContain('resizeProcessPty({');
+    expect(terminal).toContain('env: terminalEnvironment()');
+    expect(terminal).toContain("brightBlue: '#3b82c4'");
   });
 });

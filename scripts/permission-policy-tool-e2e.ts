@@ -12,7 +12,8 @@ import type { ConfigReadResponse } from "../src/codex/protocol/generated/v2/Conf
 
 const codexHome = resolveTestCodexHome();
 process.env.CODEX_HOME = codexHome;
-const testRoot = "/volume2/SSD/codex/Temp/codex-permission-e2e-20260714-142802";
+const testRoot = process.env.CODEX_PERMISSION_E2E_ROOT?.trim()
+  || "/volume2/SSD/codex/Temp/codex-permission-e2e-20260714-142802";
 const workspace = path.join(testRoot, "workspace");
 const outside = path.join(testRoot, "outside");
 const approvalMethods = new Set([

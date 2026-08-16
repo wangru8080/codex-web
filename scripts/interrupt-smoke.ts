@@ -55,6 +55,12 @@ async function main(): Promise<void> {
     const threadId = thread.thread?.id;
     if (!threadId) throw new Error("thread/start 未返回 thread.id");
 
+    const turnStarted = client.waitForNotification((notification) => {
+      const params = notification.params as { threadId?: string; turn?: { id?: string } } | undefined;
+      return notification.method === "turn/started"
+        && params?.threadId === threadId
+        && typeof params.turn?.id === "string";
+    }, 30_000, "等待 shell Turn 开始");
     const commandStarted = client.waitForNotification((notification) => {
       if (notification.method !== "item/started") return false;
       const params = notification.params as {
@@ -62,23 +68,20 @@ async function main(): Promise<void> {
         item?: { type?: string };
       } | undefined;
       return params?.threadId === threadId && params.item?.type === "commandExecution";
-    }, 30_000);
-    const started = await client.request("turn/start", {
-      threadId,
-      cwd,
-      model,
-      input: [{ type: "text", text: "请使用 shell 执行 sleep 30，等待完成后只回复 done。", text_elements: [] }],
-    }) as { turn?: { id?: string } };
-    const turnId = started.turn?.id;
-    if (!turnId) throw new Error("turn/start 未返回 turn.id");
-
+    }, 30_000, "等待长命令开始");
+    await client.request("thread/shellCommand", { threadId, command: "sleep 30" });
+    const startedNotification = await turnStarted;
+    const turnId = (
+      startedNotification.params as { turn?: { id?: string } } | undefined
+    )?.turn?.id;
+    if (!turnId) throw new Error("turn/started notification 未返回 turn.id");
     await commandStarted;
 
     const completed = client.waitForNotification((notification) => {
       if (notification.method !== "turn/completed") return false;
       const params = notification.params as { threadId?: string; turn?: { id?: string } } | undefined;
       return params?.threadId === threadId && params.turn?.id === turnId;
-    }, 30_000);
+    }, 30_000, "等待中断后的 turn/completed");
     await client.request("turn/interrupt", { threadId, turnId });
 
     const notification = await completed;
@@ -132,6 +135,7 @@ class RpcClient {
   waitForNotification(
     predicate: (notification: Notification) => boolean,
     timeoutMs: number,
+    label: string,
   ): Promise<Notification> {
     return new Promise((resolve, reject) => {
       const listener = (notification: Notification) => {
@@ -142,7 +146,7 @@ class RpcClient {
       };
       const timeout = setTimeout(() => {
         this.listeners.delete(listener);
-        reject(new Error(`等待 turn/completed 超时：${timeoutMs}ms`));
+        reject(new Error(`${label}超时：${timeoutMs}ms`));
       }, timeoutMs);
       this.listeners.add(listener);
     });

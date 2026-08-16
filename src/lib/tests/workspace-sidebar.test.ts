@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   WORKSPACE_HOME_TAB_ID,
   initialState,
+  openDynamicTab,
   parse,
   serialize,
 } from '@/lib/workspace-sidebar';
@@ -18,5 +19,19 @@ describe('工作区侧栏状态', () => {
     const persisted = serialize(initialState({ open: true }));
 
     expect(parse(JSON.stringify({ ...persisted, activeTabId: 'missing' })).activeTabId).toBe('git');
+  });
+
+  it('终端标签可持久化并恢复为活动标签', () => {
+    const state = openDynamicTab(initialState({ open: true }), {
+      id: 'terminal-pinned',
+      kind: 'terminal-pinned',
+      key: 'terminal',
+      title: '终端',
+    });
+
+    expect(parse(JSON.stringify(serialize(state)))).toMatchObject({
+      activeTabId: 'terminal-pinned',
+      tabs: expect.arrayContaining([expect.objectContaining({ kind: 'terminal-pinned' })]),
+    });
   });
 });

@@ -36,6 +36,10 @@ const FileTreePanel = dynamic(
   () => import('@/components/layout/panels/FileTreePanel').then((m) => ({ default: m.FileTreePanel })),
   { ssr: false },
 );
+const TerminalPanel = dynamic(
+  () => import('@/components/layout/WorkspaceSidebar/TerminalPanel').then((m) => ({ default: m.TerminalPanel })),
+  { ssr: false },
+);
 
 function ActiveContent({ tab, hasFilesTab }: { tab: Tab; hasFilesTab: boolean }) {
   if (tab.kind === 'fixed') {
@@ -47,6 +51,9 @@ function ActiveContent({ tab, hasFilesTab }: { tab: Tab; hasFilesTab: boolean })
     // shell owns resize, and Pin is meaningless because we're already
     // inside the sidebar. (Codex P2 收口 2026-04-30.)
     return <FileWorkspace />;
+  }
+  if (tab.kind === 'terminal-pinned') {
+    return <TerminalPanel />;
   }
   // markdown / artifact / file all flow through PreviewPanel; the
   // panel reads previewSource from PanelContext (kept in sync by
@@ -123,7 +130,11 @@ function WorkspaceHome() {
           <CodexWebIcon name="git" size="sm" aria-hidden />
           <span>{t('workspaceSidebar.home.review' as TranslationKey)}</span>
         </button>
-        <button type="button" disabled className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-muted-foreground disabled:opacity-70">
+        <button
+          type="button"
+          className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-foreground hover:bg-muted"
+          onClick={() => openTab({ id: 'terminal-pinned', kind: 'terminal-pinned', key: 'terminal', title: t('workspaceSidebar.tool.terminal' as TranslationKey) })}
+        >
           <CodexWebIcon name="terminal" size="sm" aria-hidden />
           <span>{t('workspaceSidebar.tool.terminal' as TranslationKey)}</span>
         </button>

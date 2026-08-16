@@ -159,6 +159,14 @@ import {
 } from "./turn-notification-routing";
 import { readAccountLoginCompletion } from "./account-login-adapter";
 import {
+  processNotification,
+  type ProcessKillParams,
+  type ProcessNotification,
+  type ProcessResizePtyParams,
+  type ProcessSpawnParams,
+  type ProcessWriteStdinParams,
+} from "./process-terminal";
+import {
   BROKER_PRESENCE_LIST_METHOD,
   readBrokerPresence,
   type BrokerPresenceListParams,
@@ -225,6 +233,11 @@ export type AppServerActions = {
   readThread: (threadId: string, options?: { includeTurns?: boolean }) => Promise<ThreadReadResponse>;
   listThreadTurns: (params: ThreadTurnsListParams) => Promise<ThreadTurnsListResponse>;
   execCommand: (params: CommandExecParams) => Promise<CommandExecResponse>;
+  spawnProcess: (params: ProcessSpawnParams) => Promise<void>;
+  writeProcessStdin: (params: ProcessWriteStdinParams) => Promise<void>;
+  resizeProcessPty: (params: ProcessResizePtyParams) => Promise<void>;
+  killProcess: (params: ProcessKillParams) => Promise<void>;
+  subscribeProcess: (processHandle: string, listener: (notification: ProcessNotification) => void) => () => void;
   readDirectory: (path: string) => Promise<FsReadDirectoryResponse>;
   createDirectory: (path: string, recursive?: boolean) => Promise<FsCreateDirectoryResponse>;
   readFile: (path: string) => Promise<FsReadFileResponse>;
@@ -277,6 +290,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
   const clientRef = useRef<AppServerBrowserClient | null>(null);
   const fsWatchSequenceRef = useRef(0);
   const terminalTurnRecoveryRef = useRef(new Set<string>());
+  const processListenersRef = useRef(new Map<string, Set<(notification: ProcessNotification) => void>>());
   const threadSettingsWaitersRef = useRef(new Map<string, Set<() => void>>());
   const approvalResponseStateRef = useRef<ApprovalResponseGuardState>({});
 
@@ -332,6 +346,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     });
 
     client.onNotification((notification) => {
+      const terminalNotification = processNotification(notification);
+      if (terminalNotification) {
+        const listeners = processListenersRef.current.get(terminalNotification.params.processHandle);
+        listeners?.forEach((listener) => listener(terminalNotification));
+        return;
+      }
       const onlineUsers = readBrokerPresence(notification);
       if (onlineUsers !== null) {
         setState((current) => ({
@@ -623,6 +643,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       }
       clientRef.current = null;
       approvalResponseStateRef.current = {};
+      processListenersRef.current.clear();
       client.close();
     };
   }, [publicBridgeUrl]);
@@ -851,6 +872,45 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const client = clientRef.current;
     if (!client) throw new Error("Web bridge 尚未连接");
     return (await client.request("command/exec", params)) as CommandExecResponse;
+  }, []);
+
+  const spawnProcess = useCallback(async (params: ProcessSpawnParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    await client.request("process/spawn", params);
+  }, []);
+
+  const writeProcessStdin = useCallback(async (params: ProcessWriteStdinParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    await client.request("process/writeStdin", params);
+  }, []);
+
+  const resizeProcessPty = useCallback(async (params: ProcessResizePtyParams) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    await client.request("process/resizePty", params);
+  }, []);
+
+  const killProcess = useCallback(async (params: ProcessKillParams) => {
+    const client = clientRef.current;
+    if (!client) return;
+    await client.request("process/kill", params);
+  }, []);
+
+  const subscribeProcess = useCallback((
+    processHandle: string,
+    listener: (notification: ProcessNotification) => void,
+  ) => {
+    const listeners = processListenersRef.current.get(processHandle) ?? new Set();
+    listeners.add(listener);
+    processListenersRef.current.set(processHandle, listeners);
+    return () => {
+      const current = processListenersRef.current.get(processHandle);
+      if (!current) return;
+      current.delete(listener);
+      if (current.size === 0) processListenersRef.current.delete(processHandle);
+    };
   }, []);
 
   const readDirectory = useCallback(async (path: string) => {
@@ -1492,6 +1552,11 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       readThread,
       listThreadTurns,
       execCommand,
+      spawnProcess,
+      writeProcessStdin,
+      resizeProcessPty,
+      killProcess,
+      subscribeProcess,
       readDirectory,
       createDirectory,
       readFile,
@@ -1531,7 +1596,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       publishCrossClientUserMessage,
       listOnlineUsers,
     }),
-    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, readDirectory, createDirectory, readFile, readFileLimited, getFileSize, getFileMetadata, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, listHooks, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
+    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, spawnProcess, writeProcessStdin, resizeProcessPty, killProcess, subscribeProcess, readDirectory, createDirectory, readFile, readFileLimited, getFileSize, getFileMetadata, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, listHooks, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
   );
 
   return (

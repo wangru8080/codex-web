@@ -20,7 +20,7 @@ import type { MarkdownPresentationStyle } from '@/lib/markdown/presentation-temp
 export type FixedTabId = 'git';
 export const WORKSPACE_HOME_TAB_ID = 'home' as const;
 
-export type DynamicTabKind = 'markdown' | 'artifact' | 'file' | 'files-pinned';
+export type DynamicTabKind = 'markdown' | 'artifact' | 'file' | 'files-pinned' | 'terminal-pinned';
 
 export interface FixedTab {
   id: FixedTabId;
@@ -72,7 +72,14 @@ export interface FilesPinnedTab {
   title: string;
 }
 
-export type DynamicTab = MarkdownTab | ArtifactTab | FilePreviewTab | FilesPinnedTab;
+export interface TerminalPinnedTab {
+  id: 'terminal-pinned';
+  kind: 'terminal-pinned';
+  key: 'terminal';
+  title: string;
+}
+
+export type DynamicTab = MarkdownTab | ArtifactTab | FilePreviewTab | FilesPinnedTab | TerminalPinnedTab;
 export type Tab = FixedTab | DynamicTab;
 
 export interface WorkspaceSidebarState {
@@ -272,7 +279,7 @@ function isParsableDynamicTab(value: unknown): value is DynamicTab {
   if (!value || typeof value !== 'object') return false;
   const v = value as Partial<DynamicTab> & { kind?: string; id?: string; key?: string };
   if (typeof v.id !== 'string' || typeof v.key !== 'string') return false;
-  return v.kind === 'markdown' || v.kind === 'artifact' || v.kind === 'file' || v.kind === 'files-pinned';
+  return v.kind === 'markdown' || v.kind === 'artifact' || v.kind === 'file' || v.kind === 'files-pinned' || v.kind === 'terminal-pinned';
 }
 
 // =====================================================================
