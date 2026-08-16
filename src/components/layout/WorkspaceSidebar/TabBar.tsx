@@ -22,9 +22,10 @@
  */
 
 import { useCallback, useRef } from 'react';
-import { X } from '@/components/ui/icon';
+import { Plus, X } from '@/components/ui/icon';
 import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { cn } from '@/lib/utils';
@@ -39,7 +40,7 @@ function tabLabel(tab: Tab, t: (key: TranslationKey, vars?: Record<string, strin
   if (tab.kind === 'fixed') {
     return t('workspaceSidebar.tab.git' as TranslationKey);
   }
-  if (tab.kind === 'files-pinned') return t('workspaceSidebar.tab.files' as TranslationKey);
+  if (tab.kind === 'files-pinned') return t('workspaceSidebar.tab.openFile' as TranslationKey);
   return tab.title;
 }
 
@@ -70,7 +71,7 @@ function tabIcon(tab: Tab): React.ReactNode {
 }
 
 export function TabBar({ className }: TabBarProps) {
-  const { state, setActiveTab, closeTab, setOpen } = useWorkspaceSidebar();
+  const { state, setActiveTab, closeTab, setOpen, openTab } = useWorkspaceSidebar();
   const { t } = useTranslation();
   // Refs to each Tab button so ArrowLeft/ArrowRight focus moves keep
   // the visual focus ring in sync with `activeTabId`.
@@ -159,6 +160,35 @@ export function TabBar({ className }: TabBarProps) {
           />
         );
       })}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t('workspaceSidebar.addTab' as TranslationKey)}
+            className="ml-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            <Plus size={15} />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" side="bottom" className="w-52 gap-1 rounded-xl p-1.5">
+          <ToolMenuItem icon="terminal" label={t('workspaceSidebar.tool.terminal' as TranslationKey)} disabled />
+          <ToolMenuItem icon="chat" label={t('workspaceSidebar.tool.sideChat' as TranslationKey)} disabled />
+          <ToolMenuItem
+            icon="file_tree"
+            label={t('workspaceSidebar.tool.files' as TranslationKey)}
+            onClick={() =>
+              openTab({
+                id: 'files-pinned',
+                kind: 'files-pinned',
+                key: 'files',
+                title: t('workspaceSidebar.tab.openFile' as TranslationKey),
+              })
+            }
+          />
+        </PopoverContent>
+      </Popover>
       </div>
       <Button
         type="button"
@@ -172,6 +202,30 @@ export function TabBar({ className }: TabBarProps) {
         <span className="sr-only">{t('workspaceSidebar.collapse' as TranslationKey)}</span>
       </Button>
     </div>
+  );
+}
+
+function ToolMenuItem({
+  icon,
+  label,
+  onClick,
+  disabled = false,
+}: {
+  icon: 'terminal' | 'chat' | 'file_tree';
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <CodexWebIcon name={icon} size="sm" aria-hidden />
+      <span>{label}</span>
+    </button>
   );
 }
 

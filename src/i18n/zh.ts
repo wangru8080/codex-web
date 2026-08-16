@@ -1776,7 +1776,15 @@ const zh: Record<TranslationKey, string> = {
   'workspaceSidebar.tab.git': 'Git',
   'workspaceSidebar.tab.widget': '看板',
   'workspaceSidebar.tab.files': '文件',
+  'workspaceSidebar.tab.openFile': '打开文件',
   'workspaceSidebar.pinFiles': '固定到工作区侧栏',
+  'workspaceSidebar.addTab': '打开侧栏面板',
+  'workspaceSidebar.tool.terminal': '终端',
+  'workspaceSidebar.tool.files': '文件',
+  'workspaceSidebar.tool.sideChat': '侧边聊天',
+  'workspaceSidebar.home.review': '审阅',
+  'workspaceSidebar.file.emptyTitle': '打开文件',
+  'workspaceSidebar.file.emptyBody': '从工作区目录中选择文件',
   'fileTree.addToChat': '添加到对话',
 
   // plugins page actions

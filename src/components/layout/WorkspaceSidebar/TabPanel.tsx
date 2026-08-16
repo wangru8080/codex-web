@@ -20,6 +20,9 @@ import dynamic from 'next/dynamic';
 import { useWorkspaceSidebar } from '@/hooks/useWorkspaceSidebar';
 import { usePanel } from '@/hooks/usePanel';
 import { previewSourceFromTab, type Tab } from '@/lib/workspace-sidebar';
+import { CodexWebIcon } from '@/components/ui/semantic-icon';
+import { useTranslation } from '@/hooks/useTranslation';
+import type { TranslationKey } from '@/i18n';
 
 const GitTabContent = dynamic(
   () => import('@/components/layout/panels/GitPanel').then((m) => ({ default: m.GitTabContent })),
@@ -34,7 +37,7 @@ const FileTreePanel = dynamic(
   { ssr: false },
 );
 
-function ActiveContent({ tab }: { tab: Tab }) {
+function ActiveContent({ tab, hasFilesTab }: { tab: Tab; hasFilesTab: boolean }) {
   if (tab.kind === 'fixed') {
     return <GitTabContent />;
   }
@@ -43,20 +46,26 @@ function ActiveContent({ tab }: { tab: Tab }) {
     // ResizeHandle / panel title) — the Tab strip's X owns close, the
     // shell owns resize, and Pin is meaningless because we're already
     // inside the sidebar. (Codex P2 收口 2026-04-30.)
-    return <FileTreePanel variant="sidebar" />;
+    return <FileWorkspace />;
   }
   // markdown / artifact / file all flow through PreviewPanel; the
   // panel reads previewSource from PanelContext (kept in sync by
   // openWorkspaceTab callers in MessageItem / FileTreePanel /
   // DiffSummary — see Track 4). sidebar variant strips the redundant
   // outer ResizeHandle / width / Close chrome.
+  if (hasFilesTab && (tab.kind === 'file' || tab.kind === 'markdown')) {
+    return <FileWorkspace />;
+  }
   return <PreviewPanel variant="sidebar" />;
 }
 
 export function TabPanel() {
   const { state } = useWorkspaceSidebar();
   const { previewSource, setPreviewSource } = usePanel();
-  const active = state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
+  const active = state.activeTabId === 'home'
+    ? undefined
+    : state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
+  const hasFilesTab = state.tabs.some((tab) => tab.kind === 'files-pinned');
 
   // Sync PanelContext.previewSource to the active dynamic Tab. Skips
   // fixed / files-pinned Tabs (those don't drive the preview surface).
@@ -76,7 +85,19 @@ export function TabPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id]);
 
-  if (!active) return null;
+  if (!active || active.id === 'home') {
+    return (
+      <div
+        id="workspace-sidebar-tabpanel"
+        role="tabpanel"
+        tabIndex={0}
+        className="flex min-h-0 flex-1 overflow-hidden focus-visible:outline-none"
+        data-workspace-sidebar-home
+      >
+        <WorkspaceHome />
+      </div>
+    );
+  }
   return (
     <div
       id="workspace-sidebar-tabpanel"
@@ -87,7 +108,83 @@ export function TabPanel() {
       data-workspace-sidebar-tabpanel
       data-tab-id={active.id}
     >
-      <ActiveContent tab={active} />
+      <ActiveContent tab={active} hasFilesTab={hasFilesTab} />
+    </div>
+  );
+}
+
+function WorkspaceHome() {
+  const { openTab, setActiveTab } = useWorkspaceSidebar();
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-full w-full items-center justify-center px-8">
+      <div className="w-full max-w-[240px] space-y-1">
+        <button type="button" className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-foreground hover:bg-muted" onClick={() => setActiveTab('git')}>
+          <CodexWebIcon name="git" size="sm" aria-hidden />
+          <span>{t('workspaceSidebar.home.review' as TranslationKey)}</span>
+        </button>
+        <button type="button" disabled className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-muted-foreground disabled:opacity-70">
+          <CodexWebIcon name="terminal" size="sm" aria-hidden />
+          <span>{t('workspaceSidebar.tool.terminal' as TranslationKey)}</span>
+        </button>
+        <button type="button" className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-foreground hover:bg-muted" onClick={() => openTab({ id: 'files-pinned', kind: 'files-pinned', key: 'files', title: t('workspaceSidebar.tab.openFile' as TranslationKey) })}>
+          <CodexWebIcon name="file_tree" size="sm" aria-hidden />
+          <span>{t('workspaceSidebar.tool.files' as TranslationKey)}</span>
+        </button>
+        <button type="button" disabled className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-muted-foreground disabled:opacity-70">
+          <CodexWebIcon name="chat" size="sm" aria-hidden />
+          <span>{t('workspaceSidebar.tool.sideChat' as TranslationKey)}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FileWorkspace() {
+  const { previewSource, workingDirectory, setPreviewFile } = usePanel();
+  const { t } = useTranslation();
+  const filePath = previewSource?.kind === 'file' ? previewSource.filePath : null;
+  const segments = (filePath ?? workingDirectory ?? '/').split('/').filter(Boolean);
+  const relativeSegments = filePath && workingDirectory && filePath.startsWith(workingDirectory)
+    ? [workingDirectory.split('/').filter(Boolean).pop() ?? workingDirectory, ...filePath.slice(workingDirectory.length).split('/').filter(Boolean)]
+    : segments;
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/60 px-3 text-xs text-muted-foreground">
+        {filePath ? relativeSegments.map((segment, index) => (
+          <span key={`${segment}-${index}`} className="inline-flex min-w-0 items-center">
+            {index > 0 && <span className="px-1 text-muted-foreground/50">›</span>}
+            <button
+              type="button"
+              className="truncate hover:text-foreground hover:underline"
+              onClick={() => index === relativeSegments.length - 1 && setPreviewFile(filePath)}
+              title={index === relativeSegments.length - 1 ? filePath : segment}
+            >
+              {segment}
+            </button>
+          </span>
+        )) : <span>/</span>}
+      </div>
+      <div className="flex min-h-0 flex-1 divide-x divide-border">
+        <div className="min-w-0 flex-1">
+          {filePath ? <PreviewPanel variant="sidebar" /> : <EmptyFilePreview t={t} />}
+        </div>
+        <div className="w-[42%] min-w-[220px] max-w-[360px]">
+          <FileTreePanel variant="sidebar" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyFilePreview({ t }: { t: (key: TranslationKey) => string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+      <CodexWebIcon name="folder_open" size="lg" className="text-muted-foreground/70" aria-hidden />
+      <div>
+        <p className="text-base font-medium text-foreground">{t('workspaceSidebar.file.emptyTitle')}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('workspaceSidebar.file.emptyBody')}</p>
+      </div>
     </div>
   );
 }

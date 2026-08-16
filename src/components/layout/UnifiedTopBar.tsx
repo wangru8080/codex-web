@@ -335,19 +335,8 @@ export function UnifiedTopBar() {
             </Tooltip>
           )}
 
-          {/* File tree toggle — independent topbar entry per the
-              revised Phase 2 boundary (2026-04-30):
-                1. File tree is a high-frequency deterministic tool, so
-                   it gets its own button.
-                2. Workspace Sidebar handles work surfaces (Git / Widget
-                   / preview); the file tree is NOT folded into it by
-                   default. Files Tab only appears when the user
-                   explicitly pins.
-                3. v13: File Tree 与 Workspace Sidebar 可同时打开，
-                   各自独立 toggle —— 两个按钮不再自动关闭对方，用户
-                   可以一边浏览 file tree 一边在 Workspace Sidebar 上
-                   钉一个 markdown / artifact preview Tab，聊天区随之
-                   收窄。完整 rationale 见 Phase 3 archive 的 v13 条目。 */}
+          {/* 文件树从工作区侧栏的“+”菜单打开；没有侧栏上下文的旧页面保留原入口。 */}
+          {!ws && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -360,7 +349,6 @@ export function UnifiedTopBar() {
                   const nextOpen = !fileTreeOpen;
                   if (nextOpen && compactViewport) {
                     setChatListOpen(false);
-                    ws?.setOpen(false);
                   }
                   // v13: file-tree and Workspace Sidebar are additive,
                   // not mutex. Each toggle flips its own panel only;
@@ -375,6 +363,7 @@ export function UnifiedTopBar() {
             </TooltipTrigger>
             <TooltipContent side="bottom">{t('topBar.fileTree')}</TooltipContent>
           </Tooltip>
+          )}
 
           {/* Single Workspace Sidebar toggle — replaces the previous
               Git + Widget + Dashboard cluster. The new sidebar hosts

@@ -135,7 +135,7 @@ export function CardSurface({ kind, variant, className, children }: CardSurfaceP
         // the translucent fill shows up everywhere off-mac too (web
         // sidebars get the legacy `--platform-surface-sidebar` token).
         kind === "sidebar" && "bg-[var(--platform-surface-sidebar)] backdrop-blur-xl",
-        kind === "workspace" && "bg-background",
+        kind === "workspace" && "border-l border-border bg-background",
         kind === "main" && "bg-background",
         kind === "fileTree" && "bg-background",
         // Assistant rail is opaque by deliberate user request (see

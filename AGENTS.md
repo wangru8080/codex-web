@@ -144,6 +144,12 @@ Codex Web 只有一个 runtime：Codex app-server。
 export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 ```
 
+使用测试账号进行登录：
+```
+export CODEX_WEB_LOGIN_EMAIL="test@test.com"
+export CODEX_WEB_LOGIN_PASSWORD="123456"
+```
+
 未设置或只设置空白 `CODEX_HOME` 时，开发入口、测试 fixture、smoke 和回归脚本使用上述默认值。用户显式设置任意非空 `CODEX_HOME` 时，所有入口必须使用该值，包括真实 `CODEX_HOME`，不得做默认路径精确相等限制。
 
 适用范围：
@@ -152,6 +158,7 @@ export CODEX_HOME=/volume2/SSD/codex/Temp/codex-dev-home
 - Web bridge 启动 app-server。
 - `npm run test`、`npm run test:smoke`、Playwright、Vitest 和所有会触发 app-server 的测试。
 - 任何会读取账号、配置、历史会话、MCP、skills、approval 记录或模型设置的命令。
+- 使用浏览器测试完毕后，需要关闭测试标签页，然后停止服务。
 
 要求：
 

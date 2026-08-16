@@ -1801,7 +1801,15 @@ const en = {
   'workspaceSidebar.tab.git': 'Git',
   'workspaceSidebar.tab.widget': 'Dashboard',
   'workspaceSidebar.tab.files': 'Files',
+  'workspaceSidebar.tab.openFile': 'Open file',
   'workspaceSidebar.pinFiles': 'Pin files to workspace sidebar',
+  'workspaceSidebar.addTab': 'Open sidebar panel',
+  'workspaceSidebar.tool.terminal': 'Terminal',
+  'workspaceSidebar.tool.files': 'Files',
+  'workspaceSidebar.tool.sideChat': 'Side chat',
+  'workspaceSidebar.home.review': 'Review',
+  'workspaceSidebar.file.emptyTitle': 'Open file',
+  'workspaceSidebar.file.emptyBody': 'Select a file from the workspace',
   'fileTree.addToChat': 'Add to chat',
 
   // plugins page actions

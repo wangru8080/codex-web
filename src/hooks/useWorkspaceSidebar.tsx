@@ -115,7 +115,13 @@ export function WorkspaceSidebarProvider({ workingDirectory, sessionId, children
     setState((prev) => pureSetActive(prev, id));
   }, []);
   const setOpen = useCallback((open: boolean) => {
-    setState((prev) => pureSetOpen(prev, open));
+    setState((prev) => {
+      const next = pureSetOpen(prev, open);
+      if (open && !prev.open) {
+        return { ...next, activeTabId: 'home' };
+      }
+      return next;
+    });
   }, []);
   const setWidth = useCallback((width: number) => {
     setState((prev) => pureSetWidth(prev, width));
