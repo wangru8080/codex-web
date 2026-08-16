@@ -18,6 +18,7 @@ import type { PreviewTrust } from '@/lib/preview-source';
 import type { MarkdownPresentationStyle } from '@/lib/markdown/presentation-templates';
 
 export type FixedTabId = 'git';
+export const WORKSPACE_HOME_TAB_ID = 'home' as const;
 
 export type DynamicTabKind = 'markdown' | 'artifact' | 'file' | 'files-pinned';
 
@@ -81,7 +82,7 @@ export interface WorkspaceSidebarState {
   /** Pixel width of the shell when open. Persisted across sessions
    *  within the same workspace. */
   width: number;
-  /** Currently active Tab `id`. Always points at a Tab in `tabs`. */
+  /** 当前活动标签，或未对应可见标签的工作区总览。 */
   activeTabId: string;
   /** Fixed first, then dynamic in insertion order. */
   tabs: Tab[];
@@ -251,7 +252,9 @@ export function parse(raw: string | null | undefined): WorkspaceSidebarState {
     const tabs: Tab[] = [...FIXED_TABS, ...dynamicTabs];
     const fallbackActive = 'git';
     const desired = typeof data.activeTabId === 'string' ? data.activeTabId : fallbackActive;
-    const activeTabId = tabs.some((t) => t.id === desired) ? desired : fallbackActive;
+    const activeTabId = desired === WORKSPACE_HOME_TAB_ID || tabs.some((t) => t.id === desired)
+      ? desired
+      : fallbackActive;
     return {
       open: typeof data.open === 'boolean' ? data.open : false,
       width: typeof data.width === 'number'

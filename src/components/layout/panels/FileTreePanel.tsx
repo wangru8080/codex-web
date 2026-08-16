@@ -30,7 +30,15 @@ type NewItemMode = "file" | "folder";
  *     Tab strip's X handles closing). Avoids the "half-migrated" look
  *     where the sidebar Tab body still showed the legacy chrome.
  */
-export function FileTreePanel({ variant = 'legacy' }: { variant?: 'legacy' | 'sidebar' } = {}) {
+export function FileTreePanel({
+  variant = 'legacy',
+  focusPath,
+  focusSeek,
+}: {
+  variant?: 'legacy' | 'sidebar';
+  focusPath?: string;
+  focusSeek?: number;
+} = {}) {
   const { workingDirectory, previewFile, setPreviewFile, setFileTreeOpen } = usePanel();
   const { t } = useTranslation();
   const searchParams = useSearchParams();
@@ -318,8 +326,8 @@ export function FileTreePanel({ variant = 'legacy' }: { variant?: 'legacy' | 'si
               selectedFolderPath={selectedFolderPath ?? undefined}
               onSelectFolder={handleSelectFolder}
               selectedFilePath={previewFile ?? undefined}
-              highlightPath={highlightPath}
-              highlightSeek={highlightSeek}
+              highlightPath={focusPath ?? highlightPath}
+              highlightSeek={focusSeek?.toString() ?? highlightSeek}
             />
           </div>
         </div>

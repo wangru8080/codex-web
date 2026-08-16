@@ -11,6 +11,7 @@ import {
   parse,
   serialize,
   storageKey,
+  WORKSPACE_HOME_TAB_ID,
   tabFromPreviewSource,
   type DynamicTab,
   type WorkspaceSidebarState,
@@ -118,7 +119,7 @@ export function WorkspaceSidebarProvider({ workingDirectory, sessionId, children
     setState((prev) => {
       const next = pureSetOpen(prev, open);
       if (open && !prev.open) {
-        return { ...next, activeTabId: 'home' };
+        return { ...next, activeTabId: WORKSPACE_HOME_TAB_ID };
       }
       return next;
     });

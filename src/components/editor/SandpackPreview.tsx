@@ -90,6 +90,22 @@ function hashString(str: string): string {
   return Math.abs(hash).toString(36);
 }
 
+const STABLE_ID_STORAGE_KEY = "SANDPACK_INTERNAL:URL-CONSISTENT-ID";
+
+function ensureStableServiceWorkerId(seed: string): string {
+  const fallback = hashString(seed).slice(0, 9).padEnd(9, "s");
+  if (typeof window === "undefined") return fallback;
+
+  try {
+    const stored = window.localStorage.getItem(STABLE_ID_STORAGE_KEY);
+    if (stored) return stored;
+    window.localStorage.setItem(STABLE_ID_STORAGE_KEY, fallback);
+  } catch {
+    // 持久化存储不可用时保留本次生成值，由 Sandpack 自身负责后续错误收口。
+  }
+  return fallback;
+}
+
 /** Sandpack's react-ts template hard-codes /index.tsx → `import App from './App'`. */
 const MOUNT_PATH = "/App.tsx";
 
@@ -102,6 +118,8 @@ export function SandpackPreview({ filePath, content, bundlerURL }: SandpackPrevi
   // on "previously seen this provider" — the Provider looks unique on
   // every file swap, so cached compilation results can't cross over.
   const [mountToken] = useState(() => Math.random().toString(36).slice(2));
+  // 必须在子级 SandpackProvider 挂载前写入，避免局域网 HTTP 下调用 crypto.subtle。
+  useState(() => ensureStableServiceWorkerId(`${filePath ?? "inline"}:${content ?? ""}`));
 
   const { files, setup, activeFile, providerKey } = useMemo(() => {
     // Codex P1: the user's source ALWAYS goes to /App.tsx, not to a
@@ -140,6 +158,7 @@ export function SandpackPreview({ filePath, content, bundlerURL }: SandpackPrevi
           activeFile,
           bundlerURL,
           externalResources: EXTERNAL_RESOURCES,
+          experimental_enableStableServiceWorkerId: true,
           recompileMode: "delayed",
           recompileDelay: 400,
           autorun: true,

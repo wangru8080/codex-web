@@ -330,6 +330,15 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
 
   // Sync expanded paths when highlightPath changes
   useEffect(() => {
+    if (highlightPath === workingDirectory) {
+      setExpandedPaths(new Set());
+      seekKeyRef.current = `${workingDirectory}::root::${highlightSeek || ''}`;
+      requestAnimationFrame(() => {
+        const root = document.querySelector<HTMLElement>('[data-file-tree-root]');
+        root?.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+      return;
+    }
     if (highlightPath) {
       const next = new Set<string>();
       for (const parent of getParentPaths(highlightPath)) {
@@ -340,7 +349,7 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
     } else {
       setExpandedPaths(new Set());
     }
-  }, [highlightPath, highlightSeek]);
+  }, [highlightPath, highlightSeek, workingDirectory]);
 
   // Scroll to and flash highlighted file from search results.
   // Guarded by seekKeyRef so tree auto-refreshes don't re-trigger the scroll.
@@ -384,7 +393,7 @@ export function FileTree({ workingDirectory, onFileSelect, onFileAdd, selectedFo
       </div>
 
       {/* Tree */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" data-file-tree-root>
         {loading && tree.length === 0 ? (
           <div className="flex items-center justify-center py-8">
             <CodexWebIcon name="refresh" size="md" className="animate-spin text-muted-foreground" aria-hidden />

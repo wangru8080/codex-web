@@ -15,11 +15,11 @@
  * previous preview's content rendered. (Codex P1 finding 2026-04-30.)
  */
 
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useWorkspaceSidebar } from '@/hooks/useWorkspaceSidebar';
 import { usePanel } from '@/hooks/usePanel';
-import { previewSourceFromTab, type Tab } from '@/lib/workspace-sidebar';
+import { previewSourceFromTab, WORKSPACE_HOME_TAB_ID, type Tab } from '@/lib/workspace-sidebar';
 import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
@@ -62,7 +62,7 @@ function ActiveContent({ tab, hasFilesTab }: { tab: Tab; hasFilesTab: boolean })
 export function TabPanel() {
   const { state } = useWorkspaceSidebar();
   const { previewSource, setPreviewSource } = usePanel();
-  const active = state.activeTabId === 'home'
+  const active = state.activeTabId === WORKSPACE_HOME_TAB_ID
     ? undefined
     : state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
   const hasFilesTab = state.tabs.some((tab) => tab.kind === 'files-pinned');
@@ -144,23 +144,27 @@ function FileWorkspace() {
   const { previewSource, workingDirectory, setPreviewFile } = usePanel();
   const { t } = useTranslation();
   const filePath = previewSource?.kind === 'file' ? previewSource.filePath : null;
-  const segments = (filePath ?? workingDirectory ?? '/').split('/').filter(Boolean);
-  const relativeSegments = filePath && workingDirectory && filePath.startsWith(workingDirectory)
-    ? [workingDirectory.split('/').filter(Boolean).pop() ?? workingDirectory, ...filePath.slice(workingDirectory.length).split('/').filter(Boolean)]
-    : segments;
+  const [treeFocus, setTreeFocus] = useState<{ path: string; seek: number } | null>(null);
+  const breadcrumbs = useMemo(
+    () => buildBreadcrumbs(filePath, workingDirectory),
+    [filePath, workingDirectory],
+  );
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border/60 px-3 text-xs text-muted-foreground">
-        {filePath ? relativeSegments.map((segment, index) => (
-          <span key={`${segment}-${index}`} className="inline-flex min-w-0 items-center">
+        {filePath ? breadcrumbs.map((item, index) => (
+          <span key={item.path} className="inline-flex min-w-0 items-center">
             {index > 0 && <span className="px-1 text-muted-foreground/50">›</span>}
             <button
               type="button"
               className="truncate hover:text-foreground hover:underline"
-              onClick={() => index === relativeSegments.length - 1 && setPreviewFile(filePath)}
-              title={index === relativeSegments.length - 1 ? filePath : segment}
+              onClick={() => {
+                if (item.isFile) setPreviewFile(item.path);
+                else setTreeFocus({ path: item.path, seek: Date.now() });
+              }}
+              title={item.path}
             >
-              {segment}
+              {item.label}
             </button>
           </span>
         )) : <span>/</span>}
@@ -170,11 +174,40 @@ function FileWorkspace() {
           {filePath ? <PreviewPanel variant="sidebar" /> : <EmptyFilePreview t={t} />}
         </div>
         <div className="w-[42%] min-w-[220px] max-w-[360px]">
-          <FileTreePanel variant="sidebar" />
+          <FileTreePanel
+            variant="sidebar"
+            focusPath={treeFocus?.path}
+            focusSeek={treeFocus?.seek}
+          />
         </div>
       </div>
     </div>
   );
+}
+
+interface BreadcrumbItem {
+  label: string;
+  path: string;
+  isFile: boolean;
+}
+
+function buildBreadcrumbs(filePath: string | null, workingDirectory: string): BreadcrumbItem[] {
+  if (!filePath) return [];
+  const separator = filePath.includes('\\') ? '\\' : '/';
+  const root = workingDirectory.replace(/[\\/]+$/, '');
+  const isWorkspaceFile = filePath === root || filePath.startsWith(`${root}${separator}`);
+  if (!isWorkspaceFile) {
+    return [{ label: filePath.split(/[\\/]/).filter(Boolean).pop() ?? filePath, path: filePath, isFile: true }];
+  }
+  const rootLabel = root.split(/[\\/]/).filter(Boolean).pop() ?? root;
+  const relative = filePath.slice(root.length).split(/[\\/]/).filter(Boolean);
+  const items: BreadcrumbItem[] = [{ label: rootLabel, path: root, isFile: relative.length === 0 }];
+  let current = root;
+  relative.forEach((segment, index) => {
+    current = `${current}${separator}${segment}`;
+    items.push({ label: segment, path: current, isFile: index === relative.length - 1 });
+  });
+  return items;
 }
 
 function EmptyFilePreview({ t }: { t: (key: TranslationKey) => string }) {

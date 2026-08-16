@@ -21,7 +21,7 @@
  *     hears "Close Git" rather than just "Close tab".
  */
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Plus, X } from '@/components/ui/icon';
 import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { useWorkspaceSidebar } from '@/hooks/useWorkspaceSidebar';
-import type { Tab } from '@/lib/workspace-sidebar';
+import { WORKSPACE_HOME_TAB_ID, type Tab } from '@/lib/workspace-sidebar';
 
 interface TabBarProps {
   className?: string;
@@ -73,6 +73,7 @@ function tabIcon(tab: Tab): React.ReactNode {
 export function TabBar({ className }: TabBarProps) {
   const { state, setActiveTab, closeTab, setOpen, openTab } = useWorkspaceSidebar();
   const { t } = useTranslation();
+  const [toolMenuOpen, setToolMenuOpen] = useState(false);
   // Refs to each Tab button so ArrowLeft/ArrowRight focus moves keep
   // the visual focus ring in sync with `activeTabId`.
   const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -151,6 +152,7 @@ export function TabBar({ className }: TabBarProps) {
             tab={tab}
             label={label}
             isActive={isActive}
+            isFocusable={isActive || (state.activeTabId === WORKSPACE_HOME_TAB_ID && tab.id === 'git')}
             closable={closable}
             tabRefs={tabRefs}
             onActivate={() => setActiveTab(tab.id)}
@@ -160,7 +162,7 @@ export function TabBar({ className }: TabBarProps) {
           />
         );
       })}
-      <Popover>
+      <Popover open={toolMenuOpen} onOpenChange={setToolMenuOpen}>
         <PopoverTrigger asChild>
           <Button
             type="button"
@@ -178,14 +180,15 @@ export function TabBar({ className }: TabBarProps) {
           <ToolMenuItem
             icon="file_tree"
             label={t('workspaceSidebar.tool.files' as TranslationKey)}
-            onClick={() =>
+            onClick={() => {
               openTab({
                 id: 'files-pinned',
                 kind: 'files-pinned',
                 key: 'files',
                 title: t('workspaceSidebar.tab.openFile' as TranslationKey),
-              })
-            }
+              });
+              setToolMenuOpen(false);
+            }}
           />
         </PopoverContent>
       </Popover>
@@ -253,6 +256,7 @@ function TabItem({
   tab,
   label,
   isActive,
+  isFocusable,
   closable,
   tabRefs,
   onActivate,
@@ -263,6 +267,7 @@ function TabItem({
   tab: Tab;
   label: string;
   isActive: boolean;
+  isFocusable: boolean;
   closable: boolean;
   tabRefs: React.MutableRefObject<Map<string, HTMLButtonElement>>;
   onActivate: () => void;
@@ -301,7 +306,7 @@ function TabItem({
         role="tab"
         aria-selected={isActive}
         aria-controls="workspace-sidebar-tabpanel"
-        tabIndex={isActive ? 0 : -1}
+        tabIndex={isFocusable ? 0 : -1}
         ref={(el) => {
           if (el) tabRefs.current.set(tab.id, el);
           else tabRefs.current.delete(tab.id);
