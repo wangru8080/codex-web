@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -195,6 +196,9 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
       <DialogContent className="max-w-lg overflow-hidden">
         <DialogHeader>
           <DialogTitle>{t('folderPicker.title')}</DialogTitle>
+          <DialogDescription className="sr-only">
+            选择一个项目文件夹作为工作目录
+          </DialogDescription>
         </DialogHeader>
 
         {/* Path input */}
