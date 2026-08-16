@@ -187,7 +187,10 @@ function assertIdentity(
   connection: RuntimeBrokerConnection,
   identity: Identity,
 ): void {
-  if (connection.pid !== identity.pid) throw new Error(`${user.name} broker PID 与 runtime PID 不一致`);
+  // control-socket runtime 不暴露底层 app-server PID；有 PID 时仍校验进程对应关系。
+  if (connection.pid !== undefined && connection.pid !== identity.pid) {
+    throw new Error(`${user.name} broker PID 与 runtime PID 不一致`);
+  }
   if (identity.uid !== user.uid || identity.euid !== user.uid) throw new Error(`${user.name} UID 未正确切换`);
   if (identity.gid !== user.gid || identity.egid !== user.gid) throw new Error(`${user.name} GID 未正确切换`);
   if (identity.env.HOME !== user.home || identity.env.USER !== user.name || identity.env.LOGNAME !== user.name) {
