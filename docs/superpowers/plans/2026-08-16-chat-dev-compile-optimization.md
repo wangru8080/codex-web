@@ -43,13 +43,15 @@
 
 ### Task 4：冷启动验证与收口
 
-- [x] 测量 Turbopack 首次 `/login` 和认证 `/chat`；记录 `/chat` 仍受 xterm/可选预览异步图与网络文件系统影响。
+- [x] 测量 Turbopack 首次 `/login` 和认证 `/chat`；记录清缓存后的冷启动基线。
 - [x] 运行 `npm run test`、`npm run build`、`npm run test:smoke`。
 - [x] 检查 `git diff --check`、工作区生成物和计划状态。
 
 ## 结果与剩余风险
 
-- Phosphor 根入口已完全移出业务组件，`/login` 冷请求从此前超时降至约 1 秒。
-- 认证 `/chat` 仍可能因 xterm CSS、Mermaid、Sandpack 和网络文件系统缓存编译超过 180 秒；这些异步依赖需要独立路由或独立本地构建目录才能彻底隔离，本次不引入更大架构改动。
+- Phosphor 根入口已完全移出业务组件；清空旧 `.next` 后，`/login` 冷请求为 26.7 秒，后续请求进入缓存后恢复快速。
+- 清空旧 `.next` 后，认证 `/chat` 冷请求为 14.1 秒，第二次请求为 0.2 秒；此前超过 180 秒的异常主要由旧缓存和网络文件系统上的编译产物状态放大。开发环境仍使用网络文件系统，首次冷编译时间会随缓存状态变化。
 - Hugeicons 的逐模块导入因当前包缺少对应 TypeScript 声明而撤回，保留 Next 的 `optimizePackageImports` 配置。
-- 终端已迁移到独立 `/workspace/terminal` iframe 路由；认证后首次路由编译约 14.9 秒，二次请求约 0.1 秒，父页面仍负责 app-server process 生命周期。
+- 终端已迁移到独立 `/workspace/terminal` iframe 路由；本次清缓存后首次路由编译约 4.9 秒，父页面仍负责 app-server process 生命周期。
+- 预览已迁移到独立 `/workspace/preview` iframe 路由；本次清缓存后首次路由编译约 11.1 秒，不再阻塞 `/chat` 首次编译。
+- 本次 A/B 缓存操作未覆盖既有暂存物：当前 `.next` 已移动至 `/volume2/SSD/Trash/home/rrssnas/code/codex-web/2026-08-16-next-cache/.next`（约 6.2G）；目标目录中原有约 2.9G 缓存保持不变。
