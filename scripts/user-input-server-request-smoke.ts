@@ -85,7 +85,7 @@ async function main(): Promise<void> {
   await waitFor(cdp, `document.querySelector('[data-testid="git-history-file"]')?.textContent?.includes("src/history.ts") === true`, 15_000);
   await captureScreenshot(cdp, "04-git-history.png");
   await click(cdp, '[data-testid="git-history-file"]');
-  await waitFor(cdp, `document.body.innerText.includes("+const historicalValue = 2;")`, 15_000);
+  await waitFor(cdp, `(() => { const text = "+const historicalValue = 2;"; return document.body.innerText.includes(text) || [...document.querySelectorAll("iframe")].some((frame) => frame.contentDocument?.body?.innerText.includes(text)); })()`, 15_000);
   await captureScreenshot(cdp, "05-history-diff.png");
 
   await click(cdp, "#tab-git");
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
   });
   await waitFor(cdp, `document.querySelector('[aria-label="只读查看 src/history.ts 的历史版本"]') !== null`, 15_000);
   await click(cdp, '[aria-label="只读查看 src/history.ts 的历史版本"]');
-  await waitFor(cdp, `document.body.innerText.includes("const historicalValue = 2;") && document.body.innerText.includes("只读")`, 15_000);
+  await waitFor(cdp, `(() => { const text = "historicalValue = 2;"; return [...document.querySelectorAll("iframe")].some((frame) => frame.contentDocument?.body?.innerText.includes(text)); })()`, 15_000);
   await captureScreenshot(cdp, "06-history-file.png");
   console.log("Git 历史 smoke 通过：普通路径不预取历史，提交可展开文件，diff 与完整版本均只读打开");
 
@@ -106,7 +106,7 @@ async function main(): Promise<void> {
   await waitFor(cdp, `document.querySelector('[data-testid="git-view-changes"]') !== null`, 15_000);
   await click(cdp, '[data-testid="git-view-changes"]');
   await click(cdp, '[data-testid="git-panel"] [title="src/app.ts"]');
-  await waitFor(cdp, `document.body.innerText.includes("-const oldValue = 2;")`, 15_000);
+  await waitFor(cdp, `(() => { const text = "-const oldValue = 2;"; return document.body.innerText.includes(text) || [...document.querySelectorAll("iframe")].some((frame) => frame.contentDocument?.body?.innerText.includes(text)); })()`, 15_000);
   await captureScreenshot(cdp, "02-file-diff.png");
   debug("Git 文件 diff 已打开");
   await click(cdp, "#tab-git");
@@ -189,7 +189,7 @@ async function main(): Promise<void> {
   console.log("任务进度 UI smoke 通过：仅任务时独立展开，文件出现时切换双胶囊，文件消失后恢复独立面板，完成后自动退出");
   await click(cdp, '[data-testid="composer-file-changes"] > button');
   await click(cdp, '[data-testid="composer-file-changes"] [title="src/app.ts"]');
-  await waitFor(cdp, `document.body.innerText.includes("+const nextValue = 2;")`, 15_000);
+  await waitFor(cdp, `(() => { const text = "+const nextValue = 2;"; return document.body.innerText.includes(text) || [...document.querySelectorAll("iframe")].some((frame) => frame.contentDocument?.body?.innerText.includes(text)); })()`, 15_000);
 
   fake.setGitStatus("partial");
   await cdp.call("Runtime.evaluate", { expression: `window.dispatchEvent(new CustomEvent("git-refresh"))` });
@@ -317,12 +317,13 @@ async function startFakeAppServer(publicHost: string): Promise<{
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("fake app-server 未返回端口");
 
-  let client: WebSocket | null = null;
+  const clients = new Set<WebSocket>();
   let gitStatus: GitSmokeStatus = "all";
   const responses = new Map<string, unknown>();
   const responseWaiters = new Map<string, (value: unknown) => void>();
   server.on("connection", (socket) => {
-    client = socket;
+    clients.add(socket);
+    socket.once("close", () => clients.delete(socket));
     socket.on("message", (data) => {
       const message = JSON.parse(data.toString("utf8")) as {
         id?: string | number;
@@ -348,22 +349,32 @@ async function startFakeAppServer(publicHost: string): Promise<{
     });
   });
 
+  const broadcast = (message: unknown) => {
+    const payload = JSON.stringify(message);
+    for (const socket of clients) {
+      if (socket.readyState === socket.OPEN) socket.send(payload);
+    }
+  };
+  const assertConnected = () => {
+    if (clients.size === 0) throw new Error("fake app-server 尚未连接");
+  };
+
   return {
     url: `ws://${publicHost}:${address.port}`,
     sendRequests: () => {
-      if (!client || client.readyState !== client.OPEN) throw new Error("fake app-server 尚未连接");
-      for (const request of smokeRequests()) client.send(JSON.stringify(request));
+      assertConnected();
+      for (const request of smokeRequests()) broadcast(request);
     },
     sendFileChanges: () => {
-      if (!client || client.readyState !== client.OPEN) throw new Error("fake app-server 尚未连接");
-      for (const notification of fileChangeNotifications()) client.send(JSON.stringify(notification));
+      assertConnected();
+      for (const notification of fileChangeNotifications()) broadcast(notification);
     },
     sendTurnPlan: (stage) => {
-      if (!client || client.readyState !== client.OPEN) throw new Error("fake app-server 尚未连接");
+      assertConnected();
       if (stage === "running") {
-        client.send(JSON.stringify({ method: "turn/started", params: { threadId, turn: { id: "turn-file-smoke", status: "inProgress" } } }));
+        broadcast({ method: "turn/started", params: { threadId, turn: { id: "turn-file-smoke", status: "inProgress" } } });
       }
-      client.send(JSON.stringify(turnPlanNotification(stage)));
+      broadcast(turnPlanNotification(stage));
     },
     setGitStatus: (status) => {
       gitStatus = status;

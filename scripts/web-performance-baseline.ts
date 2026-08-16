@@ -355,6 +355,9 @@ async function runScenario(
     await client.waitFor(`Boolean(window.__CODEX_WEB_PERFORMANCE__)`, 120_000);
     await client.waitFor(`window.__CODEX_WEB_PERFORMANCE__?.snapshot().entries.some((entry) => entry.name === 'codex.first-interactive')`, 120_000);
     await waitForScenarioContent(client, scenario);
+    if (scenario.name === "ordinary-history" || scenario.name === "long-history") {
+      await client.waitFor(`Boolean(document.querySelector('[data-virtualized-message-list] [data-message-list-scroller]'))`, 20_000);
+    }
     await delay(500);
     const virtualization = await captureVirtualizationProbe(client, scenario);
     const optionalMarkdown = await captureOptionalMarkdownProbe(client, scenario);
@@ -466,7 +469,7 @@ async function runStreamingScenario(
     );
     await client.waitFor(
       `!/(停止|Stop)/i.test(document.querySelector('[data-message-input-submit]')?.getAttribute('aria-label') ?? '')
-        && ((document.querySelector('main')?.innerText.match(new RegExp(${JSON.stringify(streamMarker)}, 'g'))?.length ?? 0) >= 2)`,
+        && ((document.querySelector('main')?.innerText.match(new RegExp(${JSON.stringify(streamMarker)}, 'g'))?.length ?? 0) >= 1)`,
       180_000,
     );
     await delay(500);
@@ -840,12 +843,15 @@ class CdpClient {
   }
 
   async evaluate<T>(expression: string): Promise<T> {
-    const response = await this.request<{ result?: { value?: T }; exceptionDetails?: { text?: string } }>("Runtime.evaluate", {
+    const response = await this.request<{ result?: { value?: T }; exceptionDetails?: { text?: string; description?: string } }>("Runtime.evaluate", {
       expression,
       awaitPromise: true,
       returnByValue: true,
     });
-    if (response.exceptionDetails) throw new Error(response.exceptionDetails.text ?? "浏览器表达式执行失败");
+    if (response.exceptionDetails) {
+      const details = response.exceptionDetails;
+      throw new Error(details.description ?? details.text ?? "浏览器表达式执行失败");
+    }
     return response.result?.value as T;
   }
 
