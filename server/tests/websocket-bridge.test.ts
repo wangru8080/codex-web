@@ -175,6 +175,50 @@ describe("createWebSocketBridge 共享 Server", () => {
     await bridge.close();
   });
 
+  it("客户端断开时终止其已启动的 process", async () => {
+    const bridge = createWebSocketBridge({ host: "127.0.0.1", token: "secret", allowRemoteConnections: true });
+    await waitUntilListening(bridge.server);
+    const client = await openWebSocket(`${bridge.url()}?token=secret`);
+    const appServer = fakeAppServers[0] as FakeAppServer;
+    const writes: Array<Record<string, unknown>> = [];
+    appServer.child.stdin.on("data", (data) => writes.push(JSON.parse(data.toString())));
+
+    client.send(JSON.stringify({ id: 1, method: "process/spawn", params: { processHandle: "terminal-1" } }));
+    await waitFor(() => writes.some((message) => message.method === "process/spawn"));
+    const spawn = writes.find((message) => message.method === "process/spawn")!;
+    appServer.child.stdout.write(`${JSON.stringify({ id: spawn.id, result: {} })}\n`);
+
+    client.close();
+    await waitFor(() => client.readyState === WebSocket.CLOSED);
+    await waitFor(() => writes.some((message) => (
+      message.method === "process/kill"
+      && (message.params as { processHandle?: string }).processHandle === "terminal-1"
+    )));
+    await bridge.close();
+  });
+
+  it("客户端在 process/spawn 完成前断开时补偿终止迟到的进程", async () => {
+    const bridge = createWebSocketBridge({ host: "127.0.0.1", token: "secret", allowRemoteConnections: true });
+    await waitUntilListening(bridge.server);
+    const client = await openWebSocket(`${bridge.url()}?token=secret`);
+    const appServer = fakeAppServers[0] as FakeAppServer;
+    const writes: Array<Record<string, unknown>> = [];
+    appServer.child.stdin.on("data", (data) => writes.push(JSON.parse(data.toString())));
+
+    client.send(JSON.stringify({ id: 1, method: "process/spawn", params: { processHandle: "terminal-pending" } }));
+    await waitFor(() => writes.some((message) => message.method === "process/spawn"));
+    const spawn = writes.find((message) => message.method === "process/spawn")!;
+    client.close();
+    await waitFor(() => client.readyState === WebSocket.CLOSED);
+    appServer.child.stdout.write(`${JSON.stringify({ id: spawn.id, result: {} })}\n`);
+
+    await waitFor(() => writes.filter((message) => (
+      message.method === "process/kill"
+      && (message.params as { processHandle?: string }).processHandle === "terminal-pending"
+    )).length >= 2);
+    await bridge.close();
+  });
+
   it("app-server fatal exit 后拉起新进程并要求客户端重新 initialize", async () => {
     const bridge = createWebSocketBridge({
       host: "127.0.0.1",

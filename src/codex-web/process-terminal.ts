@@ -64,3 +64,85 @@ export function terminalEnvironment(): Record<string, string> {
     CLICOLOR: '1',
   };
 }
+
+type TerminalProcessSessionActions = {
+  spawn: () => Promise<void>;
+  write: (data: string) => Promise<void>;
+  resize: (cols: number, rows: number) => Promise<void>;
+  kill: () => Promise<void>;
+  onReady?: () => void;
+  onError: (error: unknown) => void;
+};
+
+export type TerminalProcessSession = {
+  start: () => Promise<void>;
+  write: (data: string) => void;
+  resize: (cols: number, rows: number) => void;
+  exit: () => void;
+  dispose: () => Promise<void>;
+};
+
+export function createTerminalProcessSession(actions: TerminalProcessSessionActions): TerminalProcessSession {
+  let state: 'idle' | 'starting' | 'running' | 'exited' = 'idle';
+  let disposed = false;
+  let bufferedInput = '';
+  let startPromise: Promise<void> | null = null;
+
+  const report = (error: unknown) => {
+    if (!disposed) actions.onError(error);
+  };
+  const kill = async () => {
+    try {
+      await actions.kill();
+    } catch (error) {
+      report(error);
+    }
+  };
+
+  return {
+    start() {
+      if (startPromise) return startPromise;
+      if (disposed || state !== 'idle') return Promise.resolve();
+      state = 'starting';
+      startPromise = (async () => {
+        try {
+          await actions.spawn();
+          if (disposed) {
+            await kill();
+            return;
+          }
+          state = 'running';
+          actions.onReady?.();
+          const input = bufferedInput;
+          bufferedInput = '';
+          if (input) await actions.write(input);
+        } catch (error) {
+          if (!disposed) state = 'exited';
+          report(error);
+        }
+      })();
+      return startPromise;
+    },
+    write(data) {
+      if (!disposed && (state === 'idle' || state === 'starting')) {
+        bufferedInput += data;
+        return;
+      }
+      if (!disposed && state === 'running') void actions.write(data).catch(report);
+    },
+    resize(cols, rows) {
+      if (!disposed && state === 'running') void actions.resize(cols, rows).catch(() => undefined);
+    },
+    exit() {
+      if (!disposed) state = 'exited';
+      bufferedInput = '';
+    },
+    async dispose() {
+      if (disposed) return;
+      const shouldKill = state === 'running';
+      disposed = true;
+      bufferedInput = '';
+      if (shouldKill) await kill();
+    },
+  };
+}

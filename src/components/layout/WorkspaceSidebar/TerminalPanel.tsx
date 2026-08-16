@@ -5,7 +5,7 @@ import { usePanel } from '@/hooks/usePanel';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
-import { decodeBase64, encodeBase64, shellCommand, terminalEnvironment } from '@/codex-web/process-terminal';
+import { createTerminalProcessSession, decodeBase64, encodeBase64, shellCommand, terminalEnvironment } from '@/codex-web/process-terminal';
 import { isTerminalFrameMessage, type TerminalFrameCommand } from './terminal-frame-protocol';
 
 export function TerminalPanel() {
@@ -27,30 +27,37 @@ export function TerminalPanel() {
     if (!frame || !initialize || connection !== 'connected' || !workingDirectory) return;
     const processHandle = `codex-web-terminal-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     processHandleRef.current = processHandle;
-    let spawned = false;
+    const session = createTerminalProcessSession({
+      spawn: () => spawnProcess({
+        command: shellCommand(initialize.platformFamily), processHandle, cwd: workingDirectory, tty: true,
+        streamStdin: true, streamStdoutStderr: true, outputBytesCap: null, timeoutMs: null,
+        env: terminalEnvironment(), size: { cols: 80, rows: 24 },
+      }),
+      write: (data) => writeProcessStdin({ processHandle, deltaBase64: encodeBase64(data) }),
+      resize: (cols, rows) => resizeProcessPty({ processHandle, size: { cols, rows } }),
+      kill: () => killProcess({ processHandle }),
+      onReady: () => setError(null),
+      onError: (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
+    });
     const onMessage = (event: MessageEvent<unknown>) => {
       if (event.origin !== window.location.origin || event.source !== frame.contentWindow || !isTerminalFrameMessage(event.data)) return;
       if (event.data.type === 'terminal-frame/input') {
-        void writeProcessStdin({ processHandle, deltaBase64: encodeBase64(event.data.data) }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
-      } else if (event.data.type === 'terminal-frame/resize' && spawned) {
-        void resizeProcessPty({ processHandle, size: { cols: event.data.cols, rows: event.data.rows } }).catch(() => undefined);
+        session.write(event.data.data);
+      } else if (event.data.type === 'terminal-frame/resize') {
+        session.resize(event.data.cols, event.data.rows);
       } else if (event.data.type === 'terminal-frame/ready') {
-        void spawnProcess({
-          command: shellCommand(initialize.platformFamily), processHandle, cwd: workingDirectory, tty: true,
-          streamStdin: true, streamStdoutStderr: true, outputBytesCap: null, timeoutMs: null,
-          env: terminalEnvironment(), size: { cols: 80, rows: 24 },
-        }).then(() => { spawned = true; }).catch((cause) => send({ type: 'terminal-frame/error', message: cause instanceof Error ? cause.message : String(cause) }));
+        void session.start();
       }
     };
     const unsubscribe = subscribeProcess(processHandle, (notification) => {
       if (notification.method === 'process/outputDelta') send({ type: 'terminal-frame/output', data: decodeBase64(notification.params.deltaBase64) });
-      else { spawned = false; send({ type: 'terminal-frame/exit', code: notification.params.exitCode }); }
+      else { session.exit(); send({ type: 'terminal-frame/exit', code: notification.params.exitCode }); }
     });
     window.addEventListener('message', onMessage);
     return () => {
       window.removeEventListener('message', onMessage);
       unsubscribe();
-      if (spawned) void killProcess({ processHandle }).catch(() => undefined);
+      void session.dispose();
       processHandleRef.current = null;
     };
   }, [connection, initialize, killProcess, resizeProcessPty, send, spawnProcess, subscribeProcess, workingDirectory, writeProcessStdin]);

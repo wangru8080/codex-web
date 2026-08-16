@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  createTerminalProcessSession,
   decodeBase64,
   encodeBase64,
   processNotification,
@@ -33,4 +34,78 @@ describe('终端 process 协议适配', () => {
       CLICOLOR: '1',
     });
   });
+
+  it('spawn 完成前缓冲输入，完成后按顺序写入', async () => {
+    const spawn = deferred<void>();
+    const write = vi.fn(async () => undefined);
+    const session = createTerminalProcessSession({
+      spawn: () => spawn.promise,
+      write,
+      resize: vi.fn(async () => undefined),
+      kill: vi.fn(async () => undefined),
+      onError: vi.fn(),
+    });
+
+    const started = session.start();
+    session.write('echo ');
+    session.write('ok\n');
+    expect(write).not.toHaveBeenCalled();
+
+    spawn.resolve();
+    await started;
+    expect(write).toHaveBeenCalledWith('echo ok\n');
+  });
+
+  it('dispose 发生在 spawn 完成前时，迟到的进程会立即终止', async () => {
+    const spawn = deferred<void>();
+    const kill = vi.fn(async () => undefined);
+    const session = createTerminalProcessSession({
+      spawn: () => spawn.promise,
+      write: vi.fn(async () => undefined),
+      resize: vi.fn(async () => undefined),
+      kill,
+      onError: vi.fn(),
+    });
+
+    const started = session.start();
+    await session.dispose();
+    expect(kill).not.toHaveBeenCalled();
+
+    spawn.resolve();
+    await started;
+    expect(kill).toHaveBeenCalledTimes(1);
+  });
+
+  it('正常运行时 dispose 终止进程，退出后不重复终止', async () => {
+    const kill = vi.fn(async () => undefined);
+    const session = createTerminalProcessSession({
+      spawn: vi.fn(async () => undefined),
+      write: vi.fn(async () => undefined),
+      resize: vi.fn(async () => undefined),
+      kill,
+      onError: vi.fn(),
+    });
+
+    await session.start();
+    await session.dispose();
+    expect(kill).toHaveBeenCalledTimes(1);
+
+    const exited = createTerminalProcessSession({
+      spawn: vi.fn(async () => undefined),
+      write: vi.fn(async () => undefined),
+      resize: vi.fn(async () => undefined),
+      kill,
+      onError: vi.fn(),
+    });
+    await exited.start();
+    exited.exit();
+    await exited.dispose();
+    expect(kill).toHaveBeenCalledTimes(1);
+  });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((next) => { resolve = next; });
+  return { promise, resolve };
+}

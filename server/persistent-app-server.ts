@@ -13,6 +13,7 @@ import type {
 type ClientRequestRoute = {
   socket: AppServerPeer;
   clientId: JsonRpcId;
+  process?: { action: "spawn" | "kill"; handle: string };
 };
 
 type InitializeWaiter = ClientRequestRoute;
@@ -22,6 +23,7 @@ export class PersistentAppServer {
   private rpc: JsonRpcClient | null = null;
   private readonly sockets = new Set<AppServerPeer>();
   private readonly requestRoutes = new Map<string, ClientRequestRoute>();
+  private readonly processHandlesBySocket = new Map<AppServerPeer, Set<string>>();
   private serverRequestRouter = new BridgeServerRequestRouter<JsonRpcClient>();
   private readonly pendingServerRequests = new Map<string, JsonRpcRequest>();
   private readonly initializeWaiters: InitializeWaiter[] = [];
@@ -59,8 +61,10 @@ export class PersistentAppServer {
 
   detach(socket: AppServerPeer): void {
     this.sockets.delete(socket);
+    this.killOwnedProcesses(socket);
     for (const [upstreamId, route] of this.requestRoutes) {
       if (route.socket === socket) {
+        if (route.process?.action === "spawn") continue;
         this.requestRoutes.delete(upstreamId);
       }
     }
@@ -204,6 +208,7 @@ export class PersistentAppServer {
 
   private resetProtocolState(): void {
     this.requestRoutes.clear();
+    this.processHandlesBySocket.clear();
     this.serverRequestRouter = new BridgeServerRequestRouter<JsonRpcClient>();
     this.pendingServerRequests.clear();
     this.initializeWaiters.splice(0);
@@ -222,8 +227,10 @@ export class PersistentAppServer {
       return;
     }
 
+    const process = processRequest(request);
+    if (process?.action === "spawn") this.addProcessHandle(socket, process.handle);
     const upstreamId = this.createUpstreamId();
-    this.requestRoutes.set(upstreamId, { socket, clientId: request.id });
+    this.requestRoutes.set(upstreamId, { socket, clientId: request.id, ...(process ? { process } : {}) });
     rpc.sendRaw({ ...request, id: upstreamId });
   }
 
@@ -245,6 +252,10 @@ export class PersistentAppServer {
   private handleAppServerMessage(message: JsonRpcMessage, rpc: JsonRpcClient): void {
     if ("method" in message) {
       if (message.id === undefined) {
+        if (message.method === "process/exited") {
+          const handle = processHandle(message.params);
+          if (handle) this.removeProcessHandle(handle);
+        }
         this.onNotification?.(message);
         this.broadcast(message);
         return;
@@ -267,7 +278,46 @@ export class PersistentAppServer {
       return;
     }
     this.requestRoutes.delete(upstreamId);
+    if (route.process?.action === "spawn") {
+      if (message.error) this.removeProcessHandle(route.process.handle, route.socket);
+      else if (!this.sockets.has(route.socket)) this.sendProcessKill(route.process.handle, rpc);
+    } else if (route.process?.action === "kill" && !message.error) {
+      this.removeProcessHandle(route.process.handle, route.socket);
+    }
     this.send(route.socket, { ...message, id: route.clientId });
+  }
+
+  private addProcessHandle(socket: AppServerPeer, handle: string): void {
+    const handles = this.processHandlesBySocket.get(socket) ?? new Set<string>();
+    handles.add(handle);
+    this.processHandlesBySocket.set(socket, handles);
+  }
+
+  private removeProcessHandle(handle: string, socket?: AppServerPeer): void {
+    const entries = socket
+      ? [[socket, this.processHandlesBySocket.get(socket)] as const]
+      : [...this.processHandlesBySocket.entries()];
+    for (const [owner, handles] of entries) {
+      if (!handles?.delete(handle)) continue;
+      if (handles.size === 0) this.processHandlesBySocket.delete(owner);
+    }
+  }
+
+  private killOwnedProcesses(socket: AppServerPeer): void {
+    const handles = this.processHandlesBySocket.get(socket);
+    if (!handles) return;
+    this.processHandlesBySocket.delete(socket);
+    const rpc = this.rpc;
+    if (!rpc) return;
+    for (const handle of handles) this.sendProcessKill(handle, rpc);
+  }
+
+  private sendProcessKill(handle: string, rpc: JsonRpcClient): void {
+    rpc.sendRaw({
+      id: this.createUpstreamId(),
+      method: "process/kill",
+      params: { processHandle: handle },
+    });
   }
 
   private completeInitialize(response: JsonRpcResponse): void {
@@ -313,4 +363,17 @@ export class PersistentAppServer {
 function restartDelayMs(attempt: number): number {
   if (attempt === 0) return 0;
   return Math.min(250 * 2 ** (attempt - 1), 5_000);
+}
+
+function processRequest(request: JsonRpcRequest): ClientRequestRoute["process"] | undefined {
+  if (request.method !== "process/spawn" && request.method !== "process/kill") return undefined;
+  const handle = processHandle(request.params);
+  if (!handle) return undefined;
+  return { action: request.method === "process/spawn" ? "spawn" : "kill", handle };
+}
+
+function processHandle(params: unknown): string | null {
+  if (!params || typeof params !== "object") return null;
+  const handle = (params as { processHandle?: unknown }).processHandle;
+  return typeof handle === "string" && handle.length > 0 ? handle : null;
 }
