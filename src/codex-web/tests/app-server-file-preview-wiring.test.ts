@@ -6,6 +6,14 @@ import { describe, expect, it } from "vitest";
 describe("app-server 文件预览接线", () => {
   const provider = readFileSync(resolve(process.cwd(), "src/codex-web/AppServerProvider.tsx"), "utf8");
   const preview = readFileSync(resolve(process.cwd(), "src/components/layout/panels/PreviewPanel.tsx"), "utf8");
+  const previewFrame = readFileSync(resolve(process.cwd(), "src/components/layout/WorkspaceSidebar/PreviewPanelFrame.tsx"), "utf8");
+
+  it("文件预览在当前登录页面内动态渲染", () => {
+    expect(previewFrame).toContain("dynamic(");
+    expect(previewFrame).toContain('<PreviewPanel variant="sidebar" />');
+    expect(previewFrame).not.toContain('src="/workspace/preview"');
+    expect(previewFrame).not.toContain("<iframe");
+  });
 
   it("Provider 公开 generated fs/readFile 与 fs/writeFile", () => {
     expect(provider).toContain('client.request("fs/readFile"');

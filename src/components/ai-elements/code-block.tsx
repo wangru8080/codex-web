@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { writeTextToClipboard } from "@/lib/clipboard";
 import { useThemeFamily } from "@/lib/theme/context";
 import { resolveShikiTheme, resolveShikiThemes, SHIKI_DEFAULT_LIGHT, SHIKI_DEFAULT_DARK } from "@/lib/theme/code-themes";
 import type { Icon } from "@/components/ui/icon";
@@ -753,7 +754,7 @@ const CodeBlockDefaultHeader = ({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(contextCode);
+      await writeTextToClipboard(contextCode);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -764,7 +765,7 @@ const CodeBlockDefaultHeader = ({
   const handleCopyMarkdown = async () => {
     try {
       const markdown = `\`\`\`${contextLanguage}\n${contextCode}\n\`\`\``;
-      await navigator.clipboard.writeText(markdown);
+      await writeTextToClipboard(markdown);
       setCopiedMarkdown(true);
       setTimeout(() => setCopiedMarkdown(false), 2000);
     } catch {
@@ -1005,14 +1006,14 @@ export const CodeBlockCopyButton = ({
   const { code } = useContext(CodeBlockContext);
 
   const copyToClipboard = useCallback(async () => {
-    if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
-      onError?.(new Error("Clipboard API not available"));
+    if (typeof window === "undefined") {
+      onError?.(new Error("Clipboard unavailable"));
       return;
     }
 
     try {
       if (!isCopied) {
-        await navigator.clipboard.writeText(code);
+        await writeTextToClipboard(code);
         setIsCopied(true);
         onCopy?.();
         timeoutRef.current = window.setTimeout(
