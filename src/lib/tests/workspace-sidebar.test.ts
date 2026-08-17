@@ -34,4 +34,17 @@ describe('工作区侧栏状态', () => {
       tabs: expect.arrayContaining([expect.objectContaining({ kind: 'terminal-pinned' })]),
     });
   });
+
+  it('侧边聊天标签不写入持久化状态', () => {
+    const state = openDynamicTab(initialState({ open: true }), {
+      id: 'side-chat',
+      kind: 'side-chat',
+      key: 'side-chat',
+      title: '侧边聊天',
+    });
+
+    expect(serialize(state).dynamicTabs).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'side-chat' })]),
+    );
+  });
 });

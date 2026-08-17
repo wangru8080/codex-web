@@ -159,6 +159,7 @@ interface ChatViewProps {
   appServerLoadEarlier?: () => Promise<MessagesResponse>;
   appServerRollbackLastTurn?: () => Promise<Message[]>;
   appServerRemoteRollback?: CrossClientThreadRollback | null;
+  emptyState?: React.ReactNode;
 }
 
 /** Maximum messages kept in React state. Older messages are trimmed and reloaded on scroll. */
@@ -216,6 +217,7 @@ export function ChatView({
   appServerLoadEarlier,
   appServerRollbackLastTurn,
   appServerRemoteRollback,
+  emptyState,
 }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory: panelWorkingDirectory, setPendingApprovalSessionId, setFileTreeOpen, setIsAssistantWorkspace } = usePanel();
   const workingDirectory = sessionWorkingDirectory ?? panelWorkingDirectory;
@@ -1721,9 +1723,18 @@ export function ChatView({
         // inline post-stream affordances (TerminalReasonChip,
         // skillNudge, RateLimitBanner, etc.) since none of them
         // apply when there are no messages yet.
-        <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-0 py-8 sm:px-4">
-          <div className="w-full max-w-3xl">
-            <NewChatWelcome projectName={projectName} isAssistant={isAssistantProject} />
+        <div className={emptyState
+          ? 'flex min-h-0 flex-1 flex-col overflow-y-auto px-0 py-4 sm:px-4'
+          : 'flex flex-1 overflow-y-auto flex-col items-center justify-center px-0 py-8 sm:px-4'}>
+          <div className={emptyState ? 'flex min-h-0 w-full flex-1 flex-col' : 'w-full max-w-3xl'}>
+            {emptyState ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-6">
+                {emptyState}
+              </div>
+            ) : (
+              <NewChatWelcome projectName={projectName} isAssistant={isAssistantProject} />
+            )}
+            <div className={emptyState ? 'mx-auto w-full max-w-3xl' : undefined}>
             {readOnly && (
               <div
                 className="mb-2 rounded-md border border-border/60 bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
@@ -1789,6 +1800,7 @@ export function ChatView({
               blockingReasonIds={blockingReasonIds}
               />
             </PerformanceProfiler>
+            </div>
           </div>
         </div>
       ) : (

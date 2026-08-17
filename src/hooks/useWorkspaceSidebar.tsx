@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   initialState,
   openDynamicTab as pureOpen,
@@ -17,6 +17,7 @@ import {
   type WorkspaceSidebarState,
 } from '@/lib/workspace-sidebar';
 import type { PreviewSource } from '@/hooks/usePanel';
+import { useAppServerActions } from '@/codex-web/AppServerProvider';
 
 /**
  * Window event other parts of the app dispatch to ask the sidebar to
@@ -37,6 +38,16 @@ interface WorkspaceSidebarContextValue {
   setActiveTab: (id: string) => void;
   setOpen: (open: boolean) => void;
   setWidth: (width: number) => void;
+  sideChat: SideChatState | null;
+  openSideChat: (title: string) => void;
+  closeSideChat: () => Promise<void>;
+}
+
+export interface SideChatState {
+  parentThreadId: string;
+  threadId: string | null;
+  status: 'creating' | 'ready' | 'error';
+  error: string | null;
 }
 
 export const WorkspaceSidebarContext = createContext<WorkspaceSidebarContextValue | null>(null);
@@ -62,6 +73,14 @@ interface ProviderProps {
 export function WorkspaceSidebarProvider({ workingDirectory, sessionId, children }: ProviderProps) {
   const key = storageKey(workingDirectory, sessionId);
   const [state, setState] = useState<WorkspaceSidebarState>(() => initialState());
+  const [sideChat, setSideChat] = useState<SideChatState | null>(null);
+  const sideChatRef = useRef<SideChatState | null>(null);
+  const sideChatOperationRef = useRef(0);
+  const { startSideChat, unsubscribeThread, interruptTurn } = useAppServerActions();
+
+  useEffect(() => {
+    sideChatRef.current = sideChat;
+  }, [sideChat]);
 
   // Hydrate from storage when the scope (workspace + session) changes.
   // Without this, switching chats inside the same workspace would keep
@@ -128,9 +147,75 @@ export function WorkspaceSidebarProvider({ workingDirectory, sessionId, children
     setState((prev) => pureSetWidth(prev, width));
   }, []);
 
+  const openSideChat = useCallback((title: string) => {
+    setState((prev) => pureOpen(prev, {
+      id: 'side-chat',
+      kind: 'side-chat',
+      key: 'side-chat',
+      title,
+    }));
+    if (!sessionId) {
+      setSideChat({ parentThreadId: '', threadId: null, status: 'error', error: '请先发送一条消息，再打开侧边聊天。' });
+      return;
+    }
+    const current = sideChatRef.current;
+    if (current?.parentThreadId === sessionId && current.status !== 'error') return;
+
+    const operationId = ++sideChatOperationRef.current;
+    const creating: SideChatState = { parentThreadId: sessionId, threadId: null, status: 'creating', error: null };
+    sideChatRef.current = creating;
+    setSideChat(creating);
+    void startSideChat(sessionId)
+      .then((response) => {
+        if (sideChatOperationRef.current !== operationId) {
+          void unsubscribeThread(response.thread.id).catch(() => undefined);
+          return;
+        }
+        const ready: SideChatState = {
+          parentThreadId: sessionId,
+          threadId: response.thread.id,
+          status: 'ready',
+          error: null,
+        };
+        sideChatRef.current = ready;
+        setSideChat(ready);
+      })
+      .catch((error) => {
+        if (sideChatOperationRef.current !== operationId) return;
+        const failed: SideChatState = {
+          parentThreadId: sessionId,
+          threadId: null,
+          status: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        };
+        sideChatRef.current = failed;
+        setSideChat(failed);
+      });
+  }, [sessionId, startSideChat, unsubscribeThread]);
+
+  const closeSideChat = useCallback(async () => {
+    const current = sideChatRef.current;
+    ++sideChatOperationRef.current;
+    if (current?.threadId) {
+      await interruptTurn({ threadId: current.threadId });
+      await unsubscribeThread(current.threadId);
+    }
+    sideChatRef.current = null;
+    setSideChat(null);
+    setState((prev) => pureClose(prev, 'side-chat'));
+  }, [interruptTurn, unsubscribeThread]);
+
+  // 切换主会话或关闭应用壳时，临时侧聊不应继续占用 app-server 订阅。
+  useEffect(() => () => {
+    ++sideChatOperationRef.current;
+    const threadId = sideChatRef.current?.threadId;
+    if (threadId) void unsubscribeThread(threadId).catch(() => undefined);
+    sideChatRef.current = null;
+  }, [key, unsubscribeThread]);
+
   const value = useMemo(
-    () => ({ state, openTab, closeTab, setActiveTab, setOpen, setWidth }),
-    [state, openTab, closeTab, setActiveTab, setOpen, setWidth],
+    () => ({ state, openTab, closeTab, setActiveTab, setOpen, setWidth, sideChat, openSideChat, closeSideChat }),
+    [state, openTab, closeTab, setActiveTab, setOpen, setWidth, sideChat, openSideChat, closeSideChat],
   );
 
   return (

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildTurnInterruptParams,
+  isEphemeralThreadHistoryUnavailableError,
   isNoActiveTurnInterruptError,
   readActiveTurnIdMismatch,
   requestTurnInterrupt,
@@ -129,6 +130,18 @@ describe("isNoActiveTurnInterruptError", () => {
     expect(isNoActiveTurnInterruptError(new Error("no active turn to interrupt"))).toBe(true);
     expect(isNoActiveTurnInterruptError(new Error("prefix no active turn to interrupt"))).toBe(false);
     expect(isNoActiveTurnInterruptError(new Error("request failed"))).toBe(false);
+  });
+});
+
+describe("isEphemeralThreadHistoryUnavailableError", () => {
+  it("只识别临时线程不支持 includeTurns 的精确错误", () => {
+    expect(isEphemeralThreadHistoryUnavailableError(
+      new Error("ephemeral threads do not support includeTurns"),
+    )).toBe(true);
+    expect(isEphemeralThreadHistoryUnavailableError(
+      new Error("prefix: ephemeral threads do not support includeTurns"),
+    )).toBe(false);
+    expect(isEphemeralThreadHistoryUnavailableError(new Error("request failed"))).toBe(false);
   });
 });
 

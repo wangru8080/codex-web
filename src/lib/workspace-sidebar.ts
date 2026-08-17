@@ -20,7 +20,7 @@ import type { MarkdownPresentationStyle } from '@/lib/markdown/presentation-temp
 export type FixedTabId = 'git';
 export const WORKSPACE_HOME_TAB_ID = 'home' as const;
 
-export type DynamicTabKind = 'markdown' | 'artifact' | 'file' | 'files-pinned' | 'terminal-pinned';
+export type DynamicTabKind = 'markdown' | 'artifact' | 'file' | 'files-pinned' | 'terminal-pinned' | 'side-chat';
 
 export interface FixedTab {
   id: FixedTabId;
@@ -79,7 +79,14 @@ export interface TerminalPinnedTab {
   title: string;
 }
 
-export type DynamicTab = MarkdownTab | ArtifactTab | FilePreviewTab | FilesPinnedTab | TerminalPinnedTab;
+export interface SideChatTab {
+  id: 'side-chat';
+  kind: 'side-chat';
+  key: 'side-chat';
+  title: string;
+}
+
+export type DynamicTab = MarkdownTab | ArtifactTab | FilePreviewTab | FilesPinnedTab | TerminalPinnedTab | SideChatTab;
 export type Tab = FixedTab | DynamicTab;
 
 export interface WorkspaceSidebarState {
@@ -241,7 +248,8 @@ export function serialize(state: WorkspaceSidebarState): SerializedState {
     open: state.open,
     width: state.width,
     activeTabId: state.activeTabId,
-    dynamicTabs: state.tabs.filter(isDynamicTab),
+    // 侧聊是 app 生命周期内的 ephemeral thread，刷新后不得恢复一个失效标签。
+    dynamicTabs: state.tabs.filter((tab): tab is DynamicTab => isDynamicTab(tab) && tab.kind !== 'side-chat'),
   };
 }
 

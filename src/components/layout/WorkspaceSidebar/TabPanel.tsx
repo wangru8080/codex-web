@@ -37,6 +37,10 @@ const TerminalPanel = dynamic(
   () => import('@/components/layout/WorkspaceSidebar/TerminalPanel').then((m) => ({ default: m.TerminalPanel })),
   { ssr: false },
 );
+const SideChatPanel = dynamic(
+  () => import('@/components/layout/WorkspaceSidebar/SideChatPanel').then((m) => ({ default: m.SideChatPanel })),
+  { ssr: false },
+);
 
 function ActiveContent({ tab, hasFilesTab }: { tab: Tab; hasFilesTab: boolean }) {
   if (tab.kind === 'fixed') {
@@ -51,6 +55,9 @@ function ActiveContent({ tab, hasFilesTab }: { tab: Tab; hasFilesTab: boolean })
   }
   if (tab.kind === 'terminal-pinned') {
     return <TerminalPanel />;
+  }
+  if (tab.kind === 'side-chat') {
+    return <SideChatPanel />;
   }
   // markdown / artifact / file all flow through PreviewPanel; the
   // panel reads previewSource from PanelContext (kept in sync by
@@ -118,7 +125,7 @@ export function TabPanel() {
 }
 
 function WorkspaceHome() {
-  const { openTab, setActiveTab } = useWorkspaceSidebar();
+  const { openTab, openSideChat, setActiveTab } = useWorkspaceSidebar();
   const { t } = useTranslation();
   return (
     <div className="flex h-full w-full items-center justify-center px-8">
@@ -139,7 +146,11 @@ function WorkspaceHome() {
           <CodexWebIcon name="file_tree" size="sm" aria-hidden />
           <span>{t('workspaceSidebar.tool.files' as TranslationKey)}</span>
         </button>
-        <button type="button" disabled className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-muted-foreground disabled:opacity-70">
+        <button
+          type="button"
+          className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-foreground hover:bg-muted"
+          onClick={() => openSideChat(t('workspaceSidebar.tool.sideChat' as TranslationKey))}
+        >
           <CodexWebIcon name="chat" size="sm" aria-hidden />
           <span>{t('workspaceSidebar.tool.sideChat' as TranslationKey)}</span>
         </button>

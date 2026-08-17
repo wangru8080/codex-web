@@ -168,7 +168,7 @@ function ChatContentRow({
       {/* Workspace sidebar: ResizeGutter as sibling of the frame so
           its visible line lands in the gap between main and workspace. */}
       {isChatDetailRoute && ws.state.open && (compactViewport ? (
-        <Sheet open onOpenChange={ws.setOpen}>
+        <Sheet open modal={false} onOpenChange={ws.setOpen}>
           <SheetContent
             side="right"
             showCloseButton={false}

@@ -26,6 +26,16 @@ import { Plus, X } from '@/components/ui/icon';
 import { CodexWebIcon } from '@/components/ui/semantic-icon';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { TranslationKey } from '@/i18n';
 import { cn } from '@/lib/utils';
@@ -62,6 +72,7 @@ function tabIcon(tab: Tab): React.ReactNode {
   }
   if (tab.kind === 'files-pinned') return <CodexWebIcon name="pin" size="md" className="text-inherit" aria-hidden />;
   if (tab.kind === 'terminal-pinned') return <CodexWebIcon name="terminal" size="md" className="text-inherit" aria-hidden />;
+  if (tab.kind === 'side-chat') return <CodexWebIcon name="chat" size="md" className="text-inherit" aria-hidden />;
   if (tab.kind === 'markdown' || tab.kind === 'file') {
     const ext = (tab.kind === 'markdown' ? '.md' : tab.filePath.split('.').pop() || '').toLowerCase();
     if (ext.endsWith('.md') || tab.kind === 'markdown') return <CodexWebIcon name="file" size="md" className="text-inherit" aria-hidden />;
@@ -72,13 +83,49 @@ function tabIcon(tab: Tab): React.ReactNode {
   return <CodexWebIcon name="folder_open" size="md" className="text-inherit" aria-hidden />;
 }
 
+const SIDE_CHAT_CLOSE_CONFIRMATION_KEY = 'codex-web:side-chat:skip-close-confirmation';
+
 export function TabBar({ className }: TabBarProps) {
-  const { state, setActiveTab, closeTab, setOpen, openTab } = useWorkspaceSidebar();
+  const { state, setActiveTab, closeTab, setOpen, openTab, openSideChat, closeSideChat } = useWorkspaceSidebar();
   const { t } = useTranslation();
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [sideCloseOpen, setSideCloseOpen] = useState(false);
+  const [skipSideCloseConfirmation, setSkipSideCloseConfirmation] = useState(false);
+  const [sideClosePending, setSideClosePending] = useState(false);
+  const [sideCloseError, setSideCloseError] = useState<string | null>(null);
   // Refs to each Tab button so ArrowLeft/ArrowRight focus moves keep
   // the visual focus ring in sync with `activeTabId`.
   const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  const performSideClose = useCallback(async () => {
+    setSideClosePending(true);
+    setSideCloseError(null);
+    try {
+      await closeSideChat();
+      if (skipSideCloseConfirmation) {
+        localStorage.setItem(SIDE_CHAT_CLOSE_CONFIRMATION_KEY, 'true');
+      }
+      setSideCloseOpen(false);
+    } catch (error) {
+      setSideCloseError(error instanceof Error ? error.message : String(error));
+      setSideCloseOpen(true);
+    } finally {
+      setSideClosePending(false);
+    }
+  }, [closeSideChat, skipSideCloseConfirmation]);
+
+  const requestTabClose = useCallback((tab: Tab) => {
+    if (tab.kind !== 'side-chat') {
+      closeTab(tab.id);
+      return;
+    }
+    if (localStorage.getItem(SIDE_CHAT_CLOSE_CONFIRMATION_KEY) === 'true') {
+      void performSideClose();
+      return;
+    }
+    setSideCloseError(null);
+    setSideCloseOpen(true);
+  }, [closeTab, performSideClose]);
 
   const handleTabKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLButtonElement>, currentId: string) => {
@@ -158,7 +205,7 @@ export function TabBar({ className }: TabBarProps) {
             closable={closable}
             tabRefs={tabRefs}
             onActivate={() => setActiveTab(tab.id)}
-            onClose={() => closeTab(tab.id)}
+            onClose={() => requestTabClose(tab)}
             onKeyDown={(e) => handleTabKeyDown(e, tab.id)}
             closeAriaLabel={t('workspaceSidebar.closeTabNamed' as TranslationKey, { name: label })}
           />
@@ -190,7 +237,14 @@ export function TabBar({ className }: TabBarProps) {
               setToolMenuOpen(false);
             }}
           />
-          <ToolMenuItem icon="chat" label={t('workspaceSidebar.tool.sideChat' as TranslationKey)} disabled />
+          <ToolMenuItem
+            icon="chat"
+            label={t('workspaceSidebar.tool.sideChat' as TranslationKey)}
+            onClick={() => {
+              openSideChat(t('workspaceSidebar.tool.sideChat' as TranslationKey));
+              setToolMenuOpen(false);
+            }}
+          />
           <ToolMenuItem
             icon="file_tree"
             label={t('workspaceSidebar.tool.files' as TranslationKey)}
@@ -218,6 +272,41 @@ export function TabBar({ className }: TabBarProps) {
         <X size={14} />
         <span className="sr-only">{t('workspaceSidebar.collapse' as TranslationKey)}</span>
       </Button>
+      <AlertDialog open={sideCloseOpen} onOpenChange={(open) => { if (!sideClosePending) setSideCloseOpen(open); }}>
+        <AlertDialogContent className="max-w-md rounded-xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('workspaceSidebar.sideChat.closeTitle' as TranslationKey)}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('workspaceSidebar.sideChat.closeDescription' as TranslationKey)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={skipSideCloseConfirmation}
+              onChange={(event) => setSkipSideCloseConfirmation(event.target.checked)}
+              className="h-4 w-4 rounded border-border accent-foreground"
+            />
+            {t('workspaceSidebar.sideChat.doNotAskAgain' as TranslationKey)}
+          </label>
+          {sideCloseError && <p className="text-sm text-destructive" role="alert">{sideCloseError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sideClosePending}>
+              {t('workspaceSidebar.sideChat.cancel' as TranslationKey)}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={sideClosePending}
+              onClick={(event) => {
+                event.preventDefault();
+                void performSideClose();
+              }}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {t('workspaceSidebar.sideChat.closeAction' as TranslationKey)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

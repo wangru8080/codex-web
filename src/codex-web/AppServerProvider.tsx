@@ -39,6 +39,7 @@ import type { ThreadRollbackParams } from "@/codex/protocol/generated/v2/ThreadR
 import type { ThreadRollbackResponse } from "@/codex/protocol/generated/v2/ThreadRollbackResponse";
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
 import type { ThreadForkResponse } from "@/codex/protocol/generated/v2/ThreadForkResponse";
+import type { ThreadUnsubscribeResponse } from "@/codex/protocol/generated/v2/ThreadUnsubscribeResponse";
 import type { ThreadSetNameParams } from "@/codex/protocol/generated/v2/ThreadSetNameParams";
 import type { ThreadSetNameResponse } from "@/codex/protocol/generated/v2/ThreadSetNameResponse";
 import type { ThreadUnarchiveResponse } from "@/codex/protocol/generated/v2/ThreadUnarchiveResponse";
@@ -114,6 +115,7 @@ import type {
   TurnStartParamsWithCollaborationMode,
 } from "./app-server-request-overrides";
 import {
+  isEphemeralThreadHistoryUnavailableError,
   requestTurnInterrupt,
   selectTurnInterruptParams,
   type InterruptTurnParams,
@@ -158,6 +160,7 @@ import {
   turnNotificationBase,
 } from "./turn-notification-routing";
 import { readAccountLoginCompletion } from "./account-login-adapter";
+import { prepareSideChat } from "./side-chat-protocol";
 import {
   processNotification,
   type ProcessKillParams,
@@ -221,6 +224,8 @@ export type AppServerActions = {
   sendOneTurn: (params: SendOneTurnParams) => Promise<AppServerTurnState>;
   resumeThread: (params: ResumeThreadParams) => Promise<ThreadResumeResponse>;
   forkThread: (params: ForkThreadParams) => Promise<ThreadForkResponse>;
+  startSideChat: (parentThreadId: string) => Promise<ThreadForkResponse>;
+  unsubscribeThread: (threadId: string) => Promise<ThreadUnsubscribeResponse>;
   sendTurnInThread: (params: SendTurnInThreadParams) => Promise<AppServerTurnState>;
   rollbackThread: (params: ThreadRollbackParams) => Promise<ThreadRollbackResponse>;
   interruptTurn: (params?: InterruptTurnParams) => Promise<void>;
@@ -1303,6 +1308,23 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     return response;
   }, [refreshThreads]);
 
+  const startSideChat = useCallback(async (parentThreadId: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    const existingDeveloperInstructions = store.getState().config?.data.config.developer_instructions;
+    return prepareSideChat(
+      (method, params) => client.request(method, params),
+      parentThreadId,
+      existingDeveloperInstructions,
+    );
+  }, [store]);
+
+  const unsubscribeThread = useCallback(async (threadId: string) => {
+    const client = clientRef.current;
+    if (!client) throw new Error("Web bridge 尚未连接");
+    return client.request("thread/unsubscribe", { threadId }) as Promise<ThreadUnsubscribeResponse>;
+  }, []);
+
   const sendTurnInThread = useCallback(async ({ threadId, content, files, cwd, model, effort, mode, permissionProfile = "request_approval", onAccepted, skills }: SendTurnInThreadParams) => {
     const client = clientRef.current;
     if (!client) {
@@ -1448,11 +1470,18 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     if (result !== "alreadyStopped") {
       return;
     }
-    const response = await client.request("thread/read", {
-      threadId: interruptParams.threadId,
-      includeTurns: true,
-    }) as ThreadReadResponse;
-    const historicalTurn = response.thread.turns.find((turn) => turn.id === interruptParams.turnId);
+    let response: ThreadReadResponse | null = null;
+    try {
+      response = await client.request("thread/read", {
+        threadId: interruptParams.threadId,
+        includeTurns: true,
+      }) as ThreadReadResponse;
+    } catch (error) {
+      if (!isEphemeralThreadHistoryUnavailableError(error)) {
+        throw error;
+      }
+    }
+    const historicalTurn = response?.thread.turns.find((turn) => turn.id === interruptParams.turnId);
     const terminalTurn = historicalTurn && activeTurn
       ? hydrateTerminalTurn(activeTurn, historicalTurn)
       : null;
@@ -1540,6 +1569,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       sendOneTurn,
       resumeThread,
       forkThread,
+      startSideChat,
+      unsubscribeThread,
       sendTurnInThread,
       rollbackThread,
       interruptTurn,
@@ -1596,7 +1627,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       publishCrossClientUserMessage,
       listOnlineUsers,
     }),
-    [startThread, sendOneTurn, resumeThread, forkThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, spawnProcess, writeProcessStdin, resizeProcessPty, killProcess, subscribeProcess, readDirectory, createDirectory, readFile, readFileLimited, getFileSize, getFileMetadata, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, listHooks, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
+    [startThread, sendOneTurn, resumeThread, forkThread, startSideChat, unsubscribeThread, sendTurnInThread, rollbackThread, interruptTurn, refreshThreads, listThreads, setThreadName, archiveThread, unarchiveThread, deleteThread, readThread, listThreadTurns, execCommand, spawnProcess, writeProcessStdin, resizeProcessPty, killProcess, subscribeProcess, readDirectory, createDirectory, readFile, readFileLimited, getFileSize, getFileMetadata, writeFile, removeFileTree, watchFileSystem, listSkills, setSkillEnabled, listHooks, refreshConfig, writeConfigEdits, writeMcpServers, reloadMcpServers, listMcpServerStatus, listInstalledPlugins, readPlugin, getThreadGoal, setThreadGoal, clearThreadGoal, respondToApproval, respondToServerRequest, resetTurn, updateThreadPermissions, updateThreadModelSettings, compactThread, startReview, fuzzyFileSearch, updateMemorySettings, readAccountRateLimits, refreshAccount, startAccountLogin, cancelAccountLogin, logoutAccount, publishCrossClientUserMessage, listOnlineUsers],
   );
 
   return (

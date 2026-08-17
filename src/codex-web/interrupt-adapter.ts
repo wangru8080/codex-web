@@ -79,6 +79,11 @@ export function isNoActiveTurnInterruptError(error: unknown): boolean {
   return (error instanceof Error ? error.message : String(error)) === "no active turn to interrupt";
 }
 
+export function isEphemeralThreadHistoryUnavailableError(error: unknown): boolean {
+  return (error instanceof Error ? error.message : String(error))
+    === "ephemeral threads do not support includeTurns";
+}
+
 export function readActiveTurnIdMismatch(error: unknown): string | null {
   const message = error instanceof Error ? error.message : String(error);
   const prefix = "expected active turn id ";
