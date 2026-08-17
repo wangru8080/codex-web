@@ -27,6 +27,16 @@ describe("app-server 文件预览接线", () => {
     expect(preview).not.toContain("/api/files/html-preview");
   });
 
+  it("iframe 首次打开文件时等待 app-server 连接后再检查路径", () => {
+    const connectionGuard = preview.indexOf('appServerConnection !== "connected"');
+    const metadataCheck = preview.indexOf("workspacePathRequiresConfirmation(");
+
+    expect(preview).toContain("useAppServerSelector((state) => state.connection.data)");
+    expect(connectionGuard).toBeGreaterThan(-1);
+    expect(connectionGuard).toBeLessThan(metadataCheck);
+    expect(preview).toContain("appServerConnection,\n    filePath,");
+  });
+
   it("HTML 文件提供源码与 sandbox srcDoc 渲染视图", () => {
     expect(preview).toContain('isHtml(filePath)');
     expect(preview).toContain('<InlineHtmlView html={content}');

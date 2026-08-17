@@ -48,7 +48,7 @@ import {
   type FileTextSelection,
 } from "@/components/editor/FileSelectionToolbar";
 import { injectInlineHtmlCsp } from "@/lib/inline-html-csp";
-import { useAppServerActions } from "@/codex-web/AppServerProvider";
+import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
 import {
   AppServerFilePreviewError,
   FILE_PREVIEW_BYTE_LIMIT,
@@ -300,6 +300,7 @@ const INTERACTIVE_SCRIPTS_PREF_KEY = "codepilot.preview.interactiveScripts";
 export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
   const { resolvedTheme } = useTheme();
   const { workingDirectory, previewSource, previewFile, setPreviewFile, setPreviewSource, previewViewMode, setPreviewViewMode } = usePanel();
+  const appServerConnection = useAppServerSelector((state) => state.connection.data);
   const { readFile, readFileLimited, getFileMetadata, writeFile } = useAppServerActions();
   const isDark = resolvedTheme === "dark";
   const [preview, setPreview] = useState<FilePreviewType | null>(null);
@@ -440,6 +441,10 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
       setDiskConflict(false);
       return;
     }
+    if (appServerConnection !== "connected") {
+      setLoading(true);
+      return;
+    }
     let cancelled = false;
 
     const isFilePathChange = prevFilePathRef.current !== filePath;
@@ -565,6 +570,7 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
       cancelled = true;
     };
   }, [
+    appServerConnection,
     filePath,
     getFileMetadata,
     isAgentReferenced,
