@@ -140,7 +140,9 @@ export function threadToMessages(
       }
     }
 
-    if (assistantMessageId && turn.id !== options.omitAssistantTurnId) {
+    const omitLiveAssistant = turn.status === "inProgress"
+      && turn.id === options.omitAssistantTurnId;
+    if (assistantMessageId && !omitLiveAssistant) {
       messages.push(
         createMessage(
           thread,

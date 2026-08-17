@@ -122,6 +122,7 @@ import {
 } from "./interrupt-adapter";
 import { buildThreadResumeParams } from "./resume-adapter";
 import { activeTurnFromResume, mergeResumedActiveTurn } from "./resumed-turn-hydration";
+import { readResumableTurn, writeResumableTurns } from "./resumable-turn-storage";
 import {
   appServerTurnSnapshotKey,
   createAcceptedTurnState,
@@ -568,7 +569,18 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       clientRef.current = null;
       client.close();
     };
+    const persistResumableTurns = () => {
+      writeResumableTurns(
+        window.sessionStorage,
+        Object.values(store.getState().activeTurnsByThreadId).map((turn) => turn.data),
+      );
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") persistResumableTurns();
+    };
     window.addEventListener("codex-web:logout", handleWebLogout);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", persistResumableTurns);
 
     async function bootstrap(isReconnect = false) {
       if (disposed || bootstrapping) {
@@ -642,6 +654,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       window.removeEventListener("codex-web:logout", handleWebLogout);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", persistResumableTurns);
       disposed = true;
       if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer);
@@ -1262,7 +1276,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     const resumedActiveTurn = activeTurnFromResume(response);
     setState((current) => {
       const currentThreadTurn = current.activeTurnsByThreadId[response.thread.id]?.data;
-      const mergedResumedActiveTurn = mergeResumedActiveTurn(currentThreadTurn, resumedActiveTurn);
+      const recoveryTurn = currentThreadTurn ?? readResumableTurn(window.sessionStorage, response.thread.id);
+      const mergedResumedActiveTurn = mergeResumedActiveTurn(recoveryTurn, resumedActiveTurn);
       const currentActiveTurn = current.activeTurn?.data;
       const shouldClearCurrent =
         !mergedResumedActiveTurn &&

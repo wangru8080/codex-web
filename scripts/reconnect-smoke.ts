@@ -6,7 +6,7 @@ import { resolveTestCodexHome } from "../server/test-codex-home";
 import type { ThreadResumeResponse } from "../src/codex/protocol/generated/v2/ThreadResumeResponse";
 import { appServerInitializeCapabilities } from "../src/codex-web/app-server-capabilities";
 import { activeTurnFromResume, mergeResumedActiveTurn } from "../src/codex-web/resumed-turn-hydration";
-import { createAcceptedTurnState } from "../src/codex-web/turn-reducer";
+import { createAcceptedTurnState, reduceAppServerTurnNotification } from "../src/codex-web/turn-reducer";
 
 const codexHome = resolveTestCodexHome();
 process.env.CODEX_HOME = codexHome;
@@ -130,15 +130,23 @@ async function main(): Promise<void> {
     }
 
     let streamedText = "";
+    let streamedItemId = "";
     const partialTextReceived = second.waitForNotification((notification) => {
-      const params = notification.params as { threadId?: string; turnId?: string; delta?: string } | undefined;
+      const params = notification.params as {
+        threadId?: string;
+        turnId?: string;
+        itemId?: string;
+        delta?: string;
+      } | undefined;
       if (
         notification.method !== "item/agentMessage/delta"
         || params?.threadId !== threadId
+        || typeof params.itemId !== "string"
         || typeof params.delta !== "string"
       ) {
         return false;
       }
+      streamedItemId = params.itemId;
       streamedText += params.delta;
       return streamedText.length >= 20;
     }, commandStartTimeoutMs, "等待部分模型正文", threadId);
@@ -155,10 +163,31 @@ async function main(): Promise<void> {
     const localTurn = {
       ...createAcceptedTurnState(threadId, streamingTurnId),
       assistantText: streamedText,
+      assistantTextItemId: streamedItemId,
+      items: [{
+        type: "agentMessage" as const,
+        id: streamedItemId,
+        text: streamedText,
+        phase: "final_answer" as const,
+        memoryCitation: null,
+      }],
     };
     await second.close();
 
     const third = await RpcClient.connect(url, reconnectTimeoutMs);
+    const continuedDelta = third.waitForNotification((notification) => {
+      const params = notification.params as {
+        threadId?: string;
+        turnId?: string;
+        itemId?: string;
+        delta?: string;
+      } | undefined;
+      return notification.method === "item/agentMessage/delta"
+        && params?.threadId === threadId
+        && params.turnId === streamingTurnId
+        && params.itemId === streamedItemId
+        && typeof params.delta === "string";
+    }, commandStartTimeoutMs, "等待重连后的下一段模型正文", threadId);
     await initializeClient(third);
     const streamingResume = await third.request("thread/resume", { threadId }) as ThreadResumeResponse;
     const resumedStreamingTurn = streamingResume.thread.turns.find((turn) => turn.id === streamingTurnId);
@@ -170,6 +199,20 @@ async function main(): Promise<void> {
     if (!mergedTurn || mergedTurn.assistantText.length < streamedText.length) {
       throw new Error(
         `重连后正文发生回退：断线前=${streamedText.length}，合并后=${mergedTurn?.assistantText.length ?? 0}`,
+      );
+    }
+    const nextDeltaNotification = await continuedDelta;
+    const continuedTurn = reduceAppServerTurnNotification(mergedTurn, {
+      method: nextDeltaNotification.method,
+      params: nextDeltaNotification.params,
+    });
+    const continuedItem = continuedTurn.items.find((item) => item.id === streamedItemId);
+    if (
+      continuedItem?.type !== "agentMessage"
+      || continuedTurn.assistantText !== continuedItem.text
+    ) {
+      throw new Error(
+        `重连后 delta 串接错误：正文=${continuedTurn.assistantText.length}，item=${continuedItem?.type === "agentMessage" ? continuedItem.text.length : 0}`,
       );
     }
 
@@ -185,7 +228,7 @@ async function main(): Promise<void> {
 
     const resumedTextLength = hydratedTurn?.assistantText.length ?? 0;
     console.log(
-      `重连 smoke 通过：CODEX_HOME=${initialize.codexHome}，thread=${threadId}，turn=${turnId}，恢复状态=inProgress，终态=${completedStatus}，断线前正文=${streamedText.length}，resume 正文=${resumedTextLength}，合并正文=${mergedTurn.assistantText.length}`,
+      `重连 smoke 通过：CODEX_HOME=${initialize.codexHome}，thread=${threadId}，turn=${turnId}，恢复状态=inProgress，终态=${completedStatus}，断线前正文=${streamedText.length}，resume 正文=${resumedTextLength}，合并正文=${mergedTurn.assistantText.length}，续接正文=${continuedTurn.assistantText.length}`,
     );
   } finally {
     await bridge.close();

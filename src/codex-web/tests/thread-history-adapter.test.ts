@@ -215,7 +215,12 @@ describe("thread-history-adapter", () => {
   });
 
   it("实时恢复同一 Turn 时保留用户消息并省略 assistant 历史副本", () => {
-    const result = threadToMessages(createThread(), {
+    const thread = createThread();
+    thread.turns[0]!.status = "inProgress";
+    thread.turns[0]!.completedAt = null;
+    thread.turns[0]!.durationMs = null;
+
+    const result = threadToMessages(thread, {
       omitAssistantTurnId: "turn-1",
     });
 
@@ -223,6 +228,17 @@ describe("thread-history-adapter", () => {
       expect.objectContaining({ id: "user-1", role: "user", content: "你好" }),
     ]);
     expect(result.unsupportedItemCount).toBe(0);
+  });
+
+  it("resume 后分页已完成时不省略同一 Turn 的 assistant 最终正文", () => {
+    const result = threadToMessages(createThread(), {
+      omitAssistantTurnId: "turn-1",
+    });
+
+    expect(result.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(JSON.parse(result.messages.at(-1)?.content ?? "[]")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "text", text: "你好，Codex。" }),
+    ]));
   });
 
   it("省略目标不匹配时保留已完成 assistant 历史", () => {

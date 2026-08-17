@@ -44,6 +44,9 @@ describe("thread-turns-page-adapter", () => {
       "正在处理",
       10,
     );
+    turn.status = "inProgress";
+    turn.completedAt = null;
+    turn.durationMs = null;
     const messages = threadTurnsPageToMessages(
       createThread(),
       [turn],
@@ -55,6 +58,26 @@ describe("thread-turns-page-adapter", () => {
     expect(messages).toEqual([
       expect.objectContaining({ id: "user-live", role: "user", content: "user prompt" }),
     ]);
+  });
+
+  it("分页已完成时忽略陈旧的实时省略目标并显示 assistant", () => {
+    const turn = createTurnWithAssistant(
+      "turn-raced",
+      "user-raced",
+      "agent-raced",
+      "最终正文",
+      10,
+    );
+    const messages = threadTurnsPageToMessages(
+      createThread(),
+      [turn],
+      "asc",
+      {},
+      { omitAssistantTurnId: "turn-raced" },
+    );
+
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(messages.at(-1)?.content).toBe("最终正文");
   });
 
   it("prepend 合并时不重复已有消息", () => {

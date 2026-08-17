@@ -48,16 +48,44 @@ export function mergeResumedActiveTurn(
     return resumed;
   }
 
-  const assistantText = longerText(current.assistantText, resumed.assistantText);
+  const items = mergeTurnItems(current.items, resumed.items);
+  const sameAssistantItem = current.assistantTextItemId === resumed.assistantTextItemId;
+  const currentAssistantIsCommentary = !!current.assistantTextItemId && resumed.items.some(
+    (item) => item.id === current.assistantTextItemId
+      && item.type === "agentMessage"
+      && item.phase === "commentary",
+  );
+  const useCurrentAssistant = !currentAssistantIsCommentary
+    && !resumed.assistantTextItemId
+    && !resumed.assistantText;
+  const assistantText = useCurrentAssistant
+    ? current.assistantText
+    : sameAssistantItem
+      ? mergeProgressText(current.assistantText, resumed.assistantText)
+      : resumed.assistantText;
+  const assistantTextItemId = useCurrentAssistant
+    ? current.assistantTextItemId
+    : resumed.assistantTextItemId;
   return {
+    ...current,
     ...resumed,
     assistantText,
-    assistantTextItemId:
-      assistantText === current.assistantText
-        ? current.assistantTextItemId
-        : resumed.assistantTextItemId,
-    reasoningText: longerText(current.reasoningText, resumed.reasoningText),
+    assistantTextItemId,
+    reasoningText: mergeProgressText(current.reasoningText, resumed.reasoningText),
+    planText: mergeProgressText(current.planText, resumed.planText),
+    latestProposedPlanMarkdown:
+      resumed.latestProposedPlanMarkdown ?? current.latestProposedPlanMarkdown,
+    planBlocks: resumed.planBlocks.length > 0 ? resumed.planBlocks : current.planBlocks,
+    taskProgress: resumed.taskProgress ?? current.taskProgress,
+    items: synchronizeAssistantItem(items, assistantTextItemId, assistantText),
     toolOutputs: mergeAccumulatedText(current.toolOutputs, resumed.toolOutputs),
+    turnDiff: resumed.turnDiff || current.turnDiff,
+    filePatchChanges: { ...current.filePatchChanges, ...resumed.filePatchChanges },
+    mcpProgress: mergeAccumulatedText(current.mcpProgress, resumed.mcpProgress),
+    contextCompactionStatusById: {
+      ...current.contextCompactionStatusById,
+      ...resumed.contextCompactionStatusById,
+    },
   };
 }
 
@@ -80,8 +108,8 @@ function collectToolOutputs(items: ThreadItem[]): Record<string, string> {
   );
 }
 
-function longerText(current: string, resumed: string): string {
-  return resumed.length >= current.length ? resumed : current;
+function mergeProgressText(current: string, resumed: string): string {
+  return current.startsWith(resumed) ? current : resumed;
 }
 
 function mergeAccumulatedText(
@@ -90,6 +118,57 @@ function mergeAccumulatedText(
 ): Record<string, string> {
   return Object.fromEntries(
     Array.from(new Set([...Object.keys(current), ...Object.keys(resumed)]))
-      .map((key) => [key, longerText(current[key] ?? "", resumed[key] ?? "")]),
+      .map((key) => [key, mergeProgressText(current[key] ?? "", resumed[key] ?? "")]),
+  );
+}
+
+function mergeTurnItems(current: ThreadItem[], resumed: ThreadItem[]): ThreadItem[] {
+  const resumedById = new Map(resumed.map((item) => [item.id, item]));
+  const merged = current.map((item) => {
+    const resumedItem = resumedById.get(item.id);
+    if (!resumedItem) return item;
+    resumedById.delete(item.id);
+    return mergeTurnItem(item, resumedItem);
+  });
+  return [...merged, ...resumedById.values()];
+}
+
+function mergeTurnItem(current: ThreadItem, resumed: ThreadItem): ThreadItem {
+  if (current.type !== resumed.type) return resumed;
+  if (current.type === "agentMessage" && resumed.type === "agentMessage") {
+    return { ...resumed, text: mergeProgressText(current.text, resumed.text) };
+  }
+  if (current.type === "plan" && resumed.type === "plan") {
+    return { ...resumed, text: mergeProgressText(current.text, resumed.text) };
+  }
+  if (current.type === "commandExecution" && resumed.type === "commandExecution") {
+    return {
+      ...resumed,
+      aggregatedOutput: mergeProgressText(
+        current.aggregatedOutput ?? "",
+        resumed.aggregatedOutput ?? "",
+      ) || null,
+    };
+  }
+  if (current.type === "reasoning" && resumed.type === "reasoning") {
+    return {
+      ...resumed,
+      summary: resumed.summary.length > 0 ? resumed.summary : current.summary,
+      content: resumed.content.length > 0 ? resumed.content : current.content,
+    };
+  }
+  return resumed;
+}
+
+function synchronizeAssistantItem(
+  items: ThreadItem[],
+  itemId: string | null,
+  assistantText: string,
+): ThreadItem[] {
+  if (!itemId) return items;
+  return items.map((item) =>
+    item.id === itemId && item.type === "agentMessage" && item.phase !== "commentary"
+      ? { ...item, text: assistantText }
+      : item,
   );
 }

@@ -45,8 +45,16 @@ describe("app-server 断线重连接线", () => {
 
   it("thread/resume 使用真实 active Turn 水合并清理陈旧运行态", () => {
     expect(provider).toContain("const resumedActiveTurn = activeTurnFromResume(response)");
-    expect(provider).toContain("const mergedResumedActiveTurn = mergeResumedActiveTurn(currentThreadTurn, resumedActiveTurn)");
+    expect(provider).toContain("const recoveryTurn = currentThreadTurn ?? readResumableTurn(window.sessionStorage, response.thread.id)");
+    expect(provider).toContain("const mergedResumedActiveTurn = mergeResumedActiveTurn(recoveryTurn, resumedActiveTurn)");
     expect(provider).toContain('sourcedActiveTurn(mergedResumedActiveTurn, "app-server.thread/resume")');
     expect(provider).toContain("removeActiveTurnByThread(current.activeTurnsByThreadId, response.thread.id)");
+  });
+
+  it("页面进入后台时保存当前标签页的运行 Turn 候选", () => {
+    expect(provider).toContain('document.addEventListener("visibilitychange", handleVisibilityChange)');
+    expect(provider).toContain('window.addEventListener("pagehide", persistResumableTurns)');
+    expect(provider).toContain("writeResumableTurns(");
+    expect(provider).toContain("Object.values(store.getState().activeTurnsByThreadId)");
   });
 });
