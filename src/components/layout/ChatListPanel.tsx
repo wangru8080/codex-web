@@ -110,7 +110,7 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
   const handleFolderSelect = useCallback(async (path: string) => {
     localStorage.setItem('codepilot:last-working-directory', path);
     window.dispatchEvent(new CustomEvent('project-directory-changed', { detail: { path } }));
-    router.push(createNewChatHref());
+    router.replace(createNewChatHref());
   }, [router]);
 
   const openFolderPicker = useCallback(() => {
@@ -118,7 +118,7 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
   }, []);
 
   const handleNewChat = useCallback(async () => {
-    router.push(createNewChatHref());
+    router.replace(createNewChatHref());
   }, [router]);
 
   const toggleProject = useCallback((wd: string) => {
@@ -287,7 +287,7 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
     e.stopPropagation();
     localStorage.setItem('codepilot:last-working-directory', workingDirectory);
     window.dispatchEvent(new CustomEvent('project-directory-changed', { detail: { path: workingDirectory } }));
-    router.push(createNewChatHref());
+    router.replace(createNewChatHref());
   };
 
   const filteredSessions = sessions;
