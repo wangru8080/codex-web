@@ -90,6 +90,7 @@ export function TabBar({ className }: TabBarProps) {
   const { t } = useTranslation();
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const [sideCloseOpen, setSideCloseOpen] = useState(false);
+  const [sideCloseTargetId, setSideCloseTargetId] = useState<string | null>(null);
   const [skipSideCloseConfirmation, setSkipSideCloseConfirmation] = useState(false);
   const [sideClosePending, setSideClosePending] = useState(false);
   const [sideCloseError, setSideCloseError] = useState<string | null>(null);
@@ -97,17 +98,19 @@ export function TabBar({ className }: TabBarProps) {
   // the visual focus ring in sync with `activeTabId`.
   const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
-  const performSideClose = useCallback(async () => {
+  const performSideClose = useCallback(async (sideChatId: string) => {
     setSideClosePending(true);
     setSideCloseError(null);
     try {
-      await closeSideChat();
+      await closeSideChat(sideChatId);
       if (skipSideCloseConfirmation) {
         localStorage.setItem(SIDE_CHAT_CLOSE_CONFIRMATION_KEY, 'true');
       }
       setSideCloseOpen(false);
+      setSideCloseTargetId(null);
     } catch (error) {
       setSideCloseError(error instanceof Error ? error.message : String(error));
+      setSideCloseTargetId(sideChatId);
       setSideCloseOpen(true);
     } finally {
       setSideClosePending(false);
@@ -119,8 +122,9 @@ export function TabBar({ className }: TabBarProps) {
       closeTab(tab.id);
       return;
     }
+    setSideCloseTargetId(tab.id);
     if (localStorage.getItem(SIDE_CHAT_CLOSE_CONFIRMATION_KEY) === 'true') {
-      void performSideClose();
+      void performSideClose(tab.id);
       return;
     }
     setSideCloseError(null);
@@ -272,7 +276,11 @@ export function TabBar({ className }: TabBarProps) {
         <X size={14} />
         <span className="sr-only">{t('workspaceSidebar.collapse' as TranslationKey)}</span>
       </Button>
-      <AlertDialog open={sideCloseOpen} onOpenChange={(open) => { if (!sideClosePending) setSideCloseOpen(open); }}>
+      <AlertDialog open={sideCloseOpen} onOpenChange={(open) => {
+        if (sideClosePending) return;
+        setSideCloseOpen(open);
+        if (!open) setSideCloseTargetId(null);
+      }}>
         <AlertDialogContent className="max-w-md rounded-xl">
           <AlertDialogHeader>
             <AlertDialogTitle>{t('workspaceSidebar.sideChat.closeTitle' as TranslationKey)}</AlertDialogTitle>
@@ -298,7 +306,7 @@ export function TabBar({ className }: TabBarProps) {
               disabled={sideClosePending}
               onClick={(event) => {
                 event.preventDefault();
-                void performSideClose();
+                if (sideCloseTargetId) void performSideClose(sideCloseTargetId);
               }}
               className="bg-destructive text-white hover:bg-destructive/90"
             >

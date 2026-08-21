@@ -29,6 +29,7 @@ describe('工作区侧栏 UI 接线', () => {
     const terminal = source('src/components/layout/WorkspaceSidebar/TerminalPanel.tsx');
     const frame = source('src/components/layout/WorkspaceSidebar/TerminalFrame.tsx');
     const sideChat = source('src/components/layout/WorkspaceSidebar/SideChatPanel.tsx');
+    const chatView = source('src/components/chat/ChatView.tsx');
     const provider = source('src/codex-web/AppServerProvider.tsx');
 
     expect(tabBar).toContain('workspaceSidebar.tool.terminal');
@@ -37,12 +38,17 @@ describe('工作区侧栏 UI 接线', () => {
     expect(panel).toContain('workspaceSidebar.tool.terminal');
     expect(panel).toContain('workspaceSidebar.tool.sideChat');
     expect(panel).toContain('<TerminalPanel />');
-    expect(panel).toContain('<SideChatPanel />');
+    expect(panel).toContain('sideChatTabs.map((tab) => (');
+    expect(panel).toContain('hidden={tab.id !== active?.id}');
+    expect(panel).toContain('<SideChatPanel sideChatId={tab.id} />');
+    expect(panel).toContain("active.kind !== 'side-chat'");
     expect(tabBar).toContain('openSideChat(');
     expect(tabBar).not.toContain('label={t(\'workspaceSidebar.tool.sideChat\' as TranslationKey)} disabled');
+    expect(sideChat).toContain('sideChats[sideChatId]');
     expect(sideChat).toContain('<ChatView');
     expect(sideChat).toContain('appServerThreadId={childThreadId}');
     expect(sideChat).toContain('emptyState={<SideChatEmptyState />}');
+    expect(chatView).toContain("? appServerTurn?.status === 'running' || presentAppServerTurnAsStreaming");
     expect(provider).toContain('prepareSideChat(');
     expect(provider).toContain('client.request("thread/unsubscribe"');
     expect(terminal).toContain('data-source-breadcrumb="app-server.process/spawn"');
@@ -59,7 +65,10 @@ describe('工作区侧栏 UI 接线', () => {
 
     expect(tabBar).toContain('workspaceSidebar.sideChat.closeTitle');
     expect(tabBar).toContain('workspaceSidebar.sideChat.doNotAskAgain');
-    expect(tabBar).toContain('await closeSideChat()');
+    expect(tabBar).toContain('await closeSideChat(sideChatId)');
+    expect(tabBar).toContain('performSideClose(sideCloseTargetId)');
+    expect(sidebarHook).toContain('Record<string, SideChatState>');
+    expect(sidebarHook).toContain('sideChatOperationsRef.current.get(id)');
     expect(sidebarHook).toContain('await interruptTurn({ threadId: current.threadId })');
     expect(sidebarHook).toContain('await unsubscribeThread(current.threadId)');
     expect(sidebarHook).not.toContain('deleteThread');

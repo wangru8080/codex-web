@@ -567,7 +567,9 @@ export function ChatView({
     localStreaming: appServerLocalStreaming,
     finalizedTurnKey: finalizedAppServerTurnPresentationKeyRef.current,
   });
-  const isStreaming = appServerSend ? presentAppServerTurnAsStreaming : legacyIsStreaming;
+  const isStreaming = appServerSend
+    ? appServerTurn?.status === 'running' || presentAppServerTurnAsStreaming
+    : legacyIsStreaming;
   const streamingContent = appServerSend ? presentedAppServerTurn?.assistantText ?? '' : streamSnapshot?.streamingContent ?? '';
   const toolUses = appServerSend ? appServerToolState.toolUses : streamSnapshot?.toolUses ?? [];
   const toolResults = appServerSend ? appServerToolState.toolResults : streamSnapshot?.toolResults ?? [];

@@ -13,10 +13,11 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useWorkspaceSidebar } from '@/hooks/useWorkspaceSidebar';
 import type { TranslationKey } from '@/i18n';
 
-export function SideChatPanel() {
+export function SideChatPanel({ sideChatId }: { sideChatId: string }) {
   const { sessionId: parentThreadId, workingDirectory } = usePanel();
-  const { sideChat, openSideChat } = useWorkspaceSidebar();
+  const { sideChats, retrySideChat } = useWorkspaceSidebar();
   const { t } = useTranslation();
+  const sideChat = sideChats[sideChatId];
   const childThreadId = sideChat?.threadId ?? null;
   const connection = useAppServerSelector((state) => state.connection.data);
   const activeTurn = useAppServerSelector((state) => childThreadId
@@ -78,7 +79,7 @@ export function SideChatPanel() {
             variant="outline"
             size="sm"
             className="mt-4"
-            onClick={() => openSideChat(t('workspaceSidebar.tool.sideChat' as TranslationKey))}
+            onClick={() => retrySideChat(sideChatId)}
           >
             {t('workspaceSidebar.sideChat.retry' as TranslationKey)}
           </Button>

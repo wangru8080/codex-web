@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   WORKSPACE_HOME_TAB_ID,
+  closeTab,
+  createSideChatTab,
   initialState,
   openDynamicTab,
   parse,
@@ -35,13 +37,22 @@ describe('工作区侧栏状态', () => {
     });
   });
 
-  it('侧边聊天标签不写入持久化状态', () => {
-    const state = openDynamicTab(initialState({ open: true }), {
-      id: 'side-chat',
-      kind: 'side-chat',
-      key: 'side-chat',
-      title: '侧边聊天',
-    });
+  it('多个侧边聊天标签可共存且都不写入持久化状态', () => {
+    const first = createSideChatTab('侧边聊天', 1);
+    const second = createSideChatTab('侧边聊天', 2);
+    const third = createSideChatTab('侧边聊天', 3);
+    const state = [first, second, third].reduce(openDynamicTab, initialState({ open: true }));
+
+    expect(state.tabs.filter((tab) => tab.kind === 'side-chat')).toEqual([
+      expect.objectContaining({ id: 'side-chat:1', title: '侧边聊天' }),
+      expect.objectContaining({ id: 'side-chat:2', title: '侧边聊天 2' }),
+      expect.objectContaining({ id: 'side-chat:3', title: '侧边聊天 3' }),
+    ]);
+
+    expect(closeTab(state, second.id).tabs.filter((tab) => tab.kind === 'side-chat')).toEqual([
+      expect.objectContaining({ id: first.id }),
+      expect.objectContaining({ id: third.id }),
+    ]);
 
     expect(serialize(state).dynamicTabs).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: 'side-chat' })]),

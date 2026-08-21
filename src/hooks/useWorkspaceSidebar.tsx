@@ -11,6 +11,7 @@ import {
   parse,
   serialize,
   storageKey,
+  createSideChatTab,
   WORKSPACE_HOME_TAB_ID,
   tabFromPreviewSource,
   type DynamicTab,
@@ -38,9 +39,10 @@ interface WorkspaceSidebarContextValue {
   setActiveTab: (id: string) => void;
   setOpen: (open: boolean) => void;
   setWidth: (width: number) => void;
-  sideChat: SideChatState | null;
+  sideChats: Record<string, SideChatState>;
   openSideChat: (title: string) => void;
-  closeSideChat: () => Promise<void>;
+  retrySideChat: (id: string) => void;
+  closeSideChat: (id: string) => Promise<void>;
 }
 
 export interface SideChatState {
@@ -73,19 +75,31 @@ interface ProviderProps {
 export function WorkspaceSidebarProvider({ workingDirectory, sessionId, children }: ProviderProps) {
   const key = storageKey(workingDirectory, sessionId);
   const [state, setState] = useState<WorkspaceSidebarState>(() => initialState());
-  const [sideChat, setSideChat] = useState<SideChatState | null>(null);
-  const sideChatRef = useRef<SideChatState | null>(null);
-  const sideChatOperationRef = useRef(0);
+  const [sideChats, setSideChats] = useState<Record<string, SideChatState>>({});
+  const sideChatsRef = useRef<Record<string, SideChatState>>({});
+  const sideChatOrdinalRef = useRef(0);
+  const sideChatOperationSequenceRef = useRef(0);
+  const sideChatOperationsRef = useRef<Map<string, number>>(new Map());
   const { startSideChat, unsubscribeThread, interruptTurn } = useAppServerActions();
 
-  useEffect(() => {
-    sideChatRef.current = sideChat;
-  }, [sideChat]);
+  const storeSideChat = useCallback((id: string, sideChat: SideChatState) => {
+    const next = { ...sideChatsRef.current, [id]: sideChat };
+    sideChatsRef.current = next;
+    setSideChats(next);
+  }, []);
+
+  const removeSideChat = useCallback((id: string) => {
+    const { [id]: _removed, ...next } = sideChatsRef.current;
+    sideChatsRef.current = next;
+    setSideChats(next);
+  }, []);
 
   // Hydrate from storage when the scope (workspace + session) changes.
   // Without this, switching chats inside the same workspace would keep
   // the previous chat's dynamic Tabs around.
   useEffect(() => {
+    sideChatsRef.current = {};
+    setSideChats({});
     try {
       const raw = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
       setState(parse(raw));
@@ -147,27 +161,18 @@ export function WorkspaceSidebarProvider({ workingDirectory, sessionId, children
     setState((prev) => pureSetWidth(prev, width));
   }, []);
 
-  const openSideChat = useCallback((title: string) => {
-    setState((prev) => pureOpen(prev, {
-      id: 'side-chat',
-      kind: 'side-chat',
-      key: 'side-chat',
-      title,
-    }));
+  const startSideChatForTab = useCallback((id: string) => {
+    const operationId = ++sideChatOperationSequenceRef.current;
+    sideChatOperationsRef.current.set(id, operationId);
     if (!sessionId) {
-      setSideChat({ parentThreadId: '', threadId: null, status: 'error', error: '请先发送一条消息，再打开侧边聊天。' });
+      storeSideChat(id, { parentThreadId: '', threadId: null, status: 'error', error: '请先发送一条消息，再打开侧边聊天。' });
       return;
     }
-    const current = sideChatRef.current;
-    if (current?.parentThreadId === sessionId && current.status !== 'error') return;
-
-    const operationId = ++sideChatOperationRef.current;
     const creating: SideChatState = { parentThreadId: sessionId, threadId: null, status: 'creating', error: null };
-    sideChatRef.current = creating;
-    setSideChat(creating);
+    storeSideChat(id, creating);
     void startSideChat(sessionId)
       .then((response) => {
-        if (sideChatOperationRef.current !== operationId) {
+        if (sideChatOperationsRef.current.get(id) !== operationId) {
           void unsubscribeThread(response.thread.id).catch(() => undefined);
           return;
         }
@@ -177,45 +182,54 @@ export function WorkspaceSidebarProvider({ workingDirectory, sessionId, children
           status: 'ready',
           error: null,
         };
-        sideChatRef.current = ready;
-        setSideChat(ready);
+        storeSideChat(id, ready);
       })
       .catch((error) => {
-        if (sideChatOperationRef.current !== operationId) return;
+        if (sideChatOperationsRef.current.get(id) !== operationId) return;
         const failed: SideChatState = {
           parentThreadId: sessionId,
           threadId: null,
           status: 'error',
           error: error instanceof Error ? error.message : String(error),
         };
-        sideChatRef.current = failed;
-        setSideChat(failed);
+        storeSideChat(id, failed);
       });
-  }, [sessionId, startSideChat, unsubscribeThread]);
+  }, [sessionId, startSideChat, storeSideChat, unsubscribeThread]);
 
-  const closeSideChat = useCallback(async () => {
-    const current = sideChatRef.current;
-    ++sideChatOperationRef.current;
+  const openSideChat = useCallback((title: string) => {
+    const tab = createSideChatTab(title, ++sideChatOrdinalRef.current);
+    setState((prev) => pureOpen(prev, tab));
+    startSideChatForTab(tab.id);
+  }, [startSideChatForTab]);
+
+  const retrySideChat = useCallback((id: string) => {
+    if (!sideChatsRef.current[id]) return;
+    startSideChatForTab(id);
+  }, [startSideChatForTab]);
+
+  const closeSideChat = useCallback(async (id: string) => {
+    const current = sideChatsRef.current[id];
+    sideChatOperationsRef.current.delete(id);
     if (current?.threadId) {
       await interruptTurn({ threadId: current.threadId });
       await unsubscribeThread(current.threadId);
     }
-    sideChatRef.current = null;
-    setSideChat(null);
-    setState((prev) => pureClose(prev, 'side-chat'));
-  }, [interruptTurn, unsubscribeThread]);
+    removeSideChat(id);
+    setState((prev) => pureClose(prev, id));
+  }, [interruptTurn, removeSideChat, unsubscribeThread]);
 
   // 切换主会话或关闭应用壳时，临时侧聊不应继续占用 app-server 订阅。
   useEffect(() => () => {
-    ++sideChatOperationRef.current;
-    const threadId = sideChatRef.current?.threadId;
-    if (threadId) void unsubscribeThread(threadId).catch(() => undefined);
-    sideChatRef.current = null;
+    sideChatOperationsRef.current.clear();
+    for (const sideChat of Object.values(sideChatsRef.current)) {
+      if (sideChat.threadId) void unsubscribeThread(sideChat.threadId).catch(() => undefined);
+    }
+    sideChatsRef.current = {};
   }, [key, unsubscribeThread]);
 
   const value = useMemo(
-    () => ({ state, openTab, closeTab, setActiveTab, setOpen, setWidth, sideChat, openSideChat, closeSideChat }),
-    [state, openTab, closeTab, setActiveTab, setOpen, setWidth, sideChat, openSideChat, closeSideChat],
+    () => ({ state, openTab, closeTab, setActiveTab, setOpen, setWidth, sideChats, openSideChat, retrySideChat, closeSideChat }),
+    [state, openTab, closeTab, setActiveTab, setOpen, setWidth, sideChats, openSideChat, retrySideChat, closeSideChat],
   );
 
   return (

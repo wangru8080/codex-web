@@ -56,9 +56,6 @@ function ActiveContent({ tab, hasFilesTab }: { tab: Tab; hasFilesTab: boolean })
   if (tab.kind === 'terminal-pinned') {
     return <TerminalPanel />;
   }
-  if (tab.kind === 'side-chat') {
-    return <SideChatPanel />;
-  }
   // markdown / artifact / file all flow through PreviewPanel; the
   // panel reads previewSource from PanelContext (kept in sync by
   // openWorkspaceTab callers in MessageItem / FileTreePanel /
@@ -77,6 +74,7 @@ export function TabPanel() {
     ? undefined
     : state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
   const hasFilesTab = state.tabs.some((tab) => tab.kind === 'files-pinned');
+  const sideChatTabs = state.tabs.filter((tab) => tab.kind === 'side-chat');
 
   // Sync PanelContext.previewSource to the active dynamic Tab. Skips
   // fixed / files-pinned Tabs (those don't drive the preview surface).
@@ -96,30 +94,31 @@ export function TabPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id]);
 
-  if (!active || active.id === 'home') {
-    return (
-      <div
-        id="workspace-sidebar-tabpanel"
-        role="tabpanel"
-        tabIndex={0}
-        className="flex min-h-0 flex-1 overflow-hidden focus-visible:outline-none"
-        data-workspace-sidebar-home
-      >
-        <WorkspaceHome />
-      </div>
-    );
-  }
   return (
     <div
       id="workspace-sidebar-tabpanel"
       role="tabpanel"
-      aria-labelledby={`tab-${active.id}`}
+      aria-labelledby={active ? `tab-${active.id}` : undefined}
       tabIndex={0}
       className="flex flex-1 min-h-0 overflow-hidden focus-visible:outline-none"
-      data-workspace-sidebar-tabpanel
-      data-tab-id={active.id}
+      data-workspace-sidebar-home={!active || active.id === 'home' ? '' : undefined}
+      data-workspace-sidebar-tabpanel={active && active.id !== 'home' ? '' : undefined}
+      data-tab-id={active?.id}
     >
-      <ActiveContent tab={active} hasFilesTab={hasFilesTab} />
+      {sideChatTabs.map((tab) => (
+        <div
+          key={tab.id}
+          hidden={tab.id !== active?.id}
+          className="h-full min-h-0 w-full flex-1"
+        >
+          <SideChatPanel sideChatId={tab.id} />
+        </div>
+      ))}
+      {!active || active.id === 'home' ? (
+        <WorkspaceHome />
+      ) : active.kind !== 'side-chat' ? (
+        <ActiveContent tab={active} hasFilesTab={hasFilesTab} />
+      ) : null}
     </div>
   );
 }

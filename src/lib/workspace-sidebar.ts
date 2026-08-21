@@ -80,9 +80,9 @@ export interface TerminalPinnedTab {
 }
 
 export interface SideChatTab {
-  id: 'side-chat';
+  id: string;
   kind: 'side-chat';
-  key: 'side-chat';
+  key: string;
   title: string;
 }
 
@@ -139,6 +139,16 @@ export function initialState(opts?: { open?: boolean; width?: number }): Workspa
  */
 export function dynamicTabId(kind: DynamicTabKind, key: string): string {
   return `${kind}:${key}`;
+}
+
+export function createSideChatTab(baseTitle: string, ordinal: number): SideChatTab {
+  const id = `side-chat:${ordinal}`;
+  return {
+    id,
+    kind: 'side-chat',
+    key: id,
+    title: ordinal === 1 ? baseTitle : `${baseTitle} ${ordinal}`,
+  };
 }
 
 // ─── Mutations (returns new state) ─────────────────────────────────
