@@ -137,6 +137,8 @@ interface MessageInputProps {
   onStop?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
+  /** Only the active composer consumes global attachment/checkpoint events. */
+  isActive?: boolean;
   sessionId?: string;
   modelName?: string;
   onModelChange?: (model: string) => void;
@@ -654,6 +656,7 @@ export const MessageInput = memo(function MessageInput({
   onStop,
   disabled,
   isStreaming,
+  isActive = true,
   sessionId,
   modelName,
   onModelChange,
@@ -822,6 +825,7 @@ export const MessageInput = memo(function MessageInput({
   // compact source metadata while the full selected text remains in state for
   // the model-only prompt assembled at submit time.
   useEffect(() => {
+    if (!isActive) return;
     function handle(event: Event) {
       const detail = (event as CustomEvent).detail;
       if (!isAddToChatDetail(detail)) return;
@@ -845,7 +849,7 @@ export const MessageInput = memo(function MessageInput({
     }
     window.addEventListener(ADD_TO_CHAT_EVENT, handle);
     return () => window.removeEventListener(ADD_TO_CHAT_EVENT, handle);
-  }, []);
+  }, [isActive]);
 
   const mentions = useMemo(() => {
     // Render chips only for explicitly inserted/known mentions.
@@ -1071,6 +1075,7 @@ export const MessageInput = memo(function MessageInput({
   // it's 'directory', the difference is stored in mentionNodeTypes (not in the
   // text token) to match the picker's convention (see resolveItemSelection).
   useEffect(() => {
+    if (!isActive) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ path: string; nodeType?: 'file' | 'directory' }>).detail;
       const rawPath = detail?.path;
@@ -1088,9 +1093,10 @@ export const MessageInput = memo(function MessageInput({
     };
     window.addEventListener('insert-file-mention', handler);
     return () => window.removeEventListener('insert-file-mention', handler);
-  }, [setInputValue, setMentionNodeTypes, ensureMentionOrder]);
+  }, [ensureMentionOrder, isActive, setInputValue, setMentionNodeTypes]);
 
   useEffect(() => {
+    if (!isActive) return;
     const handler = (event: Event) => {
       const rawPath = (event as CustomEvent<{ path?: string }>).detail?.path?.trim();
       const path = rawPath ? normalizeWorkspaceReferencePath(rawPath, workingDirectory) : '';
@@ -1100,7 +1106,7 @@ export const MessageInput = memo(function MessageInput({
     };
     window.addEventListener('insert-file-reference', handler);
     return () => window.removeEventListener('insert-file-reference', handler);
-  }, [workingDirectory]);
+  }, [isActive, workingDirectory]);
 
   const normalizeMentionPath = useCallback((rawPath: string): string => {
     return normalizeWorkspaceReferencePath(rawPath, workingDirectory);
@@ -1583,6 +1589,7 @@ export const MessageInput = memo(function MessageInput({
   // (rather than writing `@path/` into the textarea) so the chip lives
   // in the same green-capsule attachment row as files and images.
   useEffect(() => {
+    if (!isActive) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ path: string }>).detail;
       const rawPath = detail?.path;
@@ -1593,7 +1600,7 @@ export const MessageInput = memo(function MessageInput({
     };
     window.addEventListener('attach-directory-to-chat', handler);
     return () => window.removeEventListener('attach-directory-to-chat', handler);
-  }, []);
+  }, [isActive]);
 
   // Run Checkpoint Round 2 — when the banner's confirm action fires,
   // we set the bypass flag and programmatically click the composer's
@@ -1601,6 +1608,7 @@ export const MessageInput = memo(function MessageInput({
   // attachments + mentions) then runs unchanged; handleSubmit reads
   // the bypass and skips its blocking-reasons check exactly once.
   useEffect(() => {
+    if (!isActive) return;
     const handler = () => {
       bypassBlockingRef.current = true;
       // Find this composer's submit button via the stable
@@ -1623,7 +1631,7 @@ export const MessageInput = memo(function MessageInput({
     };
     window.addEventListener('run-checkpoint-confirm-send', handler);
     return () => window.removeEventListener('run-checkpoint-confirm-send', handler);
-  }, []);
+  }, [isActive]);
 
   const removeMention = useCallback((targetMention: MentionRef) => {
     let removedPath = '';
@@ -1882,7 +1890,7 @@ export const MessageInput = memo(function MessageInput({
             onDirectoriesDropped={handleDirectoriesDropped}
             className="[&_[data-slot=input-group]]:shadow-[var(--shadow-diffuse)]"
           >
-            <FileTreeAttachmentBridge />
+            <FileTreeAttachmentBridge isActive={isActive} />
             {/* Chip rows: each carries its own `pt-2.5 px-3 order-first`
                 so they float above the textarea via flex `order` and
                 produce zero DOM when their data is empty — wrapping them

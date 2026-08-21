@@ -30,6 +30,8 @@ describe('工作区侧栏 UI 接线', () => {
     const frame = source('src/components/layout/WorkspaceSidebar/TerminalFrame.tsx');
     const sideChat = source('src/components/layout/WorkspaceSidebar/SideChatPanel.tsx');
     const chatView = source('src/components/chat/ChatView.tsx');
+    const messageInput = source('src/components/chat/MessageInput.tsx');
+    const messageInputParts = source('src/components/chat/MessageInputParts.tsx');
     const provider = source('src/codex-web/AppServerProvider.tsx');
 
     expect(tabBar).toContain('workspaceSidebar.tool.terminal');
@@ -40,7 +42,7 @@ describe('工作区侧栏 UI 接线', () => {
     expect(panel).toContain('<TerminalPanel />');
     expect(panel).toContain('sideChatTabs.map((tab) => (');
     expect(panel).toContain('hidden={tab.id !== active?.id}');
-    expect(panel).toContain('<SideChatPanel sideChatId={tab.id} />');
+    expect(panel).toContain('<SideChatPanel sideChatId={tab.id} isActive={tab.id === active?.id} />');
     expect(panel).toContain("active.kind !== 'side-chat'");
     expect(tabBar).toContain('openSideChat(');
     expect(tabBar).not.toContain('label={t(\'workspaceSidebar.tool.sideChat\' as TranslationKey)} disabled');
@@ -49,6 +51,11 @@ describe('工作区侧栏 UI 接线', () => {
     expect(sideChat).toContain('appServerThreadId={childThreadId}');
     expect(sideChat).toContain('emptyState={<SideChatEmptyState />}');
     expect(chatView).toContain("? appServerTurn?.status === 'running' || presentAppServerTurnAsStreaming");
+    expect(sideChat).toContain('isActive={isActive}');
+    expect(chatView).toContain('isActive={isActive}');
+    expect(messageInput).toContain('if (!isActive) return;');
+    expect(messageInput).toContain('<FileTreeAttachmentBridge isActive={isActive} />');
+    expect(messageInputParts).toContain('FileTreeAttachmentBridge({ isActive = true }');
     expect(provider).toContain('prepareSideChat(');
     expect(provider).toContain('client.request("thread/unsubscribe"');
     expect(terminal).toContain('data-source-breadcrumb="app-server.process/spawn"');

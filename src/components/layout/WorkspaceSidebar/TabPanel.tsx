@@ -111,7 +111,7 @@ export function TabPanel() {
           hidden={tab.id !== active?.id}
           className="h-full min-h-0 w-full flex-1"
         >
-          <SideChatPanel sideChatId={tab.id} />
+          <SideChatPanel sideChatId={tab.id} isActive={tab.id === active?.id} />
         </div>
       ))}
       {!active || active.id === 'home' ? (

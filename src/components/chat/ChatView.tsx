@@ -160,6 +160,8 @@ interface ChatViewProps {
   appServerRollbackLastTurn?: () => Promise<Message[]>;
   appServerRemoteRollback?: CrossClientThreadRollback | null;
   emptyState?: React.ReactNode;
+  /** Hidden side chats stay mounted for state retention but must not consume global composer events. */
+  isActive?: boolean;
 }
 
 /** Maximum messages kept in React state. Older messages are trimmed and reloaded on scroll. */
@@ -218,6 +220,7 @@ export function ChatView({
   appServerRollbackLastTurn,
   appServerRemoteRollback,
   emptyState,
+  isActive = true,
 }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory: panelWorkingDirectory, setPendingApprovalSessionId, setFileTreeOpen, setIsAssistantWorkspace } = usePanel();
   const workingDirectory = sessionWorkingDirectory ?? panelWorkingDirectory;
@@ -1779,6 +1782,7 @@ export function ChatView({
                 ))
               }
               isStreaming={isStreaming}
+              isActive={isActive}
               sessionId={activeSessionId}
               modelName={currentModel}
               onModelChange={settingsLocked ? undefined : handleModelChange}
@@ -2079,6 +2083,7 @@ export function ChatView({
           ))
         }
         isStreaming={isStreaming}
+        isActive={isActive}
         sessionId={activeSessionId}
         modelName={currentModel}
         onModelChange={settingsLocked ? undefined : handleModelChange}

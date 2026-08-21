@@ -13,7 +13,7 @@ import { useTranslation } from '@/hooks/useTranslation';
 import { useWorkspaceSidebar } from '@/hooks/useWorkspaceSidebar';
 import type { TranslationKey } from '@/i18n';
 
-export function SideChatPanel({ sideChatId }: { sideChatId: string }) {
+export function SideChatPanel({ sideChatId, isActive = true }: { sideChatId: string; isActive?: boolean }) {
   const { sessionId: parentThreadId, workingDirectory } = usePanel();
   const { sideChats, retrySideChat } = useWorkspaceSidebar();
   const { t } = useTranslation();
@@ -101,6 +101,7 @@ export function SideChatPanel({ sideChatId }: { sideChatId: string }) {
         initialMode="code"
         workingDirectory={workingDirectory}
         appServerThreadId={childThreadId}
+        isActive={isActive}
         appServerTurn={activeTurn}
         appServerRequest={pendingRequest}
         appServerTokenUsage={tokenUsage}

@@ -91,7 +91,7 @@ export function FileAwareSubmitButton({
  * from the file tree and adds the file as a proper attachment (capsule).
  * Uses app-server to fetch the real file binary, preserving type and content.
  */
-export function FileTreeAttachmentBridge() {
+export function FileTreeAttachmentBridge({ isActive = true }: { isActive?: boolean }) {
   const attachments = usePromptInputAttachments();
   const { readFileLimited } = useAppServerActions();
 
@@ -109,6 +109,7 @@ export function FileTreeAttachmentBridge() {
   }, [attachments, readFileLimited]);
 
   useEffect(() => {
+    if (!isActive) return;
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent<{ path: string }>;
       const filePath = customEvent.detail?.path;
@@ -118,7 +119,7 @@ export function FileTreeAttachmentBridge() {
 
     window.addEventListener('attach-file-to-chat', handler);
     return () => window.removeEventListener('attach-file-to-chat', handler);
-  }, [handleAttach]);
+  }, [handleAttach, isActive]);
 
   return null;
 }

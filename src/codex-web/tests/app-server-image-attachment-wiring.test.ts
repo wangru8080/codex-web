@@ -43,7 +43,7 @@ describe("app-server image attachment wiring", () => {
     expect(messageInput).toContain("const resolvedAttachmentsAccept = attachmentsAccept ?? ''");
     expect(messageInput).toContain("accept={resolvedAttachmentsAccept}");
     expect(chatView).not.toContain("attachmentsAccept={appServerSend ? 'image/*' : undefined}");
-    expect(messageInput).toContain("<FileTreeAttachmentBridge />");
+    expect(messageInput).toContain("<FileTreeAttachmentBridge isActive={isActive} />");
     expect(messageInput).toContain("<FileAndFolderMenuItem />");
     expect(messageInputParts).not.toContain("imageOnly");
     expect(messageInputParts).toContain("readFileLimited(filePath");
