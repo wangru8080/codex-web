@@ -890,7 +890,8 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
           - Action buttons all `text-muted-foreground/80 hover:text-foreground
             hover:bg-muted/50` — same hover idiom as the Tab strip and
             chat composer (no border, no fill, surfaces only on hover). */}
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border/40 bg-background px-3 pb-1">
+      {!isDocument && (
+        <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border/40 bg-background px-3 pb-1">
         <div className="min-w-0 flex-1 leading-tight">
           <p className="truncate text-xs font-medium text-foreground flex items-center gap-1.5">
             <span className="truncate">{fileName}</span>
@@ -1110,7 +1111,8 @@ export function PreviewPanel(_: { variant?: 'sidebar' } = {}) {
         )}
 
         {/* No close button here — the Tab strip's X owns close. */}
-      </div>
+        </div>
+      )}
 
       {/* Content dispatches on previewSource.kind. File previews preserve the
           app-server-backed MediaView/RenderedView/SourceView path; inline HTML

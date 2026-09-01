@@ -25,6 +25,12 @@ describe("PDF、Word 与 Excel 预览接线", () => {
     expect(preview).toContain('dynamic(\n  () => import("@/components/editor/SpreadsheetViewer")');
   });
 
+  it("纯文档预览不重复显示文件身份与复制下载工具栏", () => {
+    const preview = read("src/components/layout/panels/PreviewPanel.tsx");
+
+    expect(preview).toContain('{!isDocument && (\n        <div className="flex h-12');
+  });
+
   it("DOC 使用无脚本沙箱，DOCX 不渲染嵌入 HTML", () => {
     const viewer = read("src/components/editor/WordDocumentViewer.tsx");
 
