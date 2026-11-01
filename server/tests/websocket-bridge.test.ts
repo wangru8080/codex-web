@@ -1,5 +1,8 @@
 import { createServer, type Server } from "node:http";
+import { mkdtemp } from "node:fs/promises";
 import { connect } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { PassThrough } from "node:stream";
 import WebSocket from "ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -28,6 +31,7 @@ vi.mock("../codex-process", async () => {
 });
 
 import { createWebSocketBridge } from "../websocket-bridge";
+import { PushNotificationService } from "../push-notifications";
 
 describe("createWebSocketBridge 共享 Server", () => {
   let server: Server | null = null;
@@ -280,6 +284,85 @@ describe("createWebSocketBridge 共享 Server", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(fakeAppServers).toHaveLength(1);
+  });
+
+  it("routes UnifiedPush registration through the bridge and forwards only eligible events", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-web-push-bridge-"));
+    const sent = vi.fn<(
+      subscription: unknown,
+      payload: string,
+      vapidDetails: unknown,
+    ) => Promise<{ statusCode?: number }>>(async () => ({}));
+    const pushNotifications = new PushNotificationService({
+      env: {},
+      statePath: join(directory, "push.json"),
+      transport: {
+        generateVapidKeys: () => ({ publicKey: "vapid-public", privateKey: "vapid-private" }),
+        send: sent,
+      },
+    });
+    const bridge = createWebSocketBridge({
+      host: "127.0.0.1",
+      token: "secret",
+      allowRemoteConnections: true,
+      pushNotifications,
+    });
+    await waitUntilListening(bridge.server);
+    const messages: Array<Record<string, unknown>> = [];
+    const client = await openWebSocket(`${bridge.url()}?token=secret`, messages);
+    const appServer = fakeAppServers[0] as FakeAppServer;
+    const writes: Array<Record<string, unknown>> = [];
+    appServer.child.stdin.on("data", (data) => writes.push(JSON.parse(data.toString())));
+
+    client.send(JSON.stringify({ id: 41, method: "codexWeb/push/config", params: {} }));
+    await waitFor(() => messages.some((message) => message.id === 41));
+    expect(messages.find((message) => message.id === 41)).toEqual({
+      id: 41,
+      result: { vapidPublicKey: "vapid-public", source: "codex-web.push" },
+    });
+    expect(writes).toHaveLength(0);
+
+    client.send(JSON.stringify({
+      id: 42,
+      method: "codexWeb/push/register",
+      params: {
+        instance: "codex-web-default",
+        endpoint: "https://push.example.test/endpoint",
+        keys: { p256dh: "p256dh-key", auth: "auth-key" },
+      },
+    }));
+    await waitFor(() => messages.some((message) => message.id === 42));
+    expect(writes).toHaveLength(0);
+
+    appServer.child.stdout.write(`${JSON.stringify({
+      method: "item/agentMessage/delta",
+      params: { threadId: "thread-1", delta: "not a completion" },
+    })}\n`);
+    appServer.child.stdout.write(`${JSON.stringify({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: {
+          id: "turn-1",
+          status: "completed",
+          items: [{ id: "item-1", type: "agentMessage", text: "Finished the task." }],
+        },
+      },
+    })}\n`);
+
+    await waitFor(() => sent.mock.calls.length === 1);
+    expect(sent).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: "https://push.example.test/endpoint" }),
+      expect.any(String),
+      expect.objectContaining({ publicKey: "vapid-public", privateKey: "vapid-private" }),
+    );
+    expect(JSON.parse(String(sent.mock.calls[0]?.[1]))).toMatchObject({
+      kind: "turn_completed",
+      body: "Finished the task.",
+      threadId: "thread-1",
+    });
+
+    await bridge.close();
   });
 
   it("bridge 主动关闭会取消等待中的 app-server 重启", async () => {

@@ -267,6 +267,7 @@ export class PersistentAppServer {
       const publicId = this.serverRequestRouter.register(rpc, message.id);
       const publicRequest = { ...message, id: publicId };
       this.pendingServerRequests.set(publicId, publicRequest);
+      this.onNotification?.(publicRequest);
       this.broadcast(publicRequest);
       return;
     }

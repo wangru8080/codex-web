@@ -11,6 +11,7 @@ import { readRuntimeBrokerConfig } from "../server/runtime-broker-config";
 import { watchRuntimeBrokerConfig } from "../server/runtime-broker-config-watcher";
 import { createRuntimeBrokerServer } from "../server/runtime-broker-server";
 import { parseCodexWebBrokerArgs } from "./codex-web-broker-options";
+import { PushNotificationService } from "../server/push-notifications";
 
 export async function runCodexWebRuntimeCli(args: string[]): Promise<void> {
   const options = parseCodexWebBrokerArgs(args);
@@ -37,10 +38,12 @@ export async function runCodexWebRuntimeCli(args: string[]): Promise<void> {
     return { config, users };
   };
   const { config, users } = await loadConfig();
+  const pushNotifications = new PushNotificationService();
   const broker = await createRuntimeBrokerServer({
     socketPath: options.socketPath!,
     config,
     createRuntime: createBrokerRuntimeFactory(config, users, platform),
+    pushNotifications,
   });
   const stopWatching = watchRuntimeBrokerConfig({
     path: configPath,
