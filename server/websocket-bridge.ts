@@ -4,6 +4,7 @@ import WebSocket, { WebSocketServer } from "ws";
 
 import type { CodexProcessOptions } from "./codex-process";
 import { webSocketAppServerPeer, type AppServerPeer } from "./app-server-peer";
+import { observeBridgeSocket } from "./bridge-connection-diagnostics";
 import { isBridgeSyncNotification } from "./bridge-message-routing";
 import { PersistentAppServer } from "./persistent-app-server";
 import { validateBridgeRequest } from "./security";
@@ -87,6 +88,7 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
 
   wsServer.on("connection", (webSocket, request) => {
     const peer = webSocketAppServerPeer(webSocket);
+    observeBridgeSocket("bridge", webSocket, request);
     sockets.add(webSocket);
     appServer.attach(peer);
     attachClient(webSocket, peer, request, options, appServer);
