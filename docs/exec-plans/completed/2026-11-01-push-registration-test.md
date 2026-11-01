@@ -43,6 +43,8 @@ confirming that the endpoint, encryption keys, and VAPID configuration were vali
   (real, non-isolated state).
 - Android `./gradlew testDebugUnitTest`: passed.
 - Android `./gradlew assembleRelease`: passed; local release APK generated.
+- GitHub Actions run `41324961493` for Android commit `37bdc59`: passed; artifact
+  `codex-web-android-0.1.0-ci.24` (12,470,813 bytes) uploaded.
 - Android visual notification verification is still pending installation of the updated
   APK and a registration retry on the device.
 
@@ -54,3 +56,4 @@ confirming that the endpoint, encryption keys, and VAPID configuration were vali
 | 2026-11-01 | Unit fixture | Registration test gets HTTP `503` | Registration remains stored; response reports `delivered: false`, status `503` |
 | 2026-11-01 | Unit fixture, mocked DNS | Node requests `all: true` | Lookup returns an address array; private DNS results are rejected |
 | 2026-11-01 | Android parser | `kind: test` payload | Accepted; unknown/malformed payloads remain rejected |
+| 2026-11-01 | GitHub Actions | Android `main` push `37bdc59` | Workflow succeeded; APK artifact uploaded |
