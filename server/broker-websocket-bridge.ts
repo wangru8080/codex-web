@@ -2,6 +2,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import WebSocket, { WebSocketServer } from "ws";
 
+import { observeBridgeSocket } from "./bridge-connection-diagnostics";
 import { RuntimeBrokerClient, type RuntimeBrokerConnection } from "./runtime-broker-client";
 import { validateBrowserBridgeRequest } from "./security";
 import { readSessionCookie } from "./web-auth";
@@ -61,8 +62,9 @@ export function createBrokerWebSocketBridge(options: BrokerWebSocketBridgeOption
   };
   options.server.on("upgrade", handleUpgrade);
 
-  wsServer.on("connection", (webSocket) => {
+  wsServer.on("connection", (webSocket, request) => {
     const connection = connections.get(webSocket)!;
+    observeBridgeSocket("broker-bridge", webSocket, request);
     sockets.add(webSocket);
     const removeMessage = connection.onMessage((message) => {
       if (webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(message));
