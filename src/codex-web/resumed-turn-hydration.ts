@@ -89,6 +89,15 @@ export function mergeResumedActiveTurn(
   };
 }
 
+export function completedPlanTurnForResume(
+  turn: AppServerTurnState | null | undefined,
+): AppServerTurnState | null {
+  if (turn?.status !== "completed" || !turn.latestProposedPlanMarkdown?.trim()) {
+    return null;
+  }
+  return turn;
+}
+
 export function latestInProgressTurnId(turns: Turn[]): string | null {
   const latest = turns.at(-1);
   return latest?.status === "inProgress" ? latest.id : null;

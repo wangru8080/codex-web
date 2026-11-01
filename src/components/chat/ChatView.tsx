@@ -328,6 +328,7 @@ export function ChatView({
     cappedSetMessages((current) => mergeCrossClientUserMessages(current, appServerSyncedUserMessages));
   }, [appServerSyncedUserMessages, cappedSetMessages]);
   const [mode, setMode] = useState<string>(initialMode || 'code');
+  const lastSyncedInitialModeRef = useRef(initialMode);
   const [currentModel, setCurrentModel] = useState(() => modelName || (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') : null) || 'sonnet');
   const currentModelRef = useRef(currentModel);
   const modelSwitchSequenceRef = useRef(0);
@@ -686,6 +687,12 @@ export function ChatView({
     }
   }, [settingsLocked, activeSessionId]);
 
+  useEffect(() => {
+    if (settingsLocked || !initialMode || initialMode === lastSyncedInitialModeRef.current) return;
+    lastSyncedInitialModeRef.current = initialMode;
+    setMode(initialMode);
+  }, [initialMode, settingsLocked]);
+
   const handleModelChange = useCallback((model: string, recordSwitch = true) => {
     const previousModel = currentModelRef.current;
     if (previousModel === model) return;
@@ -798,6 +805,12 @@ export function ChatView({
     setAppServerLocalStreaming(false);
     pendingOptimisticUserIdRef.current = null;
   }, [activeSessionId, appServerLocalStreaming, appServerSend, appServerTurn, cappedSetMessages]);
+
+  useEffect(() => {
+    if (!appServerSend || !appServerTurn) return;
+    if (!['completed', 'failed', 'interrupted'].includes(appServerTurn.status)) return;
+    setLivePlanPromptTurnKey(`${appServerTurn.threadId}:${appServerTurn.turnId}:${appServerTurn.status}`);
+  }, [appServerSend, appServerTurn]);
 
   const initializedRef = useRef(false);
   useEffect(() => {

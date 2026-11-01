@@ -24,6 +24,20 @@ export function planCollaborationModeForRequest(
   };
 }
 
+export function turnCollaborationModeForRequest(
+  mode: string | undefined,
+  model: string | null | undefined,
+): CollaborationMode {
+  return planCollaborationModeForRequest(mode, model) ?? {
+    mode: "default",
+    settings: {
+      model: model ?? "",
+      reasoning_effort: null,
+      developer_instructions: null,
+    },
+  };
+}
+
 export function withPlanCollaborationMode(
   params: ThreadStartParams,
   mode: string | undefined,
@@ -47,5 +61,16 @@ export function withPlanCollaborationMode(
   return {
     ...params,
     collaborationMode,
+  };
+}
+
+export function withTurnCollaborationMode(
+  params: TurnStartParams,
+  mode: string | undefined,
+  model: string | null | undefined,
+): TurnStartParamsWithCollaborationMode {
+  return {
+    ...params,
+    collaborationMode: turnCollaborationModeForRequest(mode, model),
   };
 }

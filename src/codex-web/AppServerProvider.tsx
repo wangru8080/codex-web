@@ -104,7 +104,10 @@ import {
   type ApprovalResponseGuardState,
 } from "./approval-response-guard";
 import { AppServerBrowserClient } from "./app-server-browser-client";
-import { withPlanCollaborationMode } from "./app-server-collaboration-mode";
+import {
+  withPlanCollaborationMode,
+  withTurnCollaborationMode,
+} from "./app-server-collaboration-mode";
 import { appServerInitializeCapabilities } from "./app-server-capabilities";
 import { threadPermissionUpdateOptions, threadRuntimeOptions, turnRuntimeOptions } from "./app-server-runtime-options";
 import { BridgeAuthenticationError, resolveCodexBridgeUrl } from "./bridge-url-runtime";
@@ -121,7 +124,11 @@ import {
   type InterruptTurnParams,
 } from "./interrupt-adapter";
 import { buildThreadResumeParams } from "./resume-adapter";
-import { activeTurnFromResume, mergeResumedActiveTurn } from "./resumed-turn-hydration";
+import {
+  activeTurnFromResume,
+  completedPlanTurnForResume,
+  mergeResumedActiveTurn,
+} from "./resumed-turn-hydration";
 import { readResumableTurn, writeResumableTurns } from "./resumable-turn-storage";
 import {
   appServerTurnSnapshotKey,
@@ -1360,27 +1367,34 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       const currentThreadTurn = current.activeTurnsByThreadId[response.thread.id]?.data;
       const recoveryTurn = currentThreadTurn ?? readResumableTurn(window.sessionStorage, response.thread.id);
       const mergedResumedActiveTurn = mergeResumedActiveTurn(recoveryTurn, resumedActiveTurn);
+      const completedPlanTurn = completedPlanTurnForResume(currentThreadTurn);
       const currentActiveTurn = current.activeTurn?.data;
       const shouldClearCurrent =
         !mergedResumedActiveTurn &&
         currentActiveTurn?.threadId === response.thread.id &&
         isRunningActiveTurn(currentActiveTurn);
+      const nextActiveTurn = mergedResumedActiveTurn
+        ? sourcedActiveTurn(mergedResumedActiveTurn, "app-server.thread/resume")
+        : completedPlanTurn
+          ? sourcedActiveTurn(completedPlanTurn)
+          : shouldClearCurrent
+            ? null
+            : current.activeTurn;
+      const nextActiveTurns = mergedResumedActiveTurn
+        ? rememberActiveTurnByThread(
+            current.activeTurnsByThreadId,
+            mergedResumedActiveTurn,
+            "app-server.thread/resume",
+          )
+        : completedPlanTurn
+          ? rememberActiveTurnByThread(current.activeTurnsByThreadId, completedPlanTurn)
+          : removeActiveTurnByThread(current.activeTurnsByThreadId, response.thread.id);
       return {
         ...current,
         resumedThread: { source: "app-server.thread/resume", data: response },
         selectedThread: { source: "app-server.thread/resume", data: { thread: response.thread } },
-        activeTurn: mergedResumedActiveTurn
-          ? sourcedActiveTurn(mergedResumedActiveTurn, "app-server.thread/resume")
-          : shouldClearCurrent
-            ? null
-            : current.activeTurn,
-        activeTurnsByThreadId: mergedResumedActiveTurn
-          ? rememberActiveTurnByThread(
-              current.activeTurnsByThreadId,
-              mergedResumedActiveTurn,
-              "app-server.thread/resume",
-            )
-          : removeActiveTurnByThread(current.activeTurnsByThreadId, response.thread.id),
+        activeTurn: nextActiveTurn,
+        activeTurnsByThreadId: nextActiveTurns,
         turnSnapshots: mergedResumedActiveTurn
           ? rememberTurnSnapshot(
               current.turnSnapshots,
@@ -1444,7 +1458,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
 
     const effectiveConfig = await readEffectiveConfig(client, cwd);
     const turnParams: TurnStartParamsWithCollaborationMode = withReasoningEffort(
-      withPlanCollaborationMode({
+      withTurnCollaborationMode({
         threadId,
         input: buildAppServerTurnInput(trimmed, persistedFiles, skills),
         cwd,
