@@ -66,8 +66,12 @@ describe("UnifiedPush notification service", () => {
       id: 2,
       result: { vapidPublicKey: "vapid-public", source: "codex-web.push" },
     });
-    expect(await register(service)).toMatchObject({ result: { registered: true } });
-    expect(await register(service)).toMatchObject({ result: { registered: true } });
+    expect(await register(service)).toMatchObject({
+      result: { registered: true, testNotification: { delivered: true, statusCode: 201 } },
+    });
+    expect(await register(service)).toMatchObject({
+      result: { registered: true, testNotification: { delivered: true, statusCode: 201 } },
+    });
 
     const stored = JSON.parse(await readFile(join(directory, "push.json"), "utf8"));
     expect(stored.subscriptions).toHaveLength(1);
@@ -76,9 +80,48 @@ describe("UnifiedPush notification service", () => {
     expect((await stat(directory)).mode & 0o777).toBe(0o700);
   });
 
+  it("sends a test notification when a device registers", async () => {
+    const { service, sent } = await serviceFixture();
+    const response = await register(service, "sunup-device");
+
+    expect(response).toMatchObject({
+      result: {
+        registered: true,
+        testNotification: { delivered: true, statusCode: 201 },
+      },
+    });
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0]!.payload)).toMatchObject({
+      kind: "test",
+      title: "Codex Web notifications are working",
+      requestId: "registration-test",
+    });
+  });
+
+  it("reports a failed registration test while retaining the subscription", async () => {
+    const { directory, service, setStatusCode } = await serviceFixture();
+    setStatusCode(503);
+
+    const response = await register(service);
+
+    expect(response).toMatchObject({
+      result: {
+        registered: true,
+        testNotification: {
+          delivered: false,
+          statusCode: 503,
+          error: "Push service returned HTTP 503",
+        },
+      },
+    });
+    const stored = JSON.parse(await readFile(join(directory, "push.json"), "utf8"));
+    expect(stored.subscriptions).toHaveLength(1);
+  });
+
   it("sends only filtered Codex events and deduplicates repeated turn notifications", async () => {
     const { service, sent } = await serviceFixture();
     await register(service);
+    sent.length = 0;
 
     service.handleAppServerMessage(user, {
       method: "item/agentMessage/delta",
@@ -111,6 +154,7 @@ describe("UnifiedPush notification service", () => {
   it("does not deliver another user's events or subscriptions", async () => {
     const { service, sent } = await serviceFixture();
     await register(service);
+    sent.length = 0;
     service.handleAppServerMessage({ id: "bob", email: "bob@example.test" }, {
       method: "turn/completed",
       params: {
@@ -126,6 +170,7 @@ describe("UnifiedPush notification service", () => {
     const { directory, service, sent, setStatusCode } = await serviceFixture();
     await register(service, "one");
     await register(service, "two");
+    sent.length = 0;
     setStatusCode(410);
     service.handleAppServerMessage(user, {
       method: "turn/completed",

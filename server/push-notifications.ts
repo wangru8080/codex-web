@@ -58,6 +58,19 @@ type PushTransport = {
   ) => Promise<{ statusCode?: number }>;
 };
 
+type PushDeliveryResult = {
+  delivered: boolean;
+  stale: boolean;
+  statusCode?: number;
+  error?: string;
+};
+
+type PushTestResult = {
+  delivered: boolean;
+  statusCode?: number;
+  error?: string;
+};
+
 type PushNotificationServiceOptions = {
   env?: PushEnvironment;
   home?: string;
@@ -191,7 +204,11 @@ export class PushNotificationService {
         .slice(0, MAX_SUBSCRIPTIONS);
     }
     await this.persist(state);
-    return { registered: true, instance, source: "codex-web.push" };
+    const testNotification = await this.sendRegistrationTest(record, state);
+    if (!testNotification.delivered) {
+      this.logger.warn(`[push] registration test delivery failed: ${testNotification.error ?? "unknown error"}`);
+    }
+    return { registered: true, instance, source: "codex-web.push", testNotification };
   }
 
   private async unregisterFromParams(user: PushUser, params: unknown): Promise<Record<string, unknown>> {
@@ -206,39 +223,92 @@ export class PushNotificationService {
     return { unregistered: true, instance, source: "codex-web.push" };
   }
 
+  private async sendRegistrationTest(
+    subscription: PushSubscriptionRecord,
+    state: PersistedPushState,
+  ): Promise<PushTestResult> {
+    const result = await this.sendToSubscription(subscription, {
+      version: 1,
+      kind: "test",
+      title: "Codex Web notifications are working",
+      body: "This test notification confirms that Codex Web can reach this device.",
+      threadId: null,
+      turnId: null,
+      requestId: "registration-test",
+      source: "codex-web.push.registration_test",
+      createdAt: this.now(),
+    }, await this.ensureVapidKeys(state));
+
+    if (result.stale) {
+      state.subscriptions = state.subscriptions.filter((candidate) =>
+        !(candidate.userId === subscription.userId && candidate.instance === subscription.instance),
+      );
+      await this.persist(state);
+    }
+
+    return result.delivered
+      ? { delivered: true, statusCode: result.statusCode }
+      : {
+          delivered: false,
+          statusCode: result.statusCode,
+          error: result.error ?? "Push delivery failed",
+        };
+  }
+
   private async deliver(user: PushUser, payload: CodexPushPayload): Promise<void> {
     const state = await this.load();
     const subscriptions = state.subscriptions.filter((subscription) => subscription.userId === user.id);
     if (subscriptions.length === 0) return;
     const vapid = await this.ensureVapidKeys(state);
-    const body = JSON.stringify(payload);
+    const results = await Promise.all(subscriptions.map(async (subscription) => ({
+      subscription,
+      result: await this.sendToSubscription(subscription, payload, vapid),
+    })));
     const stale = new Set<string>();
 
-    await Promise.all(subscriptions.map(async (subscription) => {
-      try {
-        const result = await this.transport.send(
-          { endpoint: subscription.endpoint, keys: subscription.keys },
-          body,
-          { subject: this.vapidSubject, ...vapid },
-        );
-        if (result.statusCode === 404 || result.statusCode === 410) {
-          stale.add(subscription.instance);
-        }
-      } catch (error) {
-        const statusCode = errorStatus(error);
-        if (statusCode === 404 || statusCode === 410) {
-          stale.add(subscription.instance);
-        } else {
-          this.logger.warn(`[push] ${payload.kind} delivery failed with status ${statusCode ?? "unknown"}`);
-        }
+    for (const { subscription, result } of results) {
+      if (result.stale) {
+        stale.add(subscription.instance);
+      } else if (!result.delivered) {
+        this.logger.warn(`[push] ${payload.kind} delivery failed: ${result.error ?? "unknown error"}`);
       }
-    }));
+    }
 
     if (stale.size === 0) return;
     state.subscriptions = state.subscriptions.filter((subscription) =>
       !(subscription.userId === user.id && stale.has(subscription.instance)),
     );
     await this.persist(state);
+  }
+
+  private async sendToSubscription(
+    subscription: PushSubscriptionRecord,
+    payload: CodexPushPayload,
+    vapid: VapidKeys,
+  ): Promise<PushDeliveryResult> {
+    try {
+      const result = await this.transport.send(
+        { endpoint: subscription.endpoint, keys: subscription.keys },
+        JSON.stringify(payload),
+        { subject: this.vapidSubject, ...vapid },
+      );
+      const statusCode = result.statusCode;
+      if (statusCode === 404 || statusCode === 410) {
+        return { delivered: false, stale: true, statusCode, error: `Push service returned HTTP ${statusCode}` };
+      }
+      if (statusCode !== undefined && (statusCode < 200 || statusCode >= 300)) {
+        return { delivered: false, stale: false, statusCode, error: `Push service returned HTTP ${statusCode}` };
+      }
+      return { delivered: true, stale: false, statusCode };
+    } catch (error) {
+      const statusCode = errorStatus(error);
+      return {
+        delivered: false,
+        stale: statusCode === 404 || statusCode === 410,
+        statusCode,
+        error: statusCode === undefined ? errorName(error) : `Push service returned HTTP ${statusCode}`,
+      };
+    }
   }
 
   private trackThreadMetadata(message: JsonRpcMessage): void {
@@ -482,17 +552,25 @@ function isPrivateHostname(hostname: string): boolean {
     || isPrivateAddress(normalized);
 }
 
-function createPublicOnlyHttpsAgent(): https.Agent {
+export function createPublicOnlyHttpsAgent(): https.Agent {
   return new https.Agent({
     keepAlive: true,
     lookup: (hostname, options, callback) => {
-      void lookup(hostname, { family: options.family, all: false }).then(
-        (address) => {
-          if (isPrivateAddress(address.address)) {
+      void lookup(hostname, { family: options.family, hints: options.hints, all: true }).then(
+        (addresses) => {
+          if (addresses.length === 0) {
+            callback(new Error("Push endpoint did not resolve"), "", 0);
+            return;
+          }
+          if (addresses.some((address) => isPrivateAddress(address.address))) {
             callback(new Error("Push endpoint resolved to a private address"), "", 0);
             return;
           }
-          callback(null, address.address, address.family);
+          if (options.all) {
+            callback(null, addresses);
+          } else {
+            callback(null, addresses[0]!.address, addresses[0]!.family);
+          }
         },
         (error: Error) => callback(error, "", 0),
       );

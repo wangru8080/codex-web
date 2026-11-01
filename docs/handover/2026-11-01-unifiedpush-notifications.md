@@ -39,20 +39,20 @@ Push state is stored at `${CODEX_WEB_STATE || ~/.codex-web}/push.json` with dire
 }
 ```
 
-Supported `kind` values are `turn_completed`, `turn_failed`, `goal_completed`, `approval_required`, and `question_required`.
+Supported `kind` values are `turn_completed`, `turn_failed`, `goal_completed`, `approval_required`, `question_required`, and `test`. A `test` payload is sent once for each successful `codexWeb/push/register` request so the client can verify the complete encryption and delivery path before reporting notifications as ready.
 
 ## Operations
 
 - VAPID keys are generated once and persisted when both `CODEX_WEB_PUSH_VAPID_PUBLIC_KEY` and `CODEX_WEB_PUSH_VAPID_PRIVATE_KEY` are unset.
 - If supplied through environment variables, both keys must be present and must remain stable across restarts.
 - `CODEX_WEB_PUSH_VAPID_SUBJECT` overrides the default repository HTTPS subject.
-- Endpoints require HTTPS, cannot contain credentials, and must resolve to public addresses. The HTTPS agent repeats the DNS check at connection time to reduce rebinding risk.
+- Endpoints require HTTPS, cannot contain credentials, and must resolve to public addresses. The HTTPS agent repeats the DNS check at connection time to reduce rebinding risk. Its lookup must honor Node's `options.all` contract and return an address array; returning a single address for `all: true` fails locally with `ERR_INVALID_IP_ADDRESS` before any push request is sent.
 - `CODEX_WEB_PUSH_ALLOW_INSECURE_ENDPOINTS=1` is test-only.
 - Web Push TTL is 24 hours, so an offline device can receive a notification after reconnecting.
 
 ## Verification
 
-- `pnpm exec vitest run server/tests/push-app-server-events.test.ts server/tests/push-notifications.test.ts server/tests/websocket-bridge.test.ts server/tests/user-runtime-registry.test.ts`
+- `pnpm exec vitest run server/tests/push-app-server-events.test.ts server/tests/push-notifications.test.ts server/tests/push-transport.test.ts server/tests/websocket-bridge.test.ts server/tests/user-runtime-registry.test.ts`
 - `pnpm run typecheck`
 - `pnpm run build`
 
