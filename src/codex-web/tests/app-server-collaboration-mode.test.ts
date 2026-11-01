@@ -4,7 +4,9 @@ import type { TurnStartParams } from "@/codex/protocol/generated/v2/TurnStartPar
 
 import {
   planCollaborationModeForRequest,
+  turnCollaborationModeForRequest,
   withPlanCollaborationMode,
+  withTurnCollaborationMode,
 } from "../app-server-collaboration-mode";
 
 describe("app-server collaboration mode params", () => {
@@ -22,6 +24,18 @@ describe("app-server collaboration mode params", () => {
   it("Default/code mode 不传 collaborationMode", () => {
     expect(planCollaborationModeForRequest("code", "gpt-5.5")).toBeNull();
     expect(planCollaborationModeForRequest(undefined, "gpt-5.5")).toBeNull();
+  });
+
+  it("Default/code mode 的 turn 显式切回 default collaboration mode", () => {
+    expect(turnCollaborationModeForRequest("code", "gpt-5.5")).toEqual({
+      mode: "default",
+      settings: {
+        model: "gpt-5.5",
+        reasoning_effort: null,
+        developer_instructions: null,
+      },
+    });
+    expect(turnCollaborationModeForRequest(undefined, "gpt-5.5").mode).toBe("default");
   });
 
   it("只在 Plan mode 给请求参数追加 collaborationMode", () => {
@@ -82,6 +96,27 @@ describe("app-server collaboration mode params", () => {
       threadId: "thread-1",
       collaborationMode: {
         mode: "plan",
+        settings: {
+          model: "gpt-5.5",
+          reasoning_effort: null,
+          developer_instructions: null,
+        },
+      },
+    });
+  });
+
+  it("turn/start 从 Plan 退出时显式发送 default collaborationMode", () => {
+    const params: TurnStartParams = {
+      threadId: "thread-1",
+      input: [{ type: "text", text: "Implement the plan.", text_elements: [] }],
+      cwd: "/tmp/project",
+      model: "gpt-5.5",
+      approvalPolicy: "on-request",
+    };
+
+    expect(withTurnCollaborationMode(params, "code", "gpt-5.5")).toMatchObject({
+      collaborationMode: {
+        mode: "default",
         settings: {
           model: "gpt-5.5",
           reasoning_effort: null,

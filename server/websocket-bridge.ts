@@ -7,6 +7,11 @@ import { webSocketAppServerPeer, type AppServerPeer } from "./app-server-peer";
 import { observeBridgeSocket } from "./bridge-connection-diagnostics";
 import { isBridgeSyncNotification } from "./bridge-message-routing";
 import { PersistentAppServer } from "./persistent-app-server";
+import {
+  isPushBridgeMethod,
+  pushBridgeErrorResponse,
+  PushNotificationService,
+} from "./push-notifications";
 import { validateBridgeRequest } from "./security";
 import { resolveScreenShareConfig, type ScreenShareConfigOptions } from "./screen-share/config";
 import { ScreenShareManager, type ScreenShareManagerOptions } from "./screen-share/manager";
@@ -24,6 +29,7 @@ export type WebSocketBridgeOptions = CodexProcessOptions & {
   allowRemoteConnections?: boolean;
   allowSameOrigin?: boolean;
   clientMessageInterceptor?: ClientMessageInterceptor;
+  pushNotifications?: PushNotificationService;
   screenShare?: ScreenShareConfigOptions & Partial<ScreenShareManagerOptions>;
 };
 
@@ -52,7 +58,14 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
   const screenShareWsServer = new WebSocketServer({ noServer: true });
   const sockets = new Set<WebSocket>();
   const wsServer = new WebSocketServer({ noServer: true });
-  const appServer = new PersistentAppServer(options);
+  const pushNotifications = options.pushNotifications ?? new PushNotificationService();
+  const pushUser = {
+    id: process.env.CODEX_WEB_PUSH_USER_ID?.trim() || "local",
+    email: process.env.CODEX_WEB_PUSH_USER_EMAIL?.trim() || "local",
+  };
+  const appServer = new PersistentAppServer(options, (message) => {
+    pushNotifications.handleAppServerMessage(pushUser, message);
+  });
 
   const handleUpgrade = (request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
@@ -91,7 +104,7 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
     observeBridgeSocket("bridge", webSocket, request);
     sockets.add(webSocket);
     appServer.attach(peer);
-    attachClient(webSocket, peer, request, options, appServer);
+    attachClient(webSocket, peer, request, options, appServer, pushNotifications, pushUser);
     webSocket.on("close", () => {
       sockets.delete(webSocket);
       appServer.detach(peer);
@@ -159,6 +172,8 @@ function attachClient(
   _request: IncomingMessage,
   options: WebSocketBridgeOptions,
   appServer: PersistentAppServer,
+  pushNotifications: PushNotificationService,
+  pushUser: { id: string; email: string },
 ): void {
   webSocket.on("message", (data) => {
     try {
@@ -166,6 +181,16 @@ function attachClient(
       const message = JSON.parse(text) as JsonRpcMessage;
       if (isBridgeSyncNotification(message)) {
         appServer.broadcast(message, peer);
+        return;
+      }
+      if ("method" in message && message.id !== undefined && isPushBridgeMethod(message.method)) {
+        void pushNotifications.handleClientRequest(pushUser, message).then((response) => {
+          if (response && webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(response));
+        }, (error) => {
+          if (webSocket.readyState === WebSocket.OPEN) {
+            webSocket.send(JSON.stringify(pushBridgeErrorResponse(message.id!, error)));
+          }
+        });
         return;
       }
       const intercepted = options.clientMessageInterceptor?.(message);

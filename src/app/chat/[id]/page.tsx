@@ -520,6 +520,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     if (!settings) return;
     setSessionModel(settings.model);
     setSessionEffort(settings.effort);
+    setSessionMode(settings.collaborationMode.mode === 'plan' ? 'plan' : 'code');
     const permissionProfile = permissionProfileFromRuntimeSettings(settings);
     setSessionPermissionProfile(permissionProfile);
     writeThreadRuntimePreference(localStorage, threadId, {

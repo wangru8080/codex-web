@@ -1,6 +1,7 @@
 import type { AppServerPeer } from "./app-server-peer";
 import { isBridgeSyncNotification } from "./bridge-message-routing";
 import type { RuntimeBrokerUserConfig } from "./runtime-broker-config";
+import { isPushBridgeMethod, pushBridgeErrorResponse, type PushNotificationService } from "./push-notifications";
 import {
   parseJsonRpcMessage,
   type JsonRpcId,
@@ -33,6 +34,7 @@ type RegistryOptions = {
   disconnectGraceMs: number;
   maxActiveAppServers?: number;
   createRuntime: RuntimeFactory;
+  pushNotifications?: PushNotificationService;
 };
 
 type RuntimeEntry = {
@@ -51,11 +53,13 @@ export class UserRuntimeRegistry {
   private disconnectGraceMs: number;
   private maxActiveAppServers: number | undefined;
   private createRuntime: RuntimeFactory;
+  private readonly pushNotifications: PushNotificationService | undefined;
 
   constructor(options: RegistryOptions) {
     this.disconnectGraceMs = options.disconnectGraceMs;
     this.maxActiveAppServers = options.maxActiveAppServers;
     this.createRuntime = options.createRuntime;
+    this.pushNotifications = options.pushNotifications;
   }
 
   attach(user: RuntimeBrokerUserConfig, peer: AppServerPeer): { pid: number | undefined } {
@@ -114,6 +118,19 @@ export class UserRuntimeRegistry {
     }
     if (isBridgeSyncNotification(message)) {
       entry.server.broadcast(message, runtimePeer);
+      return;
+    }
+    if (
+      this.pushNotifications
+      && "method" in message
+      && message.id !== undefined
+      && isPushBridgeMethod(message.method)
+    ) {
+      void this.pushNotifications.handleClientRequest(entry.user, message).then((response) => {
+        if (response && peer.isOpen()) peer.send(JSON.stringify(response));
+      }, (error) => {
+        if (peer.isOpen()) peer.send(JSON.stringify(pushBridgeErrorResponse(message.id!, error)));
+      });
       return;
     }
     if (isTurnStartRequest(message)) {
@@ -188,7 +205,9 @@ export class UserRuntimeRegistry {
 
   private handleNotification(userId: string, message: JsonRpcMessage): void {
     const entry = this.runtimes.get(userId);
-    if (!entry || !("method" in message) || message.id !== undefined) return;
+    if (!entry || !("method" in message)) return;
+    this.pushNotifications?.handleAppServerMessage(entry.user, message);
+    if (message.id !== undefined) return;
     const turnId = readTurnId(message.params);
     if (message.method === "turn/started" && turnId) {
       entry.activeTurns.add(turnId);

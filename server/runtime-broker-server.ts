@@ -4,6 +4,7 @@ import { dirname, isAbsolute } from "node:path";
 
 import type { AppServerPeer } from "./app-server-peer";
 import type { RuntimeBrokerConfig, RuntimeBrokerUserConfig } from "./runtime-broker-config";
+import type { PushNotificationService } from "./push-notifications";
 import { listenJsonLines, writeJsonLine } from "./runtime-broker-framing";
 import { verifyBrokerPassword } from "./runtime-broker-password";
 import type { BrokerErrorResponse, BrokerRequest, BrokerResponse } from "./runtime-broker-protocol";
@@ -34,6 +35,7 @@ type BrokerServerOptions = {
   ) => UserRuntimeServer;
   turnstileConfigPath?: string;
   verifyTurnstile?: typeof verifyTurnstileTokenDetailed;
+  pushNotifications?: PushNotificationService;
 };
 
 export type RuntimeBrokerServer = {
@@ -67,6 +69,7 @@ export async function createRuntimeBrokerServer(options: BrokerServerOptions): P
     disconnectGraceMs: config.disconnectGraceMs,
     maxActiveAppServers: config.maxActiveAppServers,
     createRuntime: options.createRuntime,
+    pushNotifications: options.pushNotifications,
   });
   const sockets = new Set<Socket>();
   const attempts = new LoginAttemptLimiter();

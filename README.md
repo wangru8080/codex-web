@@ -699,6 +699,39 @@ If a misconfiguration prevents login, the file owner can set `"enabled"` to `fal
 
 Configurations are loaded exclusively from the unified new path. After upgrading, if an older path still contains configurations, please re-enter and save in Settings; the program will not automatically read, move, overwrite, or delete legacy files.
 
+### UnifiedPush Notifications
+
+The Android client can receive Codex notifications through any UnifiedPush-compatible distributor, including Sunup, ntfy, and distributors backed by push services such as Mozilla Push. The server sends encrypted Web Push messages with VAPID to the endpoint supplied by the distributor.
+
+Notifications are intentionally limited to events that need attention:
+
+- a Turn that reaches `completed` or `failed`;
+- a thread goal that transitions to `complete`;
+- command, file-change, and permission approvals;
+- Codex user-input questions and MCP elicitation requests.
+
+Streaming deltas, ordinary agent messages, interrupted Turns, and idle thread-status changes are not pushed. Notifications are deduplicated by Turn, goal, or server-request ID in the server process.
+
+Subscriptions and VAPID keys are stored server-side in:
+
+```text
+${CODEX_WEB_STATE}/push.json
+```
+
+The directory is created with permissions `0700` and the file with `0600`. The browser and Android client never receive the private VAPID key or any Codex OAuth/API credentials. If neither VAPID key is configured, a key pair is generated once and persisted.
+
+Optional VAPID configuration:
+
+```bash
+export CODEX_WEB_PUSH_VAPID_PUBLIC_KEY='<base64url public key>'
+export CODEX_WEB_PUSH_VAPID_PRIVATE_KEY='<base64url private key>'
+export CODEX_WEB_PUSH_VAPID_SUBJECT='mailto:admin@example.com'
+```
+
+Both VAPID keys must be supplied together. Keep the same pair across server restarts and deployments so existing subscriptions remain valid.
+
+Push endpoints must use HTTPS and resolve only to public addresses. Credentials in endpoint URLs, loopback/private/link-local destinations, and private DNS results are rejected. `CODEX_WEB_PUSH_ALLOW_INSECURE_ENDPOINTS=1` exists only for local integration tests and must not be used in production.
+
 ## Upgrading
 
 When installed from source or GitHub Release tarballs, download or generate the new release tarball, then run the global installation again:
