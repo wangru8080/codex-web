@@ -39,6 +39,7 @@ type PushSubscriptionRecord = {
   endpoint: string;
   keys: PushSubscriptionKeys;
   updatedAt: number;
+  testDeliveredAt: number | null;
 };
 
 type PersistedPushState = {
@@ -67,6 +68,7 @@ type PushDeliveryResult = {
 
 type PushTestResult = {
   delivered: boolean;
+  sent: boolean;
   statusCode?: number;
   error?: string;
 };
@@ -186,6 +188,10 @@ export class PushNotificationService {
 
     const state = await this.load();
     await this.ensureVapidKeys(state);
+    const previous = state.subscriptions.find((subscription) =>
+      subscription.userId === user.id && subscription.instance === instance,
+    );
+    const unchanged = previous !== undefined && sameSubscriptionTarget(previous, endpoint, { p256dh, auth });
     const record: PushSubscriptionRecord = {
       userId: user.id,
       email: user.email,
@@ -193,6 +199,7 @@ export class PushNotificationService {
       endpoint,
       keys: { p256dh, auth },
       updatedAt: this.now(),
+      testDeliveredAt: unchanged ? previous.testDeliveredAt : null,
     };
     state.subscriptions = state.subscriptions.filter((subscription) =>
       !(subscription.userId === user.id && subscription.instance === instance),
@@ -204,9 +211,19 @@ export class PushNotificationService {
         .slice(0, MAX_SUBSCRIPTIONS);
     }
     await this.persist(state);
-    const testNotification = await this.sendRegistrationTest(record, state);
+    const testNotification = unchanged && previous.testDeliveredAt !== null
+      ? { delivered: true, sent: false }
+      : await this.sendRegistrationTest(record, state);
     if (!testNotification.delivered) {
       this.logger.warn(`[push] registration test delivery failed: ${testNotification.error ?? "unknown error"}`);
+    } else if (testNotification.sent) {
+      const stored = state.subscriptions.find((subscription) =>
+        subscription.userId === user.id && subscription.instance === instance,
+      );
+      if (stored) {
+        stored.testDeliveredAt = this.now();
+        await this.persist(state);
+      }
     }
     return { registered: true, instance, source: "codex-web.push", testNotification };
   }
@@ -247,9 +264,10 @@ export class PushNotificationService {
     }
 
     return result.delivered
-      ? { delivered: true, statusCode: result.statusCode }
+      ? { delivered: true, sent: true, statusCode: result.statusCode }
       : {
           delivered: false,
+          sent: true,
           statusCode: result.statusCode,
           error: result.error ?? "Push delivery failed",
         };
@@ -607,7 +625,18 @@ function parseSubscription(value: unknown): PushSubscriptionRecord | null {
     endpoint,
     keys: { p256dh, auth },
     updatedAt: typeof input?.updatedAt === "number" ? input.updatedAt : 0,
+    testDeliveredAt: typeof input?.testDeliveredAt === "number" ? input.testDeliveredAt : null,
   };
+}
+
+function sameSubscriptionTarget(
+  record: PushSubscriptionRecord,
+  endpoint: string,
+  keys: PushSubscriptionKeys,
+): boolean {
+  return record.endpoint === endpoint
+    && record.keys.p256dh === keys.p256dh
+    && record.keys.auth === keys.auth;
 }
 
 function requiredString(value: unknown, name: string, maxLength: number): string {

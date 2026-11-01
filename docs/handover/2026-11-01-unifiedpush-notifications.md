@@ -39,7 +39,7 @@ Push state is stored at `${CODEX_WEB_STATE || ~/.codex-web}/push.json` with dire
 }
 ```
 
-Supported `kind` values are `turn_completed`, `turn_failed`, `goal_completed`, `approval_required`, `question_required`, and `test`. A `test` payload is sent once for each successful `codexWeb/push/register` request so the client can verify the complete encryption and delivery path before reporting notifications as ready.
+Supported `kind` values are `turn_completed`, `turn_failed`, `goal_completed`, `approval_required`, `question_required`, and `test`. A `test` payload is sent for a new endpoint or encryption-key set so the client can verify the complete delivery path before reporting notifications as ready. Registration is idempotent for an unchanged reconnect: a successful test records `testDeliveredAt` in `push.json`, and subsequent identical `codexWeb/push/register` calls return `testNotification.sent: false` without sending another push. Failed tests are not marked and are retried on the next registration; a changed endpoint or key set also receives a new test.
 
 ## Operations
 

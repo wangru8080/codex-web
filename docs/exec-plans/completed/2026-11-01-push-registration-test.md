@@ -57,3 +57,23 @@ confirming that the endpoint, encryption keys, and VAPID configuration were vali
 | 2026-11-01 | Unit fixture, mocked DNS | Node requests `all: true` | Lookup returns an address array; private DNS results are rejected |
 | 2026-11-01 | Android parser | `kind: test` payload | Accepted; unknown/malformed payloads remain rejected |
 | 2026-11-01 | GitHub Actions | Android `main` push `37bdc59` | Workflow succeeded; APK artifact uploaded |
+
+## Follow-up: idempotent reconnect registration
+
+Android re-registers its UnifiedPush endpoint after each bridge reconnect. The initial
+implementation sent a registration test for every request, so the test notification
+appeared repeatedly even when the subscription target had not changed.
+
+The server now persists `testDeliveredAt` with each subscription and compares the
+endpoint plus both Web Push keys with the existing record. An unchanged registration
+whose test was previously accepted returns `testNotification.sent: false` and sends no
+push. Registrations with a changed target, and unchanged retries after a failed test,
+still send a test. The marker is loaded from `push.json`, so suppression survives service
+restarts; legacy records without the field receive one final test after deployment.
+
+| Date | Environment | Path | Result |
+| --- | --- | --- | --- |
+| 2026-11-01 | Unit fixture | Same endpoint and keys register twice | One push sent; second response reports `sent: false` |
+| 2026-11-01 | Unit fixture | Service restart between identical registrations | No second push; persisted marker is honored |
+| 2026-11-01 | Unit fixture | Failed test followed by retry | Failed attempt is unmarked; retry sends exactly one new test |
+| 2026-11-01 | Unit fixture | Endpoint or encryption keys change | New target gets a test; repeating the new target is then suppressed |

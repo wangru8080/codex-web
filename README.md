@@ -712,7 +712,7 @@ Notifications are intentionally limited to events that need attention:
 
 Streaming deltas, ordinary agent messages, interrupted Turns, and idle thread-status changes are not pushed. Notifications are deduplicated by Turn, goal, or server-request ID in the server process.
 
-Each successful subscription registration immediately sends one test notification through the same Web Push path. The Android client reports notifications as ready only after the push service accepts that test notification; otherwise the registration error is shown.
+The first registration for an endpoint sends one test notification through the same Web Push path. The Android client reports notifications as ready only after the push service accepts that test notification; otherwise the registration error is shown. Re-registering the same endpoint and encryption keys after a bridge reconnect is idempotent and does not send another test. A registration with a changed endpoint or key set, or a retry after a failed test, sends a new test notification.
 
 Subscriptions and VAPID keys are stored server-side in:
 
