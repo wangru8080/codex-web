@@ -71,8 +71,18 @@ push. Registrations with a changed target, and unchanged retries after a failed 
 still send a test. The marker is loaded from `push.json`, so suppression survives service
 restarts; legacy records without the field receive one final test after deployment.
 
+Targeted verification passed: `pnpm run typecheck`, the 47 notification, transport,
+bridge, and runtime-registry tests, and `pnpm run build:production-server`. A live check
+against a copy of the production state and the existing Mozilla endpoint returned HTTP
+`201` for the first registration, returned `testNotification.sent: false` for the
+immediate identical registration, and persisted the marker in the copied state. The full
+`pnpm run test` suite had 1056 passing tests and four unrelated pre-existing failures in
+`src/codex-web/tests/proxy.test.ts` and
+`src/codex-web/tests/web-auth-route-wiring.test.ts`.
+
 | Date | Environment | Path | Result |
 | --- | --- | --- | --- |
+| 2026-11-01 | Live production-state copy, Mozilla endpoint | New target followed by identical registration | HTTP `201`, then `sent: false`; `testDeliveredAt` persisted |
 | 2026-11-01 | Unit fixture | Same endpoint and keys register twice | One push sent; second response reports `sent: false` |
 | 2026-11-01 | Unit fixture | Service restart between identical registrations | No second push; persisted marker is honored |
 | 2026-11-01 | Unit fixture | Failed test followed by retry | Failed attempt is unmarked; retry sends exactly one new test |
