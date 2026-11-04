@@ -47,6 +47,7 @@ Project Repository: [https://github.com/wangru8080/codex-web](https://github.com
 - View Codex account status and usage limit details provided by the app-server.
 - Support for English and Chinese, theme switching, and responsive layouts for desktop and mobile.
 - Dedicated Web login protection supporting either locally defined email/password credentials or standard OpenID Connect (OIDC) Single Sign-On (SSO), plus optional Cloudflare Turnstile integration.
+- Optional Jules-compatible `/v1alpha` API with Settings-generated, revocable API keys and per-key workspace/full-access permission profiles.
 - Automatic browser reconnection after disconnection; if the app-server exits unexpectedly, the bridge attempts to restart it.
 
 ## Architecture
@@ -676,6 +677,40 @@ You can configure OIDC SSO and switch authentication modes either in **Settings 
   - In single-user mode, you can optionally restrict access via `allowedEmails` and/or `allowedDomains`; if both are empty, any user permitted by your OIDC provider policy is accepted.
   - In multi-user runtime broker mode, the verified OIDC `email` claim is matched against enabled users in `users.json`.
 - **Recovery**: If an OIDC misconfiguration prevents sign-in, set `"enabled": false` in `sso.json` (or launch with `CODEX_WEB_AUTH_MODE=local`) to switch back to local email/password login.
+
+### Jules-Compatible API Keys
+
+Codex Web exposes the documented Jules v1alpha resource surface at `/v1alpha`. Create keys in **Settings -> API Keys**. The complete key is shown exactly once; the server stores only its SHA-256 hash. Each account may have at most three active keys, and revoking a key takes effect on the next request.
+
+Supported resources:
+
+- `GET /v1alpha/sources` and `GET /v1alpha/sources/{source}`
+- `GET|POST /v1alpha/sessions`, `GET|DELETE /v1alpha/sessions/{session}`
+- `POST /v1alpha/sessions/{session}:archive`, `:unarchive`, `:sendMessage`, and `:approvePlan`
+- `GET /v1alpha/sessions/{session}/activities` and `GET /v1alpha/sessions/{session}/activities/{activity}`
+
+Pass the key only in the `X-Goog-Api-Key` header:
+
+```bash
+export CODEX_WEB_API_KEY='cwk1_...'
+curl -H "X-Goog-Api-Key: $CODEX_WEB_API_KEY" \
+  http://127.0.0.1:3001/v1alpha/sources
+```
+
+Keys authenticate as the account that created them, independently of the browser cookie. They are bound to the current Web authentication configuration:
+
+- Local-auth keys stop working after the configured email/password or session secret changes.
+- SSO keys stop working after SSO mode, issuer, client, secret, scopes, or allowlist changes; the account must also still be permitted by the current SSO allowlist.
+- Multi-user broker keys additionally require the broker user to remain enabled and unchanged.
+- Switching between local auth and SSO invalidates keys for the inactive mode until a key is created under the active configuration.
+
+The API accepts keys only from the same origin and rejects cookie-only requests, keys in query parameters, and keys in the `Authorization` header. It also rejects cross-site `Sec-Fetch-Site` requests. API-created sessions are tagged `codex_web_jules_api` and are isolated from normal browser-created threads. Sources are limited to the signed-in user's configured cwd and cwds from that user's existing app-server threads; callers cannot select arbitrary filesystem paths.
+
+Workspace keys use the normal workspace-write sandbox and on-request approvals. Full-access keys are explicitly marked high risk in Settings and run without sandbox or approval prompts. API requests never answer app-server approval or server requests: if a command or file change needs human review, approve it in the Codex Web UI.
+
+The adaptation does not invent Jules capabilities that Codex cannot provide. `AUTO_CREATE_PR`, working/starting branch selection, source environment variables, and activity time-range filters return `UNIMPLEMENTED`. `PLANNING` is deprecated by Jules and is not emitted; `AWAITING_USER_FEEDBACK` is not emitted without a real app-server state that represents it. Session outputs remain omitted rather than fabricated.
+
+Key metadata is stored in `${CODEX_WEB_STATE}/api-keys.json` and API session ownership metadata in `${CODEX_WEB_STATE}/api-sessions.json` when Web manages state directly. In a multi-user deployment these files are root-managed, alongside the broker's other `CODEX_WEB_STATE` files. Both files are written atomically with `0600` permissions. Raw keys are never written to these files, browser storage, or session metadata. The application does not intentionally log key headers; query-string key transport is rejected because reverse-proxy access logs may record complete URLs.
 
 ### Cloudflare Turnstile
 

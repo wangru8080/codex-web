@@ -5,6 +5,7 @@ import { createSessionToken, readWebAuthConfig, WEB_AUTH_COOKIE } from "../../..
 import { config as proxyConfig, isPublicWebAuthPath, proxy } from "../../proxy";
 
 const authEnv = {
+  CODEX_WEB_AUTH_MODE: "local",
   CODEX_WEB_LOGIN_EMAIL: "test@admin.com",
   CODEX_WEB_LOGIN_PASSWORD: "123456",
   CODEX_WEB_SESSION_SECRET: "0123456789abcdef0123456789abcdef",

@@ -170,6 +170,63 @@ export function runtimeBrokerSocket(
   return env.CODEX_WEB_RUNTIME_BROKER_SOCKET?.trim() || null;
 }
 
+/**
+ * Fingerprint of the browser-auth configuration that an API key is bound to.
+ * The value contains only a one-way digest so it can live in the broker key
+ * store without exposing credentials. Broker-managed local passwords are not
+ * available to the Web process; the broker separately binds the user's
+ * credential version to the key.
+ */
+export function readWebAuthBinding(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string {
+  const sso = readSsoConfigSync(env);
+  if (sso.enabled) {
+    return digestAuthBinding([
+      "sso",
+      readSessionSecret(env),
+      sso.issuer,
+      sso.clientId,
+      sso.clientSecret,
+      sso.scopes,
+      "allowed-emails",
+      ...sso.allowedEmails.map((email) => email.trim().toLowerCase()).sort(),
+      "allowed-domains",
+      ...sso.allowedDomains.map((domain) => domain.trim().toLowerCase()).sort(),
+    ]);
+  }
+  if (runtimeBrokerSocket(env)) return digestAuthBinding(["local", "broker"]);
+  const local = readWebAuthConfig(env);
+  return digestAuthBinding(["local", local.email, local.password, local.sessionSecret]);
+}
+
+export function webAuthCredentialVersion(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string | null {
+  try {
+    const sso = readSsoConfigSync(env);
+    if (sso.enabled) {
+      return ssoCredentialVersion(sso, readSessionSecret(env));
+    }
+    if (runtimeBrokerSocket(env)) return null;
+    return credentialVersion(readWebAuthConfig(env));
+  } catch {
+    return null;
+  }
+}
+
+export function isBrokerUserAllowedByCurrentWebAuth(
+  user: Pick<BrokerPublicUser, "email">,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): boolean {
+  try {
+    const sso = readSsoConfigSync(env);
+    return !sso.enabled || isEmailAllowedBySsoConfig(user.email, sso);
+  } catch {
+    return false;
+  }
+}
+
 export async function authenticateWebRequest(
   request: Request,
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
@@ -211,6 +268,8 @@ export async function authenticateWebRequest(
 }
 
 export function isSameOriginRequest(request: Request): boolean {
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") return false;
   const origin = request.headers.get("origin");
   if (!origin) return true;
   try {
@@ -237,6 +296,10 @@ function ssoCredentialVersion(sso: SsoConfig, sessionSecret: string): string {
 
 function sign(value: string, secret: string): string {
   return createHmac("sha256", secret).update(value).digest("base64url");
+}
+
+function digestAuthBinding(values: string[]): string {
+  return createHash("sha256").update(JSON.stringify(values)).digest("base64url");
 }
 
 function constantTimeEqual(left: string, right: string): boolean {

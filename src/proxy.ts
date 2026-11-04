@@ -5,6 +5,11 @@ import { authenticateWebRequest } from "../server/web-auth";
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  if (isJulesApiPath(pathname)) {
+    // API-key authentication belongs to the route handler. Cookie auth and
+    // demo mocks must not intercept this surface.
+    return NextResponse.next();
+  }
   const publicPath = isPublicWebAuthPath(pathname);
   const authenticated = await authenticateWebRequest(request);
 
@@ -44,6 +49,10 @@ export function isPublicWebAuthPath(pathname: string): boolean {
     || pathname === "/api/auth/sso/login"
     || pathname === "/api/auth/sso/callback"
   );
+}
+
+export function isJulesApiPath(pathname: string): boolean {
+  return pathname === "/v1alpha" || pathname.startsWith("/v1alpha/");
 }
 
 export const config = {

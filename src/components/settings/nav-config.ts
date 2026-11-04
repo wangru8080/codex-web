@@ -13,6 +13,7 @@ export type SettingsSection =
   | "config"
   | "hooks"
   | "security"
+  | "apiKeys"
   | "appearance"
   | "archived"
   | "about";
@@ -34,6 +35,7 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   { id: "config", label: "Config", icon: "config", href: "/settings/config", i18nKey: "settings.config" as TranslationKey },
   { id: "hooks", label: "Hooks", icon: "hook", href: "/settings/hooks", i18nKey: "settings.hooks" as TranslationKey },
   { id: "security", label: "Security", icon: "permission", href: "/settings/security", i18nKey: "settings.security" as TranslationKey },
+  { id: "apiKeys", label: "API Keys", icon: "permission", href: "/settings/api-keys", i18nKey: "settings.apiKeys" as TranslationKey },
   { id: "appearance", label: "Appearance", icon: "appearance", href: "/settings/appearance", i18nKey: "settings.appearance" as TranslationKey },
   { id: "about", label: "About", icon: "about", href: "/settings/about", i18nKey: "settings.about" as TranslationKey },
   {
