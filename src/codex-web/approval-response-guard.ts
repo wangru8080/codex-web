@@ -58,7 +58,7 @@ export function completeApprovalResponse({
   return { ...state, [key]: "resolved" };
 }
 
-export function failApprovalResponse({
+export function clearApprovalResponse({
   key,
   state,
 }: {
@@ -68,6 +68,16 @@ export function failApprovalResponse({
   const next = { ...state };
   delete next[key];
   return next;
+}
+
+export function failApprovalResponse({
+  key,
+  state,
+}: {
+  key: string;
+  state: ApprovalResponseGuardState;
+}): ApprovalResponseGuardState {
+  return clearApprovalResponse({ key, state });
 }
 
 export function approvalRequestKey(requestId: JsonRpcId): string {
