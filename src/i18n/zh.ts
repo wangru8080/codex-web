@@ -149,6 +149,13 @@ const zh: Record<TranslationKey, string> = {
   'settings.overviewDesc': '一眼看清当前执行引擎 / 服务商 / 模型 / 助理工作空间 / 系统状态，每块只给一个主入口跳转',
   'settings.codex': 'Codex',
   'settings.general': '通用',
+  'settings.defaultPermissionsTitle': '默认权限',
+  'settings.defaultPermissionsDesc': '新建会话时使用的权限模式。更改会保存到 config.toml。',
+  'settings.defaultPermissionsRequestApproval': '请求批准',
+  'settings.defaultPermissionsAutoApproval': '替我审批',
+  'settings.defaultPermissionsFullAccess': '完全访问',
+  'settings.defaultPermissionsCustom': '自定义（config.toml）',
+  'settings.defaultPermissionsSaveError': '无法保存默认权限模式',
   'settings.config': '配置',
   'settings.configTitle': '自定义 config.toml 设置',
   'settings.configPageDescription': '配置审批策略和沙盒设置',
@@ -1175,6 +1182,9 @@ const zh: Record<TranslationKey, string> = {
   'permission.default': '默认权限',
   'permission.fullAccess': '完全访问',
   'permission.fullAccessWarning': '完全访问模式将自动批准此对话的所有权限请求，包括文件写入、命令执行等潜在危险操作。确定要开启吗？',
+  'permission.useForFutureSessions': '所有未来会话都使用此模式',
+  'permission.fullAccessApplyError': '无法启用完全访问，请重试。',
+  'permission.fullAccessDefaultSaveError': '当前会话已启用完全访问，但默认权限保存失败，请重试。',
   'permission.sessionPermission': '对话权限',
 
   // ── Context Usage ─────────────────────────────────────────

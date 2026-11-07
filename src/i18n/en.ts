@@ -152,6 +152,13 @@ const en = {
   'settings.overviewDesc': 'See the current Runtime / Provider / Model / Assistant workspace / system status at a glance — one primary entry per block to jump to its dedicated page',
   'settings.codex': 'Codex',
   'settings.general': 'General',
+  'settings.defaultPermissionsTitle': 'Default Permissions',
+  'settings.defaultPermissionsDesc': 'Permission mode for new conversations. Changes are saved to config.toml.',
+  'settings.defaultPermissionsRequestApproval': 'Ask for approval',
+  'settings.defaultPermissionsAutoApproval': 'Auto approval',
+  'settings.defaultPermissionsFullAccess': 'Full access',
+  'settings.defaultPermissionsCustom': 'Custom (config.toml)',
+  'settings.defaultPermissionsSaveError': 'Unable to save the default permission mode',
   'settings.config': 'Config',
   'settings.configTitle': 'Custom config.toml settings',
   'settings.configPageDescription': 'Configure approval policies and sandbox settings',
@@ -1194,6 +1201,9 @@ const en = {
   'permission.default': 'Default',
   'permission.fullAccess': 'Full Access',
   'permission.fullAccessWarning': 'Full Access mode will automatically approve all permission requests without confirmation. This includes file writes, shell commands, and network requests. Only enable this if you fully trust the current task.',
+  'permission.useForFutureSessions': 'Use this mode for all future sessions',
+  'permission.fullAccessApplyError': 'Unable to apply Full Access. Please try again.',
+  'permission.fullAccessDefaultSaveError': 'Full Access is active for this chat, but the default could not be saved. Please try again.',
   'permission.sessionPermission': 'Chat Permission',
 
   // ── Context Usage ─────────────────────────────────────────
