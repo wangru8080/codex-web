@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { withNoStore } from "../../../../../server/http-cache";
 import { authenticateWebRequest } from "../../../../../server/web-auth";
 
 export const dynamic = "force-dynamic";
@@ -8,25 +9,17 @@ export const revalidate = 0;
 export async function GET(request: NextRequest) {
   const user = await authenticateWebRequest(request);
   if (!user) {
-    return NextResponse.json({ error: "登录已失效" }, { status: 401 });
+    return withNoStore(NextResponse.json({ error: "登录已失效" }, { status: 401 }));
   }
   const bridgeUrl = process.env.CODEX_WEB_BRIDGE_URL;
   const homeDirectory = user.home;
 
   if (!bridgeUrl) {
-    return NextResponse.json(
+    return withNoStore(NextResponse.json(
       { error: "CODEX_WEB_BRIDGE_URL 未设置", homeDirectory },
-      {
-        status: 503,
-        headers: { "Cache-Control": "no-store" },
-      },
-    );
+      { status: 503 },
+    ));
   }
 
-  return NextResponse.json(
-    { bridgeUrl, homeDirectory, user },
-    {
-      headers: { "Cache-Control": "no-store" },
-    },
-  );
+  return withNoStore(NextResponse.json({ bridgeUrl, homeDirectory, user }));
 }
