@@ -21,6 +21,7 @@ export type JulesSource = {
   name: string;
   id: string;
   cwd: string;
+  aliases?: string[];
   githubRepo?: {
     owner?: string;
     repo?: string;
@@ -35,6 +36,24 @@ export type JulesPlanInfo = {
   item: Extract<ThreadItem, { type: "plan" }>;
 };
 
+export type JulesSessionOutput = {
+  pullRequest?: {
+    baseRef?: string;
+    title?: string;
+    description?: string;
+    url: string;
+    headRef?: string;
+  };
+  changeSet?: {
+    source: string;
+    gitPatch?: {
+      unidiffPatch?: string;
+      baseCommitId?: string;
+      suggestedCommitMessage?: string;
+    };
+  };
+};
+
 type ActivityRecord = Record<string, unknown> & {
   name: string;
   id: string;
@@ -47,16 +66,40 @@ export function buildJulesSources(defaultCwd: string, threads: Thread[]): JulesS
   addCwd(byCwd, defaultCwd, null);
   for (const thread of threads) addCwd(byCwd, thread.cwd, thread);
 
-  return Array.from(byCwd.values())
-    .map(({ cwd, threads: cwdThreads }) => {
-      const repo = githubRepoFromThreads(cwdThreads);
-      return {
-        name: `sources/${sourceIdForCwd(cwd)}`,
-        id: sourceIdForCwd(cwd),
-        cwd,
-        ...(repo ? { githubRepo: repo } : {}),
-      } satisfies JulesSource;
-    })
+  const sources = new Map<string, { source: JulesSource; latestUpdate: number }>();
+  for (const { cwd, threads: cwdThreads } of byCwd.values()) {
+    const repo = githubRepoFromThreads(cwdThreads);
+    const id = repo ? `github/${repo.owner}/${repo.repo}` : sourceIdForCwd(cwd);
+    const latestUpdate = cwdThreads.reduce((latest, thread) => Math.max(latest, thread.updatedAt), 0);
+    const candidate: JulesSource = {
+      name: `sources/${id}`,
+      id,
+      cwd,
+      ...(repo ? { aliases: [sourceIdForCwd(cwd)] } : {}),
+      ...(repo ? { githubRepo: repo } : {}),
+    };
+    const existing = sources.get(id);
+    if (!existing) {
+      sources.set(id, { source: candidate, latestUpdate });
+      continue;
+    }
+    const candidateIsDefault = cwd === defaultCwd;
+    const existingIsDefault = existing.source.cwd === defaultCwd;
+    if (candidateIsDefault || (!existingIsDefault && latestUpdate > existing.latestUpdate)) {
+      existing.source = {
+        ...candidate,
+        aliases: mergeAliases(candidate.aliases, existing.source.aliases),
+        githubRepo: mergeGithubRepo(candidate.githubRepo, existing.source.githubRepo),
+      };
+      existing.latestUpdate = latestUpdate;
+    } else {
+      existing.source.aliases = mergeAliases(existing.source.aliases, candidate.aliases);
+      existing.source.githubRepo = mergeGithubRepo(existing.source.githubRepo, candidate.githubRepo);
+    }
+  }
+
+  return Array.from(sources.values())
+    .map(({ source }) => source)
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
@@ -65,8 +108,36 @@ export function findJulesSource(
   threads: Thread[],
   sourceName: string,
 ): JulesSource | null {
-  const normalized = sourceName.startsWith("sources/") ? sourceName : `sources/${sourceName}`;
-  return buildJulesSources(defaultCwd, threads).find((source) => source.name === normalized) ?? null;
+  const reference = normalizeSourceReference(sourceName);
+  if (!reference) return null;
+  const sources = buildJulesSources(defaultCwd, threads);
+  const exact = sources.find((source) => source.name === reference || source.id === reference);
+  if (exact) return exact;
+
+  const githubReference = parseGitHubSourceReference(reference);
+  if (githubReference) {
+    return sources.find((source) => {
+      const repo = source.githubRepo;
+      return repo?.owner?.toLowerCase() === githubReference.owner.toLowerCase()
+        && repo.repo?.toLowerCase() === githubReference.repo.toLowerCase();
+    }) ?? null;
+  }
+
+  return sources.find((source) => {
+    const localId = sourceIdForCwd(source.cwd);
+    return reference === localId || source.aliases?.includes(reference);
+  }) ?? null;
+}
+
+export function normalizeSourceReference(sourceName: string): string {
+  return sourceName.trim().replace(/^\/+|\/+$/g, "").replace(/^sources\//, "");
+}
+
+export function parseGitHubSourceReference(reference: string): { owner: string; repo: string } | null {
+  const normalized = normalizeSourceReference(reference).replace(/^github\//, "");
+  const match = /^([^/]+)\/([^/]+?)(?:\.git)?$/.exec(normalized);
+  if (!match) return null;
+  return { owner: match[1]!, repo: match[2]! };
 }
 
 export function sourceIdForCwd(cwd: string): string {
@@ -85,18 +156,25 @@ export function buildJulesSession(
   archived: boolean,
   webOrigin: string,
 ): Record<string, unknown> {
+  const outputs = buildJulesSessionOutputs(thread, metadata);
   return {
     name: `sessions/${thread.id}`,
     id: thread.id,
     title: sessionTitle(thread, metadata),
     prompt: metadata.prompt,
-    sourceContext: { source: `sources/${metadata.sourceId}` },
+    sourceContext: {
+      source: `sources/${metadata.sourceId}`,
+      ...(metadata.startingBranch
+        ? { githubRepoContext: { startingBranch: metadata.startingBranch } }
+        : {}),
+    },
     requirePlanApproval: metadata.requirePlanApproval,
     archived,
     state: deriveJulesSessionState(thread, metadata),
     createTime: unixSecondsToRfc3339(thread.createdAt),
     updateTime: unixSecondsToRfc3339(thread.updatedAt),
     url: new URL(`/chat/${encodeURIComponent(thread.id)}`, webOrigin).toString(),
+    ...(outputs.length > 0 ? { outputs } : {}),
   };
 }
 
@@ -104,12 +182,13 @@ export function deriveJulesSessionState(
   thread: Thread,
   metadata: JulesApiSessionMetadata,
 ): JulesSessionState {
+  if (thread.status.type === "systemError") return "FAILED";
   const latestTurn = thread.turns[thread.turns.length - 1];
   if (!latestTurn) {
     return thread.status.type === "active" ? "IN_PROGRESS" : "QUEUED";
   }
   if (latestTurn.status === "inProgress") return "IN_PROGRESS";
-  if (latestTurn.status === "failed" || thread.status.type === "systemError") return "FAILED";
+  if (latestTurn.status === "failed") return "FAILED";
   if (latestTurn.status === "interrupted") return "PAUSED";
 
   const pendingPlan = findPendingPlan(thread, metadata);
@@ -140,7 +219,7 @@ export function buildJulesActivities(
   const latestTurn = orderedTurns[orderedTurns.length - 1] ?? null;
 
   for (const turn of orderedTurns) {
-    const createTime = unixSecondsToRfc3339(turn.startedAt);
+    const createTime = unixSecondsToRfc3339(turn.startedAt) ?? unixSecondsToRfc3339(thread.createdAt);
     for (const item of turn.items) {
       const activity = activityForItem(thread.id, metadata.sourceId, turn, item, createTime);
       if (activity) activities.push(activity);
@@ -160,7 +239,8 @@ export function buildJulesActivities(
     activities.push(activityRecord(
       thread.id,
       `session-failed:${latestTurn.id}`,
-      unixSecondsToRfc3339(latestTurn.completedAt ?? latestTurn.startedAt),
+      unixSecondsToRfc3339(latestTurn.completedAt ?? latestTurn.startedAt)
+        ?? unixSecondsToRfc3339(thread.updatedAt),
       "system",
       { sessionFailed: { reason: latestTurn.error?.message ?? "Codex turn failed" } },
     ));
@@ -168,7 +248,8 @@ export function buildJulesActivities(
     activities.push(activityRecord(
       thread.id,
       `session-completed:${latestTurn.id}`,
-      unixSecondsToRfc3339(latestTurn.completedAt ?? latestTurn.startedAt),
+      unixSecondsToRfc3339(latestTurn.completedAt ?? latestTurn.startedAt)
+        ?? unixSecondsToRfc3339(thread.updatedAt),
       "system",
       { sessionCompleted: {} },
     ));
@@ -179,6 +260,75 @@ export function buildJulesActivities(
     const timeCompare = (left.createTime ?? "").localeCompare(right.createTime ?? "");
     return timeCompare || (insertionOrder.get(left.id) ?? 0) - (insertionOrder.get(right.id) ?? 0);
   });
+}
+
+export function buildJulesSessionOutputs(
+  thread: Thread,
+  metadata: JulesApiSessionMetadata,
+): JulesSessionOutput[] {
+  const pullRequests = new Map<string, NonNullable<JulesSessionOutput["pullRequest"]>>();
+  const patchParts = new Set<string>();
+  let commitDetected = false;
+  let suggestedCommitMessage: string | undefined;
+
+  const orderedTurns = [...thread.turns].sort(
+    (left, right) => (left.startedAt ?? 0) - (right.startedAt ?? 0),
+  );
+  for (const turn of orderedTurns) {
+    for (const item of turn.items) {
+      if (item.type === "commandExecution" && isSuccessfulCommand(item)) {
+        const output = item.aggregatedOutput ?? "";
+        if (isPullRequestCreateCommand(item.command)) {
+          for (const url of githubPullRequestUrls(output)) {
+            if (pullRequests.has(url)) continue;
+            const pullRequest: NonNullable<JulesSessionOutput["pullRequest"]> = { url };
+            const title = commandOption(item.command, "title") ?? commandOption(item.command, "t");
+            const description = commandOption(item.command, "body") ?? commandOption(item.command, "b");
+            const baseRef = commandOption(item.command, "base");
+            const headRef = commandOption(item.command, "head");
+            if (title) pullRequest.title = title;
+            if (description) pullRequest.description = description;
+            if (baseRef) pullRequest.baseRef = baseRef;
+            if (headRef) pullRequest.headRef = headRef;
+            pullRequests.set(url, pullRequest);
+          }
+        }
+        if (isGitHistoryCommand(item.command) && !isDryRunGitCommand(item.command)) {
+          commitDetected = true;
+          const summary = commitSummary(output);
+          if (summary?.message) suggestedCommitMessage = summary.message;
+        }
+      }
+      if (item.type === "fileChange" && item.status !== "failed" && item.status !== "declined") {
+        for (const change of item.changes) {
+          if (change.diff.trim()) patchParts.add(change.diff.trim());
+        }
+      }
+    }
+  }
+
+  if (metadata.initialGitSha && thread.gitInfo?.sha && thread.gitInfo.sha !== metadata.initialGitSha) {
+    commitDetected = true;
+  }
+
+  if (pullRequests.size > 0) {
+    return Array.from(pullRequests.values()).map((pullRequest) => ({ pullRequest }));
+  }
+
+  const unidiffPatch = Array.from(patchParts).join("\n");
+  if (!commitDetected && !unidiffPatch) return [];
+
+  const gitPatch: NonNullable<NonNullable<JulesSessionOutput["changeSet"]>["gitPatch"]> = {
+    ...(unidiffPatch ? { unidiffPatch } : {}),
+    ...(metadata.initialGitSha ? { baseCommitId: metadata.initialGitSha } : {}),
+    ...(suggestedCommitMessage ? { suggestedCommitMessage } : {}),
+  };
+  return [{
+    changeSet: {
+      source: `sources/${metadata.sourceId}`,
+      ...(Object.keys(gitPatch).length > 0 ? { gitPatch } : {}),
+    },
+  }];
 }
 
 export function planFromText(item: Extract<ThreadItem, { type: "plan" }>): Record<string, unknown> {
@@ -338,6 +488,72 @@ function githubRepoFromThreads(threads: Thread[]): JulesSource["githubRepo"] | u
   };
 }
 
+function mergeGithubRepo(
+  left: JulesSource["githubRepo"] | undefined,
+  right: JulesSource["githubRepo"] | undefined,
+): JulesSource["githubRepo"] | undefined {
+  if (!left) return right;
+  if (!right) return left;
+  const branches = new Map<string, { displayName: string }>();
+  for (const branch of [...(left.branches ?? []), ...(right.branches ?? [])]) {
+    if (branch.displayName) branches.set(branch.displayName, branch);
+  }
+  const defaultBranch = left.defaultBranch ?? right.defaultBranch;
+  return {
+    owner: left.owner ?? right.owner,
+    repo: left.repo ?? right.repo,
+    ...(branches.size > 0 ? { branches: Array.from(branches.values()) } : {}),
+    ...(defaultBranch ? { defaultBranch } : {}),
+  };
+}
+
+function mergeAliases(left: string[] | undefined, right: string[] | undefined): string[] | undefined {
+  const aliases = Array.from(new Set([...(left ?? []), ...(right ?? [])]));
+  return aliases.length > 0 ? aliases : undefined;
+}
+
+function isSuccessfulCommand(
+  item: Extract<ThreadItem, { type: "commandExecution" }>,
+): boolean {
+  return item.status === "completed" && item.exitCode === 0;
+}
+
+function isPullRequestCreateCommand(command: string): boolean {
+  return /(?:^|[\s;&|"'/])gh\s+pr\s+create\b/.test(command);
+}
+
+function githubPullRequestUrls(output: string): string[] {
+  const urls = new Set<string>();
+  const pattern = /https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+/g;
+  for (const match of output.matchAll(pattern)) urls.add(match[0]);
+  return Array.from(urls);
+}
+
+function isGitHistoryCommand(command: string): boolean {
+  return /(?:^|[\s;&|"'/])git\s+(?:commit|merge|cherry-pick|revert|am|rebase)\b/.test(command);
+}
+
+function isDryRunGitCommand(command: string): boolean {
+  return /\s--dry-run\b/.test(command);
+}
+
+function commitSummary(output: string): { sha: string; message: string | undefined } | null {
+  const match = /^\[[^\]]*?\s([0-9a-f]{7,40})\]\s*(.*)$/m.exec(output);
+  if (!match) return null;
+  const message = match[2]?.trim();
+  return { sha: match[1]!, message: message || undefined };
+}
+
+function commandOption(command: string, name: string): string | undefined {
+  const flag = name.length === 1 ? `-${name}` : `--${name}`;
+  const pattern = new RegExp(
+    `(?:^|\\s)${flag}(?:=|\\s+)(?:"([^"]*)"|'([^']*)'|(\\S+))`,
+    "i",
+  );
+  const match = pattern.exec(command);
+  return match ? (match[1] ?? match[2] ?? match[3])?.trim() || undefined : undefined;
+}
+
 export function parseGitHubRepo(originUrl: string): { owner: string; repo: string } | null {
   const value = originUrl.trim();
   const ssh = /^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/.exec(value);
@@ -365,8 +581,10 @@ function textFromUserInput(input: UserInput[]): string {
     .trim();
 }
 
-function unixSecondsToRfc3339(seconds: number | null): string | undefined {
-  if (seconds === null || !Number.isFinite(seconds)) return undefined;
-  return new Date(seconds * 1_000).toISOString();
+function unixSecondsToRfc3339(seconds: number | null | undefined): string | undefined {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return undefined;
+  const date = new Date(seconds * 1_000);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString();
 }
 

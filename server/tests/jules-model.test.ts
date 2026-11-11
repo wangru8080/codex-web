@@ -6,8 +6,10 @@ import type { JulesApiSessionMetadata } from "../jules-session-store";
 import {
   buildJulesActivities,
   buildJulesSession,
+  buildJulesSessionOutputs,
   buildJulesSources,
   deriveJulesSessionState,
+  findJulesSource,
   parseGitHubRepo,
   sourceIdForCwd,
 } from "../jules-model";
@@ -68,19 +70,27 @@ function thread(overrides: Partial<Thread> = {}): Thread {
 }
 
 describe("Jules model mapping", () => {
-  it("builds stable source ids without exposing filesystem paths in the API resource", () => {
+  it("uses GitHub resource names and maps them back to local checkout directories", () => {
     const first = sourceIdForCwd("/workspace/app");
     expect(first).toBe(sourceIdForCwd("/workspace/app"));
     expect(first).toMatch(/^app-[a-f0-9]{12}$/);
     expect(sourceIdForCwd("/workspace/other")).not.toBe(first);
 
-    const sources = buildJulesSources("/workspace/app", [
+    const sourceThreads = [
       thread(),
       thread({ id: "thread-2", gitInfo: { sha: "def", branch: "feature", originUrl: "https://github.com/acme/app" } }),
-    ]);
+      thread({
+        id: "thread-3",
+        cwd: "/workspace/checkout",
+        gitInfo: { sha: "def", branch: "feature", originUrl: "https://github.com/acme/app.git" },
+      }),
+    ];
+    const sources = buildJulesSources("/workspace/app", sourceThreads);
     expect(sources).toHaveLength(1);
     expect(sources[0]).toMatchObject({
-      id: first,
+      name: "sources/github/acme/app",
+      id: "github/acme/app",
+      cwd: "/workspace/app",
       githubRepo: {
         owner: "acme",
         repo: "app",
@@ -91,6 +101,14 @@ describe("Jules model mapping", () => {
       { displayName: "main" },
       { displayName: "feature" },
     ]);
+    expect(findJulesSource("/workspace/app", sourceThreads, "sources/github/acme/app"))
+      .toMatchObject({ id: "github/acme/app", cwd: "/workspace/app" });
+    expect(findJulesSource("/workspace/app", sourceThreads, "github/acme/app"))
+      .toMatchObject({ id: "github/acme/app", cwd: "/workspace/app" });
+    expect(findJulesSource("/workspace/app", sourceThreads, `sources/${first}`))
+      .toMatchObject({ id: "github/acme/app", cwd: "/workspace/app" });
+    expect(findJulesSource("/workspace/app", sourceThreads, sourceIdForCwd("/workspace/checkout")))
+      .toMatchObject({ id: "github/acme/app", cwd: "/workspace/app" });
   });
 
   it("parses GitHub SSH and HTTPS origins", () => {
@@ -172,10 +190,108 @@ describe("Jules model mapping", () => {
     expect(buildJulesActivities(threadValue, session)).toEqual(activities);
   });
 
+  it("emits change sets only from real file changes and successful git commits", () => {
+    const fileChangeTurn = turn({
+      items: [{
+        type: "fileChange",
+        id: "change-1",
+        status: "completed",
+        changes: [{
+          path: "src/app.ts",
+          kind: { type: "update", move_path: null },
+          diff: "--- a/src/app.ts\n+++ b/src/app.ts\n",
+        }],
+      }],
+    });
+    const noOutput = buildJulesSessionOutputs(thread(), metadata());
+    expect(noOutput).toEqual([]);
+
+    const outputs = buildJulesSessionOutputs(
+      thread({ turns: [fileChangeTurn] }),
+      metadata({ sourceId: "github/acme/app", initialGitSha: "abc1234" }),
+    );
+    expect(outputs).toEqual([{
+      changeSet: {
+        source: "sources/github/acme/app",
+        gitPatch: {
+          unidiffPatch: "--- a/src/app.ts\n+++ b/src/app.ts",
+          baseCommitId: "abc1234",
+        },
+      },
+    }]);
+
+    const commitTurn = turn({
+      items: [{
+        type: "commandExecution",
+        id: "commit-1",
+        command: "git commit -m \"Implement feature\"",
+        cwd: "/workspace/app",
+        processId: null,
+        source: "agent",
+        status: "completed",
+        commandActions: [],
+        aggregatedOutput: "[main abc1234] Implement feature\n 1 file changed, 1 insertion(+)",
+        exitCode: 0,
+        durationMs: 10,
+      }],
+    });
+    expect(buildJulesSessionOutputs(thread({ turns: [commitTurn] }), metadata()))
+      .toEqual([{
+        changeSet: {
+          source: `sources/${sourceIdForCwd("/workspace/app")}`,
+          gitPatch: { suggestedCommitMessage: "Implement feature" },
+        },
+      }]);
+    expect(buildJulesSessionOutputs(thread({ turns: [commitTurn] }), metadata({ initialGitSha: "def5678" })))
+      .toEqual([{
+        changeSet: {
+          source: `sources/${sourceIdForCwd("/workspace/app")}`,
+          gitPatch: {
+            baseCommitId: "def5678",
+            suggestedCommitMessage: "Implement feature",
+          },
+        },
+      }]);
+  });
+
+  it("emits a pull request only when a successful gh pr create returns a real URL", () => {
+    const command = (output: string, status: "completed" | "failed" = "completed") => turn({
+      items: [{
+        type: "commandExecution",
+        id: "pr-1",
+        command: "gh pr create --title \"Add feature\" --body \"Description\" --base main --head feature",
+        cwd: "/workspace/app",
+        processId: null,
+        source: "agent",
+        status,
+        commandActions: [],
+        aggregatedOutput: output,
+        exitCode: status === "completed" ? 0 : 1,
+        durationMs: 10,
+      }],
+    });
+    expect(buildJulesSessionOutputs(
+      thread({ turns: [command("https://github.com/acme/app/pull/35\n")] }),
+      metadata({ sourceId: "github/acme/app" }),
+    )).toEqual([{
+      pullRequest: {
+        url: "https://github.com/acme/app/pull/35",
+        title: "Add feature",
+        description: "Description",
+        baseRef: "main",
+        headRef: "feature",
+      },
+    }]);
+    expect(buildJulesSessionOutputs(
+      thread({ turns: [command("https://github.com/acme/app/pull/35\n", "failed")] }),
+      metadata({ sourceId: "github/acme/app" }),
+    )).toEqual([]);
+  });
+
   it("builds a Jules session from app-server state and API metadata", () => {
     const session = buildJulesSession(
       thread({ turns: [turn()] }),
-      metadata(),
+      metadata({ startingBranch: "main" }),
       false,
       "https://codex.example",
     );
@@ -184,10 +300,22 @@ describe("Jules model mapping", () => {
       id: "thread-1",
       title: "Feature",
       prompt: "Build the feature",
-      sourceContext: { source: `sources/${sourceIdForCwd("/workspace/app")}` },
+      sourceContext: {
+        source: `sources/${sourceIdForCwd("/workspace/app")}`,
+        githubRepoContext: { startingBranch: "main" },
+      },
       archived: false,
       state: "COMPLETED",
     });
+    expect(session.createTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/);
+    expect(session.updateTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/);
     expect(session).not.toHaveProperty("cwd");
+  });
+
+  it("maps a system error without turns to FAILED", () => {
+    expect(deriveJulesSessionState(
+      thread({ status: { type: "systemError" } }),
+      metadata(),
+    )).toBe("FAILED");
   });
 });

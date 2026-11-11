@@ -684,7 +684,8 @@ Codex Web exposes the documented Jules v1alpha resource surface at `/v1alpha`. C
 
 Supported resources:
 
-- `GET /v1alpha/sources` and `GET /v1alpha/sources/{source}`
+- `GET /v1alpha/sources` and `GET /v1alpha/sources/{source}`, including GitHub
+  source names in the form `sources/github/{owner}/{repo}`
 - `GET|POST /v1alpha/sessions`, `GET|DELETE /v1alpha/sessions/{session}`
 - `POST /v1alpha/sessions/{session}:archive`, `:unarchive`, `:sendMessage`, and `:approvePlan`
 - `GET /v1alpha/sessions/{session}/activities` and `GET /v1alpha/sessions/{session}/activities/{activity}`
@@ -708,7 +709,34 @@ The API accepts keys only from the same origin and rejects cookie-only requests,
 
 Workspace keys use the normal workspace-write sandbox and on-request approvals. Full-access keys are explicitly marked high risk in Settings and run without sandbox or approval prompts. API requests never answer app-server approval or server requests: if a command or file change needs human review, approve it in the Codex Web UI.
 
-The adaptation does not invent Jules capabilities that Codex cannot provide. `AUTO_CREATE_PR`, working/starting branch selection, source environment variables, and activity time-range filters return `UNIMPLEMENTED`. `PLANNING` is deprecated by Jules and is not emitted; `AWAITING_USER_FEEDBACK` is not emitted without a real app-server state that represents it. Session outputs remain omitted rather than fabricated.
+GitHub origin URLs reported by app-server are exposed with Jules-compatible
+source names (`sources/github/{owner}/{repo}`) and mapped back to the local
+checkout directory used by the Codex thread. Historical local source IDs remain
+accepted as aliases.
+
+`sourceContext.githubRepoContext.startingBranch` checks out the requested branch
+through app-server `command/exec` before `thread/start`. The operation fails with
+`FAILED_PRECONDITION` when the source is not a git checkout, the worktree has
+uncommitted changes, or the branch cannot be found locally or on `origin`.
+
+`automationMode: "AUTO_CREATE_PR"` is accepted and added as a developer
+instruction for the API-created thread: after making code changes, Codex creates
+a branch, commits, pushes, and opens a pull request with `gh pr create`. The API
+does not claim a PR exists unless a successful command returned a real GitHub
+pull request URL.
+
+Session `outputs` are derived from real app-server state. A successful
+`gh pr create` output produces `outputs: [{ pullRequest: { ... } }]`; completed
+file changes or successful git history commands produce
+`outputs: [{ changeSet: { ... } }]`. When available, the initial thread commit is
+used as `gitPatch.baseCommitId`, file changes provide `unidiffPatch`, and a
+successful commit command provides `suggestedCommitMessage`.
+
+The adaptation does not invent Jules capabilities that Codex cannot provide.
+`sourceContext.workingBranch`, source environment variables, and activity
+time-range filters still return `UNIMPLEMENTED`. `PLANNING` is deprecated by
+Jules and is not emitted; `AWAITING_USER_FEEDBACK` is not emitted without a real
+app-server state that represents it.
 
 Key metadata is stored in `${CODEX_WEB_STATE}/api-keys.json` and API session ownership metadata in `${CODEX_WEB_STATE}/api-sessions.json` when Web manages state directly. In a multi-user deployment these files are root-managed, alongside the broker's other `CODEX_WEB_STATE` files. Both files are written atomically with `0600` permissions. Raw keys are never written to these files, browser storage, or session metadata. The application does not intentionally log key headers; query-string key transport is rejected because reverse-proxy access logs may record complete URLs.
 

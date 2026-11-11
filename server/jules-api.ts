@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 
 import type { Thread } from "../src/codex/protocol/generated/v2/Thread";
+import type { CommandExecResponse } from "../src/codex/protocol/generated/v2/CommandExecResponse";
 import type { ThreadReadResponse } from "../src/codex/protocol/generated/v2/ThreadReadResponse";
 import type { ThreadStartResponse } from "../src/codex/protocol/generated/v2/ThreadStartResponse";
 import type { ThreadListResponse } from "../src/codex/protocol/generated/v2/ThreadListResponse";
@@ -257,30 +258,23 @@ async function createSession(
   const requirePlanApproval = body.requirePlanApproval === undefined
     ? false
     : requiredBoolean(body.requirePlanApproval, "requirePlanApproval");
-  if (body.automationMode !== undefined) {
-    if (body.automationMode === "AUTOMATION_MODE_UNSPECIFIED") {
-      // No automation requested.
-    } else if (body.automationMode === "AUTO_CREATE_PR") {
-      throw new JulesApiError(
-        501,
-        "UNIMPLEMENTED",
-        "AUTO_CREATE_PR is not supported because Codex Web does not create GitHub pull requests",
-      );
-    } else {
-      throw new JulesApiError(400, "INVALID_ARGUMENT", "automationMode must be AUTO_CREATE_PR or AUTOMATION_MODE_UNSPECIFIED");
-    }
-  }
+  const automationMode = parseAutomationMode(body.automationMode);
 
   const sourceContext = parseSourceContext(body.sourceContext);
   const allThreads = await listThreadsForSources(runtime);
   const sourceName = sourceContext.source ?? `sources/${sourceIdForCwd(auth.identity.user.cwd)}`;
   const source = findJulesSource(auth.identity.user.cwd, allThreads, sourceName);
   if (!source) throw new JulesApiError(404, "NOT_FOUND", "Source not found");
+  if (sourceContext.startingBranch) {
+    await applyStartingBranch(runtime, source, sourceContext.startingBranch);
+  }
+  const instructions = automationInstructions(automationMode, source, sourceContext.startingBranch);
 
   const threadParams = {
     cwd: source.cwd,
     threadSource: JULES_API_THREAD_SOURCE,
     serviceName: JULES_API_THREAD_SOURCE,
+    ...(instructions ? { developerInstructions: instructions } : {}),
     ...threadPermissionOptions(runtime.permissionProfile, source.cwd),
     collaborationMode: collaborationMode(requirePlanApproval ? "plan" : "default"),
   };
@@ -305,6 +299,9 @@ async function createSession(
     requirePlanApproval,
     approvedPlanTurnId: null,
     approvedPlanAt: null,
+    automationMode,
+    startingBranch: sourceContext.startingBranch ?? null,
+    initialGitSha: started.thread.gitInfo?.sha ?? null,
   };
   try {
     await auth.repository.upsert(metadata);
@@ -651,6 +648,13 @@ function parseRoute(path: string[]): ParsedRoute {
     if (segments.length === 1) {
       return { kind: "sources-list" };
     }
+    if (segments.length === 4 && segments[1] === "github") {
+      const owner = segments[2]!;
+      const repo = segments[3]!.replace(/\.git$/, "");
+      assertGitHubName(owner, "owner");
+      assertGitHubName(repo, "repo");
+      return { kind: "source-get", sourceName: `sources/github/${owner}/${repo}` };
+    }
     if (segments.length === 2) {
       const sourceName = segments[1]!;
       assertResourceId(sourceName.replace(/^sources\//, ""), "source");
@@ -725,7 +729,7 @@ function assertSupportedActivityFilter(filter: string | null): void {
   );
 }
 
-function parseSourceContext(value: unknown): { source?: string } {
+function parseSourceContext(value: unknown): { source?: string; startingBranch?: string } {
   if (value === undefined) return {};
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new JulesApiError(400, "INVALID_ARGUMENT", "sourceContext must be an object");
@@ -748,13 +752,169 @@ function parseSourceContext(value: unknown): { source?: string } {
     }
     const repoContext = context.githubRepoContext as Record<string, unknown>;
     assertOnlyFields(repoContext, ["startingBranch"], "githubRepoContext");
-    if (repoContext.startingBranch !== undefined && repoContext.startingBranch !== "") {
-      throw new JulesApiError(501, "UNIMPLEMENTED", "Starting-branch selection is not supported");
-    }
   }
+  const startingBranch = parseStartingBranch(context.githubRepoContext);
   return {
     ...(context.source === undefined ? {} : { source: requiredString(context.source, "sourceContext.source", 512) }),
+    ...(startingBranch ? { startingBranch } : {}),
   };
+}
+
+function parseStartingBranch(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new JulesApiError(400, "INVALID_ARGUMENT", "githubRepoContext must be an object");
+  }
+  const startingBranch = (value as Record<string, unknown>).startingBranch;
+  if (startingBranch === undefined || startingBranch === "") return undefined;
+  const branch = requiredString(startingBranch, "sourceContext.githubRepoContext.startingBranch", 255);
+  if (
+    branch.startsWith("-")
+    || branch === "HEAD"
+    || branch.includes("..")
+    || branch.includes("@{")
+    || branch.includes("//")
+    || branch.endsWith("/")
+    || branch.endsWith(".")
+    || /[ \t\r\n~^:?*\[\\]/.test(branch)
+  ) {
+    throw new JulesApiError(400, "INVALID_ARGUMENT", "sourceContext.githubRepoContext.startingBranch is not a valid branch name");
+  }
+  return branch;
+}
+
+function parseAutomationMode(
+  value: unknown,
+): "AUTOMATION_MODE_UNSPECIFIED" | "AUTO_CREATE_PR" {
+  if (value === undefined) return "AUTOMATION_MODE_UNSPECIFIED";
+  if (value === "AUTOMATION_MODE_UNSPECIFIED" || value === "AUTO_CREATE_PR") return value;
+  throw new JulesApiError(
+    400,
+    "INVALID_ARGUMENT",
+    "automationMode must be AUTO_CREATE_PR or AUTOMATION_MODE_UNSPECIFIED",
+  );
+}
+
+function automationInstructions(
+  mode: "AUTOMATION_MODE_UNSPECIFIED" | "AUTO_CREATE_PR",
+  source: JulesSource,
+  startingBranch: string | undefined,
+): string | undefined {
+  if (mode !== "AUTO_CREATE_PR") return undefined;
+  const repo = source.githubRepo?.owner && source.githubRepo.repo
+    ? `${source.githubRepo.owner}/${source.githubRepo.repo}`
+    : "the selected GitHub repository";
+  return [
+    "Automation mode AUTO_CREATE_PR is enabled for this API session.",
+    `If you make code changes for ${repo}, create a dedicated working branch, commit the changes, push the branch, and open a pull request with \`gh pr create\`.`,
+    startingBranch ? `Use \`${startingBranch}\` as the pull request base branch.` : "",
+    "Only report a pull request URL when a successful command actually returned it.",
+    "If git credentials, a GitHub remote, or gh are unavailable, report that the pull request could not be created instead of claiming success.",
+  ].filter(Boolean).join("\n");
+}
+
+async function applyStartingBranch(
+  runtime: JulesRuntime,
+  source: JulesSource,
+  startingBranch: string,
+): Promise<void> {
+  const current = await runGit(runtime, source.cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (current.exitCode !== 0) {
+    throw new JulesApiError(
+      400,
+      "FAILED_PRECONDITION",
+      `Cannot select starting branch because the source is not a git checkout: ${commandError(current)}`,
+    );
+  }
+  if (current.stdout.trim() === startingBranch) return;
+
+  const status = await runGit(runtime, source.cwd, ["status", "--porcelain"]);
+  if (status.exitCode !== 0) {
+    throw new JulesApiError(400, "FAILED_PRECONDITION", `Unable to inspect git status: ${commandError(status)}`);
+  }
+  if (status.stdout.trim()) {
+    throw new JulesApiError(
+      400,
+      "FAILED_PRECONDITION",
+      `Cannot start from branch ${startingBranch} because the source checkout has uncommitted changes`,
+    );
+  }
+
+  const localRef = `refs/heads/${startingBranch}`;
+  const local = await runGit(runtime, source.cwd, ["show-ref", "--verify", "--quiet", localRef]);
+  if (local.exitCode === 0) {
+    await checkoutBranch(runtime, source.cwd, ["checkout", startingBranch], startingBranch);
+    return;
+  }
+
+  const remoteRef = `refs/remotes/origin/${startingBranch}`;
+  let remote = await runGit(runtime, source.cwd, ["show-ref", "--verify", "--quiet", remoteRef]);
+  if (remote.exitCode !== 0) {
+    const fetched = await runGit(runtime, source.cwd, ["fetch", "origin", startingBranch], 60_000);
+    if (fetched.exitCode !== 0) {
+      throw new JulesApiError(
+        400,
+        "FAILED_PRECONDITION",
+        `Starting branch ${startingBranch} was not found locally or on origin: ${commandError(fetched)}`,
+      );
+    }
+    remote = await runGit(runtime, source.cwd, ["show-ref", "--verify", "--quiet", remoteRef]);
+  }
+  if (remote.exitCode !== 0) {
+    throw new JulesApiError(
+      400,
+      "FAILED_PRECONDITION",
+      `Starting branch ${startingBranch} was not found locally or on origin`,
+    );
+  }
+  await checkoutBranch(
+    runtime,
+    source.cwd,
+    ["checkout", "-b", startingBranch, `origin/${startingBranch}`],
+    startingBranch,
+  );
+}
+
+async function checkoutBranch(
+  runtime: JulesRuntime,
+  cwd: string,
+  args: string[],
+  branch: string,
+): Promise<void> {
+  const result = await runGit(runtime, cwd, args);
+  if (result.exitCode !== 0) {
+    throw new JulesApiError(
+      400,
+      "FAILED_PRECONDITION",
+      `Unable to check out starting branch ${branch}: ${commandError(result)}`,
+    );
+  }
+}
+
+async function runGit(
+  runtime: JulesRuntime,
+  cwd: string,
+  args: string[],
+  timeoutMs = 30_000,
+): Promise<CommandExecResponse> {
+  try {
+    return await runtime.request("command/exec", {
+      command: ["git", ...args],
+      cwd,
+      timeoutMs,
+      sandboxPolicy: sandboxPolicy(runtime.permissionProfile, cwd),
+    }, timeoutMs + 5_000) as CommandExecResponse;
+  } catch (error) {
+    throw new JulesApiError(
+      400,
+      "FAILED_PRECONDITION",
+      `Unable to run git ${args[0] ?? ""}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function commandError(result: CommandExecResponse): string {
+  return (result.stderr.trim() || result.stdout.trim() || `git exited with code ${result.exitCode}`).slice(0, 500);
 }
 
 function parsePagination(request: Request, defaultPageSize: number): {
@@ -833,13 +993,19 @@ function turnPermissionOptions(profile: ApiKeyPermissionProfile, cwd: string): R
     : {
         approvalPolicy: "on-request",
         approvalsReviewer: "user",
-        sandboxPolicy: {
-          type: "workspaceWrite",
-          writableRoots: [cwd],
-          networkAccess: false,
-          excludeTmpdirEnvVar: false,
-          excludeSlashTmp: false,
-        },
+        sandboxPolicy: sandboxPolicy(profile, cwd),
+      };
+}
+
+function sandboxPolicy(profile: ApiKeyPermissionProfile, cwd: string): Record<string, unknown> {
+  return profile === "full_access"
+    ? { type: "dangerFullAccess" }
+    : {
+        type: "workspaceWrite",
+        writableRoots: [cwd],
+        networkAccess: false,
+        excludeTmpdirEnvVar: false,
+        excludeSlashTmp: false,
       };
 }
 
@@ -916,6 +1082,12 @@ function requiredBoolean(value: unknown, name: string): boolean {
 function assertResourceId(value: string, name: string): void {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
     throw new JulesApiError(400, "INVALID_ARGUMENT", `Invalid ${name} id`);
+  }
+}
+
+function assertGitHubName(value: string, name: "owner" | "repo"): void {
+  if (!/^[A-Za-z0-9_.-]{1,100}$/.test(value) || value === "." || value === "..") {
+    throw new JulesApiError(400, "INVALID_ARGUMENT", `Invalid GitHub ${name}`);
   }
 }
 

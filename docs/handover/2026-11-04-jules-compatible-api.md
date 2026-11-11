@@ -38,7 +38,15 @@ The Next proxy bypasses cookie authentication and demo mocks for `/v1alpha`; key
 ## API-to-App-Server Mapping
 
 - Sources are derived from `thread/list`; no filesystem source can be created through the API.
+- GitHub origins reported by app-server are exposed as
+  `sources/github/{owner}/{repo}` and mapped back to the known checkout cwd.
+  Historical local source IDs remain accepted as aliases.
+- `sourceContext.githubRepoContext.startingBranch` is applied through
+  `command/exec` (branch lookup, clean-worktree check, local/origin ref check,
+  checkout) before `thread/start`.
 - Session creation calls `thread/start` with `threadSource=codex_web_jules_api`, writes ownership metadata, then calls `turn/start`.
+- `AUTO_CREATE_PR` adds a real developer instruction for the API-created thread;
+  it does not synthesize a PR result.
 - Session list/get/delete map to real app-server `thread/list`, `thread/read`, and `thread/delete`.
 - Archive and unarchive map to `thread/archive` and `thread/unarchive`.
 - `sendMessage` uses `turn/steer` when the latest turn is active, otherwise `turn/start`.
@@ -47,7 +55,12 @@ The Next proxy bypasses cookie authentication and demo mocks for `/v1alpha`; key
 
 ## Ownership and Data Isolation
 
-`server/jules-session-store.ts` records the owning user, source ID, original prompt, title, plan-approval flag, and plan approval receipt. Upserts are globally unique by thread ID and reject cross-user ownership changes. API listing requires both an ownership record and the `codex_web_jules_api` thread source, so normal browser threads never appear.
+`server/jules-session-store.ts` records the owning user, source ID, original
+prompt, title, plan-approval flag, plan approval receipt, automation mode,
+starting branch, and initial git commit. Upserts are globally unique by thread ID
+and reject cross-user ownership changes. API listing requires both an ownership
+record and the `codex_web_jules_api` thread source, so normal browser threads
+never appear.
 
 In multi-user mode, these metadata operations and the runtime attachment use the API key against the broker; the broker resolves the key to its configured user and re-checks the credential version. The API never accepts a client-supplied user ID as identity.
 
@@ -55,13 +68,20 @@ In multi-user mode, these metadata operations and the runtime attachment use the
 
 The following return `UNIMPLEMENTED` rather than being simulated:
 
-- `AUTO_CREATE_PR`
 - `sourceContext.workingBranch`
-- `sourceContext.githubRepoContext.startingBranch`
 - source environment variables
 - activity time-range filters
 
-Session outputs are omitted. `PLANNING` is deprecated by the Jules discovery document and is not emitted. `AWAITING_USER_FEEDBACK` is not emitted because Codex does not expose a corresponding terminal session state. `AWAITING_PLAN_APPROVAL` is emitted only when a real plan item is pending.
+Session outputs are derived from app-server evidence. A successful `gh pr create`
+command output containing a GitHub pull request URL produces a `pullRequest`
+output. Completed file changes or successful git history commands produce a
+`changeSet` output with the initial thread commit as `baseCommitId` when known.
+
+`PLANNING` is deprecated by the Jules discovery document and is not emitted.
+`AWAITING_USER_FEEDBACK` is not emitted because Codex does not expose a
+corresponding terminal session state. `AWAITING_PLAN_APPROVAL` is emitted only
+when a real plan item is pending. `systemError` is mapped to `FAILED` even when
+the thread has no turns.
 
 ## Operational Notes
 

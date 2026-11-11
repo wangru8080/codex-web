@@ -17,6 +17,7 @@ type FakeRuntime = JulesRuntime & {
   threads: Thread[];
   archivedThreads: Thread[];
   closed: boolean;
+  gitStatusOutput?: string;
 };
 
 function turn(overrides: Partial<Turn> = {}): Turn {
@@ -151,6 +152,26 @@ function fakeRuntime(threads: Thread[] = [], archivedThreads: Thread[] = []): Fa
         runtime.archivedThreads = runtime.archivedThreads.filter((candidate) => candidate.id !== threadId);
         return {};
       }
+      if (method === "command/exec") {
+        const { command } = params as { command: string[] };
+        const joined = command.join(" ");
+        if (joined === "git rev-parse --abbrev-ref HEAD") {
+          return { exitCode: 0, stdout: "main\n", stderr: "" };
+        }
+        if (joined === "git status --porcelain") {
+          return { exitCode: 0, stdout: runtime.gitStatusOutput ?? "", stderr: "" };
+        }
+        if (joined === "git show-ref --verify --quiet refs/heads/develop") {
+          return { exitCode: 1, stdout: "", stderr: "" };
+        }
+        if (joined === "git show-ref --verify --quiet refs/remotes/origin/develop") {
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }
+        if (joined === "git checkout -b develop origin/develop") {
+          return { exitCode: 0, stdout: "Switched to a new branch 'develop'\n", stderr: "" };
+        }
+        return { exitCode: 1, stdout: "", stderr: `unexpected git command: ${joined}` };
+      }
       throw new Error(`unexpected method ${method}`);
     },
     notify: () => undefined,
@@ -259,15 +280,31 @@ describe("Jules-compatible API", () => {
     const { env, key } = await fixture();
     const runtime = fakeRuntime([
       thread({ cwd: process.cwd() }),
-      thread({ id: "other_thread", cwd: "/workspace/other" }),
+      thread({
+        id: "other_thread",
+        cwd: "/workspace/other",
+        gitInfo: { sha: "def", branch: "main", originUrl: "https://github.com/other/repo.git" },
+      }),
     ]);
     const result = await call(request("/sources", key), ["sources"], env, runtime);
     expect(result.response.status).toBe(200);
     const sources = result.body.sources as Array<Record<string, unknown>>;
     expect(sources).toHaveLength(2);
-    expect(sources.some((source) => source.id === sourceIdForCwd(process.cwd()))).toBe(true);
+    expect(sources.some((source) => source.id === "github/acme/app")).toBe(true);
+    expect(sources.some((source) => source.id === "github/other/repo")).toBe(true);
+    expect((sources.find((source) => source.id === "github/acme/app") as { name?: string })?.name)
+      .toBe("sources/github/acme/app");
     expect(JSON.stringify(sources)).not.toContain("cwd");
     expect(JSON.stringify(sources)).not.toContain("/workspace/other");
+
+    const fetched = await call(
+      request("/sources/github/acme/app", key),
+      ["sources", "github", "acme", "app"],
+      env,
+      runtime,
+    );
+    expect(fetched.response.status).toBe(200);
+    expect(fetched.body).toMatchObject({ id: "github/acme/app", name: "sources/github/acme/app" });
     expect(runtime.closed).toBe(true);
   });
 
@@ -298,7 +335,7 @@ describe("Jules-compatible API", () => {
       .toMatchObject({ threadId: "created_thread_1" });
     expect(await metadataStore.get("test@admin.com", "created_thread_1")).toMatchObject({
       requirePlanApproval: false,
-      sourceId: sourceIdForCwd(process.cwd()),
+      sourceId: "github/acme/app",
     });
 
     const listed = await call(request("/sessions", key), ["sessions"], env, runtime);
@@ -307,22 +344,75 @@ describe("Jules-compatible API", () => {
       .toEqual(["created_thread_1"]);
   });
 
-  it("returns UNIMPLEMENTED for unsupported Jules automation and branch semantics", async () => {
-    const { env, key } = await fixture();
-    const runtime = fakeRuntime();
+  it("accepts AUTO_CREATE_PR and applies GitHub startingBranch selection", async () => {
+    const { env, key, metadataStore } = await fixture();
+    const runtime = fakeRuntime([thread({ cwd: process.cwd() })]);
     const automation = await call(
       request("/sessions", key, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: "Build", automationMode: "AUTO_CREATE_PR" }),
+        body: JSON.stringify({
+          prompt: "Build",
+          automationMode: "AUTO_CREATE_PR",
+          sourceContext: {
+            source: "sources/github/acme/app",
+            githubRepoContext: { startingBranch: "develop" },
+          },
+        }),
       }),
       ["sessions"],
       env,
       runtime,
     );
-    expect(automation.response.status).toBe(501);
-    expect((automation.body.error as { status: string }).status).toBe("UNIMPLEMENTED");
-    expect(runtime.calls.filter((entry) => entry.method === "thread/start")).toHaveLength(0);
+    expect(automation.response.status).toBe(200);
+    expect(automation.body).toMatchObject({
+      sourceContext: {
+        source: "sources/github/acme/app",
+        githubRepoContext: { startingBranch: "develop" },
+      },
+    });
+    expect(runtime.calls.filter((entry) => entry.method === "command/exec").map((entry) => entry.params))
+      .toEqual([
+        expect.objectContaining({ command: ["git", "rev-parse", "--abbrev-ref", "HEAD"] }),
+        expect.objectContaining({ command: ["git", "status", "--porcelain"] }),
+        expect.objectContaining({ command: ["git", "show-ref", "--verify", "--quiet", "refs/heads/develop"] }),
+        expect.objectContaining({ command: ["git", "show-ref", "--verify", "--quiet", "refs/remotes/origin/develop"] }),
+        expect.objectContaining({ command: ["git", "checkout", "-b", "develop", "origin/develop"] }),
+      ]);
+    const start = runtime.calls.find((entry) => entry.method === "thread/start")?.params;
+    expect(start).toMatchObject({
+      cwd: process.cwd(),
+      developerInstructions: expect.stringContaining("AUTO_CREATE_PR"),
+    });
+    expect((start as { developerInstructions: string }).developerInstructions)
+      .toContain("gh pr create");
+    expect(await metadataStore.get("test@admin.com", "created_thread_1")).toMatchObject({
+      automationMode: "AUTO_CREATE_PR",
+      startingBranch: "develop",
+      initialGitSha: "abc",
+    });
+
+    const dirtyRuntime = fakeRuntime([thread({ cwd: process.cwd() })]);
+    dirtyRuntime.gitStatusOutput = " M src/app.ts\n";
+    const dirty = await call(
+      request("/sessions", key, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Build",
+          sourceContext: {
+            source: "sources/github/acme/app",
+            githubRepoContext: { startingBranch: "develop" },
+          },
+        }),
+      }),
+      ["sessions"],
+      env,
+      dirtyRuntime,
+    );
+    expect(dirty.response.status).toBe(400);
+    expect((dirty.body.error as { status: string }).status).toBe("FAILED_PRECONDITION");
+    expect(dirtyRuntime.calls.filter((entry) => entry.method === "thread/start")).toHaveLength(0);
   });
 
   it("rejects arbitrary source paths and browser-thread metadata", async () => {

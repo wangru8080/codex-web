@@ -16,6 +16,9 @@ export type JulesApiSessionMetadata = {
   requirePlanApproval: boolean;
   approvedPlanTurnId: string | null;
   approvedPlanAt: string | null;
+  automationMode?: "AUTOMATION_MODE_UNSPECIFIED" | "AUTO_CREATE_PR";
+  startingBranch?: string | null;
+  initialGitSha?: string | null;
 };
 
 type JulesSessionFile = {
@@ -179,6 +182,15 @@ function parseSession(value: unknown, index: number): JulesApiSessionMetadata {
     || typeof session.requirePlanApproval !== "boolean"
     || (session.approvedPlanTurnId !== null && typeof session.approvedPlanTurnId !== "string")
     || (session.approvedPlanAt !== null && typeof session.approvedPlanAt !== "string")
+    || (session.automationMode !== undefined
+      && session.automationMode !== "AUTOMATION_MODE_UNSPECIFIED"
+      && session.automationMode !== "AUTO_CREATE_PR")
+    || (session.startingBranch !== undefined
+      && session.startingBranch !== null
+      && typeof session.startingBranch !== "string")
+    || (session.initialGitSha !== undefined
+      && session.initialGitSha !== null
+      && typeof session.initialGitSha !== "string")
   ) {
     throw new Error(`Invalid API session entry at index ${index}`);
   }
@@ -202,6 +214,9 @@ function copySession(session: JulesApiSessionMetadata): JulesApiSessionMetadata 
     requirePlanApproval: session.requirePlanApproval,
     approvedPlanTurnId: session.approvedPlanTurnId,
     approvedPlanAt: session.approvedPlanAt,
+    ...(session.automationMode ? { automationMode: session.automationMode } : {}),
+    ...(session.startingBranch !== undefined ? { startingBranch: session.startingBranch } : {}),
+    ...(session.initialGitSha !== undefined ? { initialGitSha: session.initialGitSha } : {}),
   };
 }
 
