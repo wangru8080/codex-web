@@ -49,8 +49,11 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
 ];
 
 export function pathnameToSettingsSection(pathname: string): SettingsSection {
-  if (pathname === "/settings") return "codex";
-  const tail = pathname.replace(/^\/settings\/?/, "").split("/")[0];
-  if (SETTINGS_NAV_ITEMS.some((item) => item.id === tail)) return tail as SettingsSection;
+  const normalized = pathname === "/" ? pathname : pathname.replace(/\/+$/, "");
+  if (normalized === "/settings") return "codex";
+  const item = SETTINGS_NAV_ITEMS.find(
+    (candidate) => normalized === candidate.href || normalized.startsWith(`${candidate.href}/`),
+  );
+  if (item) return item.id;
   return "codex";
 }
