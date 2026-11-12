@@ -880,13 +880,6 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
         key: guard.key,
         state: approvalResponseStateRef.current,
       });
-    } catch (error) {
-      approvalResponseStateRef.current = failApprovalResponse({
-        key: guard.key,
-        state: approvalResponseStateRef.current,
-      });
-      throw error;
-    } finally {
       const respondedRequestId = approval.requestId;
       setState((current) => {
         const pendingApprovals = removeApproval(current.pendingApprovals, respondedRequestId);
@@ -896,6 +889,12 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           pendingApproval: sourcedApproval(firstApproval(pendingApprovals)),
         };
       });
+    } catch (error) {
+      approvalResponseStateRef.current = failApprovalResponse({
+        key: guard.key,
+        state: approvalResponseStateRef.current,
+      });
+      throw error;
     }
   }, [store]);
 

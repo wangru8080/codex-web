@@ -155,12 +155,12 @@ async function dispatchJulesRequest(
       .sort((left, right) => right.thread.updatedAt - left.thread.updatedAt || right.thread.id.localeCompare(left.thread.id));
     const page = paginate(visible, query.pageSize, query.pageToken, "session");
     const origin = new URL(request.url).origin;
-    const sessions = [];
-    for (const entry of page.items) {
-      const sessionMetadata = metadataById.get(entry.thread.id)!;
-      const thread = await readThread(runtime, entry.thread.id, true);
-      sessions.push(buildJulesSession(thread, sessionMetadata, entry.archived, origin));
-    }
+    const sessions = await Promise.all(page.items.map(async (entry) => buildJulesSession(
+      await readThread(runtime, entry.thread.id, true),
+      metadataById.get(entry.thread.id)!,
+      entry.archived,
+      origin,
+    )));
     return jsonResponse({
       sessions,
       ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}),
@@ -265,9 +265,9 @@ async function createSession(
   const sourceName = sourceContext.source ?? `sources/${sourceIdForCwd(auth.identity.user.cwd)}`;
   const source = findJulesSource(auth.identity.user.cwd, allThreads, sourceName);
   if (!source) throw new JulesApiError(404, "NOT_FOUND", "Source not found");
-  if (sourceContext.startingBranch) {
-    await applyStartingBranch(runtime, source, sourceContext.startingBranch);
-  }
+  const switchedBranch = sourceContext.startingBranch
+    ? await applyStartingBranch(runtime, source, sourceContext.startingBranch, allThreads)
+    : false;
   const instructions = automationInstructions(automationMode, source, sourceContext.startingBranch);
 
   const threadParams = {
@@ -278,7 +278,13 @@ async function createSession(
     ...threadPermissionOptions(runtime.permissionProfile, source.cwd),
     collaborationMode: collaborationMode(requirePlanApproval ? "plan" : "default"),
   };
-  const started = await runtime.request("thread/start", threadParams) as ThreadStartResponse;
+  let started: ThreadStartResponse;
+  try {
+    started = await runtime.request("thread/start", threadParams) as ThreadStartResponse;
+  } catch (error) {
+    if (switchedBranch) await runGit(runtime, source.cwd, ["checkout", "-"]).catch(() => undefined);
+    throw error;
+  }
   const threadId = started.thread.id;
   if (!threadId) throw new Error("thread/start returned no thread id");
 
@@ -351,6 +357,7 @@ async function sendMessage(
   }
 
   const pendingPlan = findPendingPlan(thread, metadata);
+  await resumeUnloadedThread(runtime, thread);
   await runtime.request("turn/start", {
     threadId: sessionId,
     clientUserMessageId: randomUUID(),
@@ -371,6 +378,10 @@ async function approvePlan(
   if (archived) throw new JulesApiError(400, "FAILED_PRECONDITION", "Unarchive the session before approving a plan");
   const pendingPlan = findPendingPlan(thread, metadata);
   if (!pendingPlan) throw new JulesApiError(409, "FAILED_PRECONDITION", "The session has no plan awaiting approval");
+  if (thread.turns[thread.turns.length - 1]?.status !== "completed") {
+    throw new JulesApiError(409, "FAILED_PRECONDITION", "The latest turn has not completed; the plan cannot be approved yet");
+  }
+  await resumeUnloadedThread(runtime, thread);
   const approvedAt = now().toISOString();
   const previous = await auth.repository.approve(sessionId, pendingPlan.turnId, approvedAt);
   if (!previous) throw new JulesApiError(404, "NOT_FOUND", "Session not found");
@@ -398,24 +409,27 @@ async function loadOwnedSession(
   if (!metadata || metadata.userId !== auth.identity.user.id) {
     throw new JulesApiError(404, "NOT_FOUND", "Session not found");
   }
-  const found = await findThread(runtime, sessionId);
-  if (!found || found.thread.threadSource !== JULES_API_THREAD_SOURCE) {
+  let thread: Thread;
+  try {
+    thread = await readThread(runtime, sessionId, true);
+  } catch (error) {
+    if (isNotFoundError(error)) throw new JulesApiError(404, "NOT_FOUND", "Session not found");
+    throw error;
+  }
+  if (thread.threadSource !== JULES_API_THREAD_SOURCE) {
     throw new JulesApiError(404, "NOT_FOUND", "Session not found");
   }
-  const thread = await readThread(runtime, sessionId, true);
-  return { metadata, thread, archived: found.archived };
+  const archived = (await listThreads(runtime, true, thread.cwd)).some((candidate) => candidate.id === sessionId);
+  return { metadata, thread, archived };
 }
 
-async function findThread(
-  runtime: JulesRuntime,
-  threadId: string,
-): Promise<{ thread: Thread; archived: boolean } | null> {
-  for (const archived of [false, true]) {
-    for (const thread of await listThreads(runtime, archived)) {
-      if (thread.id === threadId) return { thread, archived };
-    }
-  }
-  return null;
+// A thread unloaded by an idle runtime shutdown or app-server restart must be resumed before turn/start.
+async function resumeUnloadedThread(runtime: JulesRuntime, thread: Thread): Promise<void> {
+  if (thread.status.type !== "notLoaded") return;
+  await runtime.request("thread/resume", {
+    threadId: thread.id,
+    ...threadPermissionOptions(runtime.permissionProfile, thread.cwd),
+  });
 }
 
 async function listThreadsForSources(runtime: JulesRuntime): Promise<Thread[]> {
@@ -445,7 +459,7 @@ async function listThreadsByArchive(
   return (await listThreads(runtime, archived)).map((thread) => ({ thread, archived }));
 }
 
-async function listThreads(runtime: JulesRuntime, archived: boolean): Promise<Thread[]> {
+async function listThreads(runtime: JulesRuntime, archived: boolean, cwd?: string): Promise<Thread[]> {
   const threads = new Map<string, Thread>();
   let cursor: string | null = null;
   const seenCursors = new Set<string>();
@@ -456,6 +470,7 @@ async function listThreads(runtime: JulesRuntime, archived: boolean): Promise<Th
       sortDirection: "desc",
       limit: THREAD_PAGE_SIZE,
       sourceKinds: ["appServer"],
+      ...(cwd === undefined ? {} : { cwd }),
       cursor,
     }) as ThreadListResponse;
     for (const thread of response.data ?? []) threads.set(thread.id, thread);
@@ -817,7 +832,8 @@ async function applyStartingBranch(
   runtime: JulesRuntime,
   source: JulesSource,
   startingBranch: string,
-): Promise<void> {
+  threads: Thread[],
+): Promise<boolean> {
   const current = await runGit(runtime, source.cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
   if (current.exitCode !== 0) {
     throw new JulesApiError(
@@ -826,7 +842,15 @@ async function applyStartingBranch(
       `Cannot select starting branch because the source is not a git checkout: ${commandError(current)}`,
     );
   }
-  if (current.stdout.trim() === startingBranch) return;
+  if (current.stdout.trim() === startingBranch) return false;
+
+  if (threads.some((thread) => thread.cwd === source.cwd && thread.status.type === "active")) {
+    throw new JulesApiError(
+      409,
+      "FAILED_PRECONDITION",
+      `Cannot start from branch ${startingBranch} while another session is running in the source checkout`,
+    );
+  }
 
   const status = await runGit(runtime, source.cwd, ["status", "--porcelain"]);
   if (status.exitCode !== 0) {
@@ -844,7 +868,7 @@ async function applyStartingBranch(
   const local = await runGit(runtime, source.cwd, ["show-ref", "--verify", "--quiet", localRef]);
   if (local.exitCode === 0) {
     await checkoutBranch(runtime, source.cwd, ["checkout", startingBranch], startingBranch);
-    return;
+    return true;
   }
 
   const remoteRef = `refs/remotes/origin/${startingBranch}`;
@@ -873,6 +897,7 @@ async function applyStartingBranch(
     ["checkout", "-b", startingBranch, `origin/${startingBranch}`],
     startingBranch,
   );
+  return true;
 }
 
 async function checkoutBranch(
@@ -902,7 +927,9 @@ async function runGit(
       command: ["git", ...args],
       cwd,
       timeoutMs,
-      sandboxPolicy: sandboxPolicy(runtime.permissionProfile, cwd),
+      // These fixed git commands (validated branch name) need origin access and a writable .git,
+      // which the workspace sandbox denies.
+      sandboxPolicy: { type: "dangerFullAccess" },
     }, timeoutMs + 5_000) as CommandExecResponse;
   } catch (error) {
     throw new JulesApiError(

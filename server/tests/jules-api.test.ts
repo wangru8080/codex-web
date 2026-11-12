@@ -134,6 +134,12 @@ function fakeRuntime(threads: Thread[] = [], archivedThreads: Thread[] = []): Fa
         found.updatedAt = started.startedAt ?? found.updatedAt;
         return { turn: started };
       }
+      if (method === "thread/resume") {
+        const found = runtime.threads.find((candidate) => candidate.id === (params as { threadId: string }).threadId);
+        if (!found) throw new Error("thread not found");
+        found.status = { type: "idle" };
+        return { thread: found };
+      }
       if (method === "turn/steer") {
         return { turnId: (params as { expectedTurnId: string }).expectedTurnId };
       }
@@ -491,6 +497,62 @@ describe("Jules-compatible API", () => {
       approvedPlanTurnId: "plan_turn",
       approvedPlanAt: "2026-11-04T10:00:00.000Z",
     });
+  });
+
+  it("resumes an unloaded thread before starting a turn and rejects approval while a turn is running", async () => {
+    const { env, key, metadataStore } = await fixture();
+    const plan = turn({
+      id: "plan_turn",
+      items: [{ type: "plan", id: "plan_item", text: "1. Inspect" }],
+    });
+    const unloaded = thread({ id: "unloaded_thread", status: { type: "notLoaded" }, turns: [plan] });
+    const revising = thread({
+      id: "revising_thread",
+      turns: [plan, turn({ id: "revise_turn", status: "inProgress", completedAt: null })],
+    });
+    const runtime = fakeRuntime([unloaded, revising]);
+    for (const value of [unloaded, revising]) await metadataStore.upsert(sessionMetadata(value.id, true));
+
+    const approve = await call(
+      request("/sessions/unloaded_thread:approvePlan", key, { method: "POST", body: "{}" }),
+      ["sessions", "unloaded_thread:approvePlan"],
+      env,
+      runtime,
+    );
+    expect(approve.response.status).toBe(200);
+    const methods = runtime.calls.map((entry) => entry.method);
+    expect(methods.indexOf("thread/resume")).toBeGreaterThan(-1);
+    expect(methods.indexOf("thread/resume")).toBeLessThan(methods.indexOf("turn/start"));
+    expect(methods.filter((method) => method === "thread/list")).toHaveLength(1);
+
+    const stale = await call(
+      request("/sessions/revising_thread:approvePlan", key, { method: "POST", body: "{}" }),
+      ["sessions", "revising_thread:approvePlan"],
+      env,
+      runtime,
+    );
+    expect(stale.response.status).toBe(409);
+    expect(await metadataStore.get("test@admin.com", "revising_thread")).toMatchObject({ approvedPlanTurnId: null });
+  });
+
+  it("refuses to switch the shared checkout while another session is running in it", async () => {
+    const { env, key } = await fixture();
+    const runtime = fakeRuntime([thread({ id: "busy_thread", status: { type: "active", activeFlags: [] } })]);
+    const created = await call(
+      request("/sessions", key, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Build",
+          sourceContext: { source: "sources/github/acme/app", githubRepoContext: { startingBranch: "develop" } },
+        }),
+      }),
+      ["sessions"],
+      env,
+      runtime,
+    );
+    expect(created.response.status).toBe(409);
+    expect(runtime.calls.some((entry) => entry.method === "thread/start")).toBe(false);
   });
 
   it("lists and gets deterministic activities from real thread items", async () => {

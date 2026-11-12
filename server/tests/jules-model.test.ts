@@ -288,6 +288,47 @@ describe("Jules model mapping", () => {
     )).toEqual([]);
   });
 
+  it("reads gh short flags case-sensitively", () => {
+    expect(buildJulesSessionOutputs(
+      thread({
+        turns: [turn({
+          items: [{
+            type: "commandExecution",
+            id: "pr-2",
+            command: "gh pr create -B main -H feature -t \"Fix login\" -b \"Details\"",
+            cwd: "/workspace/app",
+            processId: null,
+            source: "agent",
+            status: "completed",
+            commandActions: [],
+            aggregatedOutput: "https://github.com/acme/app/pull/36\n",
+            exitCode: 0,
+            durationMs: 10,
+          }],
+        })],
+      }),
+      metadata({ sourceId: "github/acme/app" }),
+    )).toEqual([{
+      pullRequest: {
+        url: "https://github.com/acme/app/pull/36",
+        title: "Fix login",
+        description: "Details",
+        baseRef: "main",
+        headRef: "feature",
+      },
+    }]);
+  });
+
+  it("reports AWAITING_USER_FEEDBACK while a turn waits on an approval", () => {
+    expect(deriveJulesSessionState(
+      thread({
+        status: { type: "active", activeFlags: ["waitingOnApproval"] },
+        turns: [turn({ status: "inProgress", completedAt: null })],
+      }),
+      metadata(),
+    )).toBe("AWAITING_USER_FEEDBACK");
+  });
+
   it("builds a Jules session from app-server state and API metadata", () => {
     const session = buildJulesSession(
       thread({ turns: [turn()] }),

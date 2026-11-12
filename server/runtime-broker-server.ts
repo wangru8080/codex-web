@@ -179,6 +179,7 @@ function handleSocket(
       const apiAuthentication = request.type === "attachApiRuntime"
         ? await verifyApiKey(request.apiKey, request.authBinding, config, apiStores.apiKeyStore)
         : null;
+      if (socket.destroyed) return;
       const user = request.type === "attachRuntime"
         ? verifyBrokerSession(request.token, config)
         : apiAuthentication?.user ?? null;

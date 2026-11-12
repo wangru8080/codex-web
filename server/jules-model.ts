@@ -187,6 +187,7 @@ export function deriveJulesSessionState(
   if (!latestTurn) {
     return thread.status.type === "active" ? "IN_PROGRESS" : "QUEUED";
   }
+  if (thread.status.type === "active" && thread.status.activeFlags.length > 0) return "AWAITING_USER_FEEDBACK";
   if (latestTurn.status === "inProgress") return "IN_PROGRESS";
   if (latestTurn.status === "failed") return "FAILED";
   if (latestTurn.status === "interrupted") return "PAUSED";
@@ -284,8 +285,8 @@ export function buildJulesSessionOutputs(
             const pullRequest: NonNullable<JulesSessionOutput["pullRequest"]> = { url };
             const title = commandOption(item.command, "title") ?? commandOption(item.command, "t");
             const description = commandOption(item.command, "body") ?? commandOption(item.command, "b");
-            const baseRef = commandOption(item.command, "base");
-            const headRef = commandOption(item.command, "head");
+            const baseRef = commandOption(item.command, "base") ?? commandOption(item.command, "B");
+            const headRef = commandOption(item.command, "head") ?? commandOption(item.command, "H");
             if (title) pullRequest.title = title;
             if (description) pullRequest.description = description;
             if (baseRef) pullRequest.baseRef = baseRef;
@@ -546,10 +547,7 @@ function commitSummary(output: string): { sha: string; message: string | undefin
 
 function commandOption(command: string, name: string): string | undefined {
   const flag = name.length === 1 ? `-${name}` : `--${name}`;
-  const pattern = new RegExp(
-    `(?:^|\\s)${flag}(?:=|\\s+)(?:"([^"]*)"|'([^']*)'|(\\S+))`,
-    "i",
-  );
+  const pattern = new RegExp(`(?:^|\\s)${flag}(?:=|\\s+)(?:"([^"]*)"|'([^']*)'|(\\S+))`);
   const match = pattern.exec(command);
   return match ? (match[1] ?? match[2] ?? match[3])?.trim() || undefined : undefined;
 }

@@ -120,7 +120,7 @@ class AppServerApiSession {
   }
 }
 
-export const createJulesRuntime: JulesRuntimeFactory = async (request, identity) => {
+export const createJulesRuntime: JulesRuntimeFactory = async (_request, identity) => {
   const brokerSocket = runtimeBrokerSocket();
   if (brokerSocket) {
     const connection = await new RuntimeBrokerClient(brokerSocket).attachApiRuntime(
@@ -130,9 +130,10 @@ export const createJulesRuntime: JulesRuntimeFactory = async (request, identity)
     return await initializeRuntime(connection, connection.user, connection.permissionProfile ?? identity.permissionProfile);
   }
 
-  const bridgeUrl = process.env.CODEX_WEB_BRIDGE_URL?.trim();
-  if (!bridgeUrl) throw new Error("CODEX_WEB_BRIDGE_URL 未设置");
-  const socket = await openWebSocket(resolveBridgeWebSocketUrl(bridgeUrl, request.url));
+  // The bridge URL carries the bridge token, so it must never be resolved against the client-supplied Host.
+  const bridgeUrl = process.env.CODEX_WEB_INTERNAL_BRIDGE_URL?.trim();
+  if (!bridgeUrl) throw new Error("CODEX_WEB_INTERNAL_BRIDGE_URL 未设置");
+  const socket = await openWebSocket(bridgeUrl);
   const transport: MessageTransport = {
     send: (message) => {
       if (socket.readyState !== WebSocket.OPEN) throw new Error("Web bridge 连接已关闭");
@@ -181,16 +182,6 @@ async function initializeRuntime(
     notify: (method, params) => session.notify(method, params),
     close: () => session.close(),
   };
-}
-
-export function resolveBridgeWebSocketUrl(configuredUrl: string, requestUrl: string): string {
-  const resolved = new URL(configuredUrl, requestUrl);
-  if (resolved.protocol === "http:") resolved.protocol = "ws:";
-  else if (resolved.protocol === "https:") resolved.protocol = "wss:";
-  if (resolved.protocol !== "ws:" && resolved.protocol !== "wss:") {
-    throw new Error("CODEX_WEB_BRIDGE_URL 必须使用 ws:// 或 wss://");
-  }
-  return resolved.toString();
 }
 
 function openWebSocket(url: string): Promise<WebSocket> {
