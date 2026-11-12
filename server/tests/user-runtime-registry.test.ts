@@ -586,9 +586,15 @@ describe("UserRuntimeRegistry", () => {
     });
     await vi.waitFor(() => expect(sentMessage(client)).toMatchObject({
       id: 2,
-      result: { registered: true },
+      result: { registered: true, testNotification: { delivered: true } },
     }));
     expect(runtime.handleClientMessage).not.toHaveBeenCalled();
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(sent.mock.calls[0]?.[1]))).toMatchObject({
+      kind: "test",
+      requestId: "registration-test",
+    });
+    sent.mockClear();
 
     runtime.notify({ method: "item/agentMessage/delta", params: { threadId: "thread-1", delta: "stream" } });
     runtime.notify({

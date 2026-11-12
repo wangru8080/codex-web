@@ -5,7 +5,8 @@ export type CodexPushKind =
   | "turn_failed"
   | "goal_completed"
   | "approval_required"
-  | "question_required";
+  | "question_required"
+  | "test";
 
 export type CodexPushPayload = {
   version: 1;

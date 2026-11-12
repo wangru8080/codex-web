@@ -48,6 +48,14 @@ describe("isBridgeSyncNotification", () => {
 });
 
 describe("BridgeServerRequestRouter", () => {
+  it("不同 router 实例不复用公共 id，避免 app-server 重启后误判为旧请求", () => {
+    const owner = { name: "client-a" };
+    const first = new BridgeServerRequestRouter<typeof owner>();
+    const second = new BridgeServerRequestRouter<typeof owner>();
+
+    expect(first.register(owner, 1)).not.toBe(second.register(owner, 1));
+  });
+
   it("保留原始所有者和 id，且公共 id 只能消费一次", () => {
     const owner = { name: "client-a" };
     const router = new BridgeServerRequestRouter<typeof owner>();

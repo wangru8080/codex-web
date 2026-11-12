@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { JsonRpcId, JsonRpcMessage } from "../src/codex/protocol/json-rpc";
 import {
   CROSS_CLIENT_THREAD_ROLLBACK_METHOD,
@@ -28,9 +30,10 @@ export function isBridgeSyncNotification(message: JsonRpcMessage): boolean {
 export class BridgeServerRequestRouter<TOwner> {
   private nextId = 1;
   private readonly pending = new Map<string, { owner: TOwner; originalId: JsonRpcId }>();
+  private readonly publicIdPrefix = `${SERVER_REQUEST_ID_PREFIX}${randomUUID()}:`;
 
   register(owner: TOwner, originalId: JsonRpcId): string {
-    const publicId = `${SERVER_REQUEST_ID_PREFIX}${this.nextId++}`;
+    const publicId = `${this.publicIdPrefix}${this.nextId++}`;
     this.pending.set(publicId, { owner, originalId });
     return publicId;
   }

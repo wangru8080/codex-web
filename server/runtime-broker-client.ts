@@ -10,10 +10,13 @@ import type {
 import type { TurnstileConfigUpdate } from "./turnstile-config";
 import type { TurnstileVerificationResult } from "./turnstile";
 import type { JsonRpcMessage } from "../src/codex/protocol/json-rpc";
+import type { ApiKeyPermissionProfile, PublicApiKey } from "./api-key-store";
+import type { JulesApiSessionMetadata } from "./jules-session-store";
 
 export type RuntimeBrokerConnection = {
   user: BrokerPublicUser;
   pid: number | undefined;
+  permissionProfile: ApiKeyPermissionProfile | undefined;
   send: (message: JsonRpcMessage) => void;
   onMessage: (listener: (message: JsonRpcMessage) => void) => () => void;
   onClose: (listener: (error?: Error) => void) => () => void;
@@ -69,7 +72,128 @@ export class RuntimeBrokerClient {
     return response.config;
   }
 
+  async listApiKeys(sessionToken: string): Promise<PublicApiKey[]> {
+    const response = await this.request({ type: "apiKeys/list", token: sessionToken });
+    if (response.type !== "apiKeysList") throw new Error("broker API key 列表响应类型无效");
+    return response.keys;
+  }
+
+  async createApiKey(
+    sessionToken: string,
+    name: string,
+    permissionProfile: ApiKeyPermissionProfile,
+    authBinding: string,
+  ): Promise<{ key: string; metadata: PublicApiKey }> {
+    const response = await this.request({
+      type: "apiKeys/create",
+      token: sessionToken,
+      name,
+      permissionProfile,
+      authBinding,
+    });
+    if (response.type !== "apiKeyCreated") throw new Error("broker API key 创建响应类型无效");
+    return { key: response.key, metadata: response.metadata };
+  }
+
+  async revokeApiKey(sessionToken: string, id: string): Promise<void> {
+    const response = await this.request({ type: "apiKeys/revoke", token: sessionToken, id });
+    if (response.type !== "apiKeyRevoked") throw new Error("broker API key 撤销响应类型无效");
+  }
+
+  async verifyApiKey(
+    apiKey: string,
+    authBinding: string,
+  ): Promise<{
+    user: BrokerPublicUser;
+    keyId: string;
+    permissionProfile: ApiKeyPermissionProfile;
+  }> {
+    const response = await this.request({ type: "apiKey/verify", apiKey, authBinding });
+    if (response.type !== "apiKeyVerified") throw new Error("broker API key 验证响应类型无效");
+    return {
+      user: response.user,
+      keyId: response.keyId,
+      permissionProfile: response.permissionProfile,
+    };
+  }
+
+  async listJulesSessions(
+    apiKey: string,
+    authBinding: string,
+  ): Promise<JulesApiSessionMetadata[]> {
+    const response = await this.request({ type: "julesSessions/list", apiKey, authBinding });
+    if (response.type !== "julesSessionsList") throw new Error("broker API Session 列表响应类型无效");
+    return response.sessions;
+  }
+
+  async getJulesSession(
+    apiKey: string,
+    authBinding: string,
+    threadId: string,
+  ): Promise<JulesApiSessionMetadata | null> {
+    const response = await this.request({ type: "julesSessions/get", apiKey, authBinding, threadId });
+    if (response.type !== "julesSessionGet") throw new Error("broker API Session 响应类型无效");
+    return response.session;
+  }
+
+  async upsertJulesSession(
+    apiKey: string,
+    authBinding: string,
+    session: JulesApiSessionMetadata,
+  ): Promise<JulesApiSessionMetadata> {
+    const response = await this.request({
+      type: "julesSessions/upsert",
+      apiKey,
+      authBinding,
+      session,
+    });
+    if (response.type !== "julesSessionUpserted") throw new Error("broker API Session 更新响应类型无效");
+    return response.session;
+  }
+
+  async approveJulesSessionPlan(
+    apiKey: string,
+    authBinding: string,
+    threadId: string,
+    turnId: string,
+    approvedAt: string,
+  ): Promise<JulesApiSessionMetadata | null> {
+    const response = await this.request({
+      type: "julesSessions/approve",
+      apiKey,
+      authBinding,
+      threadId,
+      turnId,
+      approvedAt,
+    });
+    if (response.type !== "julesSessionApproved") throw new Error("broker API Session 计划批准响应类型无效");
+    return response.session;
+  }
+
+  async deleteJulesSession(
+    apiKey: string,
+    authBinding: string,
+    threadId: string,
+  ): Promise<boolean> {
+    const response = await this.request({
+      type: "julesSessions/delete",
+      apiKey,
+      authBinding,
+      threadId,
+    });
+    if (response.type !== "julesSessionDeleted") throw new Error("broker API Session 删除响应类型无效");
+    return response.deleted;
+  }
+
   async attachRuntime(token: string): Promise<RuntimeBrokerConnection> {
+    return this.attach({ type: "attachRuntime", token });
+  }
+
+  async attachApiRuntime(apiKey: string, authBinding: string): Promise<RuntimeBrokerConnection> {
+    return this.attach({ type: "attachApiRuntime", apiKey, authBinding });
+  }
+
+  private async attach(request: BrokerRequest & { type: "attachRuntime" | "attachApiRuntime" }): Promise<RuntimeBrokerConnection> {
     const socket = await openSocket(this.socketPath);
     return await new Promise<RuntimeBrokerConnection>((resolve, reject) => {
       let attached = false;
@@ -98,6 +222,7 @@ export class RuntimeBrokerClient {
           resolve({
             user: response.user,
             pid: response.pid,
+            permissionProfile: response.permissionProfile,
             send: (rpcMessage) => writeJsonLine(socket, rpcMessage),
             onMessage: (listener) => {
               messageListeners.add(listener);
@@ -128,7 +253,7 @@ export class RuntimeBrokerClient {
         if (!settled) reject(new Error("runtime broker 连接已关闭"));
         for (const listener of closeListeners) listener();
       });
-      writeJsonLine(socket, { type: "attachRuntime", token } satisfies BrokerRequest);
+      writeJsonLine(socket, request satisfies BrokerRequest);
     });
   }
 

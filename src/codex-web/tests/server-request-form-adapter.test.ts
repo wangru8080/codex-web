@@ -4,13 +4,16 @@ import type { McpServerElicitationRequestParams } from "@/codex/protocol/generat
 import type { ToolRequestUserInputParams } from "@/codex/protocol/generated/v2/ToolRequestUserInputParams";
 import {
   AUTO_RESOLUTION_HIDDEN_GRACE_MS,
+  AUTO_RESOLUTION_TOTAL_MS,
   AUTO_RESOLUTION_VISIBLE_COUNTDOWN_MS,
   buildMcpElicitationAcceptInput,
   buildToolUserInputResponseInput,
   formatAutoResolutionRemaining,
   getToolUserInputAutoResolutionTiming,
   initialMcpFormValues,
+  isToolUserInputAutoResolutionEnabled,
   normalizeMcpFormFields,
+  shouldPauseToolUserInputAutoResolutionOnResume,
 } from "../server-request-form-adapter";
 
 describe("server-request-form-adapter", () => {
@@ -19,6 +22,7 @@ describe("server-request-form-adapter", () => {
       threadId: "thread-1",
       turnId: "turn-1",
       itemId: "tool-1",
+      isBlocking: true,
       autoResolutionMs: null,
       questions: [
         { id: "region", header: "区域", question: "部署到哪里？", isOther: true, isSecret: false, options: [] },
@@ -43,6 +47,7 @@ describe("server-request-form-adapter", () => {
       threadId: "thread-1",
       turnId: "turn-1",
       itemId: "tool-1",
+      isBlocking: true,
       autoResolutionMs: null,
       questions: [
         { id: "region", header: "区域", question: "部署到哪里？", isOther: true, isSecret: false, options: null },
@@ -126,32 +131,39 @@ describe("server-request-form-adapter", () => {
   it("按 TUI 固定 60 秒静默期和 60 秒可见倒计时计算自动处理状态", () => {
     const startedAtMs = 1_000;
 
-    expect(getToolUserInputAutoResolutionTiming(null, startedAtMs, startedAtMs, false)).toEqual({
+    expect(getToolUserInputAutoResolutionTiming(false, startedAtMs, startedAtMs, false)).toEqual({
       phase: "disabled",
     });
-    expect(getToolUserInputAutoResolutionTiming(240_000, startedAtMs, startedAtMs + AUTO_RESOLUTION_HIDDEN_GRACE_MS - 1, false)).toEqual({
+    expect(getToolUserInputAutoResolutionTiming(true, startedAtMs, startedAtMs + AUTO_RESOLUTION_HIDDEN_GRACE_MS - 1, false)).toEqual({
       phase: "hiddenGrace",
       remainingMs: 1,
     });
-    expect(getToolUserInputAutoResolutionTiming(60_000, startedAtMs, startedAtMs + AUTO_RESOLUTION_HIDDEN_GRACE_MS, false)).toEqual({
+    expect(getToolUserInputAutoResolutionTiming(true, startedAtMs, startedAtMs + AUTO_RESOLUTION_HIDDEN_GRACE_MS, false)).toEqual({
       phase: "visibleCountdown",
       remainingMs: AUTO_RESOLUTION_VISIBLE_COUNTDOWN_MS,
     });
-    expect(getToolUserInputAutoResolutionTiming(60_000, startedAtMs, startedAtMs + AUTO_RESOLUTION_HIDDEN_GRACE_MS + AUTO_RESOLUTION_VISIBLE_COUNTDOWN_MS - 1, false)).toEqual({
+    expect(getToolUserInputAutoResolutionTiming(true, startedAtMs, startedAtMs + AUTO_RESOLUTION_HIDDEN_GRACE_MS + AUTO_RESOLUTION_VISIBLE_COUNTDOWN_MS - 1, false)).toEqual({
       phase: "visibleCountdown",
       remainingMs: 1,
     });
-    expect(getToolUserInputAutoResolutionTiming(60_000, startedAtMs, startedAtMs + AUTO_RESOLUTION_HIDDEN_GRACE_MS + AUTO_RESOLUTION_VISIBLE_COUNTDOWN_MS, false)).toEqual({
+    expect(getToolUserInputAutoResolutionTiming(true, startedAtMs, startedAtMs + AUTO_RESOLUTION_HIDDEN_GRACE_MS + AUTO_RESOLUTION_VISIBLE_COUNTDOWN_MS, false)).toEqual({
       phase: "due",
     });
   });
 
-  it("把 autoResolutionMs 仅作为启用信号，并在用户交互后暂停自动处理", () => {
+  it("按 isBlocking 决定是否自动处理，并兼容缺少该字段的旧 app-server", () => {
+    expect(isToolUserInputAutoResolutionEnabled(true, 240_000)).toBe(false);
+    expect(isToolUserInputAutoResolutionEnabled(false, null)).toBe(true);
+    expect(isToolUserInputAutoResolutionEnabled(undefined, 240_000)).toBe(true);
+    expect(isToolUserInputAutoResolutionEnabled(undefined, null)).toBe(false);
+  });
+
+  it("自动处理启用时仍会在用户交互后暂停", () => {
     const startedAtMs = 5_000;
     const dueAtMs = startedAtMs + AUTO_RESOLUTION_HIDDEN_GRACE_MS + AUTO_RESOLUTION_VISIBLE_COUNTDOWN_MS;
 
-    expect(getToolUserInputAutoResolutionTiming(240_000, startedAtMs, dueAtMs, false)).toEqual({ phase: "due" });
-    expect(getToolUserInputAutoResolutionTiming(60_000, startedAtMs, dueAtMs, true)).toEqual({ phase: "disabled" });
+    expect(getToolUserInputAutoResolutionTiming(true, startedAtMs, dueAtMs, false)).toEqual({ phase: "due" });
+    expect(getToolUserInputAutoResolutionTiming(true, startedAtMs, dueAtMs, true)).toEqual({ phase: "disabled" });
   });
 
   it("按 TUI 规则向上取整并格式化倒计时", () => {
@@ -159,6 +171,12 @@ describe("server-request-form-adapter", () => {
     expect(formatAutoResolutionRemaining(59_001)).toBe("1m 00s");
     expect(formatAutoResolutionRemaining(59_000)).toBe("59s");
     expect(formatAutoResolutionRemaining(1)).toBe("1s");
+  });
+
+  it("后台超过自动处理窗口后恢复前台时暂停自动提交，避免空答案覆盖用户输入", () => {
+    expect(shouldPauseToolUserInputAutoResolutionOnResume(true, 1_000, 1_000 + AUTO_RESOLUTION_TOTAL_MS - 1)).toBe(false);
+    expect(shouldPauseToolUserInputAutoResolutionOnResume(true, 1_000, 1_000 + AUTO_RESOLUTION_TOTAL_MS)).toBe(true);
+    expect(shouldPauseToolUserInputAutoResolutionOnResume(false, 1_000, 1_000 + AUTO_RESOLUTION_TOTAL_MS)).toBe(false);
   });
 });
 

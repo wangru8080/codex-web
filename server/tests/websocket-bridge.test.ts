@@ -333,6 +333,12 @@ describe("createWebSocketBridge 共享 Server", () => {
     }));
     await waitFor(() => messages.some((message) => message.id === 42));
     expect(writes).toHaveLength(0);
+    await waitFor(() => sent.mock.calls.length === 1);
+    expect(JSON.parse(String(sent.mock.calls[0]?.[1]))).toMatchObject({
+      kind: "test",
+      requestId: "registration-test",
+    });
+    sent.mockClear();
 
     appServer.child.stdout.write(`${JSON.stringify({
       method: "item/agentMessage/delta",
