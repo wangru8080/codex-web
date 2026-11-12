@@ -8,7 +8,12 @@ import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/auth/T
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/hooks/useTranslation";
-import { canSubmitLogin, resolveLoginDestination, turnstileClientErrorCode } from "@/lib/web-login";
+import {
+  buildSsoLoginPath,
+  canSubmitLogin,
+  resolveLoginDestination,
+  turnstileClientErrorCode,
+} from "@/lib/web-login";
 
 type PublicAuthConfig = {
   authMode?: "local" | "sso";
@@ -102,7 +107,10 @@ export function LoginForm() {
     setSubmitting(true);
     setError("");
     const destination = resolveLoginDestination(searchParams.get("next"));
-    window.location.assign(`/api/auth/sso/login?next=${encodeURIComponent(destination)}`);
+    const cacheBuster = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.location.assign(buildSsoLoginPath(destination, cacheBuster));
   }
 
   const ssoEnabled = config?.authMode === "sso" || config?.sso?.enabled === true;

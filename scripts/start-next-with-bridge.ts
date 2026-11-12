@@ -106,6 +106,10 @@ await listen(server, requestedPort, nextHost);
 const address = server.address();
 if (!address || typeof address === "string") throw new Error("生产 Server 未返回 TCP 端口");
 const actualPort = address.port;
+if (!brokerSocket) {
+  const loopbackHost = nextHost === "0.0.0.0" || nextHost === "::" ? "127.0.0.1" : nextHost;
+  process.env.CODEX_WEB_INTERNAL_BRIDGE_URL = `ws://${loopbackHost}:${actualPort}${process.env.CODEX_WEB_BRIDGE_URL}`;
+}
 console.log(`Codex Web: http://${publicHost}:${actualPort}`);
 console.log(`Codex Web bridge: ws://${publicHost}:${actualPort}${process.env.CODEX_WEB_BRIDGE_URL}`);
 if (!brokerSocket) console.log(`Codex app-server PID: ${legacyAppServerPid ?? "未知"}`);

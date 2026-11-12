@@ -47,6 +47,7 @@ Project Repository: [https://github.com/wangru8080/codex-web](https://github.com
 - View Codex account status and usage limit details provided by the app-server.
 - Support for English and Chinese, theme switching, and responsive layouts for desktop and mobile.
 - Dedicated Web login protection supporting either locally defined email/password credentials or standard OpenID Connect (OIDC) Single Sign-On (SSO), plus optional Cloudflare Turnstile integration.
+- Optional Jules-compatible `/v1alpha` API with Settings-generated, revocable API keys and per-key workspace/full-access permission profiles.
 - Automatic browser reconnection after disconnection; if the app-server exits unexpectedly, the bridge attempts to restart it.
 
 ## Architecture
@@ -677,6 +678,68 @@ You can configure OIDC SSO and switch authentication modes either in **Settings 
   - In multi-user runtime broker mode, the verified OIDC `email` claim is matched against enabled users in `users.json`.
 - **Recovery**: If an OIDC misconfiguration prevents sign-in, set `"enabled": false` in `sso.json` (or launch with `CODEX_WEB_AUTH_MODE=local`) to switch back to local email/password login.
 
+### Jules-Compatible API Keys
+
+Codex Web exposes the documented Jules v1alpha resource surface at `/v1alpha`. Create keys in **Settings -> API Keys**. The complete key is shown exactly once; the server stores only its SHA-256 hash. Each account may have at most three active keys, and revoking a key takes effect on the next request.
+
+Supported resources:
+
+- `GET /v1alpha/sources` and `GET /v1alpha/sources/{source}`, including GitHub
+  source names in the form `sources/github/{owner}/{repo}`
+- `GET|POST /v1alpha/sessions`, `GET|DELETE /v1alpha/sessions/{session}`
+- `POST /v1alpha/sessions/{session}:archive`, `:unarchive`, `:sendMessage`, and `:approvePlan`
+- `GET /v1alpha/sessions/{session}/activities` and `GET /v1alpha/sessions/{session}/activities/{activity}`
+
+Pass the key only in the `X-Goog-Api-Key` header:
+
+```bash
+export CODEX_WEB_API_KEY='cwk1_...'
+curl -H "X-Goog-Api-Key: $CODEX_WEB_API_KEY" \
+  http://127.0.0.1:3001/v1alpha/sources
+```
+
+Keys authenticate as the account that created them, independently of the browser cookie. They are bound to the current Web authentication configuration:
+
+- Local-auth keys stop working after the configured email/password or session secret changes.
+- SSO keys stop working after SSO mode, issuer, client, secret, scopes, or allowlist changes; the account must also still be permitted by the current SSO allowlist.
+- Multi-user broker keys additionally require the broker user to remain enabled and unchanged.
+- Switching between local auth and SSO invalidates keys for the inactive mode until a key is created under the active configuration.
+
+The API accepts keys only from the same origin and rejects cookie-only requests, keys in query parameters, and keys in the `Authorization` header. It also rejects cross-site `Sec-Fetch-Site` requests. API-created sessions are tagged `codex_web_jules_api` and are isolated from normal browser-created threads. Sources are limited to the signed-in user's configured cwd and cwds from that user's existing app-server threads; callers cannot select arbitrary filesystem paths.
+
+Workspace keys use the normal workspace-write sandbox and on-request approvals. Full-access keys are explicitly marked high risk in Settings and run without sandbox or approval prompts. API requests never answer app-server approval or server requests: if a command or file change needs human review, approve it in the Codex Web UI.
+
+GitHub origin URLs reported by app-server are exposed with Jules-compatible
+source names (`sources/github/{owner}/{repo}`) and mapped back to the local
+checkout directory used by the Codex thread. Historical local source IDs remain
+accepted as aliases.
+
+`sourceContext.githubRepoContext.startingBranch` checks out the requested branch
+through app-server `command/exec` before `thread/start`. The operation fails with
+`FAILED_PRECONDITION` when the source is not a git checkout, the worktree has
+uncommitted changes, or the branch cannot be found locally or on `origin`.
+
+`automationMode: "AUTO_CREATE_PR"` is accepted and added as a developer
+instruction for the API-created thread: after making code changes, Codex creates
+a branch, commits, pushes, and opens a pull request with `gh pr create`. The API
+does not claim a PR exists unless a successful command returned a real GitHub
+pull request URL.
+
+Session `outputs` are derived from real app-server state. A successful
+`gh pr create` output produces `outputs: [{ pullRequest: { ... } }]`; completed
+file changes or successful git history commands produce
+`outputs: [{ changeSet: { ... } }]`. When available, the initial thread commit is
+used as `gitPatch.baseCommitId`, file changes provide `unidiffPatch`, and a
+successful commit command provides `suggestedCommitMessage`.
+
+The adaptation does not invent Jules capabilities that Codex cannot provide.
+`sourceContext.workingBranch`, source environment variables, and activity
+time-range filters still return `UNIMPLEMENTED`. `PLANNING` is deprecated by
+Jules and is not emitted; `AWAITING_USER_FEEDBACK` is not emitted without a real
+app-server state that represents it.
+
+Key metadata is stored in `${CODEX_WEB_STATE}/api-keys.json` and API session ownership metadata in `${CODEX_WEB_STATE}/api-sessions.json` when Web manages state directly. In a multi-user deployment these files are root-managed, alongside the broker's other `CODEX_WEB_STATE` files. Both files are written atomically with `0600` permissions. Raw keys are never written to these files, browser storage, or session metadata. The application does not intentionally log key headers; query-string key transport is rejected because reverse-proxy access logs may record complete URLs.
+
 ### Cloudflare Turnstile
 
 After logging in, Turnstile can be enabled in "Settings -> Security". When enabling or updating keys, the settings page must first pass a live Turnstile challenge, and the server validates it successfully with Siteverify before saving the configuration.
@@ -711,6 +774,8 @@ Notifications are intentionally limited to events that need attention:
 - Codex user-input questions and MCP elicitation requests.
 
 Streaming deltas, ordinary agent messages, interrupted Turns, and idle thread-status changes are not pushed. Notifications are deduplicated by Turn, goal, or server-request ID in the server process.
+
+The first registration for an endpoint sends one test notification through the same Web Push path. The Android client reports notifications as ready only after the push service accepts that test notification; otherwise the registration error is shown. Re-registering the same endpoint and encryption keys after a bridge reconnect is idempotent and does not send another test. A registration with a changed endpoint or key set, or a retry after a failed test, sends a new test notification.
 
 Subscriptions and VAPID keys are stored server-side in:
 

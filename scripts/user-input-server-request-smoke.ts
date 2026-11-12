@@ -98,7 +98,7 @@ async function main(): Promise<void> {
   });
   await waitFor(cdp, `document.querySelector('[aria-label="只读查看 src/history.ts 的历史版本"]') !== null`, 15_000);
   await click(cdp, '[aria-label="只读查看 src/history.ts 的历史版本"]');
-  await waitFor(cdp, `(() => { const text = "historicalValue = 2;"; return [...document.querySelectorAll("iframe")].some((frame) => frame.contentDocument?.body?.innerText.includes(text)); })()`, 15_000);
+  await waitFor(cdp, `(() => { const text = "historicalValue = 2;"; return document.body.innerText.includes(text) || [...document.querySelectorAll("iframe")].some((frame) => frame.contentDocument?.body?.innerText.includes(text)); })()`, 15_000);
   await captureScreenshot(cdp, "06-history-file.png");
   console.log("Git 历史 smoke 通过：普通路径不预取历史，提交可展开文件，diff 与完整版本均只读打开");
 
@@ -262,6 +262,14 @@ async function main(): Promise<void> {
   await assert(cdp, `document.querySelector('[data-testid="app-server-request-prompt"]') === null`, "普通 approval 不应渲染用户输入表单");
   await click(cdp, '[data-testid="app-server-approval-deny"]');
   expectEqual(await fake.waitForResponse("approval-1"), { decision: "decline" }, "approval response");
+
+  await waitForPrompt(cdp, "item/tool/requestUserInput");
+  await assert(cdp, `document.querySelector('[data-testid="request-user-input-auto-resolution-countdown"]') === null`, "blocking request 不应显示自动处理倒计时");
+  await advanceBrowserClock(cdp, 120_000);
+  await delay(1_200);
+  if (fake.hasResponse("blocking-auto")) throw new Error("blocking request 即使带 autoResolutionMs 也不应自动响应");
+  await click(cdp, '[data-testid="request-user-input-skip"]');
+  expectEqual(await fake.waitForResponse("blocking-auto"), { answers: {} }, "blocking request 手动跳过响应");
 
   await waitForPrompt(cdp, "item/tool/requestUserInput");
   await assert(cdp, `document.querySelector('[data-testid="request-user-input-auto-resolution-countdown"]') === null`, "自动处理静默期不应显示倒计时");
@@ -567,6 +575,7 @@ function smokeRequests(): unknown[] {
         threadId: "other-thread",
         turnId: "other-turn",
         itemId: "other-item",
+        isBlocking: true,
         autoResolutionMs: null,
         questions: [{ id: "hidden", header: "隐藏", question: "不应显示的跨线程问题", isOther: true, isSecret: false, options: null }],
       },
@@ -578,6 +587,7 @@ function smokeRequests(): unknown[] {
         threadId,
         turnId: "turn-1",
         itemId: "input-item",
+        isBlocking: true,
         autoResolutionMs: null,
         questions: [
           { id: "environment", header: "Environment", question: "Choose an environment", isOther: true, isSecret: false, options: [{ label: "Production", description: "Live environment" }] },
@@ -592,6 +602,7 @@ function smokeRequests(): unknown[] {
         threadId,
         turnId: "turn-1",
         itemId: "skip-item",
+        isBlocking: true,
         autoResolutionMs: null,
         questions: [{ id: "skip", header: "Skip", question: "Skip this question?", isOther: true, isSecret: false, options: [{ label: "Answer", description: "Do not skip" }] }],
       },
@@ -632,12 +643,25 @@ function smokeRequests(): unknown[] {
       params: { threadId, turnId: "turn-1", itemId: "command-1", startedAtMs: 1, environmentId: null, command: "smoke command", cwd: process.cwd(), commandActions: null },
     },
     {
+      id: "blocking-auto",
+      method: "item/tool/requestUserInput",
+      params: {
+        threadId,
+        turnId: "turn-1",
+        itemId: "blocking-auto-item",
+        isBlocking: true,
+        autoResolutionMs: 240_000,
+        questions: [{ id: "blocking", header: "Blocking", question: "This question must wait for an answer", isOther: true, isSecret: false, options: [{ label: "Answer", description: "Continue manually" }] }],
+      },
+    },
+    {
       id: "auto-snooze",
       method: "item/tool/requestUserInput",
       params: {
         threadId,
         turnId: "turn-1",
         itemId: "auto-snooze-item",
+        isBlocking: false,
         autoResolutionMs: 240_000,
         questions: [{ id: "action", header: "Action", question: "Pause automatic handling?", isOther: true, isSecret: false, options: [{ label: "Keep waiting", description: "Submit immediately" }] }],
       },
@@ -649,6 +673,7 @@ function smokeRequests(): unknown[] {
         threadId,
         turnId: "turn-1",
         itemId: "auto-submit-item",
+        isBlocking: false,
         autoResolutionMs: 60_000,
         questions: [{ id: "choice", header: "Choice", question: "Allow automatic handling?", isOther: false, isSecret: false, options: [{ label: "Wait", description: "Leave unanswered" }] }],
       },

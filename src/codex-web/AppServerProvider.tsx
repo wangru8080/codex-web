@@ -98,7 +98,9 @@ import {
   sourcedActiveTurn,
 } from "./active-turns-adapter";
 import {
+  approvalRequestKey,
   beginApprovalResponse,
+  clearApprovalResponse,
   completeApprovalResponse,
   failApprovalResponse,
   type ApprovalResponseGuardState,
@@ -326,6 +328,7 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
     client.onClose((error) => {
       if (disposed || reconnectStopped) return;
       const message = error.message;
+      approvalResponseStateRef.current = {};
       setState((current) => ({
         ...current,
         connection: { source: "web-bridge", data: "reconnecting" },
@@ -421,6 +424,15 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
           };
         });
         return;
+      }
+      if (notification.method === "serverRequest/resolved") {
+        const requestId = readRecord(notification.params).requestId;
+        if (typeof requestId === "string" || typeof requestId === "number") {
+          approvalResponseStateRef.current = clearApprovalResponse({
+            key: approvalRequestKey(requestId),
+            state: approvalResponseStateRef.current,
+          });
+        }
       }
       if (notification.method === "thread/settings/updated") {
         const params = notification.params as { threadId?: string } | undefined;
@@ -861,8 +873,8 @@ export function AppServerProvider({ children }: { children: React.ReactNode }) {
       throw new Error(`app-server request 已处理或已失效: ${guard.reason}`);
     }
 
-    const response = buildServerRequestResponse(approval, input);
     try {
+      const response = buildServerRequestResponse(approval, input);
       client.respond(approval.requestId, response);
       approvalResponseStateRef.current = completeApprovalResponse({
         key: guard.key,

@@ -1,10 +1,16 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createSessionToken, readWebAuthConfig, WEB_AUTH_COOKIE } from "../../../server/web-auth";
+import {
+  createSessionToken,
+  readWebAuthConfig,
+  WEB_AUTH_COOKIE,
+  WEB_AUTH_MAX_AGE_SECONDS,
+} from "../../../server/web-auth";
 import { config as proxyConfig, isPublicWebAuthPath, proxy } from "../../proxy";
 
 const authEnv = {
+  CODEX_WEB_AUTH_MODE: "local",
   CODEX_WEB_LOGIN_EMAIL: "test@admin.com",
   CODEX_WEB_LOGIN_PASSWORD: "123456",
   CODEX_WEB_SESSION_SECRET: "0123456789abcdef0123456789abcdef",
@@ -31,12 +37,34 @@ describe("Web 登录路由门禁", () => {
     const response = await proxy(new NextRequest("http://localhost:3000/chat?id=1"));
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe("http://localhost:3000/login?next=%2Fchat%3Fid%3D1");
+    expect(response.headers.get("cache-control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("pragma")).toBe("no-cache");
   });
 
   it("未登录 API 返回 401 而不是 HTML 重定向", async () => {
     const response = await proxy(new NextRequest("http://localhost:3000/api/codex/bridge-url"));
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "登录已失效" });
+    expect(response.headers.get("cache-control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("pragma")).toBe("no-cache");
+  });
+
+  it("过期会话首次跳转登录页时禁止浏览器复用缓存重定向", async () => {
+    const config = readWebAuthConfig(authEnv);
+    const expiredToken = createSessionToken(
+      config,
+      Date.now() - (WEB_AUTH_MAX_AGE_SECONDS * 1_000 + 1_000),
+    );
+    const response = await proxy(new NextRequest("http://localhost:3000/chat?thread=old", {
+      headers: { cookie: `${WEB_AUTH_COOKIE}=${expiredToken}` },
+    }));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/login?next=%2Fchat%3Fthread%3Dold",
+    );
+    expect(response.headers.get("cache-control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("pragma")).toBe("no-cache");
   });
 
   it("有效 Cookie 放行应用并把登录页送回聊天页", async () => {
@@ -46,5 +74,6 @@ describe("Web 登录路由门禁", () => {
     const response = await proxy(new NextRequest("http://localhost:3000/login", { headers }));
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe("http://localhost:3000/chat");
+    expect(response.headers.get("cache-control")).toBe("no-store, max-age=0");
   });
 });

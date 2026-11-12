@@ -46,6 +46,7 @@ import type { ComposerTurnPlan as ComposerTurnPlanData } from '@/codex-web/compo
 import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import { AppServerFilePreviewError } from '@/codex-web/app-server-files';
 import { buildHookTrustEdit, hookNeedsReview } from '@/codex-web/hooks-config';
+import { defaultPermissionModeConfigEdits } from '@/codex-web/default-permission-mode';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { ContextWindowIndicator } from './ContextWindowIndicator';
 import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, FileExcerptCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
@@ -331,6 +332,10 @@ function ComposerPermissionSelector({
   const [menuOpen, setMenuOpen] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
   const [pendingChoice, setPendingChoice] = useState<PermissionChoice['id'] | null>(null);
+  const [rememberFullAccess, setRememberFullAccess] = useState(false);
+  const [applyingWarningChoice, setApplyingWarningChoice] = useState(false);
+  const [warningError, setWarningError] = useState<string | null>(null);
+  const appServer = useAppServerActions();
 
   const choices: PermissionChoice[] = useMemo(() => [
     {
@@ -367,12 +372,8 @@ function ComposerPermissionSelector({
   const activeChoice = choices.find((choice) => choice.id === activeChoiceId) ?? choices[0];
 
   const applyChoice = useCallback(async (choice: PermissionChoice) => {
-    try {
-      await onPermissionChange?.(choice.profile);
-      setLocalChoice(choice.id);
-    } catch (error) {
-      console.warn('[ComposerPermissionSelector] Permission update failed:', error);
-    }
+    await onPermissionChange?.(choice.profile);
+    setLocalChoice(choice.id);
   }, [onPermissionChange]);
 
   const handleSelect = useCallback((choice: PermissionChoice) => {
@@ -383,20 +384,46 @@ function ComposerPermissionSelector({
       window.requestAnimationFrame(() => setShowWarning(true));
       return;
     }
-    void applyChoice(choice);
+    void applyChoice(choice).catch((error) => {
+      console.warn('[ComposerPermissionSelector] Permission update failed:', error);
+    });
   }, [applyChoice, disabled, onPermissionChange, permissionProfile]);
 
-  const confirmFullAccess = useCallback(() => {
+  const confirmFullAccess = useCallback(async () => {
     const choice = choices.find((item) => item.id === pendingChoice);
-    setShowWarning(false);
-    setPendingChoice(null);
-    if (choice) void applyChoice(choice);
-  }, [applyChoice, choices, pendingChoice]);
+    if (!choice || applyingWarningChoice) return;
+    setApplyingWarningChoice(true);
+    setWarningError(null);
+    let permissionApplied = false;
+    try {
+      await applyChoice(choice);
+      permissionApplied = true;
+      if (rememberFullAccess) {
+        await appServer.writeConfigEdits(defaultPermissionModeConfigEdits('full_access'));
+      }
+      setShowWarning(false);
+      setPendingChoice(null);
+      setRememberFullAccess(false);
+    } catch (error) {
+      setWarningError(permissionApplied
+        ? t('permission.fullAccessDefaultSaveError' as TranslationKey)
+        : error instanceof Error
+          ? error.message
+          : t('permission.fullAccessApplyError' as TranslationKey));
+    } finally {
+      setApplyingWarningChoice(false);
+    }
+  }, [appServer, applyChoice, applyingWarningChoice, choices, pendingChoice, rememberFullAccess, t]);
 
   const handleWarningOpenChange = useCallback((open: boolean) => {
+    if (applyingWarningChoice) return;
     setShowWarning(open);
-    if (!open) setPendingChoice(null);
-  }, []);
+    if (!open) {
+      setPendingChoice(null);
+      setRememberFullAccess(false);
+      setWarningError(null);
+    }
+  }, [applyingWarningChoice]);
 
   return (
     <>
@@ -438,14 +465,31 @@ function ComposerPermissionSelector({
           <AlertDialogHeader>
             <AlertDialogTitle>{isEnglish ? 'Full Access' : '完全访问权限'}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('permission.fullAccessWarning' as TranslationKey)}
+              <span className="block">{t('permission.fullAccessWarning' as TranslationKey)}</span>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={rememberFullAccess}
+                  onChange={(event) => setRememberFullAccess(event.target.checked)}
+                  disabled={applyingWarningChoice}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-foreground"
+                />
+                <span>{t('permission.useForFutureSessions' as TranslationKey)}</span>
+              </label>
+              {warningError && (
+                <span className="mt-3 block text-sm text-destructive" role="alert">{warningError}</span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{isEnglish ? 'Cancel' : '取消'}</AlertDialogCancel>
+            <AlertDialogCancel disabled={applyingWarningChoice}>{isEnglish ? 'Cancel' : '取消'}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={confirmFullAccess}
+              disabled={applyingWarningChoice}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmFullAccess();
+              }}
             >
               {isEnglish ? 'Full Access' : '完全访问权限'}
             </AlertDialogAction>

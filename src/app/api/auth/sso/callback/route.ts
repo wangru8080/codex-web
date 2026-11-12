@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { resolveLoginDestination } from "@/lib/web-login";
+import { withNoStore } from "../../../../../../server/http-cache";
 import {
   exchangeOidcAuthorizationCode,
   fetchOidcDiscovery,
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest) {
     }
 
     const destinationUrl = new URL(next, origin);
-    const response = NextResponse.redirect(destinationUrl);
+    const response = withNoStore(NextResponse.redirect(destinationUrl));
     response.cookies.set(WEB_AUTH_COOKIE, sessionToken, {
       httpOnly: true,
       sameSite: "lax",
@@ -117,7 +118,7 @@ function redirectWithError(origin: string, next: string, errorMessage: string): 
   const loginUrl = new URL("/login", origin);
   loginUrl.searchParams.set("next", resolveLoginDestination(next));
   loginUrl.searchParams.set("error", errorMessage);
-  const response = NextResponse.redirect(loginUrl);
+  const response = withNoStore(NextResponse.redirect(loginUrl));
   response.cookies.set(WEB_OIDC_STATE_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",

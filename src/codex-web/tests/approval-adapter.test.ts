@@ -113,6 +113,7 @@ describe("approval-adapter", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "tool-1",
+        isBlocking: false,
         autoResolutionMs: 60_000,
         questions: [
           {
@@ -195,6 +196,7 @@ describe("approval-adapter", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "tool-1",
+        isBlocking: true,
         autoResolutionMs: null,
         questions: [],
       },

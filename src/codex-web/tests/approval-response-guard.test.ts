@@ -4,6 +4,7 @@ import type { AppServerApprovalRequest } from "../approval-adapter";
 import {
   approvalRequestKey,
   beginApprovalResponse,
+  clearApprovalResponse,
   completeApprovalResponse,
   failApprovalResponse,
 } from "../approval-response-guard";
@@ -79,6 +80,15 @@ describe("approval-response-guard", () => {
       state: { [key]: "responding" },
     });
     expect(retryable).toEqual({});
+  });
+
+  it("收到 resolved notification 后清除旧 requestId 的守卫状态", () => {
+    const key = approvalRequestKey("bridge-server-request:1");
+
+    expect(clearApprovalResponse({
+      key,
+      state: { [key]: "resolved" },
+    })).toEqual({});
   });
 });
 

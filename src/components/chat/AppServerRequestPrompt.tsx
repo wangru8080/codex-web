@@ -16,7 +16,9 @@ import {
   formatAutoResolutionRemaining,
   getToolUserInputAutoResolutionTiming,
   initialMcpFormValues,
+  isToolUserInputAutoResolutionEnabled,
   normalizeMcpFormFields,
+  shouldPauseToolUserInputAutoResolutionOnResume,
   type McpFormField,
   type McpFormValue,
 } from '@/codex-web/server-request-form-adapter';
@@ -114,19 +116,51 @@ function ToolUserInputForm({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const startedAtMsRef = useRef(nowMs);
   const autoSubmitStartedRef = useRef(false);
+  const hiddenAtMsRef = useRef<number | null>(null);
+  const autoResolutionEnabled = isToolUserInputAutoResolutionEnabled(
+    request.params.isBlocking,
+    request.params.autoResolutionMs,
+  );
 
   const autoResolutionTiming = getToolUserInputAutoResolutionTiming(
-    request.params.autoResolutionMs,
+    autoResolutionEnabled,
     startedAtMsRef.current,
     nowMs,
     autoResolutionSnoozed,
   );
 
   useEffect(() => {
-    if (request.params.autoResolutionMs === null || autoResolutionSnoozed) return;
+    if (!autoResolutionEnabled || autoResolutionSnoozed) return;
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, [autoResolutionSnoozed, request.params.autoResolutionMs]);
+  }, [autoResolutionEnabled, autoResolutionSnoozed]);
+
+  useEffect(() => {
+    if (!autoResolutionEnabled) return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtMsRef.current = Date.now();
+        return;
+      }
+
+      const hiddenAtMs = hiddenAtMsRef.current;
+      hiddenAtMsRef.current = null;
+      if (
+        hiddenAtMs !== null
+        && !autoSubmitStartedRef.current
+        && shouldPauseToolUserInputAutoResolutionOnResume(
+          autoResolutionEnabled,
+          hiddenAtMs,
+          Date.now(),
+        )
+      ) {
+        setAutoResolutionSnoozed(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [autoResolutionEnabled]);
 
   useEffect(() => {
     if (autoResolutionTiming.phase !== 'due' || autoSubmitStartedRef.current) return;
@@ -135,7 +169,7 @@ function ToolUserInputForm({
   }, [autoResolutionTiming.phase, onSubmit]);
 
   const snoozeAutoResolution = () => {
-    if (request.params.autoResolutionMs !== null) {
+    if (autoResolutionEnabled) {
       setAutoResolutionSnoozed(true);
     }
   };

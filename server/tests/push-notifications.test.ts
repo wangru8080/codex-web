@@ -42,6 +42,7 @@ async function serviceFixture() {
     service,
     sent,
     transport,
+    statePath: join(directory, "push.json"),
     setStatusCode: (status: number) => { statusCode = status; },
   };
 }
@@ -50,11 +51,15 @@ function request(method: string, id: number, params: unknown): JsonRpcRequest {
   return { id, method, params };
 }
 
-async function register(service: PushNotificationService, instance = "codex-web-default") {
+async function register(
+  service: PushNotificationService,
+  instance = "codex-web-default",
+  overrides: { endpoint?: string; keys?: typeof keys } = {},
+) {
   return service.handleClientRequest(user, request(PUSH_REGISTER_METHOD, 1, {
     instance,
-    endpoint: "https://push.example.test/endpoint/secret",
-    keys,
+    endpoint: overrides.endpoint ?? "https://push.example.test/endpoint/secret",
+    keys: overrides.keys ?? keys,
   }));
 }
 
@@ -66,8 +71,12 @@ describe("UnifiedPush notification service", () => {
       id: 2,
       result: { vapidPublicKey: "vapid-public", source: "codex-web.push" },
     });
-    expect(await register(service)).toMatchObject({ result: { registered: true } });
-    expect(await register(service)).toMatchObject({ result: { registered: true } });
+    expect(await register(service)).toMatchObject({
+      result: { registered: true, testNotification: { delivered: true, sent: true, statusCode: 201 } },
+    });
+    expect(await register(service)).toMatchObject({
+      result: { registered: true, testNotification: { delivered: true, sent: false } },
+    });
 
     const stored = JSON.parse(await readFile(join(directory, "push.json"), "utf8"));
     expect(stored.subscriptions).toHaveLength(1);
@@ -76,9 +85,123 @@ describe("UnifiedPush notification service", () => {
     expect((await stat(directory)).mode & 0o777).toBe(0o700);
   });
 
+  it("sends a test notification when a device registers", async () => {
+    const { service, sent } = await serviceFixture();
+    const response = await register(service, "sunup-device");
+
+    expect(response).toMatchObject({
+      result: {
+        registered: true,
+        testNotification: { delivered: true, sent: true, statusCode: 201 },
+      },
+    });
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0]!.payload)).toMatchObject({
+      kind: "test",
+      title: "Codex Web notifications are working",
+      requestId: "registration-test",
+    });
+  });
+
+  it("reports a failed registration test while retaining the subscription", async () => {
+    const { directory, service, setStatusCode } = await serviceFixture();
+    setStatusCode(503);
+
+    const response = await register(service);
+
+    expect(response).toMatchObject({
+      result: {
+        registered: true,
+        testNotification: {
+          delivered: false,
+          sent: true,
+          statusCode: 503,
+          error: "Push service returned HTTP 503",
+        },
+      },
+    });
+    const stored = JSON.parse(await readFile(join(directory, "push.json"), "utf8"));
+    expect(stored.subscriptions).toHaveLength(1);
+  });
+
+  it("does not resend the registration test for an unchanged reconnect", async () => {
+    const { directory, service, sent } = await serviceFixture();
+    const first = await register(service, "sunup-device");
+    const second = await register(service, "sunup-device");
+
+    expect(first).toMatchObject({
+      result: { testNotification: { delivered: true, sent: true } },
+    });
+    expect(second).toMatchObject({
+      result: { testNotification: { delivered: true, sent: false } },
+    });
+    expect(sent).toHaveLength(1);
+    const stored = JSON.parse(await readFile(join(directory, "push.json"), "utf8"));
+    expect(stored.subscriptions[0].testDeliveredAt).toBe(1_700_000_000_000);
+  });
+
+  it("keeps the registration test marker across service restarts", async () => {
+    const { statePath, service, sent, transport } = await serviceFixture();
+    await register(service, "sunup-device");
+    const restarted = new PushNotificationService({
+      statePath,
+      env: {},
+      transport,
+      now: () => 1_700_000_000_000,
+      logger: { warn: vi.fn(), info: vi.fn() },
+    });
+
+    const response = await register(restarted, "sunup-device");
+
+    expect(response).toMatchObject({
+      result: { testNotification: { delivered: true, sent: false } },
+    });
+    expect(sent).toHaveLength(1);
+  });
+
+  it("retries the registration test after a failed delivery", async () => {
+    const { directory, service, sent, setStatusCode } = await serviceFixture();
+    setStatusCode(503);
+    const failed = await register(service, "sunup-device");
+    expect(failed).toMatchObject({
+      result: { testNotification: { delivered: false, sent: true } },
+    });
+
+    setStatusCode(201);
+    const retried = await register(service, "sunup-device");
+
+    expect(retried).toMatchObject({
+      result: { testNotification: { delivered: true, sent: true } },
+    });
+    expect(sent).toHaveLength(2);
+    const stored = JSON.parse(await readFile(join(directory, "push.json"), "utf8"));
+    expect(stored.subscriptions[0].testDeliveredAt).toBe(1_700_000_000_000);
+  });
+
+  it("resends the registration test when the endpoint or encryption keys change", async () => {
+    const { service, sent } = await serviceFixture();
+    await register(service, "sunup-device");
+    await register(service, "sunup-device", { endpoint: "https://push.example.test/endpoint/new" });
+    await register(service, "sunup-device", {
+      endpoint: "https://push.example.test/endpoint/new",
+      keys: { ...keys, auth: "replacement_auth" },
+    });
+
+    expect(sent).toHaveLength(3);
+    const sameAgain = await register(service, "sunup-device", {
+      endpoint: "https://push.example.test/endpoint/new",
+      keys: { ...keys, auth: "replacement_auth" },
+    });
+    expect(sameAgain).toMatchObject({
+      result: { testNotification: { delivered: true, sent: false } },
+    });
+    expect(sent).toHaveLength(3);
+  });
+
   it("sends only filtered Codex events and deduplicates repeated turn notifications", async () => {
     const { service, sent } = await serviceFixture();
     await register(service);
+    sent.length = 0;
 
     service.handleAppServerMessage(user, {
       method: "item/agentMessage/delta",
@@ -111,6 +234,7 @@ describe("UnifiedPush notification service", () => {
   it("does not deliver another user's events or subscriptions", async () => {
     const { service, sent } = await serviceFixture();
     await register(service);
+    sent.length = 0;
     service.handleAppServerMessage({ id: "bob", email: "bob@example.test" }, {
       method: "turn/completed",
       params: {
@@ -126,6 +250,7 @@ describe("UnifiedPush notification service", () => {
     const { directory, service, sent, setStatusCode } = await serviceFixture();
     await register(service, "one");
     await register(service, "two");
+    sent.length = 0;
     setStatusCode(410);
     service.handleAppServerMessage(user, {
       method: "turn/completed",

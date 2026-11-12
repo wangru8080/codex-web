@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { resolveLoginDestination } from "@/lib/web-login";
+import { withNoStore } from "../../../../../../server/http-cache";
 import {
   buildOidcAuthorizationUrl,
   createOidcStateToken,
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
       const loginUrl = new URL("/login", origin);
       loginUrl.searchParams.set("next", next);
       loginUrl.searchParams.set("error", "SSO authentication is not enabled");
-      return NextResponse.redirect(loginUrl);
+      return withNoStore(NextResponse.redirect(loginUrl));
     }
 
     const sessionSecret = readSessionSecret(process.env);
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
       codeChallenge,
     });
 
-    const response = NextResponse.redirect(authorizationUrl);
+    const response = withNoStore(NextResponse.redirect(authorizationUrl));
     response.cookies.set(WEB_OIDC_STATE_COOKIE, stateToken, {
       httpOnly: true,
       sameSite: "lax",
@@ -73,6 +74,6 @@ export async function GET(request: NextRequest) {
       "error",
       error instanceof Error ? error.message : "Failed to initiate SSO login",
     );
-    return NextResponse.redirect(loginUrl);
+    return withNoStore(NextResponse.redirect(loginUrl));
   }
 }
