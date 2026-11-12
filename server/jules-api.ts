@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 
 import type { Thread } from "../src/codex/protocol/generated/v2/Thread";
 import type { CommandExecResponse } from "../src/codex/protocol/generated/v2/CommandExecResponse";
@@ -75,6 +76,7 @@ type JulesAuthContext = {
 const MAX_BODY_BYTES = 1_048_576;
 const MAX_THREAD_PAGES = 20;
 const THREAD_PAGE_SIZE = 100;
+const WORKTREES_DIRECTORY = ".jules-worktrees";
 
 class JulesApiError extends Error {
   constructor(
@@ -178,12 +180,13 @@ async function dispatchJulesRequest(
   }
 
   if (route.kind === "session-get" && request.method === "DELETE") {
-    const { metadata } = await loadOwnedSession(runtime, auth, route.sessionId);
+    const { metadata, thread } = await loadOwnedSession(runtime, auth, route.sessionId);
     try {
       await runtime.request("thread/delete", { threadId: metadata.threadId });
     } catch (error) {
       if (!isNotFoundError(error)) throw error;
     }
+    if (isSessionWorktree(thread.cwd)) await removeSessionWorktree(runtime, thread.cwd).catch(() => undefined);
     await auth.repository.delete(metadata.threadId);
     return jsonResponse({});
   }
@@ -265,24 +268,24 @@ async function createSession(
   const sourceName = sourceContext.source ?? `sources/${sourceIdForCwd(auth.identity.user.cwd)}`;
   const source = findJulesSource(auth.identity.user.cwd, allThreads, sourceName);
   if (!source) throw new JulesApiError(404, "NOT_FOUND", "Source not found");
-  const switchedBranch = sourceContext.startingBranch
-    ? await applyStartingBranch(runtime, source, sourceContext.startingBranch, allThreads)
-    : false;
+  const cwd = sourceContext.startingBranch
+    ? await createSessionWorktree(runtime, source, sourceContext.startingBranch)
+    : source.cwd;
   const instructions = automationInstructions(automationMode, source, sourceContext.startingBranch);
 
   const threadParams = {
-    cwd: source.cwd,
+    cwd,
     threadSource: JULES_API_THREAD_SOURCE,
     serviceName: JULES_API_THREAD_SOURCE,
     ...(instructions ? { developerInstructions: instructions } : {}),
-    ...threadPermissionOptions(runtime.permissionProfile, source.cwd),
+    ...threadPermissionOptions(runtime.permissionProfile, cwd),
     collaborationMode: collaborationMode(requirePlanApproval ? "plan" : "default"),
   };
   let started: ThreadStartResponse;
   try {
     started = await runtime.request("thread/start", threadParams) as ThreadStartResponse;
   } catch (error) {
-    if (switchedBranch) await runGit(runtime, source.cwd, ["checkout", "-"]).catch(() => undefined);
+    if (cwd !== source.cwd) await removeSessionWorktree(runtime, cwd).catch(() => undefined);
     throw error;
   }
   const threadId = started.thread.id;
@@ -321,7 +324,7 @@ async function createSession(
       threadId,
       clientUserMessageId: randomUUID(),
       input: [{ type: "text", text: prompt, text_elements: [] }],
-      ...turnPermissionOptions(runtime.permissionProfile, source.cwd),
+      ...turnPermissionOptions(runtime.permissionProfile, cwd),
       collaborationMode: collaborationMode(requirePlanApproval ? "plan" : "default"),
     });
   } catch (error) {
@@ -438,7 +441,9 @@ async function listThreadsForSources(runtime: JulesRuntime): Promise<Thread[]> {
     listThreads(runtime, true),
   ]);
   const byId = new Map<string, Thread>();
-  for (const thread of [...active, ...archived]) byId.set(thread.id, thread);
+  for (const thread of [...active, ...archived]) {
+    if (!isSessionWorktree(thread.cwd)) byId.set(thread.id, thread);
+  }
   return Array.from(byId.values());
 }
 
@@ -469,7 +474,6 @@ async function listThreads(runtime: JulesRuntime, archived: boolean, cwd?: strin
       sortKey: "updated_at",
       sortDirection: "desc",
       limit: THREAD_PAGE_SIZE,
-      sourceKinds: ["appServer"],
       ...(cwd === undefined ? {} : { cwd }),
       cursor,
     }) as ThreadListResponse;
@@ -828,92 +832,53 @@ function automationInstructions(
   ].filter(Boolean).join("\n");
 }
 
-async function applyStartingBranch(
+// A session with a starting branch gets its own worktree, so it never switches branches in the
+// checkout that people and other sessions are using.
+async function createSessionWorktree(
   runtime: JulesRuntime,
   source: JulesSource,
   startingBranch: string,
-  threads: Thread[],
-): Promise<boolean> {
-  const current = await runGit(runtime, source.cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
-  if (current.exitCode !== 0) {
-    throw new JulesApiError(
-      400,
-      "FAILED_PRECONDITION",
-      `Cannot select starting branch because the source is not a git checkout: ${commandError(current)}`,
-    );
-  }
-  if (current.stdout.trim() === startingBranch) return false;
-
-  if (threads.some((thread) => thread.cwd === source.cwd && thread.status.type === "active")) {
-    throw new JulesApiError(
-      409,
-      "FAILED_PRECONDITION",
-      `Cannot start from branch ${startingBranch} while another session is running in the source checkout`,
-    );
-  }
-
-  const status = await runGit(runtime, source.cwd, ["status", "--porcelain"]);
-  if (status.exitCode !== 0) {
-    throw new JulesApiError(400, "FAILED_PRECONDITION", `Unable to inspect git status: ${commandError(status)}`);
-  }
-  if (status.stdout.trim()) {
-    throw new JulesApiError(
-      400,
-      "FAILED_PRECONDITION",
-      `Cannot start from branch ${startingBranch} because the source checkout has uncommitted changes`,
-    );
-  }
-
-  const localRef = `refs/heads/${startingBranch}`;
-  const local = await runGit(runtime, source.cwd, ["show-ref", "--verify", "--quiet", localRef]);
-  if (local.exitCode === 0) {
-    await checkoutBranch(runtime, source.cwd, ["checkout", startingBranch], startingBranch);
-    return true;
-  }
-
-  const remoteRef = `refs/remotes/origin/${startingBranch}`;
-  let remote = await runGit(runtime, source.cwd, ["show-ref", "--verify", "--quiet", remoteRef]);
-  if (remote.exitCode !== 0) {
-    const fetched = await runGit(runtime, source.cwd, ["fetch", "origin", startingBranch], 60_000);
-    if (fetched.exitCode !== 0) {
-      throw new JulesApiError(
-        400,
-        "FAILED_PRECONDITION",
-        `Starting branch ${startingBranch} was not found locally or on origin: ${commandError(fetched)}`,
-      );
-    }
-    remote = await runGit(runtime, source.cwd, ["show-ref", "--verify", "--quiet", remoteRef]);
-  }
-  if (remote.exitCode !== 0) {
-    throw new JulesApiError(
-      400,
-      "FAILED_PRECONDITION",
-      `Starting branch ${startingBranch} was not found locally or on origin`,
-    );
-  }
-  await checkoutBranch(
+): Promise<string> {
+  const fetched = await runGit(
     runtime,
     source.cwd,
-    ["checkout", "-b", startingBranch, `origin/${startingBranch}`],
-    startingBranch,
+    ["fetch", "origin", `+refs/heads/${startingBranch}:refs/remotes/origin/${startingBranch}`],
+    60_000,
   );
-  return true;
-}
-
-async function checkoutBranch(
-  runtime: JulesRuntime,
-  cwd: string,
-  args: string[],
-  branch: string,
-): Promise<void> {
-  const result = await runGit(runtime, cwd, args);
-  if (result.exitCode !== 0) {
+  if (fetched.exitCode !== 0) {
     throw new JulesApiError(
       400,
       "FAILED_PRECONDITION",
-      `Unable to check out starting branch ${branch}: ${commandError(result)}`,
+      `Starting branch ${startingBranch} was not found on origin: ${commandError(fetched)}`,
     );
   }
+  const worktree = join(
+    dirname(source.cwd),
+    WORKTREES_DIRECTORY,
+    `${basename(source.cwd)}-${randomUUID().slice(0, 8)}`,
+  );
+  const added = await runGit(
+    runtime,
+    source.cwd,
+    ["worktree", "add", "--detach", worktree, `origin/${startingBranch}`],
+    120_000,
+  );
+  if (added.exitCode !== 0) {
+    throw new JulesApiError(
+      400,
+      "FAILED_PRECONDITION",
+      `Unable to create a worktree for starting branch ${startingBranch}: ${commandError(added)}`,
+    );
+  }
+  return worktree;
+}
+
+function isSessionWorktree(cwd: string): boolean {
+  return basename(dirname(cwd)) === WORKTREES_DIRECTORY;
+}
+
+async function removeSessionWorktree(runtime: JulesRuntime, worktree: string): Promise<void> {
+  await runGit(runtime, worktree, ["worktree", "remove", "--force", worktree]);
 }
 
 async function runGit(

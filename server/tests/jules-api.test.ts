@@ -17,7 +17,6 @@ type FakeRuntime = JulesRuntime & {
   threads: Thread[];
   archivedThreads: Thread[];
   closed: boolean;
-  gitStatusOutput?: string;
 };
 
 function turn(overrides: Partial<Turn> = {}): Turn {
@@ -161,21 +160,10 @@ function fakeRuntime(threads: Thread[] = [], archivedThreads: Thread[] = []): Fa
       if (method === "command/exec") {
         const { command } = params as { command: string[] };
         const joined = command.join(" ");
-        if (joined === "git rev-parse --abbrev-ref HEAD") {
-          return { exitCode: 0, stdout: "main\n", stderr: "" };
-        }
-        if (joined === "git status --porcelain") {
-          return { exitCode: 0, stdout: runtime.gitStatusOutput ?? "", stderr: "" };
-        }
-        if (joined === "git show-ref --verify --quiet refs/heads/develop") {
-          return { exitCode: 1, stdout: "", stderr: "" };
-        }
-        if (joined === "git show-ref --verify --quiet refs/remotes/origin/develop") {
+        if (joined === "git fetch origin +refs/heads/develop:refs/remotes/origin/develop") {
           return { exitCode: 0, stdout: "", stderr: "" };
         }
-        if (joined === "git checkout -b develop origin/develop") {
-          return { exitCode: 0, stdout: "Switched to a new branch 'develop'\n", stderr: "" };
-        }
+        if (command[1] === "worktree") return { exitCode: 0, stdout: "", stderr: "" };
         return { exitCode: 1, stdout: "", stderr: `unexpected git command: ${joined}` };
       }
       throw new Error(`unexpected method ${method}`);
@@ -377,20 +365,23 @@ describe("Jules-compatible API", () => {
         githubRepoContext: { startingBranch: "develop" },
       },
     });
+    const start = runtime.calls.find((entry) => entry.method === "thread/start")?.params as { cwd: string };
+    expect(start.cwd).toMatch(/\/\.jules-worktrees\/[^/]+$/);
     expect(runtime.calls.filter((entry) => entry.method === "command/exec").map((entry) => entry.params))
       .toEqual([
-        expect.objectContaining({ command: ["git", "rev-parse", "--abbrev-ref", "HEAD"] }),
-        expect.objectContaining({ command: ["git", "status", "--porcelain"] }),
-        expect.objectContaining({ command: ["git", "show-ref", "--verify", "--quiet", "refs/heads/develop"] }),
-        expect.objectContaining({ command: ["git", "show-ref", "--verify", "--quiet", "refs/remotes/origin/develop"] }),
-        expect.objectContaining({ command: ["git", "checkout", "-b", "develop", "origin/develop"] }),
+        expect.objectContaining({
+          cwd: process.cwd(),
+          command: ["git", "fetch", "origin", "+refs/heads/develop:refs/remotes/origin/develop"],
+        }),
+        expect.objectContaining({
+          cwd: process.cwd(),
+          command: ["git", "worktree", "add", "--detach", start.cwd, "origin/develop"],
+        }),
       ]);
-    const start = runtime.calls.find((entry) => entry.method === "thread/start")?.params;
     expect(start).toMatchObject({
-      cwd: process.cwd(),
       developerInstructions: expect.stringContaining("AUTO_CREATE_PR"),
     });
-    expect((start as { developerInstructions: string }).developerInstructions)
+    expect((start as unknown as { developerInstructions: string }).developerInstructions)
       .toContain("gh pr create");
     expect(await metadataStore.get("test@admin.com", "created_thread_1")).toMatchObject({
       automationMode: "AUTO_CREATE_PR",
@@ -398,9 +389,23 @@ describe("Jules-compatible API", () => {
       initialGitSha: "abc",
     });
 
-    const dirtyRuntime = fakeRuntime([thread({ cwd: process.cwd() })]);
-    dirtyRuntime.gitStatusOutput = " M src/app.ts\n";
-    const dirty = await call(
+    const worktreeThread = runtime.threads.find((candidate) => candidate.id === "created_thread_1")!;
+    const sources = await call(request("/sources", key), ["sources"], env, runtime);
+    expect(JSON.stringify(sources.body)).not.toContain(".jules-worktrees");
+    expect(sources.body.sources).toHaveLength(1);
+    const deleted = await call(
+      request("/sessions/created_thread_1", key, { method: "DELETE" }),
+      ["sessions", "created_thread_1"],
+      env,
+      runtime,
+    );
+    expect(deleted.response.status).toBe(200);
+    expect(runtime.calls.at(-1)?.params).toMatchObject({
+      command: ["git", "worktree", "remove", "--force", worktreeThread.cwd],
+    });
+
+    const missingRuntime = fakeRuntime([thread({ cwd: process.cwd() })]);
+    const missing = await call(
       request("/sessions", key, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -408,17 +413,17 @@ describe("Jules-compatible API", () => {
           prompt: "Build",
           sourceContext: {
             source: "sources/github/acme/app",
-            githubRepoContext: { startingBranch: "develop" },
+            githubRepoContext: { startingBranch: "missing" },
           },
         }),
       }),
       ["sessions"],
       env,
-      dirtyRuntime,
+      missingRuntime,
     );
-    expect(dirty.response.status).toBe(400);
-    expect((dirty.body.error as { status: string }).status).toBe("FAILED_PRECONDITION");
-    expect(dirtyRuntime.calls.filter((entry) => entry.method === "thread/start")).toHaveLength(0);
+    expect(missing.response.status).toBe(400);
+    expect((missing.body.error as { status: string }).status).toBe("FAILED_PRECONDITION");
+    expect(missingRuntime.calls.filter((entry) => entry.method === "thread/start")).toHaveLength(0);
   });
 
   it("rejects arbitrary source paths and browser-thread metadata", async () => {
@@ -533,26 +538,6 @@ describe("Jules-compatible API", () => {
     );
     expect(stale.response.status).toBe(409);
     expect(await metadataStore.get("test@admin.com", "revising_thread")).toMatchObject({ approvedPlanTurnId: null });
-  });
-
-  it("refuses to switch the shared checkout while another session is running in it", async () => {
-    const { env, key } = await fixture();
-    const runtime = fakeRuntime([thread({ id: "busy_thread", status: { type: "active", activeFlags: [] } })]);
-    const created = await call(
-      request("/sessions", key, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: "Build",
-          sourceContext: { source: "sources/github/acme/app", githubRepoContext: { startingBranch: "develop" } },
-        }),
-      }),
-      ["sessions"],
-      env,
-      runtime,
-    );
-    expect(created.response.status).toBe(409);
-    expect(runtime.calls.some((entry) => entry.method === "thread/start")).toBe(false);
   });
 
   it("lists and gets deterministic activities from real thread items", async () => {
