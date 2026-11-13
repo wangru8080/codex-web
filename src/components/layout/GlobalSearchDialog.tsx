@@ -49,7 +49,8 @@ const TYPE_LABEL_KEYS: Record<Exclude<SearchScope, 'all'>, TranslationKey> = {
 };
 
 export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const router = useRouter();
   const { workingDirectory, sessionId, sessionTitle } = usePanel();
   const threads = useAppServerSelector((state) => state.threads);
@@ -97,9 +98,9 @@ export function GlobalSearchDialog({ open, onOpenChange }: GlobalSearchDialogPro
   );
   const activeThread = useMemo(
     () => sessionId && workingDirectory
-      ? { id: sessionId, title: sessionTitle || 'Codex 会话', cwd: workingDirectory }
+      ? { id: sessionId, title: sessionTitle || (isEnglish ? 'Codex Conversation' : 'Codex 会话'), cwd: workingDirectory }
       : null,
-    [sessionId, sessionTitle, workingDirectory],
+    [isEnglish, sessionId, sessionTitle, workingDirectory],
   );
 
   const performSearch = useCallback(async (term: string, scope: SearchScope) => {

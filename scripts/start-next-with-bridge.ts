@@ -10,14 +10,14 @@ import {
 } from "../server/production-server-options";
 import { createBrokerWebSocketBridge } from "../server/broker-websocket-bridge";
 import { createWebSocketBridge } from "../server/websocket-bridge";
-import { readWebAuthConfig, runtimeBrokerSocket } from "../server/web-auth";
+import { assertWebAuthStartupConfig, runtimeBrokerSocket } from "../server/web-auth";
 
 const brokerSocket = runtimeBrokerSocket();
 if (!brokerSocket && !process.env.CODEX_HOME) {
   console.error("start 必须显式设置 CODEX_HOME；可在当前 shell 或 .bashrc 中 export CODEX_HOME。");
   process.exit(1);
 }
-if (!brokerSocket) readWebAuthConfig(process.env);
+if (!brokerSocket) assertWebAuthStartupConfig(process.env);
 
 const paths = resolveProductionServerPaths(
   import.meta.url,
@@ -28,9 +28,9 @@ process.env.CODEX_WEB_APP_ROOT = paths.applicationRoot;
 
 const buildIdPath = paths.buildIdPath;
 if (!existsSync(buildIdPath)) {
-  console.log("未找到可用的 Next.js 生产构建，正在执行 npm run build...");
-  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-  const build = spawnSync(npmCommand, ["run", "build"], {
+  console.log("未找到可用的 Next.js 生产构建，正在执行 pnpm run build...");
+  const pmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const build = spawnSync(pmCommand, ["run", "build"], {
     cwd: paths.applicationRoot,
     env: process.env,
     stdio: "inherit",
@@ -45,7 +45,7 @@ if (!existsSync(buildIdPath)) {
   }
 }
 
-const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "192.168.3.12";
+const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "127.0.0.1";
 const nextHost = process.env.CODEX_WEB_NEXT_HOST ?? "0.0.0.0";
 const requestedPort = readProductionPort(process.env.PORT);
 const bridgePath = "/codex-bridge";
@@ -94,7 +94,7 @@ process.env.CODEX_WEB_BRIDGE_URL = brokerSocket ? bridgePath : `${bridgePath}?to
 
 server.on("upgrade", (request, socket, head) => {
   const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
-  if (pathname === bridgePath) return;
+  if (pathname === bridgePath || pathname === "/screen-share/ws") return;
   void nextUpgradeHandler(request, socket, head).catch((error) => {
     console.error("Next WebSocket upgrade 处理失败：", error);
     socket.destroy();
@@ -106,6 +106,10 @@ await listen(server, requestedPort, nextHost);
 const address = server.address();
 if (!address || typeof address === "string") throw new Error("生产 Server 未返回 TCP 端口");
 const actualPort = address.port;
+if (!brokerSocket) {
+  const loopbackHost = nextHost === "0.0.0.0" || nextHost === "::" ? "127.0.0.1" : nextHost;
+  process.env.CODEX_WEB_INTERNAL_BRIDGE_URL = `ws://${loopbackHost}:${actualPort}${process.env.CODEX_WEB_BRIDGE_URL}`;
+}
 console.log(`Codex Web: http://${publicHost}:${actualPort}`);
 console.log(`Codex Web bridge: ws://${publicHost}:${actualPort}${process.env.CODEX_WEB_BRIDGE_URL}`);
 if (!brokerSocket) console.log(`Codex app-server PID: ${legacyAppServerPid ?? "未知"}`);

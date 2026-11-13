@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from '@/hooks/useTranslation';
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
 import type { AppServerTurnStatus } from '@/codex-web/turn-reducer';
@@ -54,6 +55,8 @@ export function GoalProgressRow({
     return () => window.clearInterval(interval);
   }, [goal.status, observedAtMs, turnStatus]);
 
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const elapsed = liveGoalElapsedSeconds({
     goal,
     observedAtMs,
@@ -62,12 +65,12 @@ export function GoalProgressRow({
     turnStatus,
   });
   const statusLabel = goal.status === 'active'
-    ? '进行中的目标'
+    ? (isEnglish ? 'Active Goal' : '进行中的目标')
     : goal.status === 'complete'
-      ? '已完成的目标'
+      ? (isEnglish ? 'Completed Goal' : '已完成的目标')
       : goal.status === 'budgetLimited'
-        ? '未完成的目标'
-        : '已暂停的目标';
+        ? (isEnglish ? 'Unfinished Goal' : '未完成的目标')
+        : (isEnglish ? 'Paused Goal' : '已暂停的目标');
 
   return (
     <div
@@ -94,8 +97,8 @@ export function GoalProgressRow({
             size="icon-xs"
             disabled={pending || !onStatusChange}
             onClick={() => onStatusChange?.(canResume ? 'active' : 'paused')}
-            aria-label={canResume ? '恢复目标' : '暂停目标'}
-            title={canResume ? '恢复目标' : '暂停目标'}
+            aria-label={canResume ? (isEnglish ? 'Resume goal' : '恢复目标') : (isEnglish ? 'Pause goal' : '暂停目标')}
+            title={canResume ? (isEnglish ? 'Resume goal' : '恢复目标') : (isEnglish ? 'Pause goal' : '暂停目标')}
           >
             {canResume ? <Play size={13} /> : <Pause size={13} />}
           </Button>
@@ -106,8 +109,8 @@ export function GoalProgressRow({
           size="icon-xs"
           disabled={pending || !onEdit}
           onClick={onEdit}
-          aria-label="编辑目标"
-          title="编辑目标"
+          aria-label={isEnglish ? 'Edit goal' : '编辑目标'}
+          title={isEnglish ? 'Edit goal' : '编辑目标'}
         >
           <NotePencil size={13} />
         </Button>
@@ -117,8 +120,8 @@ export function GoalProgressRow({
           size="icon-xs"
           disabled={pending || !onClear}
           onClick={() => onClear?.()}
-          aria-label="清除目标"
-          title="清除目标"
+          aria-label={isEnglish ? 'Clear goal' : '清除目标'}
+          title={isEnglish ? 'Clear goal' : '清除目标'}
         >
           <Trash size={13} />
         </Button>

@@ -47,10 +47,11 @@ export function useProviderModels(
   _options?: unknown,
 ): UseProviderModelsReturn {
   const models = useAppServerSelector((state) => state.models);
+  const config = useAppServerSelector((state) => state.config);
   const connection = useAppServerSelector((state) => state.connection);
   const group = useMemo(
-    () => appServerModelsToProviderGroup(models?.data),
-    [models],
+    () => appServerModelsToProviderGroup(models?.data, config?.data),
+    [models, config],
   );
   const providerGroups = useMemo(() => group ? [group] : [], [group]);
   const modelOptions = group?.models ?? [];

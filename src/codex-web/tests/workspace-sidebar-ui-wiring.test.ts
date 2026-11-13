@@ -35,11 +35,15 @@ describe('工作区侧栏 UI 接线', () => {
     const provider = source('src/codex-web/AppServerProvider.tsx');
 
     expect(tabBar).toContain('workspaceSidebar.tool.terminal');
+    expect(tabBar).toContain('workspaceSidebar.tool.screenShare');
     expect(tabBar).toContain('workspaceSidebar.tool.sideChat');
     expect(tabBar).toContain("kind: 'terminal-pinned'");
+    expect(tabBar).toContain("kind: 'screen-pinned'");
     expect(panel).toContain('workspaceSidebar.tool.terminal');
+    expect(panel).toContain('workspaceSidebar.tool.screenShare');
     expect(panel).toContain('workspaceSidebar.tool.sideChat');
     expect(panel).toContain('<TerminalPanel />');
+    expect(panel).toContain('<ScreenSharePanel />');
     expect(panel).toContain('sideChatTabs.map((tab) => (');
     expect(panel).toContain('hidden={tab.id !== active?.id}');
     expect(panel).toContain('<SideChatPanel sideChatId={tab.id} isActive={tab.id === active?.id} />');
@@ -59,6 +63,9 @@ describe('工作区侧栏 UI 接线', () => {
     expect(provider).toContain('prepareSideChat(');
     expect(provider).toContain('client.request("thread/unsubscribe"');
     expect(terminal).toContain('data-source-breadcrumb="app-server.process/spawn"');
+    const screenPanel = source('src/components/layout/WorkspaceSidebar/ScreenSharePanel.tsx');
+    expect(screenPanel).toContain('data-source-breadcrumb="bridge.screen-share/probe"');
+    expect(screenPanel).toContain('data-source-breadcrumb="bridge.screen-share/rfb-serverinit"');
     expect(terminal).toContain('spawnProcess({');
     expect(terminal).toContain('writeProcessStdin({');
     expect(terminal).toContain('resizeProcessPty({');
@@ -79,5 +86,27 @@ describe('工作区侧栏 UI 接线', () => {
     expect(sidebarHook).toContain('await interruptTurn({ threadId: current.threadId })');
     expect(sidebarHook).toContain('await unsubscribeThread(current.threadId)');
     expect(sidebarHook).not.toContain('deleteThread');
+  });
+
+  it('屏幕共享 iframe 路由脱离 AppShell，避免嵌套侧栏', () => {
+    const rootApp = source('src/components/layout/RootAppContent.tsx');
+    expect(rootApp).toContain('pathname === "/workspace/screen"');
+  });
+
+  it('屏幕共享消息监听在 iframe 挂载前注册，并在收到消息时解析 frame', () => {
+    const screenPanel = source('src/components/layout/WorkspaceSidebar/ScreenSharePanel.tsx');
+    const listener = screenPanel.indexOf('const onMessage = (event: MessageEvent<unknown>) => {');
+    const frameLookup = screenPanel.indexOf('const frame = frameRef.current;', listener);
+
+    expect(listener).toBeGreaterThan(-1);
+    expect(frameLookup).toBeGreaterThan(listener);
+    expect(screenPanel).not.toContain('const frame = frameRef.current;\n    if (!frame) return;');
+  });
+
+  it('屏幕共享独立窗口自行探测能力并连接 RFB', () => {
+    const frame = source('src/components/layout/WorkspaceSidebar/ScreenShareFrame.tsx');
+    expect(frame).toContain('window.parent !== window');
+    expect(frame).toContain("fetch('/api/codex/screen-share'");
+    expect(frame).toContain('buildScreenShareWsUrl(bridgeUrl, true)');
   });
 });

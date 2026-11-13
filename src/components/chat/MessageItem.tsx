@@ -292,6 +292,8 @@ function parseMessageFiles(content: string): { files: FileAttachment[]; text: st
 }
 
 function CopyButton({ text }: { text: string }) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -300,18 +302,22 @@ function CopyButton({ text }: { text: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      showToast({ type: 'warning', message: `复制失败，可以手动复制：${text}` });
+      showToast({ type: 'warning', message: isEnglish ? `Copy failed, please copy manually: ${text}` : `复制失败，可以手动复制：${text}` });
     }
-  }, [text]);
+  }, [text, isEnglish]);
+
+  const copyAriaLabel = isEnglish ? "Copy" : "复制";
 
   return (
+    // title="复制"
+    // aria-label="复制"
     <Button
       variant="ghost"
       size="icon-xs"
       onClick={handleCopy}
       className="text-muted-foreground/60 hover:text-muted-foreground"
-      title="复制"
-      aria-label="复制"
+      title={copyAriaLabel}
+      aria-label={copyAriaLabel}
     >
       {copied ? (
         <Check size={12} className="text-status-success-foreground" />
@@ -344,7 +350,8 @@ const COLLAPSE_HEIGHT = 300;
 
 export const MessageItem = memo(function MessageItem({ message, sessionId, canEdit = false, onEdit, onContinueInNewTask, isAssistantProject, assistantName, isGoalMessage = false }: MessageItemProps) {
   const isUser = message.role === 'user';
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
 
   // Collapse/expand state for long user messages (hooks must be called unconditionally)
   const [isExpanded, setIsExpanded] = useState(false);
@@ -524,7 +531,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
           className="mb-4 border-b border-border/70 pb-3 text-sm text-muted-foreground"
           data-interrupted-source={part.sourceBreadcrumb}
         >
-          你在 {seconds}秒 后停止了
+          {isEnglish ? `You stopped after ${seconds}s` : `你在 ${seconds}秒 后停止了`}
         </div>
       );
     }
@@ -608,12 +615,12 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
                 {isExpanded ? (
                   <>
                     <CaretUp size={12} />
-                    <span>收起</span>
+                    <span>{isEnglish ? "Collapse" : "收起"}</span>
                   </>
                 ) : (
                   <>
                     <CaretDown size={12} />
-                    <span>展开</span>
+                    <span>{isEnglish ? "Expand" : "展开"}</span>
                   </>
                 )}
               </Button>
@@ -660,7 +667,7 @@ export const MessageItem = memo(function MessageItem({ message, sessionId, canEd
       {isUser && isGoalMessage && (
         <div className="flex items-center self-end gap-1.5 pr-1 text-xs text-muted-foreground" data-goal-message-marker>
           <Target size={15} aria-hidden />
-          <span>设为目标</span>
+          <span>{isEnglish ? "Set as goal" : "设为目标"}</span>
         </div>
       )}
 

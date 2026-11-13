@@ -66,6 +66,7 @@ describe("runtime broker 配置监听", () => {
     const directory = await mkdtemp(join(tmpdir(), "codex-web-config-watch-other-"));
     const path = join(directory, "users.json");
     await writeFile(path, "1", { flag: "wx" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
     const apply = vi.fn();
     const stop = watchRuntimeBrokerConfig({
       path,

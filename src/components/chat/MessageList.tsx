@@ -30,7 +30,8 @@ export type { ModelSwitch } from '@/lib/model-switch-storage';
  * Rewind button shown on user messages that have file checkpoints.
  */
 function RewindButton({ sessionId, userMessageId }: { sessionId: string; userMessageId: string }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const [state, setState] = useState<'idle' | 'preview' | 'loading' | 'done'>('idle');
   const [preview, setPreview] = useState<{ filesChanged?: string[]; insertions?: number; deletions?: number } | null>(null);
 
@@ -174,24 +175,28 @@ interface MessageListProps {
 }
 
 function ModelSwitchDivider({ change }: { change: ModelSwitch }) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   return (
     <div className="flex items-center gap-3 pb-6 pt-1 text-xs text-muted-foreground" data-model-switch-row>
       <div className="h-px flex-1 bg-border/70" />
       <div className="inline-flex min-w-0 items-center gap-2">
         <Cube size={15} weight="regular" aria-hidden />
-        <span className="truncate">模型已从 {change.from} 更改为 {change.to}.</span>
+        <span className="truncate">
+          {isEnglish ? `Model changed from ${change.from} to ${change.to}.` : `模型已从 ${change.from} 更改为 ${change.to}.`}
+        </span>
         <Popover>
           <PopoverTrigger asChild>
             <button
               type="button"
-              aria-label="模型切换说明"
+              aria-label={isEnglish ? "Model switch details" : "模型切换说明"}
               className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <Info size={14} aria-hidden />
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-64 rounded-lg p-3 text-xs leading-5" side="top">
-            在对话中途切换模型会降低性能表现。背景信息可能会自动压缩。
+            {isEnglish ? "Switching models mid-conversation may reduce performance. Context may be automatically compressed." : "在对话中途切换模型会降低性能表现。背景信息可能会自动压缩。"}
           </PopoverContent>
         </Popover>
       </div>
@@ -303,7 +308,8 @@ export function MessageList({
   modelSwitches = [],
   goalMessageIds,
 }: MessageListProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerElementRef = useRef<HTMLElement | null>(null);
   const initialBottomLockScrollFrameRef = useRef<number | null>(null);
@@ -637,28 +643,7 @@ export function MessageList({
             <div className="h-px flex-1 bg-border/70" />
           </div>
         ) : row.type === 'model-switch' ? (
-          <div className="flex items-center gap-3 pb-6 pt-1 text-xs text-muted-foreground" data-model-switch-row>
-            <div className="h-px flex-1 bg-border/70" />
-            <div className="inline-flex min-w-0 items-center gap-2">
-              <Cube size={15} weight="regular" aria-hidden />
-              <span className="truncate">模型已从 {row.change.from} 更改为 {row.change.to}.</span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="模型切换说明"
-                    className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/80 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <Info size={14} aria-hidden />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-64 rounded-lg p-3 text-xs leading-5" side="top">
-                  在对话中途切换模型会降低性能表现。背景信息可能会自动压缩。
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="h-px flex-1 bg-border/70" />
-          </div>
+          <ModelSwitchDivider change={row.change} />
         ) : (
           <div className="pb-6" data-streaming-message-row>
           <PerformanceProfiler id="StreamingMessage">
@@ -688,7 +673,7 @@ export function MessageList({
           size="icon"
           type="button"
           variant="outline"
-          aria-label="滚动到底部"
+          aria-label={isEnglish ? "Scroll to bottom" : "滚动到底部"}
         >
           <ArrowDown className="size-4" aria-hidden />
         </Button>

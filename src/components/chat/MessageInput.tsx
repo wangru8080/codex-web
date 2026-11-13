@@ -46,6 +46,7 @@ import type { ComposerTurnPlan as ComposerTurnPlanData } from '@/codex-web/compo
 import { useAppServerActions, useAppServerSelector } from '@/codex-web/AppServerProvider';
 import { AppServerFilePreviewError } from '@/codex-web/app-server-files';
 import { buildHookTrustEdit, hookNeedsReview } from '@/codex-web/hooks-config';
+import { defaultPermissionModeConfigEdits } from '@/codex-web/default-permission-mode';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { ContextWindowIndicator } from './ContextWindowIndicator';
 import { FileAwareSubmitButton, FileTreeAttachmentBridge, FileAttachmentsCapsules, FileReferenceCapsules, FileExcerptCapsules, ComposerBadgeRow, DirectoryRefsCapsules, AttachmentPendingTracker } from './MessageInputParts';
@@ -74,7 +75,9 @@ import {
   computePendingContextTokens,
   composeSubmitPayload,
   GOAL_PROMPT_PLACEHOLDER,
+  GOAL_PROMPT_PLACEHOLDER_EN,
   PLAN_PROMPT_PLACEHOLDER,
+  PLAN_PROMPT_PLACEHOLDER_EN,
   goalCommandFromPrompt,
   planPromptFromInput,
 } from '@/lib/message-input-logic';
@@ -240,6 +243,8 @@ function ComposerPlusMenuItem({
 }
 
 function FileAndFolderMenuItem({ imageOnly = false }: { imageOnly?: boolean }) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const attachments = usePromptInputAttachments();
 
   const handleSelect = useCallback(
@@ -253,20 +258,22 @@ function FileAndFolderMenuItem({ imageOnly = false }: { imageOnly?: boolean }) {
   return (
     <ComposerPlusMenuItem
       icon={<Paperclip size={20} />}
-      label={imageOnly ? "图片" : "文件和文件夹"}
+      label={imageOnly ? (isEnglish ? "Images" : "图片") : (isEnglish ? "Files and folders" : "文件和文件夹")}
       onSelect={handleSelect}
     />
   );
 }
 
 function GoalPromptModePill({ onCancel }: { onCancel: () => void }) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   return (
     <span className="pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-muted/60 px-2.5 text-sm font-medium text-muted-foreground">
       <Target size={18} />
-      <span>目标</span>
+      <span>{isEnglish ? "Goal" : "目标"}</span>
       <button
         type="button"
-        aria-label="取消目标"
+        aria-label={isEnglish ? "Cancel goal" : "取消目标"}
         onClick={onCancel}
         className="pointer-events-auto ml-0.5 rounded p-0.5 text-muted-foreground/70 hover:bg-background/80 hover:text-foreground"
       >
@@ -277,13 +284,15 @@ function GoalPromptModePill({ onCancel }: { onCancel: () => void }) {
 }
 
 function PlanPromptModePill({ onCancel }: { onCancel: () => void }) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   return (
     <span className="pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-muted/60 px-2.5 text-sm font-medium text-muted-foreground">
       <ListChecks size={18} />
-      <span>计划</span>
+      <span>{isEnglish ? "Plan" : "计划"}</span>
       <button
         type="button"
-        aria-label="取消计划"
+        aria-label={isEnglish ? "Cancel plan" : "取消计划"}
         onClick={onCancel}
         className="pointer-events-auto ml-0.5 rounded p-0.5 text-muted-foreground/70 hover:bg-background/80 hover:text-foreground"
       >
@@ -317,53 +326,54 @@ function ComposerPermissionSelector({
   onPermissionChange?: (profile: PermissionProfile) => void | Promise<void>;
   disabled?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const [localChoice, setLocalChoice] = useState<PermissionChoice['id']>('request_approval');
   const [menuOpen, setMenuOpen] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
   const [pendingChoice, setPendingChoice] = useState<PermissionChoice['id'] | null>(null);
+  const [rememberFullAccess, setRememberFullAccess] = useState(false);
+  const [applyingWarningChoice, setApplyingWarningChoice] = useState(false);
+  const [warningError, setWarningError] = useState<string | null>(null);
+  const appServer = useAppServerActions();
 
   const choices: PermissionChoice[] = useMemo(() => [
     {
       id: 'request_approval',
-      label: '请求批准',
-      description: '编辑外部文件和使用互联网时始终询问',
+      label: isEnglish ? 'Ask for Approval' : '请求批准',
+      description: isEnglish ? 'Always ask when editing external files or using the web' : '编辑外部文件和使用互联网时始终询问',
       profile: 'request_approval',
       icon: <HandPalm size={20} />,
     },
     {
       id: 'auto_approval',
-      label: '替我审批',
-      description: '仅对检测到的风险操作请求批准',
+      label: isEnglish ? 'Auto Approval' : '替我审批',
+      description: isEnglish ? 'Only request approval for risky operations' : '仅对检测到的风险操作请求批准',
       profile: 'auto_approval',
       icon: <ShieldCheck size={20} />,
     },
     {
       id: 'full_access',
-      label: '完全访问权限',
-      description: '可不受限制地访问互联网和您电脑上的任何文件',
+      label: isEnglish ? 'Full Access' : '完全访问权限',
+      description: isEnglish ? 'Unrestricted access to the internet and files on your computer' : '可不受限制地访问互联网和您电脑上的任何文件',
       profile: 'full_access',
       icon: <ShieldWarning size={20} />,
     },
     {
       id: 'config',
-      label: '自定义（config.toml）',
-      description: '使用 config.toml 中定义的权限',
+      label: isEnglish ? 'Custom (config.toml)' : '自定义（config.toml）',
+      description: isEnglish ? 'Use permissions defined in config.toml' : '使用 config.toml 中定义的权限',
       profile: 'config',
       icon: <Gear size={20} />,
     },
-  ], []);
+  ], [isEnglish]);
 
   const activeChoiceId = normalizePermissionProfile(permissionProfile) || localChoice;
   const activeChoice = choices.find((choice) => choice.id === activeChoiceId) ?? choices[0];
 
   const applyChoice = useCallback(async (choice: PermissionChoice) => {
-    try {
-      await onPermissionChange?.(choice.profile);
-      setLocalChoice(choice.id);
-    } catch (error) {
-      console.warn('[ComposerPermissionSelector] 权限更新失败:', error);
-    }
+    await onPermissionChange?.(choice.profile);
+    setLocalChoice(choice.id);
   }, [onPermissionChange]);
 
   const handleSelect = useCallback((choice: PermissionChoice) => {
@@ -374,20 +384,46 @@ function ComposerPermissionSelector({
       window.requestAnimationFrame(() => setShowWarning(true));
       return;
     }
-    void applyChoice(choice);
+    void applyChoice(choice).catch((error) => {
+      console.warn('[ComposerPermissionSelector] Permission update failed:', error);
+    });
   }, [applyChoice, disabled, onPermissionChange, permissionProfile]);
 
-  const confirmFullAccess = useCallback(() => {
+  const confirmFullAccess = useCallback(async () => {
     const choice = choices.find((item) => item.id === pendingChoice);
-    setShowWarning(false);
-    setPendingChoice(null);
-    if (choice) void applyChoice(choice);
-  }, [applyChoice, choices, pendingChoice]);
+    if (!choice || applyingWarningChoice) return;
+    setApplyingWarningChoice(true);
+    setWarningError(null);
+    let permissionApplied = false;
+    try {
+      await applyChoice(choice);
+      permissionApplied = true;
+      if (rememberFullAccess) {
+        await appServer.writeConfigEdits(defaultPermissionModeConfigEdits('full_access'));
+      }
+      setShowWarning(false);
+      setPendingChoice(null);
+      setRememberFullAccess(false);
+    } catch (error) {
+      setWarningError(permissionApplied
+        ? t('permission.fullAccessDefaultSaveError' as TranslationKey)
+        : error instanceof Error
+          ? error.message
+          : t('permission.fullAccessApplyError' as TranslationKey));
+    } finally {
+      setApplyingWarningChoice(false);
+    }
+  }, [appServer, applyChoice, applyingWarningChoice, choices, pendingChoice, rememberFullAccess, t]);
 
   const handleWarningOpenChange = useCallback((open: boolean) => {
+    if (applyingWarningChoice) return;
     setShowWarning(open);
-    if (!open) setPendingChoice(null);
-  }, []);
+    if (!open) {
+      setPendingChoice(null);
+      setRememberFullAccess(false);
+      setWarningError(null);
+    }
+  }, [applyingWarningChoice]);
 
   return (
     <>
@@ -427,18 +463,35 @@ function ComposerPermissionSelector({
       <AlertDialog open={showWarning} onOpenChange={handleWarningOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>完全访问权限</AlertDialogTitle>
+            <AlertDialogTitle>{isEnglish ? 'Full Access' : '完全访问权限'}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('permission.fullAccessWarning' as TranslationKey)}
+              <span className="block">{t('permission.fullAccessWarning' as TranslationKey)}</span>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={rememberFullAccess}
+                  onChange={(event) => setRememberFullAccess(event.target.checked)}
+                  disabled={applyingWarningChoice}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-border accent-foreground"
+                />
+                <span>{t('permission.useForFutureSessions' as TranslationKey)}</span>
+              </label>
+              {warningError && (
+                <span className="mt-3 block text-sm text-destructive" role="alert">{warningError}</span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={applyingWarningChoice}>{isEnglish ? 'Cancel' : '取消'}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={confirmFullAccess}
+              disabled={applyingWarningChoice}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmFullAccess();
+              }}
             >
-              完全访问权限
+              {isEnglish ? 'Full Access' : '完全访问权限'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -488,10 +541,10 @@ function ComposerReasoningModelSelector({
   persistLastModel: boolean;
   disabled?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const hasAvailableModel = modelOptions.length > 0;
   const effectiveEffort = selectedEffort === 'auto' ? 'high' : selectedEffort;
   const effortLabel = effortOptions.find((item) => item.value === effectiveEffort)?.label ?? effectiveEffort;
@@ -505,7 +558,6 @@ function ComposerReasoningModelSelector({
     const handler = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setOpen(false);
-        setModelMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -515,7 +567,6 @@ function ComposerReasoningModelSelector({
   const handleEffortSelect = useCallback((effort: string) => {
     onEffortChange(effort);
     setOpen(false);
-    setModelMenuOpen(false);
   }, [onEffortChange]);
 
   const handleModelSelect = useCallback((option: ComposerModelOption) => {
@@ -528,11 +579,10 @@ function ComposerReasoningModelSelector({
         localStorage.setItem('codepilot:last-model', modelValue);
         localStorage.setItem('codepilot:last-provider-id', providerId);
       } catch {
-        // 忽略浏览器存储失败；选择本身仍然通过 React 状态生效。
+        // Ignore local storage write failures; selection still takes effect via React state.
       }
     }
     setOpen(false);
-    setModelMenuOpen(false);
   }, [currentProviderIdValue, onModelChange, onProviderModelChange, persistLastModel]);
 
   const isModelActive = useCallback((option: ComposerModelOption) => (
@@ -545,7 +595,6 @@ function ComposerReasoningModelSelector({
         disabled={disabled || !hasAvailableModel}
         onClick={() => {
           setOpen((prev) => !prev);
-          setModelMenuOpen(false);
         }}
         className="gap-1.5 px-2"
       >
@@ -560,58 +609,53 @@ function ComposerReasoningModelSelector({
 
       {open && (
         <div className="absolute bottom-full right-0 z-50 mb-2 w-[260px] rounded-2xl border bg-popover p-1.5 shadow-[var(--shadow-diffuse)]">
-          <div className="px-2.5 pb-1.5 pt-1 text-xs font-semibold text-muted-foreground/65">推理</div>
-          <div className="space-y-0.5" data-source-breadcrumb="app-server.model/list">
-            {effortOptions.map((option) => (
+          <div className="px-2.5 pb-1.5 pt-1 text-xs font-semibold text-muted-foreground/65">
+            {isEnglish ? 'Model' : '模型'}
+          </div>
+          <div className="space-y-0.5">
+            {modelOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 className={cn(
-                  'flex h-9 w-full items-center rounded-lg px-2.5 text-left text-sm font-semibold text-foreground hover:bg-accent',
-                  effectiveEffort === option.value && 'bg-accent',
+                  'flex h-9 w-full items-center rounded-lg px-2.5 text-left text-sm font-normal text-foreground hover:bg-accent',
+                  isModelActive(option) && 'bg-accent font-semibold',
                 )}
-                onClick={() => handleEffortSelect(option.value)}
+                onClick={() => handleModelSelect(option)}
               >
                 <span>{option.label}</span>
-                {effectiveEffort === option.value && (
+                {isModelActive(option) && (
                   <Check size={18} className="ml-auto text-muted-foreground" />
                 )}
               </button>
             ))}
           </div>
-          <div className="my-1.5 h-px bg-border" />
-          <button
-            type="button"
-            className="flex h-9 w-full items-center rounded-lg bg-accent px-2.5 text-left text-sm font-normal text-foreground hover:bg-accent"
-            onMouseEnter={() => setModelMenuOpen(true)}
-            onClick={() => setModelMenuOpen(true)}
-          >
-            <span>{modelLabel}</span>
-            <CaretRight size={18} className="ml-auto text-muted-foreground" />
-          </button>
 
-          {modelMenuOpen && (
-            <div
-              className="absolute bottom-0 left-[calc(100%+8px)] z-50 w-[260px] rounded-2xl border bg-popover p-3 shadow-[var(--shadow-diffuse)]"
-              onMouseEnter={() => setModelMenuOpen(true)}
-            >
-              <div className="mb-2 text-xs font-semibold text-muted-foreground/65">模型</div>
-              <div className="space-y-1">
-                {modelOptions.map((option) => (
+          {effortOptions.length > 0 && (
+            <>
+              <div className="my-1.5 h-px bg-border" />
+              <div className="px-2.5 pb-1.5 pt-1 text-xs font-semibold text-muted-foreground/65">
+                {isEnglish ? 'Reasoning' : '推理'}
+              </div>
+              <div className="space-y-0.5" data-source-breadcrumb="app-server.model/list">
+                {effortOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"
-                    className="flex h-9 w-full items-center rounded-lg px-2 text-left text-sm font-normal text-foreground hover:bg-accent"
-                    onClick={() => handleModelSelect(option)}
+                    className={cn(
+                      'flex h-9 w-full items-center rounded-lg px-2.5 text-left text-sm font-semibold text-foreground hover:bg-accent',
+                      effectiveEffort === option.value && 'bg-accent',
+                    )}
+                    onClick={() => handleEffortSelect(option.value)}
                   >
                     <span>{option.label}</span>
-                    {isModelActive(option) && (
+                    {effectiveEffort === option.value && (
                       <Check size={18} className="ml-auto text-muted-foreground" />
                     )}
                   </button>
                 ))}
               </div>
-            </div>
+            </>
           )}
         </div>
       )}
@@ -684,7 +728,8 @@ export const MessageInput = memo(function MessageInput({
   fileChangeSummary,
   turnPlan,
 }: MessageInputProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const appServer = useAppServerActions();
   const config = useAppServerSelector((state) => state.config);
   const appServerConnection = useAppServerSelector((state) => state.connection.data);
@@ -995,7 +1040,7 @@ export const MessageInput = memo(function MessageInput({
     }
     if (command === '/compact') {
       if (!sessionId) {
-        setCommandError('请先开始对话，再压缩上下文');
+        setCommandError(isEnglish ? 'Please start a conversation before compacting context' : '请先开始对话，再压缩上下文');
         return;
       }
       void appServer.compactThread(sessionId).catch((error) => {
@@ -1221,6 +1266,7 @@ export const MessageInput = memo(function MessageInput({
           attachments.push(attachment);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
+          if (isEnglish) throw new Error(`Failed to read attachment ${file.filename || 'file'}: ${message}`);
           throw new Error(`无法读取附件 ${file.filename || 'file'}: ${message}`);
         }
       }
@@ -1761,21 +1807,35 @@ export const MessageInput = memo(function MessageInput({
             <div className="absolute bottom-full left-0 z-50 mb-2 max-h-80 w-full overflow-y-auto rounded-2xl border bg-popover p-3 shadow-[var(--shadow-diffuse)]" data-testid="composer-command-panel">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-sm font-semibold">
-                  {commandPanel === 'mcp' ? 'MCP' : commandPanel === 'review' ? '代码审查' : commandPanel === 'reasoning' ? '推理' : commandPanel === 'model' ? '模型' : commandPanel === 'status' ? '状态' : commandPanel === 'memory' ? '任务记忆' : '命令'}
+                  {commandPanel === 'mcp'
+                    ? 'MCP'
+                    : commandPanel === 'review'
+                    ? (isEnglish ? 'Code Review' : '代码审查')
+                    : commandPanel === 'reasoning'
+                    ? (isEnglish ? 'Reasoning' : '推理')
+                    : commandPanel === 'model'
+                    ? (isEnglish ? 'Model' : '模型')
+                    : commandPanel === 'status'
+                    ? (isEnglish ? 'Status' : '状态')
+                    : commandPanel === 'memory'
+                    ? (isEnglish ? 'Task Memories' : '任务记忆')
+                    : (isEnglish ? 'Command' : '命令')}
                 </span>
-                <button type="button" className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent" onClick={() => { setCommandPanel(null); setCommandError(''); }}>关闭</button>
+                <button type="button" className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent" onClick={() => { setCommandPanel(null); setCommandError(''); }}>
+                  {isEnglish ? 'Close' : '关闭'}
+                </button>
               </div>
               {commandError && <div className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{commandError}</div>}
 
               {commandPanel === 'mcp' && (
                 <div className="space-y-1" data-source-breadcrumb="app-server.mcpServerStatus/list">
                   {mcpStatuses.length === 0
-                    ? <div className="py-2 text-sm text-muted-foreground">没有 app-server 返回的 MCP 服务</div>
+                    ? <div className="py-2 text-sm text-muted-foreground">{isEnglish ? 'No MCP servers returned by app-server' : '没有 app-server 返回的 MCP 服务'}</div>
                     : mcpStatuses.map((server) => (
                       <div key={server.name} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-accent">
                         <span className="min-w-0 flex-1 truncate font-mono text-sm">{server.name}</span>
-                        <span className="text-xs text-muted-foreground">{Object.keys(server.tools).length} 个工具</span>
-                        <span className="text-xs text-muted-foreground">{server.authStatus === 'notLoggedIn' ? '未登录' : '已启用'}</span>
+                        <span className="text-xs text-muted-foreground">{Object.keys(server.tools).length} {isEnglish ? 'tools' : '个工具'}</span>
+                        <span className="text-xs text-muted-foreground">{server.authStatus === 'notLoggedIn' ? (isEnglish ? 'Not logged in' : '未登录') : (isEnglish ? 'Enabled' : '已启用')}</span>
                       </div>
                     ))}
                 </div>
@@ -1787,16 +1847,16 @@ export const MessageInput = memo(function MessageInput({
                     if (!sessionId) return;
                     setCommandPanel(null);
                     void appServer.startReview({ threadId: sessionId, target: { type: 'uncommittedChanges' } }).catch((error) => setCommandError(error instanceof Error ? error.message : String(error)));
-                  }}>审查未提交的更改</button>
+                  }}>{isEnglish ? 'Review unstaged changes' : '审查未提交的更改'}</button>
                   <div className="flex gap-2 px-3 py-1">
-                    <input aria-label="基准分支" value={reviewBranch} onChange={(event) => setReviewBranch(event.target.value)} className="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="基准分支" />
+                    <input aria-label={isEnglish ? 'Base branch' : '基准分支'} value={reviewBranch} onChange={(event) => setReviewBranch(event.target.value)} className="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder={isEnglish ? 'Base branch' : '基准分支'} />
                     <button type="button" disabled={!sessionId || !reviewBranch.trim()} className="rounded-lg border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50" onClick={() => {
                     if (!sessionId) return;
                     setCommandPanel(null);
                     void appServer.startReview({ threadId: sessionId, target: { type: 'baseBranch', branch: reviewBranch.trim() } }).catch((error) => setCommandError(error instanceof Error ? error.message : String(error)));
-                    }}>比较</button>
+                    }}>{isEnglish ? 'Compare' : '比较'}</button>
                   </div>
-                  {!sessionId && <div className="px-3 py-1 text-xs text-muted-foreground">请先开始对话</div>}
+                  {!sessionId && <div className="px-3 py-1 text-xs text-muted-foreground">{isEnglish ? 'Please start a conversation first' : '请先开始对话'}</div>}
                 </div>
               )}
 
@@ -1826,25 +1886,25 @@ export const MessageInput = memo(function MessageInput({
 
               {commandPanel === 'status' && (
                 <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                  <dt className="text-muted-foreground">任务</dt><dd className="break-all font-mono">{sessionId || '尚未创建'}</dd>
-                  <dt className="text-muted-foreground">上下文</dt><dd data-source-breadcrumb="app-server.thread/tokenUsage/updated">{contextWindowUsage?.modelContextWindow ? `${contextWindowUsage.total.totalTokens.toLocaleString()} / ${contextWindowUsage.modelContextWindow.toLocaleString()} 标记` : '不可用'}</dd>
-                  <dt className="text-muted-foreground">速率限制</dt><dd data-source-breadcrumb="app-server.account/rateLimits/read">{rateLimits?.rateLimits.primary ? `${Math.round(rateLimits.rateLimits.primary.usedPercent)}% 已用` : '不可用'}</dd>
+                  <dt className="text-muted-foreground">{isEnglish ? 'Task' : '任务'}</dt><dd className="break-all font-mono">{sessionId || (isEnglish ? 'Not created yet' : '尚未创建')}</dd>
+                  <dt className="text-muted-foreground">{isEnglish ? 'Context' : '上下文'}</dt><dd data-source-breadcrumb="app-server.thread/tokenUsage/updated">{contextWindowUsage?.modelContextWindow ? `${contextWindowUsage.total.totalTokens.toLocaleString()} / ${contextWindowUsage.modelContextWindow.toLocaleString()} ${isEnglish ? 'tokens' : '标记'}` : (isEnglish ? 'Unavailable' : '不可用')}</dd>
+                  <dt className="text-muted-foreground">{isEnglish ? 'Rate Limits' : '速率限制'}</dt><dd data-source-breadcrumb="app-server.account/rateLimits/read">{rateLimits?.rateLimits.primary ? `${Math.round(rateLimits.rateLimits.primary.usedPercent)}% ${isEnglish ? 'used' : '已用'}` : (isEnglish ? 'Unavailable' : '不可用')}</dd>
                 </dl>
               )}
 
               {commandPanel === 'memory' && (
                 <div className="space-y-3">
                   <button type="button" role="switch" aria-checked={useMemories} className="flex w-full items-center rounded-xl border px-3 py-3 text-left" onClick={() => setUseMemories((value) => !value)}>
-                    <span><strong className="block text-sm">使用记忆</strong><span className="text-xs text-muted-foreground">应用于后续新任务</span></span>
+                    <span><strong className="block text-sm">{isEnglish ? 'Use memories' : '使用记忆'}</strong><span className="text-xs text-muted-foreground">{isEnglish ? 'Apply to subsequent new tasks' : '应用于后续新任务'}</span></span>
                     <span className={cn('ml-auto h-6 w-10 rounded-full p-1', useMemories ? 'bg-primary' : 'bg-muted')}><span className={cn('block size-4 rounded-full bg-background transition-transform', useMemories && 'translate-x-4')} /></span>
                   </button>
                   <button type="button" role="switch" aria-checked={generateMemories} className="flex w-full items-center rounded-xl border px-3 py-3 text-left" onClick={() => setGenerateMemories((value) => !value)}>
-                    <span><strong className="block text-sm">生成记忆</strong><span className="text-xs text-muted-foreground">允许当前任务创建新记忆</span></span>
+                    <span><strong className="block text-sm">{isEnglish ? 'Generate memories' : '生成记忆'}</strong><span className="text-xs text-muted-foreground">{isEnglish ? 'Allow current task to create new memories' : '允许当前任务创建新记忆'}</span></span>
                     <span className={cn('ml-auto h-6 w-10 rounded-full p-1', generateMemories ? 'bg-primary' : 'bg-muted')}><span className={cn('block size-4 rounded-full bg-background transition-transform', generateMemories && 'translate-x-4')} /></span>
                   </button>
                   <button type="button" className="w-full rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground" onClick={() => {
                     void appServer.updateMemorySettings({ threadId: sessionId, useMemories, generateMemories }).then(() => setCommandPanel(null)).catch((error) => setCommandError(error instanceof Error ? error.message : String(error)));
-                  }}>完成</button>
+                  }}>{isEnglish ? 'Done' : '完成'}</button>
                 </div>
               )}
             </div>
@@ -1927,9 +1987,9 @@ export const MessageInput = memo(function MessageInput({
                 pasteLongTextAsFile={codexOnly}
                 placeholder={
                   goalPromptActive
-                    ? GOAL_PROMPT_PLACEHOLDER
+                    ? (isEnglish ? GOAL_PROMPT_PLACEHOLDER_EN : GOAL_PROMPT_PLACEHOLDER)
                     : planPromptActive
-                    ? PLAN_PROMPT_PLACEHOLDER
+                    ? (isEnglish ? PLAN_PROMPT_PLACEHOLDER_EN : PLAN_PROMPT_PLACEHOLDER)
                     : isProviderLoading
                     ? t('messageInput.placeholderLoading' as TranslationKey)
                     : badges.length > 0
@@ -1956,21 +2016,23 @@ export const MessageInput = memo(function MessageInput({
                     <FileAndFolderMenuItem />
                     <ComposerPlusMenuItem
                       icon={<Target size={20} />}
-                      label="目标"
-                      description="设置 Codex 将持续努力实现的目标"
+                      /* label="目标" */
+                      label={isEnglish ? "Goal" : "目标"}
+                      description={isEnglish ? "Set a goal that Codex will continuously pursue" : "设置 Codex 将持续努力实现的目标"}
                       disabled={!onCommand}
                       onSelect={activateGoalPrompt}
                     />
                     <ComposerPlusMenuItem
                       icon={<ListChecks size={20} />}
-                      label="计划模式"
-                      description="开启计划模式"
+                      /* label="计划模式" */
+                      label={isEnglish ? "Plan Mode" : "计划模式"}
+                      description={isEnglish ? "Enable plan mode" : "开启计划模式"}
                       disabled={modeChangeDisabled || !onModeChange}
                       onSelect={activatePlanPrompt}
                     />
                     {installedPlugins.length > 0 && (
                       <div className="mt-2 border-t border-border/50 pt-2">
-                        <div className="px-2.5 pb-1 text-xs font-semibold text-foreground">插件</div>
+                        <div className="px-2.5 pb-1 text-xs font-semibold text-foreground">{isEnglish ? "Plugins" : "插件"}{/* >插件</div> */}</div>
                         {installedPlugins.map((plugin) => (
                           <ComposerPlusMenuItem
                             key={plugin.uri}

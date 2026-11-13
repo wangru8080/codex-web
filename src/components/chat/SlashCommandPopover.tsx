@@ -42,7 +42,8 @@ export function SlashCommandPopover({
   onInsertItem,
   onSetSelectedIndex,
 }: SlashCommandPopoverProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
 
   const builtInItems = filteredItems.filter(item => item.builtIn);
   const slashCommandItems = filteredItems.filter(item => !item.builtIn && item.kind !== 'agent_skill');
@@ -90,7 +91,7 @@ export function SlashCommandPopover({
       )}
       {!item.builtIn && !item.installedSource && item.source && (
         <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-          {item.source === 'global' ? '个人' : item.source === 'project' ? '项目' : item.source === 'plugin' ? '插件' : '系统'}
+          {item.source === 'global' ? (isEnglish ? 'Personal' : '个人') : item.source === 'project' ? (isEnglish ? 'Project' : '项目') : item.source === 'plugin' ? (isEnglish ? 'Plugin' : '插件') : (isEnglish ? 'System' : '系统')}
         </span>
       )}
     </CommandListItem>
@@ -106,26 +107,26 @@ export function SlashCommandPopover({
           {popoverMode === 'file' ? (
             <>
               {pluginItems.length > 0 && (
-                <CommandListGroup label="插件">
+                <CommandListGroup label={isEnglish ? "Plugins" : "插件"}>
                   {pluginItems.map((item) => {
                     const idx = globalIdx++;
                     return renderItem(item, idx);
                   })}
                 </CommandListGroup>
               )}
-              <CommandListGroup label="文件和聊天">
+              <CommandListGroup label={isEnglish ? "Files and Chat" : "文件和聊天"}>
                 {filteredItems.filter((item) => item.kind !== 'plugin').length > 0
                   ? filteredItems.filter((item) => item.kind !== 'plugin').map((item) => {
                     const idx = globalIdx++;
                     return renderItem(item, idx);
                   })
-                  : <div className="px-3 py-3 text-sm text-muted-foreground">输入字符以搜索当前项目文件</div>}
+                  : <div className="px-3 py-3 text-sm text-muted-foreground">{isEnglish ? "Type characters to search current project files" : "输入字符以搜索当前项目文件"}</div>}
               </CommandListGroup>
             </>
           ) : (
             <>
               {pluginItems.length > 0 && (
-                <CommandListGroup label="插件">
+                <CommandListGroup label={isEnglish ? "Plugins" : "插件"}>
                   {pluginItems.map((item) => {
                     const idx = globalIdx++;
                     return renderItem(item, idx);
@@ -133,7 +134,7 @@ export function SlashCommandPopover({
                 </CommandListGroup>
               )}
               {builtInItems.length > 0 && (
-                <CommandListGroup label="命令">
+                <CommandListGroup label={isEnglish ? "Commands" : "命令"}>
                   {builtInItems.map((item) => {
                     const idx = globalIdx++;
                     return renderItem(item, idx);
@@ -149,7 +150,7 @@ export function SlashCommandPopover({
                 </CommandListGroup>
               )}
               {agentSkillItems.length > 0 && (
-                <CommandListGroup label="技能">
+                <CommandListGroup label={isEnglish ? "Skills" : "技能"}>
                   {agentSkillItems.map((item) => {
                     const idx = globalIdx++;
                     return renderItem(item, idx);

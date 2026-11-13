@@ -26,3 +26,15 @@ export const BUILT_IN_COMMANDS: PopoverItem[] = [
   { label: '计划模式', value: '/plan', description: '开启计划模式', builtIn: true, immediate: true },
   { label: '记忆', value: '/memories', description: '配置任务记忆', builtIn: true, immediate: true },
 ];
+
+export const BUILT_IN_COMMANDS_EN: PopoverItem[] = [
+  { label: 'MCP', value: '/mcp', description: 'Show MCP server status', builtIn: true, immediate: true },
+  { label: 'Review', value: '/review', description: 'Review unstaged changes or compare with a branch', builtIn: true, immediate: true },
+  { label: 'Compact', value: '/compact', description: 'Compact context for this task', builtIn: true, immediate: true },
+  { label: 'Reasoning', value: '/reasoning', description: 'Set model reasoning effort', builtIn: true, immediate: true },
+  { label: 'Model', value: '/model', description: 'Select model for the current task', builtIn: true, immediate: true },
+  { label: 'Status', value: '/status', description: 'Show task ID, context usage, and rate limits', builtIn: true, immediate: true },
+  { label: 'Goal', value: '/goal', description: 'Set a goal to continuously pursue', builtIn: true, immediate: true },
+  { label: 'Plan Mode', value: '/plan', description: 'Enable plan mode', builtIn: true, immediate: true },
+  { label: 'Memories', value: '/memories', description: 'Configure task memories', builtIn: true, immediate: true },
+];

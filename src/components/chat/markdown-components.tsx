@@ -24,6 +24,7 @@
 
 import type { ComponentProps, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "@/hooks/useTranslation";
 import { cn } from "@/lib/utils";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
 import { showToast } from "@/hooks/useToast";
@@ -67,6 +68,8 @@ function hasLineLabel(children: ReactNode, line: number): boolean {
 // ---------------------------------------------------------------------------
 
 function ChatTable({ children, className, ...props }: ComponentProps<"table">) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === "en";
   const tableRef = useRef<HTMLTableElement>(null);
 
   // Copy the table's current visual content as a Markdown pipe table.
@@ -97,11 +100,11 @@ function ChatTable({ children, className, ...props }: ComponentProps<"table">) {
     }
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
-      showToast({ type: "success", message: "已复制 Markdown 表格" });
+      showToast({ type: "success", message: isEnglish ? "Markdown table copied" : "已复制 Markdown 表格" });
     } catch {
-      showToast({ type: "error", message: "复制失败" });
+      showToast({ type: "error", message: isEnglish ? "Failed to copy" : "复制失败" });
     }
-  }, []);
+  }, [isEnglish]);
 
   // Round 14: table body is inset from the card edges (px-3 pb-3 on
   // the scroll wrapper) so the horizontal dividers no longer run
@@ -110,7 +113,7 @@ function ChatTable({ children, className, ...props }: ComponentProps<"table">) {
   return (
     <div className="my-4 rounded-xl bg-muted/20 overflow-hidden">
       <div className="flex items-center justify-end gap-1 bg-muted/30 px-2 py-1">
-        <button type="button" onClick={handleCopyMarkdown} className={cn(cardActionBtn, "h-7 w-7 px-0")} aria-label="Copy as Markdown" title="复制 Markdown">
+        <button type="button" onClick={handleCopyMarkdown} className={cn(cardActionBtn, "h-7 w-7 px-0")} aria-label="Copy as Markdown" title={isEnglish ? "Copy as Markdown" : "复制 Markdown"}>
           <CodexWebIcon name="copy" size="sm" aria-hidden />
         </button>
       </div>
@@ -262,6 +265,8 @@ export function ChatImg({ baseDirectory, node, ...props }: ChatImgProps) {
       : null;
   const { workingDirectory } = usePanel();
   const { readFileLimited } = useAppServerActions();
+  const { locale } = useTranslation();
+  const isEnglish = locale === "en";
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(source);
   const [loadError, setLoadError] = useState(false);
 
@@ -293,13 +298,13 @@ export function ChatImg({ baseDirectory, node, ...props }: ChatImgProps) {
   if (loadError) {
     return (
       <span className="my-3 flex min-h-16 items-center justify-center rounded-lg border border-destructive/30 px-4 text-sm text-destructive" role="alert">
-        图片加载失败，请检查文件后重试
+        {isEnglish ? "Failed to load image, please check the file and try again" : "图片加载失败，请检查文件后重试"}
       </span>
     );
   }
 
   if (!resolvedSrc) {
-    return <span className="my-3 block h-32 max-w-full animate-pulse rounded-lg border border-border/40 bg-muted/40" aria-label="图片加载中" />;
+    return <span className="my-3 block h-32 max-w-full animate-pulse rounded-lg border border-border/40 bg-muted/40" aria-label={isEnglish ? "Loading image" : "图片加载中"} />;
   }
 
   return (

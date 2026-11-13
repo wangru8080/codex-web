@@ -87,7 +87,7 @@ export function ChatListPanel({ open }: ChatListPanelProps) {
     let disposed = false;
     fetch("/api/auth/me", { cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error("Web 用户身份不可用");
+        if (!response.ok) throw new Error("Web user identity unavailable");
         return response.json() as Promise<{ user?: { id?: unknown } }>;
       })
       .then((payload) => {

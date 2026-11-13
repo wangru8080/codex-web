@@ -56,7 +56,9 @@ export interface DirectSlashResult {
 }
 
 export const GOAL_PROMPT_PLACEHOLDER = '描述你的目标，定义可衡量的成果，以获得最佳效果';
+export const GOAL_PROMPT_PLACEHOLDER_EN = 'Describe your goal and define measurable outcomes for best results';
 export const PLAN_PROMPT_PLACEHOLDER = '描述你的任务以生成计划...';
+export const PLAN_PROMPT_PLACEHOLDER_EN = 'Describe your task to generate a plan...';
 export const LARGE_PASTE_CHAR_THRESHOLD = 1000;
 
 // ─── Functions ───────────────────────────────────────────────────

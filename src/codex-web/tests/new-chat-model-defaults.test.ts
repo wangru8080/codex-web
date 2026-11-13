@@ -50,10 +50,22 @@ describe("new chat model defaults", () => {
     });
   });
 
-  it("配置模型不可用时回退 model/list 默认模型及其默认 effort", () => {
-    expect(resolveNewChatModelDefaults(models, config("missing-model", "low"))).toEqual({
-      model: "gpt-5.6-sol",
-      effort: "high",
+  it("配置自定义/第三方模型时优先使用该模型而非回退", () => {
+    expect(resolveNewChatModelDefaults(models, config("deepseek-flash", "low"))).toEqual({
+      model: "deepseek-flash",
+      effort: "low",
+    });
+  });
+
+  it("当配置了 deepseek provider 但未指定 model 时默认使用 deepseek-flash", () => {
+    const deepseekConfig = {
+      config: { model: null, model_provider: "deepseek", model_reasoning_effort: "medium" },
+      origins: {},
+      layers: null,
+    } as unknown as ConfigReadResponse;
+    expect(resolveNewChatModelDefaults(models, deepseekConfig)).toEqual({
+      model: "deepseek-flash",
+      effort: "medium",
     });
   });
 

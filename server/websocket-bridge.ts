@@ -4,9 +4,17 @@ import WebSocket, { WebSocketServer } from "ws";
 
 import type { CodexProcessOptions } from "./codex-process";
 import { webSocketAppServerPeer, type AppServerPeer } from "./app-server-peer";
+import { observeBridgeSocket } from "./bridge-connection-diagnostics";
 import { isBridgeSyncNotification } from "./bridge-message-routing";
 import { PersistentAppServer } from "./persistent-app-server";
+import {
+  isPushBridgeMethod,
+  pushBridgeErrorResponse,
+  PushNotificationService,
+} from "./push-notifications";
 import { validateBridgeRequest } from "./security";
+import { resolveScreenShareConfig, type ScreenShareConfigOptions } from "./screen-share/config";
+import { ScreenShareManager, type ScreenShareManagerOptions } from "./screen-share/manager";
 import type { JsonRpcMessage, JsonRpcResponse } from "../src/codex/protocol/json-rpc";
 
 export type ClientMessageInterceptor = (message: JsonRpcMessage) => JsonRpcResponse | null | undefined;
@@ -21,12 +29,15 @@ export type WebSocketBridgeOptions = CodexProcessOptions & {
   allowRemoteConnections?: boolean;
   allowSameOrigin?: boolean;
   clientMessageInterceptor?: ClientMessageInterceptor;
+  pushNotifications?: PushNotificationService;
+  screenShare?: ScreenShareConfigOptions & Partial<ScreenShareManagerOptions>;
 };
 
 export type WebSocketBridge = {
   server: Server;
   token: string;
   appServerPid: number | undefined;
+  screenShareManager: ScreenShareManager;
   url: () => string;
   close: () => Promise<void>;
 };
@@ -39,13 +50,29 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
     response.end("not found");
   });
   const bridgePath = options.path ?? "/";
+  const screenShareConfig = resolveScreenShareConfig(options.screenShare);
+  const screenShareManager = new ScreenShareManager({
+    config: screenShareConfig,
+    ...options.screenShare,
+  });
+  const screenShareWsServer = new WebSocketServer({ noServer: true });
   const sockets = new Set<WebSocket>();
   const wsServer = new WebSocketServer({ noServer: true });
-  const appServer = new PersistentAppServer(options);
+  const pushNotifications = options.pushNotifications ?? new PushNotificationService();
+  const pushUser = {
+    id: process.env.CODEX_WEB_PUSH_USER_ID?.trim() || "local",
+    email: process.env.CODEX_WEB_PUSH_USER_EMAIL?.trim() || "local",
+  };
+  const appServer = new PersistentAppServer(options, (message) => {
+    pushNotifications.handleAppServerMessage(pushUser, message);
+  });
 
   const handleUpgrade = (request: IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
-    if (pathname !== bridgePath) return;
+    const isBridgeUpgrade = pathname === bridgePath;
+    const isScreenShareUpgrade = pathname === screenShareConfig.wsPath;
+    if (!isBridgeUpgrade && !isScreenShareUpgrade) return;
+
     const security = validateBridgeRequest(request, {
       token,
       allowedOrigins: options.allowedOrigins,
@@ -59,6 +86,13 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
       return;
     }
 
+    if (isScreenShareUpgrade) {
+      screenShareWsServer.handleUpgrade(request, socket, head, (webSocket) => {
+        void screenShareManager.handleConnection(webSocket, request);
+      });
+      return;
+    }
+
     wsServer.handleUpgrade(request, socket, head, (webSocket) => {
       wsServer.emit("connection", webSocket, request);
     });
@@ -67,9 +101,10 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
 
   wsServer.on("connection", (webSocket, request) => {
     const peer = webSocketAppServerPeer(webSocket);
+    observeBridgeSocket("bridge", webSocket, request);
     sockets.add(webSocket);
     appServer.attach(peer);
-    attachClient(webSocket, peer, request, options, appServer);
+    attachClient(webSocket, peer, request, options, appServer, pushNotifications, pushUser);
     webSocket.on("close", () => {
       sockets.delete(webSocket);
       appServer.detach(peer);
@@ -86,6 +121,7 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
     get appServerPid() {
       return appServer.pid;
     },
+    screenShareManager,
     url: () => {
       const address = server.address();
       if (typeof address !== "object" || address === null) {
@@ -95,6 +131,8 @@ export function createWebSocketBridge(options: WebSocketBridgeOptions = {}): Web
     },
     close: () => new Promise((resolve, reject) => {
       const finish = () => {
+        void screenShareManager.close();
+        screenShareWsServer.close();
         appServer.close();
         wsServer.removeAllListeners();
         if (!ownsServer || !server.listening) {
@@ -134,6 +172,8 @@ function attachClient(
   _request: IncomingMessage,
   options: WebSocketBridgeOptions,
   appServer: PersistentAppServer,
+  pushNotifications: PushNotificationService,
+  pushUser: { id: string; email: string },
 ): void {
   webSocket.on("message", (data) => {
     try {
@@ -141,6 +181,16 @@ function attachClient(
       const message = JSON.parse(text) as JsonRpcMessage;
       if (isBridgeSyncNotification(message)) {
         appServer.broadcast(message, peer);
+        return;
+      }
+      if ("method" in message && message.id !== undefined && isPushBridgeMethod(message.method)) {
+        void pushNotifications.handleClientRequest(pushUser, message).then((response) => {
+          if (response && webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(response));
+        }, (error) => {
+          if (webSocket.readyState === WebSocket.OPEN) {
+            webSocket.send(JSON.stringify(pushBridgeErrorResponse(message.id!, error)));
+          }
+        });
         return;
       }
       const intercepted = options.clientMessageInterceptor?.(message);

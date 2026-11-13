@@ -28,14 +28,15 @@ function makeRequest(pathname: string) {
 }
 
 beforeEach(() => {
-  process.env.CODEX_WEB_LOGIN_EMAIL = "test@admin.com";
-  process.env.CODEX_WEB_LOGIN_PASSWORD = "123456";
-  process.env.CODEX_WEB_SESSION_SECRET = "0123456789abcdef0123456789abcdef";
+  vi.stubEnv("CODEX_WEB_AUTH_MODE", "local");
+  vi.stubEnv("CODEX_WEB_LOGIN_EMAIL", "test@admin.com");
+  vi.stubEnv("CODEX_WEB_LOGIN_PASSWORD", "123456");
+  vi.stubEnv("CODEX_WEB_SESSION_SECRET", "0123456789abcdef0123456789abcdef");
 });
 
 afterEach(() => {
   vi.clearAllMocks();
-  delete process.env.CODEX_WEB_DEMO;
+  vi.unstubAllEnvs();
 });
 
 describe("proxy demo gate", () => {
@@ -65,6 +66,21 @@ describe("proxy demo gate", () => {
     process.env.CODEX_WEB_DEMO = "1";
 
     const response = await proxy(makeRequest("/api/codex/bridge-url"));
+
+    expect(mockApiResponse).not.toHaveBeenCalled();
+    expect(nextResponseNext).toHaveBeenCalledTimes(1);
+    expect(response).toEqual({ kind: "next" });
+  });
+
+  it("/v1alpha 不经过 Cookie 门禁或 demo mock", async () => {
+    process.env.CODEX_WEB_DEMO = "1";
+    mockApiResponse.mockReturnValue({ kind: "mock" });
+
+    const response = await proxy({
+      url: "http://localhost:3000/v1alpha/sources",
+      headers: new Headers(),
+      nextUrl: { pathname: "/v1alpha/sources", search: "" },
+    } as unknown as Parameters<typeof proxy>[0]);
 
     expect(mockApiResponse).not.toHaveBeenCalled();
     expect(nextResponseNext).toHaveBeenCalledTimes(1);

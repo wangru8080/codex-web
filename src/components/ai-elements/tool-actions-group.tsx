@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { Streamdown } from 'streamdown';
 import { useStreamdownPlugins } from '@/components/ai-elements/streamdown-plugins';
+import { useTranslation } from '@/hooks/useTranslation';
 import type { MediaBlock } from '@/types';
 
 const TOOL_OUTPUT_MAX_LINES = 5;
@@ -112,16 +113,16 @@ function toolKind(name: string): 'terminal' | 'search' | 'read' | 'write' | 'too
   return 'tool';
 }
 
-function toolTitle(tool: ToolAction, status: ToolStatus): string {
+function toolTitle(tool: ToolAction, status: ToolStatus, isEnglish = false): string {
   const kind = toolKind(tool.name);
   if (kind === 'terminal') {
-    if (status === 'running') return '正在运行';
-    return status === 'error' ? '运行失败' : '已运行';
+    if (status === 'running') return isEnglish ? 'Running' : '正在运行';
+    return status === 'error' ? (isEnglish ? 'Failed' : '运行失败') : (isEnglish ? 'Executed' : '已运行');
   }
-  if (kind === 'search') return status === 'running' ? '正在搜索' : '已搜索';
-  if (kind === 'read') return status === 'running' ? '正在读取' : '已读取';
-  if (kind === 'write') return status === 'running' ? '正在编辑' : '已编辑';
-  return status === 'running' ? '正在调用' : '已调用';
+  if (kind === 'search') return status === 'running' ? (isEnglish ? 'Searching' : '正在搜索') : (isEnglish ? 'Searched' : '已搜索');
+  if (kind === 'read') return status === 'running' ? (isEnglish ? 'Reading' : '正在读取') : (isEnglish ? 'Read' : '已读取');
+  if (kind === 'write') return status === 'running' ? (isEnglish ? 'Editing' : '正在编辑') : (isEnglish ? 'Edited' : '已编辑');
+  return status === 'running' ? (isEnglish ? 'Calling' : '正在调用') : (isEnglish ? 'Called' : '已调用');
 }
 
 function toolDetail(tool: ToolAction, renderer: ToolRendererDef): string {
@@ -265,12 +266,14 @@ export function ProcessCollapseGroup({
   elapsedMs,
   processCount,
 }: ProcessCollapseGroupProps) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const [userExpandedState, setUserExpandedState] = useState<boolean | null>(null);
   const expanded = userExpandedState !== null ? userExpandedState : defaultExpanded;
   const fallbackSummary = (() => {
-    if (elapsedMs !== undefined) return `已处理 ${formatElapsed(elapsedMs)}`;
-    if (processCount !== undefined) return `已处理 ${processCount} 项`;
-    return '已处理';
+    if (elapsedMs !== undefined) return isEnglish ? `Processed in ${formatElapsed(elapsedMs)}` : `已处理 ${formatElapsed(elapsedMs)}`;
+    if (processCount !== undefined) return isEnglish ? `Processed ${processCount} item${processCount === 1 ? '' : 's'}` : `已处理 ${processCount} 项`;
+    return isEnglish ? 'Processed' : '已处理';
   })();
 
   return (
@@ -368,6 +371,8 @@ function computeSegments(tools: ToolAction[]): Segment[] {
 }
 
 function ContextGroup({ tools }: { tools: ToolAction[] }) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const [expanded, setExpanded] = useState(false);
   const hasRunning = tools.some((t) => t.result === undefined);
   const hasError = tools.some((t) => t.isError);
@@ -389,10 +394,10 @@ function ContextGroup({ tools }: { tools: ToolAction[] }) {
           )}
         />
         <span className="font-medium text-muted-foreground">
-          {hasRunning ? '正在探索' : '已探索'}
+          {hasRunning ? (isEnglish ? 'Exploring' : '正在探索') : (isEnglish ? 'Explored' : '已探索')}
         </span>
         <span className="font-mono text-muted-foreground/50">
-          {tools.length} 项
+          {isEnglish ? `${tools.length} item${tools.length === 1 ? '' : 's'}` : `${tools.length} 项`}
         </span>
       </button>
       <AnimatePresence initial={false}>
@@ -443,7 +448,7 @@ function StatusBullet({ status }: { status: ToolStatus }) {
 // Thinking row — same style as tool rows, Brain icon → caret on hover
 // ---------------------------------------------------------------------------
 
-export function splitThinkingContent(content: string, isStreaming = false): { summary: string; body: string } {
+export function splitThinkingContent(content: string, isStreaming = false, locale = 'zh'): { summary: string; body: string } {
   const trimmed = content.trim();
   const structuredTitle = trimmed.match(/^\*\*([^\r\n]+?)\*\*(?:[ \t]*(?:\r?\n)+([\s\S]*))?$/)
     ?? trimmed.match(/^#{1,4}\s+([^\r\n]+?)(?:[ \t]*(?:\r?\n)+([\s\S]*))?$/);
@@ -455,8 +460,9 @@ export function splitThinkingContent(content: string, isStreaming = false): { su
     };
   }
 
+  const isEnglish = locale === 'en';
   return {
-    summary: isStreaming ? '正在思考...' : '思考过程',
+    summary: isStreaming ? (isEnglish ? 'Thinking...' : '正在思考...') : (isEnglish ? 'Thought process' : '思考过程'),
     body: trimmed,
   };
 }
@@ -470,7 +476,8 @@ export function resolveThinkingExpanded(
 }
 
 function ThinkingRow({ content, isStreaming }: { content: string; isStreaming?: boolean }) {
-  const { summary, body } = splitThinkingContent(content, isStreaming);
+  const { locale } = useTranslation();
+  const { summary, body } = splitThinkingContent(content, isStreaming, locale);
   const hasDetails = body.length > 0;
   const [userExpandedState, setUserExpandedState] = useState<boolean | null>(null);
   const expanded = resolveThinkingExpanded(hasDetails, !!isStreaming, userExpandedState);
@@ -533,6 +540,8 @@ function ThinkingRow({ content, isStreaming }: { content: string; isStreaming?: 
 // ---------------------------------------------------------------------------
 
 function ToolActionRow({ tool, streamingToolOutput }: { tool: ToolAction; streamingToolOutput?: string }) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const renderer = getRenderer(tool.name);
   const status = getStatus(tool);
   const running = status === 'running';
@@ -549,7 +558,7 @@ function ToolActionRow({ tool, streamingToolOutput }: { tool: ToolAction; stream
       <div className="flex min-h-[24px] items-baseline gap-2">
         <StatusBullet status={status} />
         <span className="shrink-0 font-semibold text-muted-foreground">
-          {toolTitle(tool, status)}
+          {toolTitle(tool, status, isEnglish)}
         </span>
         <span className="min-w-0 flex-1 break-words font-mono text-muted-foreground/75">
           {firstDetailLine}
@@ -592,7 +601,7 @@ function ToolActionRow({ tool, streamingToolOutput }: { tool: ToolAction; stream
       {running && !outputText && (
         <div className="ml-[21px] flex gap-2 font-mono text-[12px] leading-5 text-muted-foreground/45">
           <span className="shrink-0">└</span>
-          <Shimmer duration={1.5}>正在思考</Shimmer>
+          <Shimmer duration={1.5}>{isEnglish ? 'Thinking' : '正在思考'}</Shimmer>
         </div>
       )}
 
@@ -683,15 +692,18 @@ export function ToolActionsGroup({
     setUserExpandedState((prev) => prev !== null ? !prev : !expanded);
   };
 
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
+
   const summaryText = (() => {
-    if (singleInlineTool) return toolTitle(singleInlineTool, getStatus(singleInlineTool));
-    if (runningCount > 0) return runningCount === 1 ? '正在处理' : `正在处理 ${runningCount} 项`;
-    if (isStreaming) return '正在生成回答';
+    if (singleInlineTool) return toolTitle(singleInlineTool, getStatus(singleInlineTool), isEnglish);
+    if (runningCount > 0) return runningCount === 1 ? (isEnglish ? 'Processing' : '正在处理') : (isEnglish ? `Processing ${runningCount} items` : `正在处理 ${runningCount} 项`);
+    if (isStreaming) return isEnglish ? 'Generating response' : '正在生成回答';
     const processedSummary = !hasMetadata && tools.length > 1
-      ? `已处理 ${tools.length} 项`
-      : `已处理${elapsedText}`;
+      ? (isEnglish ? `Processed ${tools.length} items` : `已处理 ${tools.length} 项`)
+      : (isEnglish ? (elapsedText ? `Processed in${elapsedText}` : 'Processed') : `已处理${elapsedText}`);
     return errorCount > 0
-      ? `${processedSummary} · ${errorCount} 项失败`
+      ? (isEnglish ? `${processedSummary} · ${errorCount} failed` : `${processedSummary} · ${errorCount} 项失败`)
       : processedSummary;
   })();
 

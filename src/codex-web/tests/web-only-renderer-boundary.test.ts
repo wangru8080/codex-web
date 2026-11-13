@@ -78,7 +78,7 @@ describe("Web-only renderer 边界", () => {
     expect(cliSource).toContain('process.platform === "darwin"');
     expect(cliSource).toContain('process.platform === "win32"');
     expect(cliSource).toContain('executable: "xdg-open"');
-    expect(startSource).toContain('process.platform === "win32" ? "npm.cmd" : "npm"');
+    expect(startSource).toContain('process.platform === "win32" ? "pnpm.cmd" : "pnpm"');
     expect(initializeResponseSource).toContain("platformOs: string");
     expect(sessionTestSource).toContain('platformOs: "linux"');
   });

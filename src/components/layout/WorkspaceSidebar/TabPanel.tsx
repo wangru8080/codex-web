@@ -37,6 +37,10 @@ const TerminalPanel = dynamic(
   () => import('@/components/layout/WorkspaceSidebar/TerminalPanel').then((m) => ({ default: m.TerminalPanel })),
   { ssr: false },
 );
+const ScreenSharePanel = dynamic(
+  () => import('@/components/layout/WorkspaceSidebar/ScreenSharePanel').then((m) => ({ default: m.ScreenSharePanel })),
+  { ssr: false },
+);
 const SideChatPanel = dynamic(
   () => import('@/components/layout/WorkspaceSidebar/SideChatPanel').then((m) => ({ default: m.SideChatPanel })),
   { ssr: false },
@@ -55,6 +59,9 @@ function ActiveContent({ tab, hasFilesTab }: { tab: Tab; hasFilesTab: boolean })
   }
   if (tab.kind === 'terminal-pinned') {
     return <TerminalPanel />;
+  }
+  if (tab.kind === 'screen-pinned') {
+    return <ScreenSharePanel />;
   }
   // markdown / artifact / file all flow through PreviewPanel; the
   // panel reads previewSource from PanelContext (kept in sync by
@@ -140,6 +147,14 @@ function WorkspaceHome() {
         >
           <CodexWebIcon name="terminal" size="sm" aria-hidden />
           <span>{t('workspaceSidebar.tool.terminal' as TranslationKey)}</span>
+        </button>
+        <button
+          type="button"
+          className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-foreground hover:bg-muted"
+          onClick={() => openTab({ id: 'screen-pinned', kind: 'screen-pinned', key: 'screen', title: t('workspaceSidebar.tool.screenShare' as TranslationKey) })}
+        >
+          <CodexWebIcon name="desktop" size="sm" aria-hidden />
+          <span>{t('workspaceSidebar.tool.screenShare' as TranslationKey)}</span>
         </button>
         <button type="button" className="flex h-10 w-full items-center gap-3 rounded-md px-2 text-sm text-foreground hover:bg-muted" onClick={() => openTab({ id: 'files-pinned', kind: 'files-pinned', key: 'files', title: t('workspaceSidebar.tab.openFile' as TranslationKey) })}>
           <CodexWebIcon name="file_tree" size="sm" aria-hidden />

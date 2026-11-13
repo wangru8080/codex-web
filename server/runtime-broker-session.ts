@@ -28,7 +28,7 @@ export function createBrokerSession(
     sub: user.id,
     email: user.email,
     role: user.role,
-    credentialVersion: credentialVersion(user, config.sessionSecret),
+    credentialVersion: brokerUserCredentialVersion(user, config.sessionSecret),
     expiresAt: now + config.sessionMaxAgeSeconds * 1_000,
     sessionId: randomBytes(16).toString("base64url"),
   };
@@ -60,7 +60,7 @@ export function verifyBrokerSession(
       !user?.enabled
       || payload.email !== user.email
       || payload.role !== user.role
-      || payload.credentialVersion !== credentialVersion(user, config.sessionSecret)
+      || payload.credentialVersion !== brokerUserCredentialVersion(user, config.sessionSecret)
     ) return null;
     return user;
   } catch {
@@ -68,7 +68,7 @@ export function verifyBrokerSession(
   }
 }
 
-function credentialVersion(user: RuntimeBrokerUserConfig, secret: string): string {
+export function brokerUserCredentialVersion(user: RuntimeBrokerUserConfig, secret: string): string {
   return createHmac("sha256", secret)
     .update(JSON.stringify([
       user.id,

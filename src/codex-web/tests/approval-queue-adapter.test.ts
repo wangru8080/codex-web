@@ -83,6 +83,7 @@ describe("approval-queue-adapter", () => {
         turnId: "turn-1",
         itemId: "tool-1",
         questions: [],
+        isBlocking: true,
         autoResolutionMs: null,
       },
     };

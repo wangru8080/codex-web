@@ -62,7 +62,8 @@ interface StreamingMessageProps {
  * just hasn't streamed first byte yet.
  */
 function ThinkingPhaseLabel() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
@@ -162,7 +163,8 @@ function StreamingStatusBar({ statusText, onForceStop, startedAt }: { statusText
 }
 
 function StreamingRetryStatus({ status }: { status: AppServerRetryStatus }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const [expanded, setExpanded] = useState(true);
   const hasDetails = !!status.additionalDetails;
   const reconnectMatch = /^Reconnecting\.\.\. (\d+)\/(\d+)$/.exec(status.message);
@@ -219,7 +221,8 @@ export const StreamingMessage = memo(function StreamingMessage({
   retryStatus,
   onForceStop,
 }: StreamingMessageProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   // A2 (audit 2026-06): index toolResults by id once, then reuse for both the
   // running-tools filter and the per-tool lookup in the render below. Both
   // previously did an O(n) scan inside an O(n) loop → O(n²) every render.
@@ -298,7 +301,7 @@ export const StreamingMessage = memo(function StreamingMessage({
             active={!finalStarted && isStreaming}
             summary={(
               <span className="inline-flex items-center gap-1">
-                <span>已处理</span>
+                {isEnglish ? <span>Processed</span> : <span>已处理</span>}
                 <ElapsedTimer key={startedAt} startedAt={startedAt} />
               </span>
             )}

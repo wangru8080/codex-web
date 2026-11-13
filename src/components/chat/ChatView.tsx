@@ -226,7 +226,8 @@ export function ChatView({
 }: ChatViewProps) {
   const { setStreamingSessionId, workingDirectory: panelWorkingDirectory, setPendingApprovalSessionId, setFileTreeOpen, setIsAssistantWorkspace } = usePanel();
   const workingDirectory = sessionWorkingDirectory ?? panelWorkingDirectory;
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const router = useRouter();
   const [activeSessionId, setActiveSessionId] = useState(sessionId);
   useEffect(() => { setActiveSessionId(sessionId); }, [sessionId]);
@@ -253,7 +254,7 @@ export function ChatView({
       setPermissionProfile(next);
     } catch (error) {
       setAppServerErrorBanner({
-        message: '权限更新失败',
+        message: isEnglish ? 'Failed to update permissions' : '权限更新失败',
         description: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -327,6 +328,7 @@ export function ChatView({
     cappedSetMessages((current) => mergeCrossClientUserMessages(current, appServerSyncedUserMessages));
   }, [appServerSyncedUserMessages, cappedSetMessages]);
   const [mode, setMode] = useState<string>(initialMode || 'code');
+  const lastSyncedInitialModeRef = useRef(initialMode);
   const [currentModel, setCurrentModel] = useState(() => modelName || (typeof window !== 'undefined' ? localStorage.getItem('codepilot:last-model') : null) || 'sonnet');
   const currentModelRef = useRef(currentModel);
   const modelSwitchSequenceRef = useRef(0);
@@ -563,9 +565,9 @@ export function ChatView({
     presentedAppServerTurn?.status === 'running'
       ? '已处理'
       : presentedAppServerTurn?.status === 'failed'
-        ? 'Codex 处理失败'
+        ? (isEnglish ? 'Codex failed' : 'Codex 处理失败')
         : presentedAppServerTurn?.status === 'interrupted'
-          ? 'Codex 已中断'
+          ? (isEnglish ? 'Codex interrupted' : 'Codex 已中断')
           : undefined;
   const presentAppServerTurnAsStreaming = shouldPresentAppServerTurnAsStreaming({
     turn: presentedAppServerTurn ?? null,
@@ -685,6 +687,12 @@ export function ChatView({
     }
   }, [settingsLocked, activeSessionId]);
 
+  useEffect(() => {
+    if (settingsLocked || !initialMode || initialMode === lastSyncedInitialModeRef.current) return;
+    lastSyncedInitialModeRef.current = initialMode;
+    setMode(initialMode);
+  }, [initialMode, settingsLocked]);
+
   const handleModelChange = useCallback((model: string, recordSwitch = true) => {
     const previousModel = currentModelRef.current;
     if (previousModel === model) return;
@@ -720,7 +728,7 @@ export function ChatView({
     if (onAppServerModelChange && appServerThreadId) {
       void onAppServerModelChange(model).catch((error) => {
         setAppServerErrorBanner({
-          message: '模型更新失败',
+          message: isEnglish ? 'Failed to update model' : '模型更新失败',
           description: error instanceof Error ? error.message : String(error),
         });
       });
@@ -731,18 +739,18 @@ export function ChatView({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, provider_id: newProviderId }),
     }).catch(() => {});
-  }, [activeSessionId, appServerThreadId, handleModelChange, onAppServerModelChange, settingsLocked]);
+  }, [activeSessionId, appServerThreadId, handleModelChange, isEnglish, onAppServerModelChange, settingsLocked]);
 
   const handleEffortChange = useCallback((effort: string | undefined) => {
     setSelectedEffort(effort);
     if (!effort || effort === 'auto' || !onAppServerEffortChange || !appServerThreadId) return;
     void onAppServerEffortChange(effort as ReasoningEffort).catch((error) => {
       setAppServerErrorBanner({
-        message: '推理等级更新失败',
+        message: isEnglish ? 'Failed to update reasoning effort' : '推理等级更新失败',
         description: error instanceof Error ? error.message : String(error),
       });
     });
-  }, [appServerThreadId, onAppServerEffortChange]);
+  }, [appServerThreadId, isEnglish, onAppServerEffortChange]);
 
   // ── Extracted hooks ──
 
@@ -798,6 +806,12 @@ export function ChatView({
     pendingOptimisticUserIdRef.current = null;
   }, [activeSessionId, appServerLocalStreaming, appServerSend, appServerTurn, cappedSetMessages]);
 
+  useEffect(() => {
+    if (!appServerSend || !appServerTurn) return;
+    if (!['completed', 'failed', 'interrupted'].includes(appServerTurn.status)) return;
+    setLivePlanPromptTurnKey(`${appServerTurn.threadId}:${appServerTurn.turnId}:${appServerTurn.status}`);
+  }, [appServerSend, appServerTurn]);
+
   const initializedRef = useRef(false);
   useEffect(() => {
     if (initialMessages.length > 0 && !initializedRef.current) {
@@ -812,7 +826,7 @@ export function ChatView({
   // 1. Auto-compression: stream-session-manager dispatches 'context-compressed' event
   // 2. Manual /compact: response message contains the compression marker
   useEffect(() => {
-    if (!hasSummary && messages.some(m => m.role === 'assistant' && m.content.includes('上下文已压缩'))) {
+    if (!hasSummary && messages.some(m => m.role === 'assistant' && (m.content.includes('上下文已压缩') || m.content.includes('Context compressed')))) {
       setHasSummary(true);
     }
   }, [messages, hasSummary]);
@@ -1157,12 +1171,12 @@ export function ChatView({
   const handleAppServerRequestResponse = useCallback(
     async (input: AppServerRequestResponseInput) => {
       if (!onAppServerRequestResponse) {
-        throw new Error('缺少 app-server request 响应处理器');
+        throw new Error(isEnglish ? 'Missing app-server request response handler' : '缺少 app-server request 响应处理器');
       }
       await onAppServerRequestResponse(input);
       setPendingApprovalSessionId('');
     },
-    [onAppServerRequestResponse, setPendingApprovalSessionId],
+    [isEnglish, onAppServerRequestResponse, setPendingApprovalSessionId],
   );
 
   const handleGoalEdit = useCallback(() => {
@@ -1181,13 +1195,13 @@ export function ChatView({
       setGoalEditOpen(false);
     } catch (error) {
       setAppServerErrorBanner({
-        message: '目标更新失败',
+        message: isEnglish ? 'Failed to update goal' : '目标更新失败',
         description: error instanceof Error ? error.message : String(error),
       });
     } finally {
       setGoalMutationPending(false);
     }
-  }, [appServerGoal, onAppServerGoalEdit]);
+  }, [appServerGoal, isEnglish, onAppServerGoalEdit]);
 
   const handleGoalStatusChange = useCallback(async (status: ThreadGoalStatus) => {
     if (!onAppServerGoalStatusChange) return;
@@ -1201,13 +1215,13 @@ export function ChatView({
       });
     } catch (error) {
       setAppServerErrorBanner({
-        message: '目标更新失败',
+        message: isEnglish ? 'Failed to update goal' : '目标更新失败',
         description: error instanceof Error ? error.message : String(error),
       });
     } finally {
       setGoalMutationPending(false);
     }
-  }, [appServerInterrupt, appServerTurn?.status, onAppServerGoalStatusChange]);
+  }, [appServerInterrupt, appServerTurn?.status, isEnglish, onAppServerGoalStatusChange]);
 
   const handleGoalClear = useCallback(() => {
     if (!onAppServerGoalClear) return;
@@ -1215,12 +1229,12 @@ export function ChatView({
     void onAppServerGoalClear()
       .catch((error) => {
         setAppServerErrorBanner({
-          message: '目标清除失败',
+          message: isEnglish ? 'Failed to clear goal' : '目标清除失败',
           description: error instanceof Error ? error.message : String(error),
         });
       })
       .finally(() => setGoalMutationPending(false));
-  }, [onAppServerGoalClear]);
+  }, [isEnglish, onAppServerGoalClear]);
 
   /** Start an API stream for the given content. Does NOT add a user message to the list. */
   const doStartStream = useCallback(
@@ -1381,7 +1395,7 @@ export function ChatView({
           handoffToAppServerTurn = true;
         } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error);
-          setAppServerErrorBanner({ message: 'Codex 发送失败', description: errMsg });
+          setAppServerErrorBanner({ message: isEnglish ? 'Failed to send with Codex' : 'Codex 发送失败', description: errMsg });
           if (!accepted) {
             cappedSetMessages((prev) => prev.filter((message) => message.id !== optimisticUserMessage.id));
             return false;
@@ -1523,7 +1537,7 @@ export function ChatView({
       return true;
     } catch (error) {
       setAppServerErrorBanner({
-        message: 'Codex 编辑发送失败',
+        message: isEnglish ? 'Failed to send edit with Codex' : 'Codex 编辑发送失败',
         description: error instanceof Error ? error.message : String(error),
       });
       return false;
@@ -1658,11 +1672,11 @@ export function ChatView({
       })
       .catch((error) => {
         setAppServerErrorBanner({
-          message: '目标更新失败',
+          message: isEnglish ? 'Failed to update goal' : '目标更新失败',
           description: error instanceof Error ? error.message : String(error),
         });
       });
-  }, [activeSessionId, appendCommandMessage, appServerGoal, cappedSetMessages, handleGoalClear, handleGoalEdit, handleGoalStatusChange, onAppServerGoalSet]);
+  }, [activeSessionId, appendCommandMessage, appServerGoal, cappedSetMessages, handleGoalClear, handleGoalEdit, handleGoalStatusChange, isEnglish, onAppServerGoalSet]);
 
   const handleCommand = useChatCommands({
     sessionId: settingsLocked ? '' : activeSessionId,
@@ -1753,7 +1767,7 @@ export function ChatView({
                 className="mb-2 rounded-md border border-border/60 bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
                 role="status"
               >
-                {readOnlyReason ?? '这是只读历史会话，当前版本不能继续发送。'}
+                {readOnlyReason ?? (isEnglish ? 'This is a read-only historical conversation; cannot send in the current version.' : '这是只读历史会话，当前版本不能继续发送。')}
               </div>
             )}
             {appServerBanner && (
@@ -2021,7 +2035,7 @@ export function ChatView({
           className="mb-2 rounded-md border border-border/60 bg-muted/50 px-3 py-2 text-xs text-muted-foreground"
           role="status"
         >
-          {readOnlyReason ?? '这是只读历史会话，当前版本不能继续发送。'}
+          {readOnlyReason ?? (isEnglish ? 'This is a read-only historical conversation; cannot send in the current version.' : '这是只读历史会话，当前版本不能继续发送。')}
         </div>
       )}
       {appServerBanner && (

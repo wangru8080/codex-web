@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CaretRight } from "@/components/ui/icon";
 import { CodexWebIcon } from "@/components/ui/semantic-icon";
+import { useTranslation } from "@/hooks/useTranslation";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import {
   createContext,
@@ -304,6 +305,8 @@ export const FileTreeFile = ({
   );
 
   const fileContextValue = useMemo(() => ({ name, path }), [name, path]);
+  const { locale } = useTranslation();
+  const isEnglish = locale === "en";
   const copyStartedFromPointerRef = useRef(false);
   const handleCopyPointerDown = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return;
@@ -365,15 +368,15 @@ export const FileTreeFile = ({
               onSelect={handleCopySelect}
             >
               <CodexWebIcon name="copy" size="sm" aria-hidden />
-              {contextMenuLabels?.copyPath ?? "复制路径"}
+              {contextMenuLabels?.copyPath ?? (isEnglish ? "Copy Path" : "复制路径")}
             </ContextMenuPrimitive.Item>
             <ContextMenuPrimitive.Item className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent" onSelect={() => onDownload?.(path)}>
               <CodexWebIcon name="download" size="sm" aria-hidden />
-              {contextMenuLabels?.download ?? "下载"}
+              {contextMenuLabels?.download ?? (isEnglish ? "Download" : "下载")}
             </ContextMenuPrimitive.Item>
             <ContextMenuPrimitive.Item className="flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent" onSelect={() => onAddToChat?.(path)}>
               <span className="flex size-4 items-center justify-center font-medium" aria-hidden>@</span>
-              {contextMenuLabels?.addToChat ?? "添加到对话"}
+              {contextMenuLabels?.addToChat ?? (isEnglish ? "Add to Conversation" : "添加到对话")}
             </ContextMenuPrimitive.Item>
           </ContextMenuPrimitive.Content>
         </ContextMenuPrimitive.Portal>

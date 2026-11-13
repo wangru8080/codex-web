@@ -37,6 +37,20 @@ describe('工作区侧栏状态', () => {
     });
   });
 
+  it('桌面共享标签可持久化并恢复为活动标签', () => {
+    const state = openDynamicTab(initialState({ open: true }), {
+      id: 'screen-pinned',
+      kind: 'screen-pinned',
+      key: 'screen',
+      title: '共享桌面',
+    });
+
+    expect(parse(JSON.stringify(serialize(state)))).toMatchObject({
+      activeTabId: 'screen-pinned',
+      tabs: expect.arrayContaining([expect.objectContaining({ kind: 'screen-pinned' })]),
+    });
+  });
+
   it('多个侧边聊天标签可共存且都不写入持久化状态', () => {
     const first = createSideChatTab('侧边聊天', 1);
     const second = createSideChatTab('侧边聊天', 2);

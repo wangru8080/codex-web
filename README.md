@@ -1,58 +1,59 @@
 # Codex Web
 
-Codex Web 是基于官方 `codex app-server` 的浏览器工作台。它在浏览器中提供 Codex 会话、工具执行、权限审批、项目文件和扩展管理，并以 app-server 的实时事件作为状态来源。
+Codex Web is a browser workbench based on the official `codex app-server`. It provides Codex conversations, tool execution, permission approvals, project files, and extension management within the browser, using real-time app-server events as the single source of truth for state.
 
-Codex Web 不替代 Codex CLI，也不在浏览器中保存 OpenAI OAuth token 或 API Key。Web bridge 负责在服务端启动 `codex app-server --stdio`，浏览器通过同源 HTTP 和 WebSocket 使用这些能力。
+Codex Web does not replace the Codex CLI, nor does it store OpenAI OAuth tokens or API keys in the browser. The Web bridge is responsible for launching `codex app-server --stdio` on the server, and the browser accesses these capabilities via same-origin HTTP and WebSocket connections.
 
-项目地址：[https://github.com/wangru8080/codex-web](https://github.com/wangru8080/codex-web)
+Project Repository: [https://github.com/wangru8080/codex-web](https://github.com/wangru8080/codex-web)
 
-## 功能
+## Features
 
-### 对话与任务
+### Conversations & Tasks
 
-- 新建 Codex 对话，并为每个对话选择工作目录。
-- 从 app-server 加载历史对话，支持恢复、历史分页、重命名、归档和取消归档。
-- 实时显示回答、推理摘要、运行状态、Token 使用和上下文窗口。
-- 支持中断运行、编辑最后一条用户消息并回滚后续 Turn。
-- 支持 Goal、Plan、Review 和上下文压缩。
-- 同一 Web bridge 下的多个浏览器客户端可以同步用户消息、流式输出、工具状态和审批请求。
+- Start new Codex conversations and select a working directory for each conversation.
+- Load historical conversations from the app-server, with support for resuming, history pagination, renaming, archiving, and unarchiving.
+- Real-time display of answers, reasoning summaries, run statuses, token usage, and context window metrics.
+- Support for interrupting runs, editing the latest user message, and rolling back subsequent turns.
+- Support for Goals, Plans, Reviews, and context compaction.
+- Multiple browser clients under the same Web bridge can synchronize user messages, streaming outputs, tool statuses, and approval requests.
 
-### 模型、权限与工具
+### Models, Permissions & Tools
 
-- 模型列表来自 app-server `model/list`，可选择模型和推理强度。
-- 可以按 Thread 设置权限策略和 sandbox 行为。
-- 展示命令执行、文件修改、MCP 工具、协作工具及其增量输出。
-- 在浏览器中处理命令、文件修改和权限申请。
-- 支持 app-server 发起的用户输入表单与 MCP elicitation。
-- 未识别的 app-server notification 会保留在诊断信息中，不会静默丢弃。
+- Model list fetched directly from the app-server's `model/list`, allowing model and reasoning effort selection.
+- Configure permission policies and sandbox behaviors per thread.
+- Display command executions, file modifications, MCP tools, collaboration tools, and their incremental outputs.
+- Review and approve command execution, file modifications, and permission requests directly within the browser.
+- Support app-server-initiated user input forms and MCP elicitation.
+- Unrecognized app-server notifications are preserved in diagnostics rather than silently dropped.
 
-### 项目文件与附件
+### Project Files & Attachments
 
-- 浏览当前工作目录的文件树，并跟随 app-server 文件变更事件刷新。
-- 预览文本、Markdown、代码、图片、PDF、Word（DOC/DOCX）和 Excel（XLS/XLSX）文件；旧版 DOC 为实验性兼容，复杂排版可能存在差异。
-- 从文件树将文件、目录或文件片段加入对话。
-- 支持图片和普通文件附件，并在历史会话中恢复附件展示。
-- 支持本地文件链接、外部链接、图片输出和文件变更差异展示。
+- Browse the current working directory's file tree, updating reactively in response to app-server file change events.
+- Preview text, Markdown, code, images, PDF, Word (DOC/DOCX), and Excel (XLS/XLSX) files (legacy DOC files have experimental compatibility; complex layouts may differ).
+- Add files, directories, or selected file excerpts into the conversation directly from the file tree.
+- Support image and generic file attachments, with attachment display restored across historical sessions.
+- Support local file links, external links, image outputs, and file diff visualizations.
 
-### Skills 与 MCP
+### Skills & MCP
 
-- 从 app-server 读取 Skills，查看详情、启用或停用，并将 Skill 直接加入新对话。
-- 创建用户级或项目级 Skill。
-- 查看和编辑 MCP server 配置，支持启停、重新加载和运行状态检查。
-- MCP 配置和运行状态分别来自 app-server 配置接口与 `mcpServerStatus/list`。
+- Read Skills from the app-server: view details, enable or disable them, and inject Skills directly into new conversations.
+- Create user-level or project-level Skills.
+- View and edit MCP server configurations, with support for starting/stopping, reloading, and checking runtime status.
+- MCP configurations and runtime statuses are sourced respectively from app-server configuration interfaces and `mcpServerStatus/list`.
 
-### 账户与界面
+### Accounts & Interface
 
-- 在设置页通过 OpenAI 账户授权或 API Key 登录 Codex。
-- 查看 Codex 账户状态和 app-server 提供的使用额度信息。
-- 支持中文和英文、主题切换、桌面与移动端响应式布局。
-- 提供独立的 Web 登录保护，并可选接入 Cloudflare Turnstile。
-- 浏览器断线后自动重连；app-server 异常退出后，bridge 会尝试重新启动它。
+- Sign in to Codex in Settings via OpenAI account authorization or API Key.
+- View Codex account status and usage limit details provided by the app-server.
+- Support for English and Chinese, theme switching, and responsive layouts for desktop and mobile.
+- Dedicated Web login protection supporting either locally defined email/password credentials or standard OpenID Connect (OIDC) Single Sign-On (SSO), plus optional Cloudflare Turnstile integration.
+- Optional Jules-compatible `/v1alpha` API with Settings-generated, revocable API keys and per-key workspace/full-access permission profiles.
+- Automatic browser reconnection after disconnection; if the app-server exits unexpectedly, the bridge attempts to restart it.
 
-## 架构
+## Architecture
 
 ```text
-浏览器
+Browser
   |
   | HTTP / WebSocket
   v
@@ -63,37 +64,37 @@ Codex Web + Web bridge
 codex app-server
 ```
 
-浏览器不会直接启动本地进程。`codex-web serve` 启动 Next.js 应用和 Web bridge：单用户模式由 Web bridge 启动本机 `codex app-server`；多用户模式由 Web bridge 连接独立的 runtime，再由 runtime 按登录账号启动对应系统用户的 `codex app-server`。
+The browser does not spawn local processes directly. Running `codex-web serve` launches the Next.js application and the Web bridge: in single-user mode, the Web bridge spawns the local `codex app-server`; in multi-user mode, the Web bridge connects to an independent runtime broker, which in turn starts `codex app-server` under the corresponding operating system user account for each authenticated login.
 
-### 平台支持
+### Platform Support
 
-| 服务端运行方式 | Linux | macOS | Windows |
+| Server Hosting Mode | Linux | macOS | Windows |
 |---|---|---|---|
-| 单用户 `codex-web serve` | 支持 | 支持 | 支持 |
-| 多用户 `codex-web runtime serve` | 支持，使用 `setpriv` | 支持，使用 `dscacheutil` 与 `sudo` | 不支持 |
+| Single-user `codex-web serve` | Supported | Supported | Supported |
+| Multi-user `codex-web runtime serve` | Supported (using `setpriv`) | Supported (using `dscacheutil` and `sudo`) | Not supported |
 
-浏览器客户端不受服务端操作系统限制。Windows 或 macOS 浏览器可以访问部署在 Linux/macOS 上的 Codex Web；表格描述的是运行 Codex Web、runtime 和 app-server 的服务端系统。
+Browser clients are not restricted by the server operating system. A Windows or macOS browser can access Codex Web hosted on Linux or macOS; the table above describes the server OS hosting Codex Web, the runtime broker, and the app-server.
 
-### 多用户 Runtime Broker
+### Multi-User Runtime Broker
 
-Linux 或 macOS 上可以运行一个非 root Codex Web，并由本机 root runtime 按登录账号启动对应系统用户的 `codex app-server`：
+On Linux or macOS, you can run a non-root Codex Web instance, and a root runtime daemon will launch `codex app-server` under the corresponding OS user account based on the logged-in user:
 
 ```text
-浏览器会话 A ─┐
-              ├─> Codex Web（<web-user>）
-浏览器会话 B ─┘          │
-                         │ Unix socket：<runtime-socket>
-                         v
-                   Runtime（root）
-                     ├─> app-server（<linux-user-a>）
-                     └─> app-server（<linux-user-b>）
+Browser Session A ─┐
+                   ├─> Codex Web (<web-user>)
+Browser Session B ─┘          │
+                              │ Unix socket: <runtime-socket>
+                              v
+                        Runtime (root)
+                          ├─> app-server (<linux-user-a>)
+                          └─> app-server (<linux-user-b>)
 ```
 
-Codex Web 和 runtime 是两个常驻进程。登录本身不会创建 app-server；某个用户首次建立 WebSocket bridge 时才启动该用户的 app-server。同一用户的多个浏览器共享一个 app-server，不同用户的 UID、补充组、`HOME`、`CODEX_HOME`、cwd、消息和审批相互隔离。Web 服务自己的持久状态使用 `CODEX_WEB_STATE`，不与用户的 Codex home 混用。最后一个连接断开后，没有运行中 Turn 时会在宽限期结束后退出；有运行中 Turn 时等待其完成再退出。
+Codex Web and the runtime broker are two persistent background processes. Logging in does not spawn an app-server immediately; the app-server is launched when the user establishes their first WebSocket bridge connection. Multiple browser sessions from the same user share a single app-server instance. Different users have strictly isolated UIDs, supplementary groups, `HOME`, `CODEX_HOME`, cwd, messages, and approvals. The Web service's own persistent state uses `CODEX_WEB_STATE` and is never mixed with user Codex home directories. When the last connection for a user disconnects, an idle app-server terminates after a grace period; if an active turn is still running, it waits until completion before exiting.
 
-#### Linux 快速部署
+#### Linux Quick Deployment
 
-以下步骤使用通用示例：
+The following steps use generic placeholders:
 
 ```bash
 WEB_USER="codexweb"
@@ -107,7 +108,7 @@ CODEX_WEB_BIN="$(command -v codex-web)"
 CODEX_BIN="$(command -v codex)"
 ```
 
-1. 确认命令和系统用户。Node 必须位于所有服务用户均可访问的公共目录，不能使用 `/root/.nvm/...`：
+1. Verify commands and system users. Node must be located in a public directory accessible to all service users (cannot use `/root/.nvm/...`):
 
 ```bash
 printf 'node bin: %s\ncodex-web: %s\ncodex: %s\n' "$NODE_BIN_DIR" "$CODEX_WEB_BIN" "$CODEX_BIN"
@@ -115,19 +116,19 @@ command -v setpriv
 getent passwd "$WEB_USER" "$USER_A" "$USER_B" root
 ```
 
-2. 为三个登录账号分别生成密码哈希。每次输入该账号以后用于网页登录的原始密码，并保存命令输出的 `scrypt$v1$...`；网页登录时仍输入原始密码，不输入哈希。随后生成与登录密码无关的 Session 签名密钥：
+2. Generate password hashes for the three login accounts. Enter the raw password to be used for web login, and save the output `scrypt$v1$...`; when logging in via the web UI, still enter the raw password, not the hash. Then generate a session signing secret independent of the passwords:
 
 ```bash
-read -r -s -p '设置该账号的 Web 登录密码: ' CODEX_WEB_LOGIN_PASSWORD
+read -r -s -p 'Set web login password for this account: ' CODEX_WEB_LOGIN_PASSWORD
 printf '\n'
 printf '%s' "$CODEX_WEB_LOGIN_PASSWORD" | codex-web runtime hash-password
 unset CODEX_WEB_LOGIN_PASSWORD
 openssl rand -hex 32
 ```
 
-这里的 `CODEX_WEB_LOGIN_PASSWORD` 只是未导出的临时 Shell 变量，多用户 broker 服务本身不读取它。哈希使用随机盐，因此同一个密码每次生成的字符串通常不同，但都可以验证该密码。
+Here `CODEX_WEB_LOGIN_PASSWORD` is only a temporary unexported shell variable; the multi-user broker service does not read it. The hash uses a random salt, so the resulting string differs each time for the same password, but all valid hashes will verify that password.
 
-3. 创建共享组、配置目录、socket 目录和 Web 状态目录。共享组只允许普通 Web 服务访问 root broker 的 Unix socket；`WEB_USER` 需要加入该组，`users.json` 中映射的登录用户不需要加入：
+3. Create the shared group, configuration directory, socket directory, and web state directory. The shared group only allows the unprivileged web service to access the root broker's Unix socket; `WEB_USER` must join this group, while mapped users in `users.json` do not need to:
 
 ```bash
 getent group codex-web-runtime >/dev/null || sudo groupadd --system codex-web-runtime
@@ -137,18 +138,18 @@ sudo install -d -o root -g codex-web-runtime -m 2750 /run/codex-web
 sudo install -d -o "$WEB_USER" -g codex-web-runtime -m 0700 "$WEB_STATE"
 ```
 
-`2750` 的 setgid 位使 root 创建的 socket 自动继承 `codex-web-runtime` 组。`WEB_USER` 加组后需要重新登录，再用 `id` 确认其组列表包含 `codex-web-runtime`。
+The setgid bit in `2750` ensures that sockets created by root automatically inherit the `codex-web-runtime` group. After adding `WEB_USER` to the group, re-login and verify that `id` lists `codex-web-runtime`.
 
-4. 安装 [`users.example.json`](deploy/systemd/users.example.json)，再编辑为实际配置：
+4. Install [`users.example.json`](deploy/systemd/users.example.json), and edit it for your deployment:
 
 ```bash
 sudo install -o root -g root -m 0600 deploy/systemd/users.example.json /etc/codex-web/users.json
 sudoedit /etc/codex-web/users.json
 ```
 
-仓库中的 systemd 示例包含一个普通 `codex` 用户和一个 root 用户，已开启 `allowRootRuntime`。root 条目中的 `CODEX_WEB_STATE` 示例为 `/root/.codex-web`；删除该字段即可使用相同的默认目录。实际部署前必须替换两个账号的邮箱、密码哈希和 session secret。
+The systemd example in the repository contains one regular `codex` user and one root user with `allowRootRuntime` enabled. The sample `CODEX_WEB_STATE` for the root entry is `/root/.codex-web`; removing this field defaults to the same standard path. Before actual deployment, replace email addresses, password hashes, and session secrets for both accounts.
 
-下面是两个普通用户和一个 root 用户的完整结构。分别替换三个 `passwordHash`、`sessionSecret`、邮箱、系统用户和路径；允许 root 意味着其命令、文件修改和 MCP 均以 UID 0 运行：
+Below is the complete configuration structure for two regular users and one root user. Replace all three `passwordHash`, `sessionSecret`, email addresses, OS users, and paths; allowing root means its commands, file modifications, and MCP will run with UID 0:
 
 ```json
 {
@@ -213,7 +214,7 @@ sudoedit /etc/codex-web/users.json
 }
 ```
 
-确认没有遗漏占位符，并验证 JSON、所有者和权限：
+Verify that no placeholders were missed, and validate JSON syntax, ownership, and permissions:
 
 ```bash
 sudo grep -nE '<[^>]+>' /etc/codex-web/users.json
@@ -221,9 +222,9 @@ sudo jq empty /etc/codex-web/users.json
 sudo stat -c '%U %G %a %n' /etc/codex-web/users.json
 ```
 
-第一条命令应无输出，第二条命令应无报错，第三条命令应显示 `root root 600`。
+The first command should produce no output, the second should report no errors, and the third should output `root root 600`.
 
-5. 在 root 登录终端直接启动 runtime broker。保持该终端运行：
+5. In a root login terminal, launch the runtime broker directly. Keep this terminal running:
 
 ```bash
 NODE_BIN_DIR="$(dirname "$(readlink -f "$(command -v node)")")"
@@ -233,13 +234,13 @@ codex-web runtime serve \
   --socket /run/codex-web/runtime-broker.sock
 ```
 
-broker 必须由 root 启动。正常启动后会显示监听的 socket 路径；确认 socket 所属组和权限为 `codex-web-runtime`、`0660`：
+The broker must be launched as root. Once started normally, it displays the listening socket path; verify the socket's group and permissions are `codex-web-runtime` and `0660`:
 
 ```bash
 ls -l /run/codex-web/runtime-broker.sock
 ```
 
-6. 重新登录 `WEB_USER`，在该普通用户的终端直接启动 Web。保持该终端运行：
+6. Re-login as `WEB_USER`, and start Codex Web in that user's terminal. Keep this terminal running:
 
 ```bash
 id
@@ -252,17 +253,17 @@ CODEX_WEB_STATE="$HOME/.config/codex-web-state" codex-web serve \
     --port 3001
 ```
 
-直接访问服务器端口时保留 `--host 0.0.0.0`；使用本机反向代理时改为 `--host 127.0.0.1`。`CODEX_WEB_PUBLIC_HOST` 必须填写浏览器实际访问的域名或 IP。多用户模式不设置 `CODEX_WEB_LOGIN_EMAIL`、`CODEX_WEB_LOGIN_PASSWORD` 或 `CODEX_WEB_SESSION_SECRET`。
+Keep `--host 0.0.0.0` if accessing the server port directly; change to `--host 127.0.0.1` when using a local reverse proxy. `CODEX_WEB_PUBLIC_HOST` must be set to the domain or IP actually visited by browsers. In multi-user mode, do not set `CODEX_WEB_LOGIN_EMAIL`, `CODEX_WEB_LOGIN_PASSWORD`, or `CODEX_WEB_SESSION_SECRET`.
 
-浏览器打开 `http://<public-host>:3001`。未登录时不会启动用户 app-server；用户首次建立 WebSocket bridge 时，broker 才根据 `users.json` 以对应 OS 用户启动 app-server。
+Open `http://<public-host>:3001` in your browser. No user app-server is started before login; when a user establishes their first WebSocket bridge connection, the broker launches the app-server under the corresponding OS user defined in `users.json`.
 
-两个终端中的 `Ctrl+C` 会停止对应进程。服务器重启后 `/run/codex-web` 会消失，需要重新执行第 3 步中的 socket 目录创建命令。需要后台常驻、开机启动和异常重启时，再使用仓库提供的 [`codex-web-runtime.service`](deploy/systemd/codex-web-runtime.service) 与 [`codex-web.service`](deploy/systemd/codex-web.service) 模板。
+Pressing `Ctrl+C` in either terminal stops that process. After a server reboot, `/run/codex-web` will disappear and the socket directory creation command from step 3 must be re-run. When background persistence, boot autostart, and crash restarts are required, use the [`codex-web-runtime.service`](deploy/systemd/codex-web-runtime.service) and [`codex-web.service`](deploy/systemd/codex-web.service) templates provided in the repository.
 
-#### Linux systemd 后台部署
+#### Linux systemd Background Deployment
 
-如果需要开机启动、自动重启和统一日志，可以使用仓库提供的两个 systemd 单元。它们仍然启动同样的两个 `codex-web` 进程：runtime 以 root 运行，Web 以普通用户运行。
+For boot startup, auto-restart, and unified logging, use the two systemd units provided in the repo. They still start the same two `codex-web` processes: runtime running as root, and Web running as an unprivileged user.
 
-1. 安装配置文件和 service 模板：
+1. Install configuration files and service templates:
 
 ```bash
 getent group codex-web-runtime >/dev/null || sudo groupadd --system codex-web-runtime
@@ -275,7 +276,7 @@ sudoedit /etc/systemd/system/codex-web-runtime.service
 sudoedit /etc/systemd/system/codex-web.service
 ```
 
-2. 修改 `codex-web-runtime.service` 的实际路径和组名，至少确认：
+2. Edit the actual paths and group in `codex-web-runtime.service`, ensuring at least:
 
 ```ini
 User=root
@@ -287,9 +288,9 @@ RuntimeDirectoryMode=0750
 ExecStart=<codex-web-bin> runtime serve --config /etc/codex-web/users.json --socket /run/codex-web/runtime-broker.sock
 ```
 
-`<codex-web-bin>` 必须是绝对路径，例如 `command -v codex-web` 的输出。`RuntimeDirectory` 会在服务启动时创建 `/run/codex-web`，不需要手动创建。
+`<codex-web-bin>` must be an absolute path, e.g. the output of `command -v codex-web`. `RuntimeDirectory` automatically creates `/run/codex-web` when the service starts, eliminating the need to create it manually.
 
-3. 修改 `codex-web.service` 的 Web 用户、工作目录、路径和访问地址：
+3. Edit the web user, working directory, paths, and access addresses in `codex-web.service`:
 
 ```ini
 User=<web-user>
@@ -305,9 +306,9 @@ EnvironmentFile=-/etc/codex-web/web.env
 ExecStart=<codex-web-bin> serve
 ```
 
-反向代理部署使用 `CODEX_WEB_NEXT_HOST=127.0.0.1`；直接监听所有网卡时改为 `0.0.0.0`。`EnvironmentFile=-...` 表示 `/etc/codex-web/web.env` 可以不存在；多用户模式不要在其中设置 `CODEX_WEB_LOGIN_EMAIL`、`CODEX_WEB_LOGIN_PASSWORD` 或 `CODEX_WEB_SESSION_SECRET`。
+Use `CODEX_WEB_NEXT_HOST=127.0.0.1` for reverse proxy deployments; change to `0.0.0.0` when listening on all network interfaces directly. `EnvironmentFile=-...` indicates that `/etc/codex-web/web.env` is optional; in multi-user mode, do not set `CODEX_WEB_LOGIN_EMAIL`, `CODEX_WEB_LOGIN_PASSWORD`, or `CODEX_WEB_SESSION_SECRET` inside it.
 
-4. 检查并启动两个服务：
+4. Verify and start both services:
 
 ```bash
 sudo systemd-analyze verify /etc/systemd/system/codex-web-runtime.service /etc/systemd/system/codex-web.service
@@ -318,65 +319,65 @@ ls -l /run/codex-web/runtime-broker.sock
 journalctl -u codex-web-runtime.service -u codex-web.service -n 100 --no-pager
 ```
 
-systemd 会创建 socket 目录，runtime 进程会创建 `runtime-broker.sock`。只有登录用户首次建立 WebSocket bridge 后，才会按 `users.json` 启动对应的 app-server。
+systemd manages the socket directory, and the runtime process creates `runtime-broker.sock`. The corresponding app-server will only be started per `users.json` once a logged-in user establishes their first WebSocket bridge connection.
 
-#### Broker 配置参考
+#### Broker Configuration Reference
 
-配置文件顶层字段：
+Top-level configuration fields:
 
-| 字段 | 必需 | 说明 |
+| Field | Required | Description |
 |---|---|---|
-| `version` | 是 | 配置格式版本，当前固定为 `1`。 |
-| `sessionSecret` | 是 | Session 签名密钥，至少 32 个字符；使用上面的 `openssl` 命令生成。 |
-| `sessionMaxAgeSeconds` | 否 | Session 固定有效期，默认 `259200` 秒（3 天），允许 `60` 至 `604800` 秒。 |
-| `disconnectGraceMs` | 否 | 同一用户最后一个浏览器连接断开后，空闲 app-server 的退出宽限期；默认 `30000` 毫秒，允许 `0` 至 `600000`。运行中的 Turn 完成后才退出。 |
-| `maxActiveAppServers` | 否 | 全局同时保留的用户 app-server 上限，必须为正整数；不配置表示无限制。达到上限时已有账号仍可复用自己的 app-server，新账号暂时不能创建 app-server。 |
-| `allowRootRuntime` | 否 | 是否允许配置 root runtime，默认 `false`；仅此开关不能单独授权 root。 |
-| `codexCommand` | 是 | 目标服务器上 `codex` 可执行文件的绝对路径。 |
-| `setprivCommand` | Linux 否 | Linux `setpriv` 的绝对路径，默认 `/usr/bin/setpriv`；macOS 不使用该命令。 |
-| `users` | 是 | 至少包含一个登录用户；每个用户的 `id` 和 `email` 必须唯一。 |
+| `version` | Yes | Configuration format version, currently fixed to `1`. |
+| `sessionSecret` | Yes | Session signing secret, at least 32 characters; generate with the `openssl` command above. |
+| `sessionMaxAgeSeconds` | No | Fixed session lifetime, default `259200` seconds (3 days), allowed range `60` to `604800` seconds. |
+| `disconnectGraceMs` | No | Idle app-server exit grace period after the last browser client disconnects; default `30000` ms, allowed range `0` to `600000`. Exits only after running turns finish. |
+| `maxActiveAppServers` | No | Global limit on concurrently active user app-servers, must be a positive integer; omit for unlimited. When reached, existing users can still reuse their app-server, but new users cannot spawn one temporarily. |
+| `allowRootRuntime` | No | Whether root runtime configuration is allowed, default `false`; this switch alone does not authorize root. |
+| `codexCommand` | Yes | Absolute path to the `codex` executable on the target server. |
+| `setprivCommand` | Linux: No | Absolute path to Linux `setpriv`, default `/usr/bin/setpriv`; not used on macOS. |
+| `users` | Yes | List of user entries; must contain at least one user, and each user's `id` and `email` must be unique. |
 
-`users` 中每个用户的字段：
+User entry fields in `users`:
 
-| 字段 | 必需 | 说明 |
+| Field | Required | Description |
 |---|---|---|
-| `id` | 是 | broker 内部用户 ID，必须唯一；只能包含字母、数字、下划线和连字符，最长 32 个字符，首字符必须是字母或下划线。 |
-| `email` | 是 | Web 登录邮箱，必须唯一；匹配时忽略大小写。 |
-| `passwordHash` | 是 | 使用 `codex-web runtime hash-password` 生成的 scrypt 哈希；不得填写明文密码。 |
-| `osUser` | 是 | app-server 实际使用的本机系统账号。runtime 从系统账号数据库解析 UID、GID、home 和 shell，不在 JSON 中接受 UID/GID。 |
-| `home` | 是 | `osUser` 的 home 绝对路径，必须与系统账号数据库一致。 |
-| `codexHome` | 是 | 该用户 app-server 使用的 `CODEX_HOME` 绝对路径，账号、配置、会话、MCP、skills 和 approval 状态均来自此目录。 |
-| `cwd` | 是 | 该用户 app-server 的默认工作目录绝对路径。 |
-| `inheritLoginEnvironment` | 否 | 是否以对应系统用户身份执行其登录 shell profile 并继承环境，默认 `false`。登录 shell 最长运行 5 秒；Broker 管理变量和动态加载变量会被过滤。 |
-| `role` | 否 | Web 角色，只允许 `user` 或 `admin`，默认 `user`；`admin` 可管理安全设置，但不代表操作系统 root。 |
-| `enabled` | 否 | 是否允许该账号登录，默认 `true`。 |
-| `allowRoot` | 否 | 是否允许该用户项启动 UID 0 app-server，默认 `false`；仅对 `osUser: "root"` 有效，并且顶层 `allowRootRuntime` 也必须为 `true`。 |
-| `maxConcurrentTurns` | 否 | 该账号在全部浏览器连接和 Thread 中合计允许的并发 Turn 上限，必须为正整数；不配置表示无限制。 |
-| `env` | 否 | 传给 app-server 的额外环境变量字符串对象；会覆盖登录 shell 环境中的同名变量。变量名必须为大写形式；`HOME`、`CODEX_HOME`、`USER`、`SHELL`、`RUST_LOG`、`LD_*`、`DYLD_*` 等受保护变量禁止设置。 |
+| `id` | Yes | Internal broker user ID, must be unique; letters, numbers, underscores, and hyphens only, max 32 chars, first char must be letter or underscore. |
+| `email` | Yes | Web login email address, must be unique; matched case-insensitively. |
+| `passwordHash` | Yes | scrypt hash generated with `codex-web runtime hash-password`; plain text passwords are not accepted. |
+| `osUser` | Yes | Local system account used by the app-server. Runtime resolves UID, GID, home, and shell from system databases; does not accept UID/GID in JSON. |
+| `home` | Yes | Absolute path to `osUser`'s home directory, must match the system account database. |
+| `codexHome` | Yes | Absolute path to `CODEX_HOME` used by this user's app-server; accounts, configs, sessions, MCP, skills, and approvals come from here. |
+| `cwd` | Yes | Absolute path to default working directory for this user's app-server. |
+| `inheritLoginEnvironment` | No | Whether to execute the system user's login shell profile and inherit the environment, default `false`. Shell profile runs with a 5s timeout; broker-managed and dynamic variables are filtered. |
+| `role` | No | Web role, either `user` or `admin`, default `user`; `admin` can manage security settings but does not grant OS root. |
+| `enabled` | No | Whether the account is permitted to log in, default `true`. |
+| `allowRoot` | No | Whether this user entry is allowed to start a UID 0 app-server, default `false`; only valid when `osUser: "root"` and top-level `allowRootRuntime` is `true`. |
+| `maxConcurrentTurns` | No | Concurrency limit across all browser connections and threads for this user, must be a positive integer; omit for unlimited. |
+| `env` | No | Map of additional environment variables passed to app-server; overrides shell environment variables. Names must be uppercase; protected variables like `HOME`, `CODEX_HOME`, `USER`, `SHELL`, `RUST_LOG`, `LD_*`, `DYLD_*` are prohibited. |
 
-#### Broker 配置热加载
+#### Broker Configuration Hot-Reloading
 
-`codex-web runtime serve` 会监听 `--config` 指向的 `users.json`。保存文件后会重新执行启动时相同的普通文件、所有者、`0600` 权限、字段结构和系统用户校验；候选配置全部有效后才原子切换，不需要重启 runtime 服务，也不需要执行 `systemctl daemon-reload`。
+`codex-web runtime serve` watches the `users.json` file specified by `--config`. When saved, it re-executes the same regular file, owner, `0600` permissions, structural, and system user validations performed at startup. Candidate configs are switched atomically only after full validation passes, requiring no restart of the runtime service or `systemctl daemon-reload`.
 
-- 新增用户可以立即登录，并在首次连接时启动自己的 app-server。
-- 内容未变化的用户继续使用当前 app-server，运行中的 Turn 不受影响。
-- 修改 `maxActiveAppServers` 或 `maxConcurrentTurns` 会立即更新限制，但不会使 Session 失效、重启 app-server 或中断已有 Turn。降低限制后只拒绝新的超限创建或 `turn/start`；提高或移除限制后立即恢复接收。
-- 启用 `inheritLoginEnvironment` 后，用户 runtime 启动时会执行该系统用户的登录 shell profile；profile 失败、超时或未输出有效环境标记时，该用户 runtime 启动失败。修改开关或 `env` 会使该用户旧 Session 和在线连接失效，重新登录后按新环境启动 runtime。
-- 删除、禁用或修改用户的邮箱、密码哈希、角色、系统用户、home、`CODEX_HOME`、cwd 或环境变量时，该用户的旧 Session 和在线连接会失效；重新登录后按新配置启动 runtime。
-- 修改 `sessionSecret`、`codexCommand`、`setprivCommand` 或 `allowRootRuntime` 会使全部在线用户失效。修改 `sessionMaxAgeSeconds` 只影响之后签发的 Session。
-- JSON 不完整、权限错误、重复身份或系统用户解析失败时，broker 会记录“配置重载失败”，继续使用最后一份有效配置。修正并再次保存后会自动恢复加载。
+- Newly added users can log in immediately and spawn their app-server on first connection.
+- Users with unchanged configurations continue using their current app-server, and active turns are unaffected.
+- Modifying `maxActiveAppServers` or `maxConcurrentTurns` takes effect immediately without invalidating sessions, restarting app-servers, or interrupting active turns. Lowering limits rejects new creations or `turn/start` requests exceeding the limit; increasing or removing limits resumes acceptance immediately.
+- When `inheritLoginEnvironment` is enabled, user runtimes execute that system user's login shell profile at startup; if the profile fails, times out, or fails to output valid environment markers, the runtime start fails. Toggling this switch or modifying `env` invalidates existing sessions and active connections for that user, requiring re-login to start with the new environment.
+- Deleting, disabling, or modifying a user's email, password hash, role, OS user, home, `CODEX_HOME`, cwd, or environment variables invalidates old sessions and active connections; re-login starts a new runtime under the new configuration.
+- Modifying `sessionSecret`, `codexCommand`, `setprivCommand`, or `allowRootRuntime` invalidates all online users. Modifying `sessionMaxAgeSeconds` affects only newly issued sessions.
+- If JSON is incomplete, permissions are invalid, duplicate identities exist, or system user lookup fails, the broker logs "configuration reload failed" and continues using the last valid configuration. Fixing and re-saving automatically restores loading.
 
-建议使用能原子替换目标文件并保持 root 所有者和 `0600` 权限的编辑方式。热加载不会把密码哈希或 Session secret 输出到日志。
+It is recommended to edit using tools that perform atomic file replacement while preserving root ownership and `0600` permissions. Hot reloading never logs password hashes or session secrets.
 
-#### macOS launchd 部署
+#### macOS launchd Deployment
 
-仓库提供三个 macOS 样例：
+The repository provides three macOS sample files:
 
-- [`com.codex-web.runtime.plist`](deploy/launchd/com.codex-web.runtime.plist)：root LaunchDaemon，运行 `codex-web runtime serve`。
-- [`com.codex-web.web.plist`](deploy/launchd/com.codex-web.web.plist)：以示例非 root 用户运行 `codex-web serve`。
-- [`users.example.json`](deploy/launchd/users.example.json)：macOS 用户映射模板。
+- [`com.codex-web.runtime.plist`](deploy/launchd/com.codex-web.runtime.plist): Root LaunchDaemon running `codex-web runtime serve`.
+- [`com.codex-web.web.plist`](deploy/launchd/com.codex-web.web.plist): Runs `codex-web serve` as an unprivileged sample user.
+- [`users.example.json`](deploy/launchd/users.example.json): macOS user mapping template.
 
-先确认命令位置，并选择一个已存在的非 root Web 服务账号：
+First verify command paths and select an existing non-root Web service account:
 
 ```bash
 command -v codex-web
@@ -386,7 +387,7 @@ command -v sudo
 WEB_USER="codexweb"
 ```
 
-如果实际命令路径、Web 用户或工作目录与样例不同，必须先修改 plist 和用户配置。创建共享组及持久目录：
+If command paths, the Web user, or working directories differ from the samples, modify the plist and user configs first. Create the shared group and persistent directories:
 
 ```bash
 sudo dseditgroup -o create codex-web-runtime
@@ -398,7 +399,7 @@ sudo install -d -o "$WEB_USER" -g codex-web-runtime -m 0750 "/Users/Shared/Codex
 sudo install -d -o "$WEB_USER" -g codex-web-runtime -m 0700 "/Users/Shared/CodexWeb/web-state"
 ```
 
-安装配置和 LaunchDaemon；先编辑目标文件，再加载服务：
+Install configurations and LaunchDaemons; edit target files before bootstrapping services:
 
 ```bash
 sudo install -o root -g wheel -m 0600 deploy/launchd/users.example.json "/Library/Application Support/CodexWeb/users.json"
@@ -412,7 +413,7 @@ sudo launchctl bootstrap system /Library/LaunchDaemons/com.codex-web.runtime.pli
 sudo launchctl bootstrap system /Library/LaunchDaemons/com.codex-web.web.plist
 ```
 
-检查服务与日志：
+Check services and logs:
 
 ```bash
 sudo launchctl print system/com.codex-web.runtime
@@ -420,23 +421,23 @@ sudo launchctl print system/com.codex-web.web
 sudo tail -f /Library/Logs/CodexWeb/runtime-error.log /Library/Logs/CodexWeb/web-error.log
 ```
 
-停止并卸载两个 LaunchDaemon：
+Stop and remove both LaunchDaemons:
 
 ```bash
 sudo launchctl bootout system/com.codex-web.web
 sudo launchctl bootout system/com.codex-web.runtime
 ```
 
-macOS socket 父目录需要预先创建，但 socket 文件由 runtime 创建，不要手动创建。未登录时，两个 LaunchDaemon 常驻，但不会启动任何用户 app-server。
+The parent socket directory on macOS must be created in advance, but the socket file itself is created by the runtime and should not be created manually. When unauthenticated, both LaunchDaemons remain active but do not spawn any user app-servers.
 
-## 运行要求
+## Requirements
 
-- Node.js 20.9.0 或更高版本。
-- 已安装 Codex CLI，并且可以通过 `PATH` 执行 `codex app-server`。
-- 单用户服务支持 Linux、macOS 和 Windows；多用户 runtime 仅支持 Linux 与 macOS。
-- 用于访问界面的现代浏览器。
+- Node.js 20.9.0 or higher.
+- Codex CLI installed and accessible via `PATH` to run `codex app-server`.
+- Single-user service supports Linux, macOS, and Windows; multi-user runtime supports Linux and macOS only.
+- A modern web browser to access the interface.
 
-检查环境：
+Check environment:
 
 ```bash
 node --version
@@ -444,11 +445,11 @@ npm --version
 codex --version
 ```
 
-## 安装
+## Installation
 
-### 从源码构建 tarball
+### Build Tarball from Source
 
-也可以在源码仓库中构建 npm tarball，再全局安装该产物：
+You can build an npm tarball from the source repository and install it globally:
 
 ```bash
 git clone https://github.com/wangru8080/codex-web.git
@@ -460,298 +461,429 @@ mv "./wangru8080-codex-web-${PACKAGE_VERSION}.tgz" "./codex-web-${PACKAGE_VERSIO
 npm install --global "./codex-web-${PACKAGE_VERSION}.tgz"
 ```
 
-`npm pack` 会自动执行生产构建和 CLI 打包。scoped 包默认生成 `wangru8080-codex-web-<版本>.tgz`，上述命令将其重命名为 GitHub Release 使用的 `codex-web-<版本>.tgz`。
+`npm pack` automatically runs production builds and CLI bundling. Scoped packages generate `wangru8080-codex-web-<version>.tgz` by default; the command above renames it to `codex-web-<version>.tgz` as used in GitHub Releases.
 
-安装后检查命令：
+Verify the command after installation:
 
 ```bash
 codex-web --version
 codex-web --help
 ```
 
-### 从 GitHub 仓库安装
+### Install from GitHub Repository
 
-GitHub 仓库已经公开，可以直接安装当前 `master` 分支：
+The GitHub repository is public; you can install the `master` branch directly:
 
 ```bash
 npm install --global "github:wangru8080/codex-web#master"
 ```
 
-这种方式会在安装机器上下载开发依赖并执行完整构建，速度较慢。正式版本更适合使用 GitHub Release 中预先构建的 tarball。
+This method downloads devDependencies and builds the full package on the host machine, which is slower. For production use, installing prebuilt tarballs from GitHub Releases is recommended.
 
-### 从 GitHub Release 安装
+### Install from GitHub Releases
 
-发布 GitHub Release 后，可以安装 Release 附件：
+Once a GitHub Release is published, install the release asset directly:
 
 ```bash
 PACKAGE_VERSION="$(node -p "require('./package.json').version")"
 npm install --global "https://github.com/wangru8080/codex-web/releases/download/v${PACKAGE_VERSION}/codex-web-${PACKAGE_VERSION}.tgz"
 ```
 
-### 从 npm registry 安装
+### Install from npm Registry
 
-可以从 npm 官方 registry 直接安装：
+Install directly from the official npm registry:
 
 ```bash
 npm install --global @wangru8080/codex-web --registry=https://registry.npmjs.org/
 ```
 
-## 快速开始
+## Quick Start
 
-### 0. 安装 codex 与 codex-web
+### 0. Install codex and codex-web
 
 ```bash
 npm install -g @openai/codex
 npm install -g @wangru8080/codex-web
 ```
 
-### 1. 生成 Web 会话密钥
+### 1. Generate Web Session Secret
 
-只生成一次，并将结果保存在服务端的安全配置中：
+Generate once and save the result securely in your server configuration:
 
 ```bash
 openssl rand -hex 32
 ```
 
-不要在每次启动时重新生成。修改会话密钥会让已有 Web 登录会话立即失效。
+Do not regenerate on every restart. Changing the session secret immediately invalidates all existing Web login sessions.
 
-### 2. 配置 Web 登录
+### 2. Configure Web Login
 
 ```bash
 export CODEX_WEB_LOGIN_EMAIL="admin@example.com"
-export CODEX_WEB_LOGIN_PASSWORD="<独立强密码>"
-export CODEX_WEB_SESSION_SECRET="<至少32个字符的固定随机密钥>"
+export CODEX_WEB_LOGIN_PASSWORD="<unique-strong-password>"
+export CODEX_WEB_SESSION_SECRET="<fixed-random-secret-at-least-32-chars>"
 ```
 
-这些变量用于保护 Codex Web 页面，不是 OpenAI 账户凭据。OpenAI 账户或 API Key 在登录 Web 后通过“设置 -> Codex”接入 app-server。
+These variables protect the Codex Web interface and are not OpenAI account credentials. OpenAI account or API Key credentials are hooked into the app-server after logging into the Web UI via "Settings -> Codex".
 
-### 3. 在项目目录中启动
+### 3. Launch from Project Directory
 
 ```bash
 cd /path/to/your/project
 codex-web serve --open
 ```
 
-默认地址为 `http://127.0.0.1:3001`。`--open` 会在服务启动后打开默认浏览器。旧命令 `codex-web --open` 仍然兼容，等价于 `codex-web serve --open`。
+Default address is `http://127.0.0.1:3001`. `--open` opens the default browser after server launch. The legacy command `codex-web --open` remains backwards-compatible and is equivalent to `codex-web serve --open`.
 
-### 4. 登录并开始对话
+### 4. Log in and Start Chatting
 
-1. 使用 `CODEX_WEB_LOGIN_EMAIL` 和 `CODEX_WEB_LOGIN_PASSWORD` 登录 Web。
-2. 打开“设置 -> Codex”，检查 app-server 连接状态。
-3. 根据需要完成 OpenAI 账户授权或 API Key 登录。
-4. 返回“新建对话”，选择项目目录、模型、推理强度和权限策略。
-5. 输入任务，或添加文件、Skill 和附件后发送。
+1. Sign in to the Web interface using `CODEX_WEB_LOGIN_EMAIL` and `CODEX_WEB_LOGIN_PASSWORD`.
+2. Open "Settings -> Codex" and check the app-server connection status.
+3. Complete OpenAI account authorization or API Key login as needed.
+4. Return to "New Chat", choose your project directory, model, reasoning effort, and permission policy.
+5. Enter a prompt, or attach files, Skills, and attachments, then send.
 
-## Web UI 输入框便捷操作
+## Web UI Composer Shortcuts
 
-输入框可以直接组合项目上下文、Skills 和内置命令：
+The composer allows combining project context, Skills, and built-in slash commands directly:
 
-- 输入 `@` 搜索并引用当前项目中的文件或目录。
-- 输入 `$` 搜索已启用的 Skills；可以同时添加多个 Skill，再补充具体任务后发送。
-- 输入 `/` 打开内置命令选择器。
-- 点击左下角 `+` 菜单，可以添加文件上下文、设置 Goal 或进入 Plan 模式。
-- 可以选择本地文件、把文件或目录拖入输入框，或者直接粘贴剪贴板中的图片和文件。
-- 可以从项目文件树添加文件或目录，也可以在文件预览中选中内容后将片段加入对话。
-- 文件、目录、附件和选中文本会显示为可单独移除的标签，并提供估算 Token 供发送前参考。
-- 执行包含计划的任务时，输入框上方会显示可折叠的任务进度；产生文件修改后会切换为文件变更与任务进度并排展示。
-- 如果发送未被接受或发生错误，输入内容和附件会保留在输入框中，便于调整后重试。
+- Type `@` to search and reference files or directories in the current project.
+- Type `$` to search enabled Skills; you can attach multiple Skills before sending.
+- Type `/` to open the built-in slash command picker.
+- Click the `+` menu on the bottom-left to attach file contexts, set a Goal, or enter Plan mode.
+- Pick local files, drag-and-drop files or directories into the composer, or paste images and files from clipboard.
+- Attach files or directories from the project file tree, or select excerpts in the file previewer to quote them in the chat.
+- Files, directories, attachments, and text excerpts appear as individually removable tags with estimated token counts before sending.
+- When executing tasks with a plan, a collapsible task progress bar appears above the composer; once file changes occur, it switches to a side-by-side view showing file changes and task progress.
+- If a message is not accepted or fails, input content and attachments are preserved in the composer for easy retry.
 
-Codex 正在生成时，输入普通消息并发送会将其加入待发送队列；输入框没有待发送内容时，可以使用停止按钮中断当前 Turn。输入框底部还可以直接调整权限策略、模型和推理力度。
+While Codex is generating, sending a new message queues it; when there is no queued message, the stop button interrupts the active turn. Permission policies, models, and reasoning effort can also be adjusted directly from the bottom bar of the composer.
 
-### 内置命令
+### Built-in Commands
 
-| 命令 | 用途 |
+| Command | Description |
 |---|---|
-| `/mcp` | 查看 MCP server 的连接和运行状态。 |
-| `/review` | 审查未暂存的更改，或与指定分支进行比较。 |
-| `/compact` | 压缩当前任务的上下文。 |
-| `/reasoning` | 调整当前模型的推理力度。 |
-| `/model` | 选择当前任务使用的模型。 |
-| `/status` | 查看任务 ID、上下文用量和速率限制。 |
-| `/goal` | 设置 Codex 将持续追求的目标。 |
-| `/plan` | 进入 Plan 模式，先讨论和制定计划。 |
-| `/memories` | 配置当前任务的记忆使用与生成行为。 |
+| `/mcp` | View connection and runtime status of MCP servers. |
+| `/review` | Review unstaged changes or compare against a specified branch. |
+| `/compact` | Compact the context of the current task. |
+| `/reasoning` | Adjust reasoning effort for the active model. |
+| `/model` | Select the model used for the current task. |
+| `/status` | View task ID, context usage, and rate limits. |
+| `/goal` | Set a continuous goal that Codex will pursue. |
+| `/plan` | Enter Plan mode to discuss and formulate plans first. |
+| `/memories` | Configure memory usage and generation behavior for the current task. |
 
-## CLI 参数
+## CLI Options
 
 ```text
-codex-web serve [选项]
-codex-web runtime serve --config <绝对路径> --socket <绝对路径>
-printf '%s' '密码' | codex-web runtime hash-password
-codex-web [选项]  # 兼容原有单用户命令
+codex-web serve [options]
+codex-web runtime serve --config <absolute-path> --socket <absolute-path>
+printf '%s' 'password' | codex-web runtime hash-password
+codex-web [options]  # Backwards-compatible single-user command
 
-serve 选项：
---host <地址>         监听地址，默认 127.0.0.1
---port <端口>         HTTP 端口，默认 3001；0 表示随机端口
---codex-home <路径>   Codex 配置与会话目录，默认 CODEX_HOME 或 ~/.codex
---open                启动后打开默认浏览器，不能与 --port 0 同时使用
--h, --help            显示帮助
--v, --version         显示版本
+serve options:
+--host <address>        Listening address, default 127.0.0.1
+--port <port>           HTTP port, default 3001; 0 specifies random port
+--codex-home <path>     Codex config and session directory, defaults to CODEX_HOME or ~/.codex
+--open                  Open default browser upon launch, cannot be used with --port 0
+-h, --help              Show help
+-v, --version           Show version
 
-runtime serve 必需参数：
---config <绝对路径>   root 拥有、权限为 0600 的用户配置文件
---socket <绝对路径>   Web 与 runtime 通信的 Unix socket
+runtime serve required options:
+--config <absolute-path> User config file owned by root with 0600 permissions
+--socket <absolute-path> Unix socket for communication between Web and runtime
 ```
 
-`codex-web runtime serve` 仅支持 Linux 与 macOS，并且必须以 root 启动。Windows 调用该命令会在读取配置或创建 socket 前失败。`codex-web runtime hash-password` 从标准输入读取密码并输出可写入用户配置的 scrypt 哈希，不需要 root 权限。
+`codex-web runtime serve` is supported only on Linux and macOS, and must be run as root. Windows invocations fail before reading configs or creating sockets. `codex-web runtime hash-password` reads passwords from stdin and prints an scrypt hash suitable for user configs without requiring root privileges.
 
-也可以使用以下环境变量：
+The following environment variables can also be used:
 
-| 环境变量 | 用途 | 必需 |
+| Environment Variable | Description | Required |
 |---|---|---|
-| `CODEX_WEB_LOGIN_EMAIL` | Web 登录邮箱 | 单用户模式 |
-| `CODEX_WEB_LOGIN_PASSWORD` | Web 登录密码 | 单用户模式 |
-| `CODEX_WEB_SESSION_SECRET` | Web 会话签名密钥，至少 32 个字符 | 单用户模式 |
-| `CODEX_HOME` | 单用户 app-server 的 Codex 配置目录 | 否 |
-| `CODEX_WEB_STATE` | Web 自身状态目录；未设置时使用当前进程用户的 `~/.codex-web` | 否 |
-| `PORT` | HTTP 端口 | 否 |
-| `CODEX_WEB_NEXT_HOST` | 监听地址 | 否 |
-| `CODEX_WEB_PUBLIC_HOST` | `--open` 使用的公开主机名 | 否 |
-| `CODEX_WEB_RUNTIME_BROKER_SOCKET` | 启用多用户模式的 Unix socket 绝对路径；与单用户登录变量二选一 | 多用户模式 |
+| `CODEX_WEB_AUTH_MODE` | Authentication mode: `local` (email/password) or `sso` (OpenID Connect); overrides `sso.json` | No |
+| `CODEX_WEB_LOGIN_EMAIL` | Web login email (when using `local` auth mode) | Single-user `local` mode |
+| `CODEX_WEB_LOGIN_PASSWORD` | Web login password (when using `local` auth mode) | Single-user `local` mode |
+| `CODEX_WEB_SESSION_SECRET` | Web session signing key (min 32 chars) | Single-user mode (`local` and `sso`) |
+| `CODEX_WEB_OIDC_PROVIDER_NAME` | Display label for the OIDC provider on the login button (default `SSO`) | No |
+| `CODEX_WEB_OIDC_ISSUER` | OIDC Issuer URL (`.well-known/openid-configuration` base URL) | Single-user `sso` mode (if not in `sso.json`) |
+| `CODEX_WEB_OIDC_CLIENT_ID` | OIDC Client ID | Single-user `sso` mode (if not in `sso.json`) |
+| `CODEX_WEB_OIDC_CLIENT_SECRET` | OIDC Client Secret | Single-user `sso` mode (if not in `sso.json`) |
+| `CODEX_WEB_OIDC_SCOPES` | OIDC scopes (default `openid email profile`) | No |
+| `CODEX_WEB_OIDC_ALLOWED_EMAILS` | Optional comma-separated list of allowed user emails | No |
+| `CODEX_WEB_OIDC_ALLOWED_DOMAINS` | Optional comma-separated list of allowed email domains | No |
+| `CODEX_HOME` | Codex configuration directory for single-user app-server | No |
+| `CODEX_WEB_STATE` | State directory for Web service itself; defaults to current user's `~/.codex-web` | No |
+| `PORT` | HTTP port | No |
+| `CODEX_WEB_NEXT_HOST` | Listening address | No |
+| `CODEX_WEB_PUBLIC_HOST` | Public host used by `--open` | No |
+| `CODEX_WEB_RUNTIME_BROKER_SOCKET` | Absolute path to Unix socket enabling multi-user mode; mutually exclusive with single-user login variables | Multi-user mode |
 
-## Codex 路径与工作目录
+## Codex Paths & Working Directories
 
-Codex Web 使用三个彼此独立的路径：
+Codex Web uses three independent paths:
 
-- 安装目录：保存 Codex Web 的 `.next`、主题和 CLI 资源。
-- 工作目录：执行 `codex-web` 时所在的目录，会作为 app-server 的 cwd。
-- `CODEX_HOME`：保存 Codex 账户、配置、历史会话、MCP 和 Skills。
-- `CODEX_WEB_STATE`：保存 Web 自身状态，不承载用户的 Codex 会话；未设置时使用当前进程用户的 `~/.codex-web`。
+- Installation directory: Stores Codex Web's `.next`, themes, and CLI assets.
+- Working directory: The directory where `codex-web` is executed, serving as the app-server's cwd.
+- `CODEX_HOME`: Stores Codex accounts, configuration, session history, MCP, and Skills.
+- `CODEX_WEB_STATE`: Stores Web service state, not user Codex sessions; defaults to `~/.codex-web` of the current process user.
 
-单用户模式下，`CODEX_HOME` 的优先级为：
+In single-user mode, `CODEX_HOME` precedence is:
 
-1. `--codex-home <路径>`
-2. 环境变量 `CODEX_HOME`
-3. 当前用户的 `~/.codex`
+1. `--codex-home <path>`
+2. Environment variable `CODEX_HOME`
+3. Current user's `~/.codex`
 
-如果已经设置 `CODEX_HOME`，通常不需要再传 `--codex-home`。只有临时切换到另一个 Codex 环境时才需要命令行参数。多用户模式下，用户 app-server 的 `CODEX_HOME` 由 `users.json` 的 `codexHome` 指定；Web 进程本身使用 `CODEX_WEB_STATE`。
+If `CODEX_HOME` is already set, you typically do not need `--codex-home`. Command-line flags are needed only when temporarily switching to an alternate Codex environment. In multi-user mode, each user app-server's `CODEX_HOME` is specified by `codexHome` in `users.json`; the Web process itself uses `CODEX_WEB_STATE`.
 
-## 登录与安全
+## Authentication & Security
 
-- Web 登录会话有效期为 3 天。
-- 修改 Web 登录邮箱、密码或 session secret 会让已有会话立即失效。
-- 登录邮箱、密码和 session secret 只在服务端读取。
-- OpenAI OAuth token 和 API Key 由 Codex app-server 管理，不写入浏览器存储。
-- 默认监听 `127.0.0.1`，只允许本机访问。
-- WebSocket bridge 校验连接 token、Origin 和远程连接策略。
+- Web login sessions are valid for 3 days.
+- Changing the Web login email, password, or session secret immediately invalidates all active sessions.
+- Login email, password, and session secret are read exclusively on the server.
+- OpenAI OAuth tokens and API keys are managed by the Codex app-server and never written to browser storage.
+- Listens on `127.0.0.1` by default, allowing local connections only.
+- The WebSocket bridge validates connection tokens, Origin headers, and remote connection policies.
 
-需要向局域网或公网提供访问时，至少应配置 HTTPS 反向代理、防火墙和访问控制，然后再显式监听外部地址：
+When exposing access to a local network or the public Internet, configure at least an HTTPS reverse proxy, firewall, and access controls before explicitly listening on external interfaces:
 
 ```bash
 codex-web serve --host 0.0.0.0 --port 3001
 ```
 
-不要将未配置 HTTPS 和访问限制的实例直接暴露到公网。
+Never expose an unconfigured instance lacking HTTPS and access restrictions directly to the public Internet.
+
+### OpenID Connect (OIDC) Single Sign-On (SSO)
+
+Codex Web supports switching between locally defined credentials (`local`) and standard OpenID Connect Authorization Code Flow with PKCE (`sso`), compatible with any OIDC-compliant identity provider.
+
+You can configure OIDC SSO and switch authentication modes either in **Settings -> Security** or via `${CODEX_WEB_STATE}/sso.json` (defaulting to `~/.codex-web/sso.json` with `0600` file permissions) or `CODEX_WEB_OIDC_*` environment variables:
+
+```json
+{
+  "enabled": true,
+  "providerName": "SSO",
+  "issuer": "https://idp.example.com/oauth2/default",
+  "clientId": "<oidc-client-id>",
+  "clientSecret": "<oidc-client-secret>",
+  "scopes": "openid email profile",
+  "allowedEmails": ["admin@example.com"],
+  "allowedDomains": []
+}
+```
+
+- **Callback / Redirect URI**: Register `<origin>/api/auth/sso/callback` (e.g., `http://127.0.0.1:3001/api/auth/sso/callback` or `https://codex.example.com/api/auth/sso/callback`) in your OIDC provider.
+- **Exclusive Mode Switch**: When SSO is enabled (`"enabled": true` or `CODEX_WEB_AUTH_MODE=sso`), password login (`POST /api/auth/login`) is disabled and `CODEX_WEB_LOGIN_EMAIL` / `CODEX_WEB_LOGIN_PASSWORD` are not required at server startup (only `CODEX_WEB_SESSION_SECRET` is required).
+- **Allowlist & Multi-User Broker Support**:
+  - In single-user mode, you can optionally restrict access via `allowedEmails` and/or `allowedDomains`; if both are empty, any user permitted by your OIDC provider policy is accepted.
+  - In multi-user runtime broker mode, the verified OIDC `email` claim is matched against enabled users in `users.json`.
+- **Recovery**: If an OIDC misconfiguration prevents sign-in, set `"enabled": false` in `sso.json` (or launch with `CODEX_WEB_AUTH_MODE=local`) to switch back to local email/password login.
+
+### Jules-Compatible API Keys
+
+Codex Web exposes the documented Jules v1alpha resource surface at `/v1alpha`. Create keys in **Settings -> API Keys**. The complete key is shown exactly once; the server stores only its SHA-256 hash. Each account may have at most three active keys, and revoking a key takes effect on the next request.
+
+Supported resources:
+
+- `GET /v1alpha/sources` and `GET /v1alpha/sources/{source}`, including GitHub
+  source names in the form `sources/github/{owner}/{repo}`
+- `GET|POST /v1alpha/sessions`, `GET|DELETE /v1alpha/sessions/{session}`
+- `POST /v1alpha/sessions/{session}:archive`, `:unarchive`, `:sendMessage`, and `:approvePlan`
+- `GET /v1alpha/sessions/{session}/activities` and `GET /v1alpha/sessions/{session}/activities/{activity}`
+
+Pass the key only in the `X-Goog-Api-Key` header:
+
+```bash
+export CODEX_WEB_API_KEY='cwk1_...'
+curl -H "X-Goog-Api-Key: $CODEX_WEB_API_KEY" \
+  http://127.0.0.1:3001/v1alpha/sources
+```
+
+Keys authenticate as the account that created them, independently of the browser cookie. They are bound to the current Web authentication configuration:
+
+- Local-auth keys stop working after the configured email/password or session secret changes.
+- SSO keys stop working after SSO mode, issuer, client, secret, scopes, or allowlist changes; the account must also still be permitted by the current SSO allowlist.
+- Multi-user broker keys additionally require the broker user to remain enabled and unchanged.
+- Switching between local auth and SSO invalidates keys for the inactive mode until a key is created under the active configuration.
+
+The API accepts keys only from the same origin and rejects cookie-only requests, keys in query parameters, and keys in the `Authorization` header. It also rejects cross-site `Sec-Fetch-Site` requests. API-created sessions are tagged `codex_web_jules_api` and are isolated from normal browser-created threads. Sources are limited to the signed-in user's configured cwd and cwds from that user's existing app-server threads; callers cannot select arbitrary filesystem paths.
+
+Workspace keys use the normal workspace-write sandbox and on-request approvals. Full-access keys are explicitly marked high risk in Settings and run without sandbox or approval prompts. API requests never answer app-server approval or server requests: if a command or file change needs human review, approve it in the Codex Web UI.
+
+GitHub origin URLs reported by app-server are exposed with Jules-compatible
+source names (`sources/github/{owner}/{repo}`) and mapped back to the local
+checkout directory used by the Codex thread. Historical local source IDs remain
+accepted as aliases.
+
+`sourceContext.githubRepoContext.startingBranch` checks out the requested branch
+through app-server `command/exec` before `thread/start`. The operation fails with
+`FAILED_PRECONDITION` when the source is not a git checkout, the worktree has
+uncommitted changes, or the branch cannot be found locally or on `origin`.
+
+`automationMode: "AUTO_CREATE_PR"` is accepted and added as a developer
+instruction for the API-created thread: after making code changes, Codex creates
+a branch, commits, pushes, and opens a pull request with `gh pr create`. The API
+does not claim a PR exists unless a successful command returned a real GitHub
+pull request URL.
+
+Session `outputs` are derived from real app-server state. A successful
+`gh pr create` output produces `outputs: [{ pullRequest: { ... } }]`; completed
+file changes or successful git history commands produce
+`outputs: [{ changeSet: { ... } }]`. When available, the initial thread commit is
+used as `gitPatch.baseCommitId`, file changes provide `unidiffPatch`, and a
+successful commit command provides `suggestedCommitMessage`.
+
+The adaptation does not invent Jules capabilities that Codex cannot provide.
+`sourceContext.workingBranch`, source environment variables, and activity
+time-range filters still return `UNIMPLEMENTED`. `PLANNING` is deprecated by
+Jules and is not emitted; `AWAITING_USER_FEEDBACK` is not emitted without a real
+app-server state that represents it.
+
+Key metadata is stored in `${CODEX_WEB_STATE}/api-keys.json` and API session ownership metadata in `${CODEX_WEB_STATE}/api-sessions.json` when Web manages state directly. In a multi-user deployment these files are root-managed, alongside the broker's other `CODEX_WEB_STATE` files. Both files are written atomically with `0600` permissions. Raw keys are never written to these files, browser storage, or session metadata. The application does not intentionally log key headers; query-string key transport is rejected because reverse-proxy access logs may record complete URLs.
 
 ### Cloudflare Turnstile
 
-登录后打开“设置 -> 安全”可以启用 Turnstile。启用或修改密钥时，设置页必须先完成一次真实 Turnstile 验证，服务端使用候选私密密钥调用 Siteverify 成功后才保存配置。
+After logging in, Turnstile can be enabled in "Settings -> Security". When enabling or updating keys, the settings page must first pass a live Turnstile challenge, and the server validates it successfully with Siteverify before saving the configuration.
 
-Turnstile 配置统一保存在：
+Turnstile configuration is saved at:
 
 ```text
 ${CODEX_WEB_STATE}/turnstile.json
 ```
 
-如果没有显式设置 `CODEX_WEB_STATE`，则使用当前管理进程用户的默认目录：
+If `CODEX_WEB_STATE` is not explicitly set, the default directory of the current managing process user is used:
 
 ```text
 ~/.codex-web/turnstile.json
 ```
 
-单用户和没有启用 root 账号的多用户模式使用启动 Web 用户的 `CODEX_WEB_STATE`，未设置时使用该用户的 `~/.codex-web`。多用户 broker 存在启用的 root 账号时，只使用 root 用户配置中的 `CODEX_WEB_STATE`，未设置时使用 `/root/.codex-web`；只有 root 账号可以更新，普通 Web 进程只读取不含私密密钥的公开配置，登录 token 也由 broker 在 root 进程内完成 Siteverify。私密密钥不会返回浏览器或普通 Web 进程。
+Single-user mode and multi-user mode without an enabled root account use the `CODEX_WEB_STATE` of the user running Web, defaulting to `~/.codex-web`. When a multi-user broker has an active root account, only the `CODEX_WEB_STATE` configured for root is used, defaulting to `/root/.codex-web`; only root can update it. Unprivileged Web processes only read public settings without secrets, and login tokens are verified via Siteverify within the root broker process. Secret keys are never returned to the browser or unprivileged Web processes.
 
-如果错误配置导致无法登录，可以由配置文件所有者把生效的 `turnstile.json` 中的 `"enabled"` 改为 `false`。请求会重新读取配置，不必删除 site key 或 secret key；恢复登录后可在设置页重新预检并启用。状态目录权限为 `0700`，配置文件权限为 `0600`。
+If a misconfiguration prevents login, the file owner can set `"enabled"` to `false` in the active `turnstile.json`. Requests reload the configuration without needing to delete site or secret keys; after logging in, pre-check and re-enable from Settings. State directory permissions should be `0700`, and config file permissions `0600`.
 
-配置只读取新的统一路径。升级后如果旧路径仍有配置，请在设置页重新填写并保存；程序不会自动读取、移动、覆盖或删除旧文件。
+Configurations are loaded exclusively from the unified new path. After upgrading, if an older path still contains configurations, please re-enter and save in Settings; the program will not automatically read, move, overwrite, or delete legacy files.
 
-## 升级
+### UnifiedPush Notifications
 
-使用源码或 GitHub Release tarball 安装时，下载或生成新版本 tarball，然后再次执行全局安装：
+The Android client can receive Codex notifications through any UnifiedPush-compatible distributor, including Sunup, ntfy, and distributors backed by push services such as Mozilla Push. The server sends encrypted Web Push messages with VAPID to the endpoint supplied by the distributor.
 
-```bash
-npm install --global ./codex-web-<新版本>.tgz
+Notifications are intentionally limited to events that need attention:
+
+- a Turn that reaches `completed` or `failed`;
+- a thread goal that transitions to `complete`;
+- command, file-change, and permission approvals;
+- Codex user-input questions and MCP elicitation requests.
+
+Streaming deltas, ordinary agent messages, interrupted Turns, and idle thread-status changes are not pushed. Notifications are deduplicated by Turn, goal, or server-request ID in the server process.
+
+The first registration for an endpoint sends one test notification through the same Web Push path. The Android client reports notifications as ready only after the push service accepts that test notification; otherwise the registration error is shown. Re-registering the same endpoint and encryption keys after a bridge reconnect is idempotent and does not send another test. A registration with a changed endpoint or key set, or a retry after a failed test, sends a new test notification.
+
+Subscriptions and VAPID keys are stored server-side in:
+
+```text
+${CODEX_WEB_STATE}/push.json
 ```
 
-不要直接修改全局安装目录中的 `.next` 或 `dist` 文件。
+The directory is created with permissions `0700` and the file with `0600`. The browser and Android client never receive the private VAPID key or any Codex OAuth/API credentials. If neither VAPID key is configured, a key pair is generated once and persisted.
 
-当前浏览器版的“检查更新”与“安装更新”还没有接入 CLI/npm 更新流程，升级需要在命令行完成。
+Optional VAPID configuration:
 
-systemd 多用户部署升级 CLI 后，需要重启两个常驻服务，使 Web 与 runtime 使用同一版本：
+```bash
+export CODEX_WEB_PUSH_VAPID_PUBLIC_KEY='<base64url public key>'
+export CODEX_WEB_PUSH_VAPID_PRIVATE_KEY='<base64url private key>'
+export CODEX_WEB_PUSH_VAPID_SUBJECT='mailto:admin@example.com'
+```
+
+Both VAPID keys must be supplied together. Keep the same pair across server restarts and deployments so existing subscriptions remain valid.
+
+Push endpoints must use HTTPS and resolve only to public addresses. Credentials in endpoint URLs, loopback/private/link-local destinations, and private DNS results are rejected. `CODEX_WEB_PUSH_ALLOW_INSECURE_ENDPOINTS=1` exists only for local integration tests and must not be used in production.
+
+## Upgrading
+
+When installed from source or GitHub Release tarballs, download or generate the new release tarball, then run the global installation again:
+
+```bash
+npm install --global ./codex-web-<new-version>.tgz
+```
+
+Do not modify `.next` or `dist` files inside the global installation directory directly.
+
+The browser version's "Check for Updates" and "Install Update" buttons are not yet connected to the CLI/npm update flow; upgrades must be performed via the command line.
+
+After upgrading the CLI in a systemd multi-user deployment, restart both services so that Web and runtime use the same version:
 
 ```bash
 sudo systemctl restart codex-web-runtime.service
 sudo systemctl restart codex-web.service
 ```
 
-macOS launchd 部署升级 CLI 后执行：
+For macOS launchd deployments, run after upgrading the CLI:
 
 ```bash
 sudo launchctl kickstart -k system/com.codex-web.runtime
 sudo launchctl kickstart -k system/com.codex-web.web
 ```
 
-## 源码开发
+## Source Development
 
 ```bash
 git clone https://github.com/wangru8080/codex-web.git
 cd codex-web
-npm install
+pnpm install
 
 export CODEX_HOME="${TMPDIR:-/tmp}/codex-web-dev-home"
 export CODEX_WEB_STATE="${TMPDIR:-/tmp}/codex-web-state"
 export CODEX_WEB_LOGIN_EMAIL="dev@example.com"
-export CODEX_WEB_LOGIN_PASSWORD="<开发环境独立密码>"
-export CODEX_WEB_SESSION_SECRET="<至少32个字符的开发环境固定密钥>"
+export CODEX_WEB_LOGIN_PASSWORD="<dev-unique-password>"
+export CODEX_WEB_SESSION_SECRET="<dev-fixed-secret-at-least-32-chars>"
 
-npm run dev
+pnpm run dev
 ```
 
-建议为开发和测试分别使用独立的 `CODEX_HOME` 和 `CODEX_WEB_STATE`，避免读取或修改日常使用环境中的 Codex 账号、配置、会话、MCP、Skills、审批状态或 Web 配置。
+It is strongly recommended to use dedicated, isolated directories for `CODEX_HOME` and `CODEX_WEB_STATE` during development and testing to prevent reading or altering daily Codex accounts, configs, sessions, MCP, Skills, approvals, or Web settings.
 
-常用验证命令：
+Common verification commands:
 
 ```bash
-npm run test
-npm run build
-npm run test:smoke
+pnpm run test
+pnpm run build
+pnpm run test:smoke
 ```
 
-仓库还提供 `npm run test:smoke:multi-user:macos`，用于在 macOS 上以 root 验证真实 Chrome、普通用户与 root app-server 的隔离和回收。该命令要求先设置脚本提示的隔离目录、CLI、测试用户等 `CODEX_WEB_MACOS_SMOKE_*` 环境变量，不应指向日常使用的 `CODEX_HOME`。
+The repository also provides `pnpm run test:smoke:multi-user:macos` to verify isolation and recycling across Chrome, unprivileged users, and root app-servers on macOS. This command requires setting isolated directories, CLI paths, and test users via `CODEX_WEB_MACOS_SMOKE_*` environment variables as prompted by the script, and should never point to your daily `CODEX_HOME`.
 
-构建 CLI：
+Build CLI:
 
 ```bash
-npm run build:cli
-npm pack --dry-run
+pnpm run build:cli
+pnpm pack --dry-run
 ```
 
-## 当前限制
+## Current Limitations
 
-- 当前只接入本机 `codex app-server --stdio`；SSH remote 尚未完成。
-- 浏览器版更新按钮尚未接入 CLI/npm 自动更新。
-- 浏览器重连不会终止仍在 bridge 中运行的 Turn；但 app-server 进程崩溃后，旧进程内存中的运行中 Turn 无法继续。
-- app-server 没有提供历史消息全文搜索时，界面会明确显示不支持，而不会返回伪造结果。
-- 某些 app-server 新增的 server request 可能只显示诊断信息，直到 Codex Web 增加对应交互。
+- Currently connects only to local `codex app-server --stdio`; SSH remote mode is not yet complete.
+- The browser update button is not yet integrated with CLI/npm automated updates.
+- Browser reconnects do not terminate turns still executing in the bridge; however, if the app-server crashes, in-flight turns in memory cannot be resumed.
+- When the app-server does not provide full-text search for message history, the UI explicitly indicates lack of support rather than returning fabricated results.
+- Certain newly added server requests from app-server may only display diagnostic information until Codex Web adds dedicated UI interactions.
 
-## 常见问题
+## FAQ
 
-### 必须设置 `--codex-home` 吗？
+### Is `--codex-home` required?
 
-不必须。已设置 `CODEX_HOME` 时会直接使用该目录；两者都没有时使用 `~/.codex`。
+No. If `CODEX_HOME` is set in the environment, it is used directly; if neither is set, `~/.codex` is used.
 
-### `--open` 有什么作用？
+### What does `--open` do?
 
-服务启动后调用系统默认浏览器打开 Codex Web。它不能与 `--port 0` 同时使用，因为随机端口模式不提供固定的打开地址。
+It instructs the operating system to open Codex Web in the default browser upon server startup. It cannot be used with `--port 0` because random port allocation does not yield a fixed URL upfront.
 
-### 为什么需要两次登录？
+### Why are two logins required?
 
-Web 登录用于限制谁能访问网页；“设置 -> Codex”中的 OpenAI 账户或 API Key 登录用于让 app-server 调用 Codex。两者用途不同。
+Web login controls who can access the web interface; OpenAI account or API Key login under "Settings -> Codex" allows the app-server to invoke Codex. They serve distinct purposes.
 
-### 可以从其他目录启动吗？
+### Can it be launched from other directories?
 
-可以。CLI 会从安装目录读取应用资源，并把执行命令时的当前目录作为项目工作目录。
+Yes. The CLI reads application assets from the installation directory and treats the current working directory where the command was executed as the project workspace.
 
-### 可以直接开放到公网吗？
+### Can it be directly exposed to the Internet?
 
-不建议。应先配置 HTTPS 反向代理、防火墙、访问控制和 Turnstile，并确保源站不接受绕过反向代理的连接。
+Not recommended without precautions. Always configure an HTTPS reverse proxy, firewall, access controls, and Turnstile first, and ensure the origin host rejects requests bypassing the reverse proxy.

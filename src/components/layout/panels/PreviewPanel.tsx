@@ -1445,6 +1445,8 @@ function AgentReferencedConfirm({
 
 /** Direct media preview — no API fetch needed */
 function MediaView({ filePath, fileServeUrl }: { filePath: string; fileServeUrl: string }) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === "en";
   const [mediaError, setMediaError] = useState(false);
 
   useEffect(() => {
@@ -1455,7 +1457,7 @@ function MediaView({ filePath, fileServeUrl }: { filePath: string; fileServeUrl:
     if (mediaError) {
       return (
         <div className="flex h-full items-center justify-center px-4 py-8 text-center text-sm text-destructive" role="alert">
-          图片加载失败，请刷新后重试
+          {isEnglish ? "Failed to load image, please refresh and try again" : "图片加载失败，请刷新后重试"}
         </div>
       );
     }

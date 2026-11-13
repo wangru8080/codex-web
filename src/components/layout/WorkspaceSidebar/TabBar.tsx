@@ -52,6 +52,7 @@ function tabLabel(tab: Tab, t: (key: TranslationKey, vars?: Record<string, strin
   }
   if (tab.kind === 'files-pinned') return t('workspaceSidebar.tab.openFile' as TranslationKey);
   if (tab.kind === 'terminal-pinned') return t('workspaceSidebar.tool.terminal' as TranslationKey);
+  if (tab.kind === 'screen-pinned') return t('workspaceSidebar.tool.screenShare' as TranslationKey);
   return tab.title;
 }
 
@@ -72,6 +73,7 @@ function tabIcon(tab: Tab): React.ReactNode {
   }
   if (tab.kind === 'files-pinned') return <CodexWebIcon name="pin" size="md" className="text-inherit" aria-hidden />;
   if (tab.kind === 'terminal-pinned') return <CodexWebIcon name="terminal" size="md" className="text-inherit" aria-hidden />;
+  if (tab.kind === 'screen-pinned') return <CodexWebIcon name="desktop" size="md" className="text-inherit" aria-hidden />;
   if (tab.kind === 'side-chat') return <CodexWebIcon name="chat" size="md" className="text-inherit" aria-hidden />;
   if (tab.kind === 'markdown' || tab.kind === 'file') {
     const ext = (tab.kind === 'markdown' ? '.md' : tab.filePath.split('.').pop() || '').toLowerCase();
@@ -242,6 +244,19 @@ export function TabBar({ className }: TabBarProps) {
             }}
           />
           <ToolMenuItem
+            icon="desktop"
+            label={t('workspaceSidebar.tool.screenShare' as TranslationKey)}
+            onClick={() => {
+              openTab({
+                id: 'screen-pinned',
+                kind: 'screen-pinned',
+                key: 'screen',
+                title: t('workspaceSidebar.tool.screenShare' as TranslationKey),
+              });
+              setToolMenuOpen(false);
+            }}
+          />
+          <ToolMenuItem
             icon="chat"
             label={t('workspaceSidebar.tool.sideChat' as TranslationKey)}
             onClick={() => {
@@ -325,7 +340,7 @@ function ToolMenuItem({
   onClick,
   disabled = false,
 }: {
-  icon: 'terminal' | 'chat' | 'file_tree';
+  icon: 'terminal' | 'chat' | 'file_tree' | 'desktop';
   label: string;
   onClick?: () => void;
   disabled?: boolean;

@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  allowedDevOrigins: ["192.168.3.12"],
+  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.3.12"],
   experimental: {
     optimizePackageImports: [
       "@phosphor-icons/react",

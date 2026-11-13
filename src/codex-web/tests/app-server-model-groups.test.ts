@@ -70,12 +70,64 @@ describe("appServerModelsToProviderGroup", () => {
     }));
   });
 
-  it("filters hidden models and returns null when nothing is visible", () => {
+  it("filters hidden models and returns null when nothing is visible and no custom model configured", () => {
     const group = appServerModelsToProviderGroup({
       data: [{ ...baseModel, hidden: true }],
       nextCursor: null,
     });
 
     expect(group).toBeNull();
+  });
+
+  it("当配置了 deepseek 时提供 DeepSeek 专用模型列表且不暴露不兼容的 OpenAI 模型", () => {
+    const config = {
+      config: {
+        model: "deepseek-flash",
+        model_provider: "deepseek",
+        model_reasoning_effort: "medium",
+      },
+      origins: {},
+      layers: null,
+    } as any;
+
+    const group = appServerModelsToProviderGroup(
+      {
+        data: [baseModel],
+        nextCursor: null,
+      },
+      config,
+    );
+
+    expect(group).not.toBeNull();
+    expect(group?.provider_id).toBe("codex_account");
+    expect(group?.provider_name).toBe("DeepSeek (Codex)");
+    expect(group?.models.map((m) => m.value)).toEqual([
+      "deepseek-flash",
+      "deepseek-v4-pro",
+    ]);
+  });
+
+  it("当配置了自定义模型时将其插入到模型列表首位", () => {
+    const config = {
+      config: {
+        model: "custom-agent-v1",
+        model_provider: null,
+        model_reasoning_effort: null,
+      },
+      origins: {},
+      layers: null,
+    } as any;
+
+    const group = appServerModelsToProviderGroup(
+      {
+        data: [baseModel],
+        nextCursor: null,
+      },
+      config,
+    );
+
+    expect(group).not.toBeNull();
+    expect(group?.models[0].value).toBe("custom-agent-v1");
+    expect(group?.models[1].value).toBe("gpt-5.6-sol");
   });
 });

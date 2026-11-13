@@ -57,7 +57,8 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
   { variant = "standalone", onCountChange, search = "" },
   ref,
 ) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const { refreshConfig, writeMcpServers, listMcpServerStatus, reloadMcpServers, listInstalledPlugins, readPlugin } = useAppServerActions();
   const connectionData = useAppServerSelector((state) => state.connection.data);
   const extensionRevision = useAppServerSelector((state) => state.mcpRevision + state.pluginsRevision);
@@ -122,7 +123,7 @@ export const McpManager = forwardRef<McpManagerHandle, McpManagerProps>(function
       }
       setServers({ ...configured, ...pluginServers });
       if (pluginErrors.length > 0) {
-        setWarning(`部分插件 MCP 无法读取：${pluginErrors.join("；")}`);
+        setWarning(isEnglish ? `Failed to read some plugin MCPs: ${pluginErrors.join("; ")}` : `部分插件 MCP 无法读取：${pluginErrors.join("；")}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

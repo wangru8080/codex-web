@@ -43,7 +43,8 @@ interface FolderPickerProps {
 }
 
 export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: FolderPickerProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const { readDirectory } = useAppServerActions();
   const [currentDir, setCurrentDir] = useState('');
   const [parentDir, setParentDir] = useState<string | null>(null);
@@ -197,7 +198,7 @@ export function FolderPicker({ open, onOpenChange, onSelect, initialPath }: Fold
         <DialogHeader>
           <DialogTitle>{t('folderPicker.title')}</DialogTitle>
           <DialogDescription className="sr-only">
-            选择一个项目文件夹作为工作目录
+            {isEnglish ? 'Select a project folder as the working directory' : '选择一个项目文件夹作为工作目录'}
           </DialogDescription>
         </DialogHeader>
 

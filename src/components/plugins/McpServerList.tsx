@@ -69,7 +69,8 @@ function getStatusPill(status: McpRuntimeStatus['status']) {
 }
 
 export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeStatus, startupStatus, onReload }: McpServerListProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const entries = Object.entries(servers);
   const [reconnecting, setReconnecting] = useState<Set<string>>(new Set());
 
@@ -127,7 +128,7 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
           ? server.url
           : server.command
             ? `${server.command} ${server.args?.join(' ') || ''}`
-            : source === 'plugin' ? '由 Codex 插件提供' : '';
+            : source === 'plugin' ? (isEnglish ? 'Provided by Codex plugin' : '由 Codex 插件提供') : '';
 
         return (
           <div
@@ -179,7 +180,7 @@ export function McpServerList({ servers, onOpenDetail, onToggleEnabled, runtimeS
               </span>
               {source === 'plugin' && (
                 <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                  插件提供
+                  {isEnglish ? 'Plugin' : '插件提供'}
                 </span>
               )}
               {statusPill ? (

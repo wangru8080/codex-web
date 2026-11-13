@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from '@/hooks/useTranslation';
 import { Target } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,6 +29,8 @@ export function GoalEditDialog({
   onOpenChange,
   onSave,
 }: GoalEditDialogProps) {
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const [value, setValue] = useState(objective);
 
   useEffect(() => {
@@ -43,27 +46,27 @@ export function GoalEditDialog({
           <div className="flex size-12 items-center justify-center rounded-lg bg-muted">
             <Target size={26} aria-hidden />
           </div>
-          <DialogTitle className="text-2xl">编辑目标</DialogTitle>
-          <DialogDescription className="sr-only">修改当前目标内容</DialogDescription>
+          <DialogTitle className="text-2xl">{isEnglish ? 'Edit Goal' : '编辑目标'}</DialogTitle>
+          <DialogDescription className="sr-only">{isEnglish ? 'Modify current goal content' : '修改当前目标内容'}</DialogDescription>
         </DialogHeader>
         <Textarea
           autoFocus
           value={value}
           onChange={(event) => setValue(event.target.value)}
           disabled={pending}
-          aria-label="目标内容"
+          aria-label={isEnglish ? 'Goal content' : '目标内容'}
           className="min-h-72 resize-none text-base leading-7"
         />
         <DialogFooter>
           <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
-            取消
+            {isEnglish ? 'Cancel' : '取消'}
           </Button>
           <Button
             type="button"
             disabled={pending || !trimmed || trimmed === objective.trim()}
             onClick={() => onSave(trimmed)}
           >
-            保存
+            {isEnglish ? 'Save' : '保存'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -12,24 +12,46 @@ export function resolveNewChatModelDefaults(
   configResponse: ConfigReadResponse | null | undefined,
 ): NewChatModelDefaults | null {
   const models = response?.data.filter((model) => !model.hidden) ?? [];
+  const configuredProvider = configResponse?.config.model_provider?.trim() || "";
+  let configuredModel = configResponse?.config.model?.trim() || "";
+  const configuredEffort = configResponse?.config.model_reasoning_effort;
+
+  const isDeepSeek =
+    configuredProvider.toLowerCase() === "deepseek" ||
+    configuredModel.toLowerCase().startsWith("deepseek");
+
+  if (!configuredModel && isDeepSeek) {
+    configuredModel = "deepseek-flash";
+  }
+
+  if (configuredModel) {
+    const configModel = models.find((model) => (
+      model.id === configuredModel || model.model === configuredModel
+    ));
+    if (configModel) {
+      const supportsConfiguredEffort = configuredEffort
+        ? configModel.supportedReasoningEfforts.some((option) => option.reasoningEffort === configuredEffort)
+        : false;
+      return {
+        model: configModel.id,
+        effort: configuredEffort && supportsConfiguredEffort
+          ? configuredEffort
+          : configModel.defaultReasoningEffort,
+      };
+    }
+    return {
+      model: configuredModel,
+      effort: configuredEffort || "medium",
+    };
+  }
+
   if (models.length === 0) return null;
 
-  const configuredModel = configResponse?.config.model?.trim() || "";
-  const configModel = models.find((model) => (
-    configuredModel && (model.id === configuredModel || model.model === configuredModel)
-  ));
-  const selectedModel = configModel ?? models.find((model) => model.isDefault) ?? models[0];
-  const configuredEffort = configuredModel && !configModel
-    ? null
-    : configResponse?.config.model_reasoning_effort;
-  const supportsConfiguredEffort = configuredEffort
-    ? selectedModel.supportedReasoningEfforts.some((option) => option.reasoningEffort === configuredEffort)
-    : false;
+  const selectedModel = models.find((model) => model.isDefault) ?? models[0];
+  if (!selectedModel) return null;
 
   return {
     model: selectedModel.id,
-    effort: configuredEffort && supportsConfiguredEffort
-      ? configuredEffort
-      : selectedModel.defaultReasoningEffort,
+    effort: selectedModel.defaultReasoningEffort,
   };
 }

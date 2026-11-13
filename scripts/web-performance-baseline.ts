@@ -234,7 +234,7 @@ function startServer(
   runDirectory: string,
 ): ChildProcess {
   const command = selectedMode === "dev" ? "dev" : "start";
-  const child = spawn("npm", ["run", command], {
+  const child = spawn("pnpm", ["run", command], {
     cwd: process.cwd(),
     env: {
       ...process.env,

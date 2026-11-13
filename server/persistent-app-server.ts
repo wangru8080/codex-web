@@ -170,6 +170,10 @@ export class PersistentAppServer {
 
     const diagnostics = runtime.diagnostics.slice(-5);
     const detail = diagnostics.length > 0 ? `\n${diagnostics.join("\n")}` : "";
+    console.warn(
+      `[bridge] app-server runtime closed kind=${runtime.kind} ` +
+        `error=${error?.message ?? "unknown"}${detail}`,
+    );
     this.broadcastBridgeError(`${error?.message ?? "app-server 已关闭"}${detail}`);
     for (const socket of this.sockets) {
       if (socket.isOpen()) {
@@ -263,6 +267,7 @@ export class PersistentAppServer {
       const publicId = this.serverRequestRouter.register(rpc, message.id);
       const publicRequest = { ...message, id: publicId };
       this.pendingServerRequests.set(publicId, publicRequest);
+      this.onNotification?.(publicRequest);
       this.broadcast(publicRequest);
       return;
     }

@@ -4,15 +4,15 @@ import { createServer } from "node:http";
 import { createBrokerWebSocketBridge } from "../server/broker-websocket-bridge";
 import { createThreadTurnsListFailureInterceptorFromEnv } from "../server/thread-turns-list-failure-interceptor";
 import { createWebSocketBridge } from "../server/websocket-bridge";
-import { readWebAuthConfig, runtimeBrokerSocket } from "../server/web-auth";
+import { assertWebAuthStartupConfig, runtimeBrokerSocket } from "../server/web-auth";
 
 const defaultCodexHome = "/volume2/SSD/codex/Temp/codex-dev-home";
 const codexHome = process.env.CODEX_HOME?.trim() || defaultCodexHome;
 process.env.CODEX_HOME = codexHome;
 const brokerSocket = runtimeBrokerSocket();
-if (!brokerSocket) readWebAuthConfig(process.env);
+if (!brokerSocket) assertWebAuthStartupConfig(process.env);
 
-const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "192.168.3.12";
+const publicHost = process.env.CODEX_WEB_PUBLIC_HOST ?? "127.0.0.1";
 const devOrigins = [3000, 3001].flatMap((port) => [
   `http://localhost:${port}`,
   `http://127.0.0.1:${port}`,
@@ -53,6 +53,7 @@ const bridgeUrl = brokerSocket
   ? `ws://${publicHost}:${bridgePort}/codex-bridge`
   : `ws://${publicHost}:${bridgePort}?token=${legacyBridgeToken}`;
 process.env.CODEX_WEB_BRIDGE_URL = bridgeUrl;
+if (!brokerSocket) process.env.CODEX_WEB_INTERNAL_BRIDGE_URL = `ws://127.0.0.1:${bridgePort}?token=${legacyBridgeToken}`;
 console.log(`Codex Web bridge: ${bridgeUrl}`);
 if (!brokerSocket) console.log(`Codex app-server PID: ${legacyAppServerPid ?? "未知"}`);
 else console.log(`Codex Web runtime broker: ${brokerSocket}`);

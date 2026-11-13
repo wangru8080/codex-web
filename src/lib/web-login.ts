@@ -2,6 +2,14 @@ export function resolveLoginDestination(requested: string | null): string {
   return requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/chat";
 }
 
+export function buildSsoLoginPath(destination: string, cacheBuster: string): string {
+  const params = new URLSearchParams({
+    next: resolveLoginDestination(destination),
+    cacheBust: cacheBuster,
+  });
+  return `/api/auth/sso/login?${params.toString()}`;
+}
+
 export function canSubmitLogin(configLoaded: boolean, turnstileEnabled: boolean, token: string): boolean {
   return configLoaded && (!turnstileEnabled || token.length > 0);
 }

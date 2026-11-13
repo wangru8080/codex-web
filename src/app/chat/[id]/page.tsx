@@ -24,6 +24,7 @@ import {
 import { approvalRequestMatchesThread, firstApproval } from '@/codex-web/approval-queue-adapter';
 import {
   historyPaginationFailureNotice,
+  isUnsupportedTurnsListError,
   preserveMessagesAfterPaginationFailure,
 } from '@/codex-web/history-pagination-state';
 import { resolveHistoryTurnTarget } from '@/codex-web/history-turn-routing';
@@ -116,6 +117,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const threadTokenUsageByThreadId = useAppServerSelector((state) => state.threadTokenUsageByThreadId);
   const latestCrossClientThreadRollback = useAppServerSelector((state) => state.latestCrossClientThreadRollback);
   const models = useAppServerSelector((state) => state.models);
+  const config = useAppServerSelector((state) => state.config);
   const threads = useAppServerSelector((state) => state.threads);
   const {
     readThread,
@@ -140,7 +142,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const targetFilePath = searchParams.get('file') || undefined;
   const targetMessageId = searchParams.get('continuationMessage') || undefined;
   const compactViewport = useCompactViewport();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const defaultPanelAppliedRef = useRef(false);
   const routeIdRef = useRef<string | null>(null);
   const sessionLoadedRef = useRef(false);
@@ -203,23 +206,38 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
       parentThreadId: string,
       childMessages: Message[],
     ): Promise<string | undefined> {
-      let cursor: string | null = null;
-      do {
-        const parentPage = await listThreadTurns({
-          threadId: parentThreadId,
-          cursor,
-          limit: 100,
-          sortDirection: "desc",
-          itemsView: "full",
-        });
-        const messageId = continuationBoundaryMessageId(
-          childMessages,
-          parentPage.data.map((turn) => turn.id),
-        );
-        if (messageId) return messageId;
-        cursor = parentPage.nextCursor;
-      } while (cursor);
-      return undefined;
+      try {
+        let cursor: string | null = null;
+        do {
+          const parentPage = await listThreadTurns({
+            threadId: parentThreadId,
+            cursor,
+            limit: 100,
+            sortDirection: "desc",
+            itemsView: "full",
+          });
+          const messageId = continuationBoundaryMessageId(
+            childMessages,
+            parentPage.data.map((turn) => turn.id),
+          );
+          if (messageId) return messageId;
+          cursor = parentPage.nextCursor;
+        } while (cursor);
+        return undefined;
+      } catch (boundaryError) {
+        if (isUnsupportedTurnsListError(boundaryError)) {
+          try {
+            const parentResponse = await readThread(parentThreadId, { includeTurns: true });
+            return continuationBoundaryMessageId(
+              childMessages,
+              parentResponse.thread.turns.map((turn) => turn.id),
+            );
+          } catch {
+            return undefined;
+          }
+        }
+        throw boundaryError;
+      }
     }
 
     async function loadSessionAndMessages() {
@@ -261,8 +279,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           setTurnsNextCursor(null);
           setActiveWriterReplayOnly(true);
           setPaginationNotice({
-            message: '此会话正在另一个 app-server 中运行',
-            description: '已加载完整历史；连接到原 app-server 后才能继续提交。',
+            message: isEnglish ? 'This conversation is running in another app-server' : '此会话正在另一个 app-server 中运行',
+            description: isEnglish ? 'Full history loaded; connect to the original app-server to continue submitting.' : '已加载完整历史；连接到原 app-server 后才能继续提交。',
           });
           return;
         }
@@ -328,13 +346,15 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         } catch (pageError) {
           if (cancelled) return;
           let fallbackThread = response.thread;
+          let fallbackSucceeded = false;
           try {
             const fallbackResponse = await readThread(id, { includeTurns: true });
             if (cancelled) return;
             fallbackThread = fallbackResponse.thread;
             setAppServerThread(fallbackThread);
+            fallbackSucceeded = true;
           } catch {
-            // 保留 metadata-only thread；错误 banner 会说明分页失败。
+            // Keep metadata-only thread; error banner will indicate pagination failure.
           }
           const result = threadToMessages(fallbackThread, {
             omitAssistantTurnId: resumedLiveTurnId,
@@ -355,9 +375,15 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
           setMessages((current) => mergeLoadedThreadMessages(current, snapshotMessages));
           setHasMore(false);
           setTurnsNextCursor(null);
-          setPaginationNotice(historyPaginationFailureNotice(pageError));
+          if (fallbackSucceeded && isUnsupportedTurnsListError(pageError)) {
+            // thread/turns/list is not implemented yet in this app-server version;
+            // complete turns were loaded successfully via readThread with includeTurns.
+            setPaginationNotice(null);
+          } else {
+            setPaginationNotice(historyPaginationFailureNotice(pageError, isEnglish));
+          }
           if (result.unsupportedItemCount > 0) {
-            console.info(`Phase 5A 暂未渲染 ${result.unsupportedItemCount} 个历史工具 item`);
+            console.info(`Phase 5A: ${result.unsupportedItemCount} historical tool items were not rendered`);
           }
         }
         if (needsContinuationTargetHistory(
@@ -385,7 +411,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
               "app-server.thread/read",
             ));
           } catch (targetError) {
-            setPaginationNotice(historyPaginationFailureNotice(targetError));
+            setPaginationNotice(historyPaginationFailureNotice(targetError, isEnglish));
           }
         }
         if (response.thread.forkedFromId) {
@@ -402,7 +428,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
               );
               if (!cancelled) setContinuedFromMessageId(boundaryMessageId);
             } catch (boundaryError) {
-              console.info('无法定位接续任务边界', boundaryError);
+              console.info(isEnglish ? 'Unable to locate continuation task boundary' : '无法定位接续任务边界', boundaryError);
             }
           }
         }
@@ -494,6 +520,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
     if (!settings) return;
     setSessionModel(settings.model);
     setSessionEffort(settings.effort);
+    setSessionMode(settings.collaborationMode.mode === 'plan' ? 'plan' : 'code');
     const permissionProfile = permissionProfileFromRuntimeSettings(settings);
     setSessionPermissionProfile(permissionProfile);
     writeThreadRuntimePreference(localStorage, threadId, {
@@ -567,7 +594,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
   const appServerTurn = activeTurnVisibility.visibleTurn;
   const appServerNotice = connectionNotice
     ?? (connectionData === 'connecting' && messages.length > 0
-      ? { message: '正在连接 Codex app-server...' }
+      ? { message: isEnglish ? 'Connecting to Codex app-server...' : '正在连接 Codex app-server...' }
       : null)
     ?? activeTurnVisibility.notice
     ?? paginationNotice;
@@ -590,6 +617,8 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
       ? latestCrossClientThreadRollback
       : null;
   const defaultAppServerModel =
+    config?.data?.config?.model?.trim() ||
+    (config?.data?.config?.model_provider === 'deepseek' ? 'deepseek-flash' : '') ||
     models?.data.data.find((model) => !model.hidden && model.isDefault)?.id ||
     models?.data.data.find((model) => !model.hidden)?.id ||
     '';
@@ -617,8 +646,12 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
         initialHasSummary={sessionHasSummary}
         readOnly={activeWriterReplayOnly}
         readOnlyReason={activeWriterReplayOnly
-          ? "此会话由另一个 app-server 持有；当前仅显示历史，不能提交。"
-          : "这是只读历史会话，当前版本不能继续发送。"}
+          ? (isEnglish
+            ? "This conversation is held by another app-server; currently showing history only and cannot submit."
+            : "此会话由另一个 app-server 持有；当前仅显示历史，不能提交。")
+          : (isEnglish
+            ? "This is a read-only historical conversation; cannot send in the current version."
+            : "这是只读历史会话，当前版本不能继续发送。")}
         composerDisabled={connectionData !== 'connected' || sessionSyncing}
         messageApiBase={messageApiBase}
         workingDirectory={sessionWorkingDirectory}
@@ -856,7 +889,7 @@ export default function ChatSessionPage({ params }: ChatSessionPageProps) {
             setPaginationNotice(null);
             return { messages: mergedMessages, hasMore: !!turnsPage.nextCursor };
           } catch (pageError) {
-            const failure = preserveMessagesAfterPaginationFailure(messages, pageError);
+            const failure = preserveMessagesAfterPaginationFailure(messages, pageError, isEnglish);
             setHasMore(failure.hasMore);
             setTurnsNextCursor(failure.nextCursor);
             setPaginationNotice(failure.notice);

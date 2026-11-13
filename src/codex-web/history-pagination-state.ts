@@ -12,9 +12,20 @@ export type HistoryPaginationFailureState = {
   notice: HistoryPaginationNotice;
 };
 
-export function historyPaginationFailureNotice(error: unknown): HistoryPaginationNotice {
+export function isUnsupportedTurnsListError(error: unknown): boolean {
+  if (!error) return false;
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return (
+    message.includes("list_turns is not supported yet") ||
+    message.includes("not supported") ||
+    message.includes("method not found") ||
+    message.includes("unknown method")
+  );
+}
+
+export function historyPaginationFailureNotice(error: unknown, isEnglish = false): HistoryPaginationNotice {
   return {
-    message: "历史分页暂不可用",
+    message: isEnglish ? "History pagination is unavailable" : "历史分页暂不可用",
     description: error instanceof Error ? error.message : String(error),
   };
 }
@@ -22,11 +33,12 @@ export function historyPaginationFailureNotice(error: unknown): HistoryPaginatio
 export function preserveMessagesAfterPaginationFailure(
   messages: Message[],
   error: unknown,
+  isEnglish = false,
 ): HistoryPaginationFailureState {
   return {
     messages,
     hasMore: false,
     nextCursor: null,
-    notice: historyPaginationFailureNotice(error),
+    notice: historyPaginationFailureNotice(error, isEnglish),
   };
 }

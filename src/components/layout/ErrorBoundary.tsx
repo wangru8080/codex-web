@@ -26,8 +26,41 @@ const DOM_ERROR_PATTERNS = [
   'is not a child of this node',
 ];
 
+const CHUNK_LOAD_ERROR_PATTERNS = [
+  'failed to load chunk',
+  'loading chunk',
+  'chunkloaderror',
+  'failed to fetch dynamically imported module',
+  'importing a module script failed',
+  'unable to preload css',
+];
+
+const CHUNK_RELOAD_STORAGE_KEY = 'codepilot:chunk-reload-at';
+const CHUNK_RELOAD_COOLDOWN_MS = 60_000;
+
 export function isRecoverableDomError(message: string): boolean {
   return DOM_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+export function isChunkLoadError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return CHUNK_LOAD_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+export function claimChunkReloadAttempt(
+  storage: Pick<Storage, 'getItem' | 'setItem'>,
+  now = Date.now(),
+): boolean {
+  try {
+    const previous = Number(storage.getItem(CHUNK_RELOAD_STORAGE_KEY) ?? 0);
+    if (Number.isFinite(previous) && previous > 0 && now - previous < CHUNK_RELOAD_COOLDOWN_MS) {
+      return false;
+    }
+    storage.setItem(CHUNK_RELOAD_STORAGE_KEY, String(now));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /* ── Fallback UI (functional, so it can use hooks) ──────────── */
@@ -109,6 +142,24 @@ export class ErrorBoundary extends React.Component<
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     const msg = error.message || '';
     const isDomError = isRecoverableDomError(msg);
+
+    // A deployment can replace .next while a tab is still open. In that case
+    // Next tries to fetch a route chunk that no longer exists and a hard
+    // reload is enough to pick up the new build. Only do this once per minute
+    // so a partially deployed build cannot trap the page in a reload loop.
+    if (typeof window !== 'undefined' && isChunkLoadError(msg)) {
+      let shouldReload = false;
+      try {
+        shouldReload = claimChunkReloadAttempt(window.sessionStorage);
+      } catch {
+        // Some privacy modes throw when sessionStorage is accessed.
+      }
+      if (shouldReload) {
+        console.warn('[ErrorBoundary] Route chunk missing after an app update; reloading:', msg);
+        window.location.reload();
+        return;
+      }
+    }
 
     // Auto-recover from DOM errors (hydration mismatch, stale node refs)
     // by clearing the error state and letting React re-render cleanly.

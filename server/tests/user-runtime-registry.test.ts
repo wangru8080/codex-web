@@ -1,6 +1,10 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppServerPeer } from "../app-server-peer";
+import { PushNotificationService } from "../push-notifications";
 import type { RuntimeBrokerUserConfig } from "../runtime-broker-config";
 import { UserRuntimeRegistry, type UserRuntimeServer } from "../user-runtime-registry";
 import type { JsonRpcMessage } from "../../src/codex/protocol/json-rpc";
@@ -536,6 +540,75 @@ describe("UserRuntimeRegistry", () => {
     expect(runtime.close).not.toHaveBeenCalled();
     expect(runtime.handleClientMessage).toHaveBeenCalledTimes(3);
   });
+
+  it("routes push bridge requests with the authenticated user and observes runtime notifications", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codex-web-push-registry-"));
+    const sent = vi.fn<(
+      subscription: unknown,
+      payload: string,
+      vapidDetails: unknown,
+    ) => Promise<{ statusCode?: number }>>(async () => ({}));
+    const pushNotifications = new PushNotificationService({
+      env: {},
+      statePath: join(directory, "push.json"),
+      transport: {
+        generateVapidKeys: () => ({ publicKey: "vapid-public", privateKey: "vapid-private" }),
+        send: sent,
+      },
+    });
+    const runtime = fakeRuntime();
+    const registry = new UserRuntimeRegistry({
+      disconnectGraceMs: 100,
+      createRuntime: (_user, onNotification) => {
+        runtime.notify = onNotification;
+        return runtime;
+      },
+      pushNotifications,
+    });
+    const client = peer();
+    registry.attach(USER, client);
+
+    registry.handleClientMessage(USER.id, client, { id: 1, method: "codexWeb/push/config", params: {} });
+    await vi.waitFor(() => expect(sentMessage(client)).toMatchObject({
+      id: 1,
+      result: { vapidPublicKey: "vapid-public" },
+    }));
+    expect(runtime.handleClientMessage).not.toHaveBeenCalled();
+
+    registry.handleClientMessage(USER.id, client, {
+      id: 2,
+      method: "codexWeb/push/register",
+      params: {
+        instance: "codex-web-default",
+        endpoint: "https://push.example.test/endpoint",
+        keys: { p256dh: "p256dh-key", auth: "auth-key" },
+      },
+    });
+    await vi.waitFor(() => expect(sentMessage(client)).toMatchObject({
+      id: 2,
+      result: { registered: true, testNotification: { delivered: true } },
+    }));
+    expect(runtime.handleClientMessage).not.toHaveBeenCalled();
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(sent.mock.calls[0]?.[1]))).toMatchObject({
+      kind: "test",
+      requestId: "registration-test",
+    });
+    sent.mockClear();
+
+    runtime.notify({ method: "item/agentMessage/delta", params: { threadId: "thread-1", delta: "stream" } });
+    runtime.notify({
+      id: "approval-1",
+      method: "item/commandExecution/requestApproval",
+      params: { threadId: "thread-1", turnId: "turn-1", command: "npm publish" },
+    });
+    await vi.waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String(sent.mock.calls[0]?.[1]))).toMatchObject({
+      kind: "approval_required",
+      body: "npm publish",
+      threadId: "thread-1",
+    });
+  });
 });
 
 type FakeRuntime = UserRuntimeServer & {
@@ -544,9 +617,10 @@ type FakeRuntime = UserRuntimeServer & {
   handleClientMessage: ReturnType<typeof vi.fn>;
   broadcast: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
+  notify: (message: JsonRpcMessage) => void;
 };
 
-function fakeRuntime(_onNotification: (message: JsonRpcMessage) => void): FakeRuntime {
+function fakeRuntime(onNotification: (message: JsonRpcMessage) => void = () => undefined): FakeRuntime {
   return {
     pid: 123,
     attach: vi.fn<(peer: AppServerPeer) => void>(),
@@ -554,6 +628,7 @@ function fakeRuntime(_onNotification: (message: JsonRpcMessage) => void): FakeRu
     handleClientMessage: vi.fn<(peer: AppServerPeer, message: JsonRpcMessage) => void>(),
     broadcast: vi.fn<(message: JsonRpcMessage, excludedPeer?: AppServerPeer) => void>(),
     close: vi.fn<() => void>(),
+    notify: onNotification,
   };
 }
 

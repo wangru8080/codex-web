@@ -1,16 +1,25 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { CircleAlert, Eye, EyeOff, LockKeyhole, LogIn, Mail } from "lucide-react";
+import { CircleAlert, Eye, EyeOff, KeyRound, LockKeyhole, LogIn, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { TurnstileWidget, type TurnstileWidgetHandle } from "@/components/auth/TurnstileWidget";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTranslation } from "@/hooks/useTranslation";
-import { canSubmitLogin, resolveLoginDestination, turnstileClientErrorCode } from "@/lib/web-login";
+import {
+  buildSsoLoginPath,
+  canSubmitLogin,
+  resolveLoginDestination,
+  turnstileClientErrorCode,
+} from "@/lib/web-login";
 
-type PublicAuthConfig = { turnstile: { enabled: boolean; siteKey: string } };
+type PublicAuthConfig = {
+  authMode?: "local" | "sso";
+  sso?: { enabled: boolean; providerName: string };
+  turnstile: { enabled: boolean; siteKey: string };
+};
 
 export function LoginForm() {
   const { t } = useTranslation();
@@ -94,48 +103,90 @@ export function LoginForm() {
     }
   }
 
-  const turnstileRequired = config?.turnstile.enabled === true;
+  function startSsoLogin() {
+    setSubmitting(true);
+    setError("");
+    const destination = resolveLoginDestination(searchParams.get("next"));
+    const cacheBuster = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.location.assign(buildSsoLoginPath(destination, cacheBuster));
+  }
+
+  const ssoEnabled = config?.authMode === "sso" || config?.sso?.enabled === true;
+  const ssoProviderName = config?.sso?.providerName?.trim() || "SSO";
+  const turnstileRequired = !ssoEnabled && config?.turnstile.enabled === true;
   const sessionExpired = searchParams.get("reason") === "session-expired";
+  const queryError = searchParams.get("error")?.trim() || "";
+  const visibleError = error || queryError;
+
   return (
     <>
-    <header className="mb-7 text-center">
-      <h1 id="login-title" className="text-2xl font-semibold">{t("auth.welcome")}</h1>
-      <p className="mt-2 text-sm text-muted-foreground">{t("auth.subtitle")}</p>
-    </header>
-    <form onSubmit={submit} className="space-y-5" data-testid="web-login-form">
-      {sessionExpired && (
-        <p className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3 py-2.5 text-sm text-foreground" role="status" data-testid="session-expired-message">
-          <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span>{t("auth.sessionExpired")}</span>
+      <header className="mb-7 text-center">
+        <h1 id="login-title" className="text-2xl font-semibold">{t("auth.welcome")}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {ssoEnabled ? t("auth.ssoSubtitle") : t("auth.subtitle")}
         </p>
-      )}
-      <div className="space-y-2">
-        <label htmlFor="login-email" className="text-sm font-medium">{t("auth.email")}</label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input id="login-email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-lg border border-border bg-background pl-10" placeholder={t("auth.emailPlaceholder")} />
+      </header>
+      {ssoEnabled ? (
+        <div className="space-y-5" data-testid="web-sso-login">
+          {sessionExpired && (
+            <p className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3 py-2.5 text-sm text-foreground" role="status" data-testid="session-expired-message">
+              <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span>{t("auth.sessionExpired")}</span>
+            </p>
+          )}
+          {visibleError && <p className="text-sm text-destructive" role="alert">{visibleError}</p>}
+          <Button
+            type="button"
+            size="lg"
+            className="w-full rounded-lg"
+            data-testid="web-sso-login-button"
+            disabled={submitting || !config}
+            onClick={startSsoLogin}
+          >
+            <KeyRound aria-hidden />
+            {submitting
+              ? t("auth.signingIn")
+              : t("auth.signInWithSso", { provider: ssoProviderName })}
+          </Button>
         </div>
-      </div>
-      <div className="space-y-2">
-        <label htmlFor="login-password" className="text-sm font-medium">{t("auth.password")}</label>
-        <div className="relative">
-          <LockKeyhole className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input id="login-password" type={showPassword ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="h-11 rounded-lg border border-border bg-background px-10" placeholder={t("auth.passwordPlaceholder")} />
-          <button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}>
-            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          </button>
-        </div>
-      </div>
-      {turnstileRequired && (
-        <TurnstileWidget ref={widgetRef} siteKey={config.turnstile.siteKey} onVerify={handleTurnstileVerify} onExpire={clearTurnstile} onError={handleTurnstileError} />
+      ) : (
+        <form onSubmit={submit} className="space-y-5" data-testid="web-login-form">
+          {sessionExpired && (
+            <p className="flex items-start gap-2 rounded-md border border-border bg-muted/50 px-3 py-2.5 text-sm text-foreground" role="status" data-testid="session-expired-message">
+              <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span>{t("auth.sessionExpired")}</span>
+            </p>
+          )}
+          <div className="space-y-2">
+            <label htmlFor="login-email" className="text-sm font-medium">{t("auth.email")}</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <Input id="login-email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-lg border border-border bg-background pl-10" placeholder={t("auth.emailPlaceholder")} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="login-password" className="text-sm font-medium">{t("auth.password")}</label>
+            <div className="relative">
+              <LockKeyhole className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <Input id="login-password" type={showPassword ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="h-11 rounded-lg border border-border bg-background px-10" placeholder={t("auth.passwordPlaceholder")} />
+              <button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}>
+                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
+          </div>
+          {turnstileRequired && (
+            <TurnstileWidget ref={widgetRef} siteKey={config.turnstile.siteKey} onVerify={handleTurnstileVerify} onExpire={clearTurnstile} onError={handleTurnstileError} />
+          )}
+          {turnstileError && <div className="space-y-2" role="alert"><p className="text-sm text-destructive">{turnstileError}</p><Button type="button" variant="outline" size="sm" onClick={retryTurnstile}>{t("auth.turnstileRetry")}</Button></div>}
+          {visibleError && <p className="text-sm text-destructive" role="alert">{visibleError}</p>}
+          <Button type="submit" size="lg" className="w-full rounded-lg" disabled={submitting || !canSubmitLogin(Boolean(config), turnstileRequired, turnstileToken)}>
+            <LogIn aria-hidden />
+            {submitting ? t("auth.signingIn") : t("auth.signIn")}
+          </Button>
+        </form>
       )}
-      {turnstileError && <div className="space-y-2" role="alert"><p className="text-sm text-destructive">{turnstileError}</p><Button type="button" variant="outline" size="sm" onClick={retryTurnstile}>{t("auth.turnstileRetry")}</Button></div>}
-      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-      <Button type="submit" size="lg" className="w-full rounded-lg" disabled={submitting || !canSubmitLogin(Boolean(config), turnstileRequired, turnstileToken)}>
-        <LogIn aria-hidden />
-        {submitting ? t("auth.signingIn") : t("auth.signIn")}
-      </Button>
-    </form>
     </>
   );
 }

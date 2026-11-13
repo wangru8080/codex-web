@@ -61,7 +61,7 @@ export function PanelZone({ compactViewport }: { compactViewport: boolean }) {
         >
           <SheetTitle className="sr-only">Files</SheetTitle>
           <SheetDescription className="sr-only">
-            在移动端显示当前工作区的文件树。
+            Display current workspace file tree on mobile.
           </SheetDescription>
           <CardSurface kind="fileTree">
             <FileTreePanel />

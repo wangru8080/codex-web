@@ -11,6 +11,9 @@ import {
   verifyCredentials,
   verifySessionToken,
   isSameOriginRequest,
+  isBrokerUserAllowedByCurrentWebAuth,
+  readWebAuthBinding,
+  webAuthCredentialVersion,
 } from "../web-auth";
 
 const env = {
@@ -73,6 +76,12 @@ describe("Web 登录认证", () => {
     expect(isSameOriginRequest(new Request("http://0.0.0.0/login", {
       headers: { host: "127.0.0.1:3001", origin: "https://example.com" },
     }))).toBe(false);
+    expect(isSameOriginRequest(new Request("http://0.0.0.0/login", {
+      headers: { host: "127.0.0.1:3001", "sec-fetch-site": "cross-site" },
+    }))).toBe(false);
+    expect(isSameOriginRequest(new Request("http://0.0.0.0/login", {
+      headers: { host: "127.0.0.1:3001", "sec-fetch-site": "same-origin" },
+    }))).toBe(true);
   });
 
   it("畸形 Cookie 按未登录处理而不是抛出异常", async () => {
@@ -80,5 +89,53 @@ describe("Web 登录认证", () => {
       headers: { cookie: `${WEB_AUTH_COOKIE}=%` },
     });
     await expect(authenticateWebRequest(request, env)).resolves.toBeNull();
+  });
+
+  it("API key 绑定随本地凭据和会话密钥变化，健康配置保持稳定", () => {
+    const binding = readWebAuthBinding(env);
+    const credentialVersion = webAuthCredentialVersion(env);
+
+    expect(readWebAuthBinding(env)).toBe(binding);
+    expect(webAuthCredentialVersion(env)).toBe(credentialVersion);
+    expect(readWebAuthBinding({ ...env, CODEX_WEB_LOGIN_PASSWORD: "654321" })).not.toBe(binding);
+    expect(readWebAuthBinding({
+      ...env,
+      CODEX_WEB_SESSION_SECRET: "abcdef0123456789abcdef0123456789",
+    })).not.toBe(binding);
+    expect(webAuthCredentialVersion({ ...env, CODEX_WEB_LOGIN_PASSWORD: "654321" }))
+      .not.toBe(credentialVersion);
+  });
+
+  it("SSO API key 绑定包含 provider 与 allowlist，broker 会话另行绑定用户凭据", () => {
+    const ssoEnv = {
+      ...env,
+      CODEX_WEB_AUTH_MODE: "sso",
+      CODEX_WEB_OIDC_ISSUER: "https://idp.example.test",
+      CODEX_WEB_OIDC_CLIENT_ID: "codex-web",
+      CODEX_WEB_OIDC_CLIENT_SECRET: "oidc-secret",
+      CODEX_WEB_OIDC_SCOPES: "openid email profile",
+      CODEX_WEB_OIDC_ALLOWED_DOMAINS: "example.test",
+    };
+    const binding = readWebAuthBinding(ssoEnv);
+    const credentialVersion = webAuthCredentialVersion(ssoEnv);
+
+    expect(readWebAuthBinding(ssoEnv)).toBe(binding);
+    expect(readWebAuthBinding({
+      ...ssoEnv,
+      CODEX_WEB_OIDC_ALLOWED_DOMAINS: "example.test,other.test",
+    })).not.toBe(binding);
+    expect(readWebAuthBinding({ ...ssoEnv, CODEX_WEB_OIDC_SCOPES: "openid email" }))
+      .not.toBe(binding);
+    expect(webAuthCredentialVersion({ ...ssoEnv, CODEX_WEB_OIDC_CLIENT_SECRET: "rotated" }))
+      .not.toBe(credentialVersion);
+    expect(isBrokerUserAllowedByCurrentWebAuth({ email: "alice@example.test" }, ssoEnv)).toBe(true);
+    expect(isBrokerUserAllowedByCurrentWebAuth({ email: "alice@other.test" }, ssoEnv)).toBe(false);
+
+    const brokerEnv = { ...env, CODEX_WEB_RUNTIME_BROKER_SOCKET: "/run/codex-web-broker.sock" };
+    expect(readWebAuthBinding(brokerEnv)).toBe(readWebAuthBinding({
+      ...brokerEnv,
+      CODEX_WEB_LOGIN_PASSWORD: "different-password",
+    }));
+    expect(webAuthCredentialVersion(brokerEnv)).toBeNull();
   });
 });

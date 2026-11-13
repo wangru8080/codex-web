@@ -179,7 +179,7 @@ function ChatContentRow({
           >
             <SheetTitle className="sr-only">Workspace</SheetTitle>
             <SheetDescription className="sr-only">
-              在移动端显示工作区侧栏内容。
+              Display workspace sidebar on mobile.
             </SheetDescription>
             <CardSurface kind="workspace">
               <WorkspaceSidebar />
@@ -655,7 +655,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   >
                     <SheetTitle className="sr-only">Navigation</SheetTitle>
                     <SheetDescription className="sr-only">
-                      在移动端显示会话列表与导航。
+                      Display conversation list and navigation on mobile.
                     </SheetDescription>
                     <CardSurface
                       kind="sidebar"

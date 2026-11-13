@@ -10,12 +10,21 @@ import {
   WEB_AUTH_MAX_AGE_SECONDS,
 } from "../../../../../server/web-auth";
 import { BrokerClientError, RuntimeBrokerClient } from "../../../../../server/runtime-broker-client";
+import { readSsoConfig } from "../../../../../server/sso-config";
 import { readTurnstileConfig } from "../../../../../server/turnstile-config";
 import { verifyTurnstileTokenDetailed } from "../../../../../server/turnstile";
 
 export async function POST(request: NextRequest) {
   if (!isSameOriginRequest(request)) {
     return NextResponse.json({ error: "请求来源无效" }, { status: 403 });
+  }
+
+  const sso = await readSsoConfig();
+  if (sso.enabled) {
+    return NextResponse.json(
+      { error: "SSO authentication mode is enabled; password login is disabled." },
+      { status: 403 },
+    );
   }
 
   let body: { email?: unknown; password?: unknown; turnstileToken?: unknown };

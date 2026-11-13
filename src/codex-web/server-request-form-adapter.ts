@@ -8,6 +8,8 @@ export type McpFormValue = string | number | boolean | string[];
 
 export const AUTO_RESOLUTION_HIDDEN_GRACE_MS = 60_000;
 export const AUTO_RESOLUTION_VISIBLE_COUNTDOWN_MS = 60_000;
+export const AUTO_RESOLUTION_TOTAL_MS =
+  AUTO_RESOLUTION_HIDDEN_GRACE_MS + AUTO_RESOLUTION_VISIBLE_COUNTDOWN_MS;
 
 export type ToolUserInputAutoResolutionTiming =
   | { phase: "disabled" }
@@ -38,13 +40,20 @@ export type McpFormField = {
   defaultValue?: McpFormValue;
 };
 
-export function getToolUserInputAutoResolutionTiming(
+export function isToolUserInputAutoResolutionEnabled(
+  isBlocking: boolean | undefined,
   autoResolutionMs: number | null,
+): boolean {
+  return isBlocking === undefined ? autoResolutionMs !== null : !isBlocking;
+}
+
+export function getToolUserInputAutoResolutionTiming(
+  enabled: boolean,
   startedAtMs: number,
   nowMs: number,
   snoozed: boolean,
 ): ToolUserInputAutoResolutionTiming {
-  if (autoResolutionMs === null || snoozed) {
+  if (!enabled || snoozed) {
     return { phase: "disabled" };
   }
 
@@ -75,6 +84,17 @@ export function formatAutoResolutionRemaining(remainingMs: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
+}
+
+export function shouldPauseToolUserInputAutoResolutionOnResume(
+  enabled: boolean,
+  hiddenAtMs: number,
+  resumedAtMs: number,
+): boolean {
+  if (!enabled) {
+    return false;
+  }
+  return Math.max(0, resumedAtMs - hiddenAtMs) >= AUTO_RESOLUTION_TOTAL_MS;
 }
 
 export function buildToolUserInputResponseInput(

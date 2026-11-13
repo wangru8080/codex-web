@@ -40,7 +40,7 @@ interface Props {
   onDismiss: () => void;
 }
 
-function formatResetCountdown(resetsAt: number | undefined): string {
+function formatResetCountdown(resetsAt: number | undefined, isEnglish?: boolean): string {
   if (!resetsAt) return '';
   const now = Date.now();
   const deltaMs = resetsAt * 1000 - now;
@@ -51,14 +51,15 @@ function formatResetCountdown(resetsAt: number | undefined): string {
   if (hours > 24) {
     const days = Math.floor(hours / 24);
     const h = hours % 24;
-    return `${days}天 ${h}小时`;
+    return isEnglish ? `${days}d ${h}h` : `${days}天 ${h}小时`;
   }
-  if (hours > 0) return `${hours}小时 ${minutes}分钟`;
-  return `${minutes}分钟`;
+  if (hours > 0) return isEnglish ? `${hours}h ${minutes}m` : `${hours}小时 ${minutes}分钟`;
+  return isEnglish ? `${minutes}m` : `${minutes}分钟`;
 }
 
 export function RateLimitBanner({ info, onRequestSwitchToSonnet, onDismiss }: Props) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   // tick just forces a re-render every minute — the countdown text itself
   // is derived from info.resetsAt, not stored state, so we avoid the
   // setState-during-effect lint ping. resetsAt changes naturally trigger
@@ -69,7 +70,7 @@ export function RateLimitBanner({ info, onRequestSwitchToSonnet, onDismiss }: Pr
     const timer = setInterval(() => setTick((n) => n + 1), 60_000);
     return () => clearInterval(timer);
   }, [info?.resetsAt]);
-  const countdown = formatResetCountdown(info?.resetsAt);
+  const countdown = formatResetCountdown(info?.resetsAt, isEnglish);
 
   if (!info || info.status === 'allowed') return null;
 

@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { I18nContext } from '@/components/layout/I18nProvider';
 
 import type { ThreadGoal } from '@/codex/protocol/generated/v2/ThreadGoal';
 import type { ThreadGoalStatus } from '@/codex/protocol/generated/v2/ThreadGoalStatus';
@@ -16,13 +17,15 @@ describe('GoalProgressRow', () => {
     ['complete', '已完成的目标', null],
   ] satisfies Array<[ThreadGoalStatus, string, string | null]>)('渲染 %s 状态及可用操作', (status, label, action) => {
     const html = renderToStaticMarkup(
-      <GoalProgressRow
-        goal={goal(status)}
-        sourceBreadcrumb="app-server.thread/goal/updated"
-        onStatusChange={() => undefined}
-        onEdit={() => undefined}
-        onClear={() => undefined}
-      />,
+      <I18nContext.Provider value={{ locale: 'zh', setLocale: () => {}, t: (k) => k }}>
+        <GoalProgressRow
+          goal={goal(status)}
+          sourceBreadcrumb="app-server.thread/goal/updated"
+          onStatusChange={() => undefined}
+          onEdit={() => undefined}
+          onClear={() => undefined}
+        />
+      </I18nContext.Provider>,
     );
 
     expect(html).toContain(`data-goal-status="${status}"`);

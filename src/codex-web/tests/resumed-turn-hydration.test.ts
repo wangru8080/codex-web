@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { ThreadResumeResponse } from "@/codex/protocol/generated/v2/ThreadResumeResponse";
 import { createAcceptedTurnState, reduceAppServerTurnNotification } from "../turn-reducer";
-import { activeTurnFromResume, mergeResumedActiveTurn } from "../resumed-turn-hydration";
+import {
+  activeTurnFromResume,
+  completedPlanTurnForResume,
+  mergeResumedActiveTurn,
+} from "../resumed-turn-hydration";
 
 describe("activeTurnFromResume", () => {
   it("从最新 inProgress Turn 恢复真实 item 和聚合输出", () => {
@@ -206,6 +210,30 @@ describe("mergeResumedActiveTurn", () => {
       mcpProgress: { "mcp-1": "处理中\n" },
       contextCompactionStatusById: { "compact-1": "inProgress" },
     });
+  });
+});
+
+describe("completedPlanTurnForResume", () => {
+  it("保留已完成且含 proposed plan 的 Turn，供路由重挂载后显示实施提示", () => {
+    const turn = {
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      status: "completed" as const,
+      latestProposedPlanMarkdown: "1. 写测试\n2. 实现",
+    };
+
+    expect(completedPlanTurnForResume(turn)).toBe(turn);
+  });
+
+  it("不保留没有 proposed plan 或未完成的 Turn", () => {
+    expect(completedPlanTurnForResume({
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      status: "completed" as const,
+    })).toBeNull();
+    expect(completedPlanTurnForResume({
+      ...createAcceptedTurnState("thread-1", "turn-1"),
+      status: "running" as const,
+      latestProposedPlanMarkdown: "1. 写测试",
+    })).toBeNull();
   });
 });
 

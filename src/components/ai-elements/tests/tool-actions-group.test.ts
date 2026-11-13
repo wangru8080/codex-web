@@ -88,6 +88,14 @@ describe("工具过程折叠组", () => {
   });
 });
 
-function renderTools(tools: ToolAction[]): string {
-  return renderToStaticMarkup(createElement(ToolActionsGroup, { tools }));
+import { I18nContext } from "../../layout/I18nProvider";
+
+function renderTools(tools: ToolAction[], locale = "zh"): string {
+  return renderToStaticMarkup(
+    createElement(
+      I18nContext.Provider,
+      { value: { locale: locale as any, setLocale: () => {}, t: (k) => k } },
+      createElement(ToolActionsGroup, { tools }),
+    ),
+  );
 }

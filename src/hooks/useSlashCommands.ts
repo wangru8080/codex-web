@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useRef } from 'react';
+import { useTranslation } from '@/hooks/useTranslation';
 import type { PopoverItem, PopoverMode, SkillKind } from '@/types';
 import { detectPopoverTrigger, resolveItemSelection } from '@/lib/message-input-logic';
-import { BUILT_IN_COMMANDS, COMMAND_PROMPTS } from '@/lib/constants/commands';
+import { BUILT_IN_COMMANDS, BUILT_IN_COMMANDS_EN, COMMAND_PROMPTS } from '@/lib/constants/commands';
 import { COMMAND_ICON_NAMES } from '@/lib/constants/command-icons';
 import { useAppServerActions } from '@/codex-web/AppServerProvider';
 import { getPluginIconUrl } from '@/lib/media-resource-cache';
 
 // Re-export for backward compatibility
-export { BUILT_IN_COMMANDS, COMMAND_PROMPTS };
+export { BUILT_IN_COMMANDS, BUILT_IN_COMMANDS_EN, COMMAND_PROMPTS };
 
 export interface UseSlashCommandsReturn {
   fetchFiles: (filter: string) => Promise<PopoverItem[]>;
@@ -61,13 +62,15 @@ export function useSlashCommands(opts: {
     isStreaming,
 } = opts;
   const { listSkills, fuzzyFileSearch, listInstalledPlugins, readFileLimited } = useAppServerActions();
+  const { locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const searchSequenceRef = useRef(0);
 
   // Enrich built-in commands with icons (presentation layer enrichment)
-  const enrichedBuiltIns = useMemo(
-    () => BUILT_IN_COMMANDS.map(cmd => ({ ...cmd, iconName: COMMAND_ICON_NAMES[cmd.value] })),
-    [],
-  );
+  const enrichedBuiltIns = useMemo(() => {
+    const commands = isEnglish ? BUILT_IN_COMMANDS_EN : BUILT_IN_COMMANDS;
+    return commands.map(cmd => ({ ...cmd, iconName: COMMAND_ICON_NAMES[cmd.value] }));
+  }, [isEnglish]);
 
   // Fetch files for @ mention
   const fetchFiles = useCallback(async (filter: string) => {

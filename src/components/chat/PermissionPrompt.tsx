@@ -386,7 +386,8 @@ export function PermissionPrompt({
   onPermissionResponse,
   toolUses = [],
 }: PermissionPromptProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
 
   // Nothing to show
   if (!pendingPermission && !permissionResolved) return null;
@@ -476,13 +477,13 @@ export function PermissionPrompt({
                 data-testid="app-server-approval-deny"
                 onClick={() => onPermissionResponse('deny')}
               >
-                拒绝
+                {isEnglish ? 'Deny' : '拒绝'}
               </ConfirmationAction>
               <ConfirmationAction
                 variant="outline"
                 onClick={() => onPermissionResponse('allow')}
               >
-                允许一次
+                {isEnglish ? 'Allow once' : '允许一次'}
               </ConfirmationAction>
               {pendingPermission.suggestions && pendingPermission.suggestions.length > 0 && (
                 <ConfirmationAction

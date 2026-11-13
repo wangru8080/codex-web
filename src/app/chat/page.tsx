@@ -52,7 +52,7 @@ import { mergeCrossClientUserMessages } from '@/codex-web/cross-client-sync';
 import { appServerConnectionNotice } from '@/codex-web/connection-notice';
 
 const DEFAULT_CODEX_PROVIDER_ID = 'codex_account';
-const DEFAULT_CODEX_MODEL = 'gpt-5.5';
+const DEFAULT_CODEX_MODEL = 'deepseek-flash';
 const PENDING_NEW_CHAT_DRAFT_KEY = 'codepilot:pending-new-chat-draft';
 
 export default function NewChatPage() {
@@ -136,7 +136,8 @@ function NewChatPageInner() {
     publishCrossClientUserMessage,
     reconnect,
   } = useAppServerActions();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const isEnglish = locale === 'en';
   const [messages, setMessages] = useState<Message[]>([]);
   const [goalMessageIds, setGoalMessageIds] = useState<Set<string>>(() => new Set());
   const [goalEditOpen, setGoalEditOpen] = useState(false);
@@ -298,7 +299,7 @@ function NewChatPageInner() {
       setPermissionProfile(next);
     } catch (error) {
       setErrorBanner({
-        message: '权限更新失败',
+        message: isEnglish ? 'Failed to update permissions' : '权限更新失败',
         description: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -405,9 +406,9 @@ function NewChatPageInner() {
       setIsStreaming(true);
       setStatusText('已处理');
     } else if (appServerTurn.status === 'failed') {
-      setStatusText('Codex 处理失败');
+      setStatusText(isEnglish ? 'Codex failed' : 'Codex 处理失败');
     } else if (appServerTurn.status === 'interrupted') {
-      setStatusText('Codex 已中断');
+      setStatusText(isEnglish ? 'Codex interrupted' : 'Codex 已中断');
     } else if (appServerTurn.status === 'completed') {
       setStatusText(undefined);
     }
@@ -480,11 +481,11 @@ function NewChatPageInner() {
       .then(() => writeThreadRuntimePreference(localStorage, createdSessionId, { model }))
       .catch((error) => {
         setErrorBanner({
-          message: '模型更新失败',
+          message: isEnglish ? 'Failed to update model' : '模型更新失败',
           description: error instanceof Error ? error.message : String(error),
         });
       });
-  }, [createdSessionId, updateThreadModelSettings]);
+  }, [createdSessionId, isEnglish, updateThreadModelSettings]);
 
   const handleThreadEffortChange = useCallback((effort: string | undefined) => {
     setSelectedEffort(effort);
@@ -496,11 +497,11 @@ function NewChatPageInner() {
       .then(() => writeThreadRuntimePreference(localStorage, createdSessionId, { effort: effort as ReasoningEffort }))
       .catch((error) => {
         setErrorBanner({
-          message: '推理等级更新失败',
+          message: isEnglish ? 'Failed to update reasoning effort' : '推理等级更新失败',
           description: error instanceof Error ? error.message : String(error),
         });
       });
-  }, [createdSessionId, updateThreadModelSettings]);
+  }, [createdSessionId, isEnglish, updateThreadModelSettings]);
 
   // 初始化工作目录，并通过 app-server 验证目录仍然存在。
   useEffect(() => {
@@ -620,14 +621,14 @@ function NewChatPageInner() {
         turnId: appServerTurn.turnId,
       })).catch((error) => {
         const errMsg = error instanceof Error ? error.message : 'Unknown error';
-        setErrorBanner({ message: 'Codex 中断失败', description: errMsg });
+        setErrorBanner({ message: isEnglish ? 'Failed to interrupt Codex' : 'Codex 中断失败', description: errMsg });
       });
       return;
     }
 
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
-  }, [appServerTurn, createdSessionId, goalsByThreadId, interruptTurn, setThreadGoal]);
+  }, [appServerTurn, createdSessionId, goalsByThreadId, interruptTurn, isEnglish, setThreadGoal]);
 
   const handlePermissionResponse = useCallback(async (decision: 'allow' | 'allow_session' | 'deny', updatedInput?: Record<string, unknown>, denyMessage?: string) => {
     if (appServerPermission && appServerApproval) {
@@ -681,11 +682,11 @@ function NewChatPageInner() {
 
   const handleAppServerRequestResponse = useCallback(async (input: AppServerRequestResponseInput) => {
     if (!appServerApproval) {
-      throw new Error('没有待处理的 app-server request');
+      throw new Error(isEnglish ? 'No pending app-server request' : '没有待处理的 app-server request');
     }
     await respondToServerRequest(input, appServerApproval.requestId);
     setPendingApprovalSessionId('');
-  }, [appServerApproval, respondToServerRequest, setPendingApprovalSessionId]);
+  }, [appServerApproval, isEnglish, respondToServerRequest, setPendingApprovalSessionId]);
 
   const handleGoalStatusChange = useCallback(async (status: ThreadGoalStatus) => {
     const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
@@ -701,11 +702,11 @@ function NewChatPageInner() {
           : undefined,
       });
     } catch (error) {
-      setErrorBanner({ message: '目标更新失败', description: error instanceof Error ? error.message : String(error) });
+      setErrorBanner({ message: isEnglish ? 'Failed to update goal' : '目标更新失败', description: error instanceof Error ? error.message : String(error) });
     } finally {
       setGoalMutationPending(false);
     }
-  }, [appServerTurn, createdSessionId, goalsByThreadId, interruptTurn, setThreadGoal]);
+  }, [appServerTurn, createdSessionId, goalsByThreadId, interruptTurn, isEnglish, setThreadGoal]);
 
   const handleGoalEdit = useCallback(() => {
     const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
@@ -726,11 +727,11 @@ function NewChatPageInner() {
       });
       setGoalEditOpen(false);
     } catch (error) {
-      setErrorBanner({ message: '目标更新失败', description: error instanceof Error ? error.message : String(error) });
+      setErrorBanner({ message: isEnglish ? 'Failed to update goal' : '目标更新失败', description: error instanceof Error ? error.message : String(error) });
     } finally {
       setGoalMutationPending(false);
     }
-  }, [createdSessionId, goalsByThreadId, setThreadGoal]);
+  }, [createdSessionId, goalsByThreadId, isEnglish, setThreadGoal]);
 
   const handleGoalClear = useCallback(() => {
     const goal = createdSessionId ? goalsByThreadId[createdSessionId]?.data : null;
@@ -738,10 +739,10 @@ function NewChatPageInner() {
     setGoalMutationPending(true);
     void clearThreadGoal(goal.threadId)
       .catch((error) => {
-        setErrorBanner({ message: '目标清除失败', description: error instanceof Error ? error.message : String(error) });
+        setErrorBanner({ message: isEnglish ? 'Failed to clear goal' : '目标清除失败', description: error instanceof Error ? error.message : String(error) });
       })
       .finally(() => setGoalMutationPending(false));
-  }, [goalsByThreadId, clearThreadGoal, createdSessionId]);
+  }, [clearThreadGoal, createdSessionId, goalsByThreadId, isEnglish]);
 
   const sendFirstMessage = useCallback(
     async (content: string, files?: FileAttachment[], systemPromptAppend?: string, displayOverride?: string, mentions?: MentionRef[], selectedSkills?: readonly SkillInputReference[], modeOverride?: string, forceNewThread = false) => {
@@ -892,7 +893,7 @@ function NewChatPageInner() {
         handoffToAppServerTurn = true;
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
-          setStatusText('已停止');
+          setStatusText(isEnglish ? 'Stopped' : '已停止');
         } else {
           const errMsg = error instanceof Error ? error.message : 'Unknown error';
           setErrorBanner({ message: t('error.sessionCreateFailed'), description: errMsg });
